@@ -42,6 +42,8 @@ body:
       label: Target Repo
       options:
         - paykaribazaronline/supremeai
+        - paykaribazaronline/supremeai-api
+        - paykaribazaronline/supremeai-studio
     validations:
       required: true
   - type: textarea
