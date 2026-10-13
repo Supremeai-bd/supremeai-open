@@ -142,16 +142,16 @@ export function queueFromIssues(rawIssues: unknown, limit = 20) {
     .slice(0, Math.min(Math.max(1, limit), 50));
 }
 
-function githubHeaders(): Record<string, string> {
+function githubHeaders(withAuth = true): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "SupremeAI-MCP-Control-Tower-Bridge",
   };
-  // Authenticated only when the tower is configured with a token — the public
-  // repo stays readable unauthenticated (that is the whole point of the lane).
-  const token = env.github.token || process.env["GH_TOKEN"] || "";
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (withAuth) {
+    const token = env.github.token || process.env["GH_TOKEN"] || "";
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
   return headers;
 }
 
@@ -179,10 +179,17 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     async ({ limit }) => {
       const repo = bridgeOpenRepo();
       try {
-        const res = await httpRequest<RawIssue[]>(
+        let res = await httpRequest<RawIssue[]>(
           `https://api.github.com/repos/${repo}/issues?state=open&labels=${encodeURIComponent(BRIDGE_QUEUE_LABEL)}&per_page=50&sort=created&direction=desc`,
-          { headers: githubHeaders(), timeoutMs: 15_000 }
+          { headers: githubHeaders(true), timeoutMs: 15_000 }
         );
+        // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
+        if (!res.ok && (res.status === 401 || res.status === 403)) {
+          res = await httpRequest<RawIssue[]>(
+            `https://api.github.com/repos/${repo}/issues?state=open&labels=${encodeURIComponent(BRIDGE_QUEUE_LABEL)}&per_page=50&sort=created&direction=desc`,
+            { headers: githubHeaders(false), timeoutMs: 15_000 }
+          );
+        }
         if (!res.ok) {
           const message = (res.data as { message?: unknown })?.message ?? res.status;
           return {
@@ -222,10 +229,17 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     async ({ number }) => {
       const repo = bridgeOpenRepo();
       try {
-        const res = await httpRequest<RawIssue>(
+        let res = await httpRequest<RawIssue>(
           `https://api.github.com/repos/${repo}/issues/${number}`,
-          { headers: githubHeaders(), timeoutMs: 15_000 }
+          { headers: githubHeaders(true), timeoutMs: 15_000 }
         );
+        // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
+        if (!res.ok && (res.status === 401 || res.status === 403)) {
+          res = await httpRequest<RawIssue>(
+            `https://api.github.com/repos/${repo}/issues/${number}`,
+            { headers: githubHeaders(false), timeoutMs: 15_000 }
+          );
+        }
         if (!res.ok) {
           const message = (res.data as { message?: unknown })?.message ?? res.status;
           return {

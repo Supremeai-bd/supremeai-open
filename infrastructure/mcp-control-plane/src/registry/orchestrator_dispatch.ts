@@ -62,6 +62,7 @@ const POOL_PREFIX_ROLES: Array<[RegExp, string]> = [
   [/^browser-\d+$/, "browser"],
   [/^platform-\d+$/, "platform"],
   [/^super-\d+$/, "super"],
+  [/^(z\.ai|claude|chatgpt|cursor|gemini|copilot)-\d+$/, "coder"],
 ];
 
 /** Resolve a slot id to its lane — pool prefix first, then legacy table. */

@@ -43,7 +43,7 @@ export const HEARTBEAT_KEY_PREFIX = "supremeai:agent-heartbeat:";
 export const HEARTBEAT_HASH_KEY = "supremeai:agent-heartbeats";
 export const HEARTBEAT_TTL_SECONDS = 300;
 export const HEARTBEAT_ONLINE_THRESHOLD_SECONDS = 90;
-export const SLOT_PATTERN = /^agent-\d+$/;
+export const SLOT_PATTERN = /^(agent|z\.ai|claude|chatgpt|cursor|gemini|copilot|coder|planner|ci|pr-helper|browser|platform|super)-\d+$/;
 
 export type HeartbeatSource = "mcp-tower" | "backend" | "dashboard" | "cli";
 
@@ -67,7 +67,7 @@ export type HeartbeatStatusEntry = HeartbeatRecord & {
 export function validateSlot(slot: string): string | null {
   if (!slot || typeof slot !== "string") return "slot is required";
   if (!SLOT_PATTERN.test(slot)) {
-    return `slot must match /^agent-\\d+$/ (e.g. "agent-4"); got "${slot}"`;
+    return `slot must match /^(agent|z\\.ai|claude|chatgpt|cursor|gemini|copilot|coder|planner|ci|pr-helper|browser|platform|super)-\\d+$/ (e.g. "agent-4", "z.ai-1", "claude-2"); got "${slot}"`;
   }
   return null;
 }
