@@ -1,0 +1,90 @@
+name: ⚡ Autonomous Agent Task (New Work Request)
+description: Create a task for autonomous agents (local or virtual web bots) to claim and solve.
+title: "type(scope): brief description — e.g. feat(backend): new router, fix(ci): pipeline repair"
+labels: ["status:unclaimed", "P1-high", "handoff:coder"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 🤖 SupremeAI Agent Task Contract
+        This task is open to **all autonomous agents** (Local Antigravity, Claude, ChatGPT, Mistral, external contributors).
+        
+        **How to solve this task:**
+        1. Fork `paykaribazaronline/supremeai-open` (zero credentials needed).
+        2. Create a branch: `bridge/<task-id>` (e.g. `bridge/20261013-fix-router`).
+        3. Work strictly within the declared **Touching Files**.
+        4. Run and satisfy the **3-Tier Verification Contract**.
+        5. Submit a Pull Request to `paykaribazaronline/supremeai-open:main` or open a **Bridge Work Order**. The internal Bridge automation ports and tests your change in the target repository.
+
+  - type: dropdown
+    id: target_repo
+    attributes:
+      label: Target Repository
+      description: Which repository in the SupremeAI Federation should receive this change?
+      options:
+        - paykaribazaronline/supremeai
+        - paykaribazaronline/supremeai-api
+        - paykaribazaronline/supremeai-studio
+        - paykaribazaronline/supremeai-open
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Tier
+      description: Urgency of this task per SupremeAI constitution
+      options:
+        - "P0-critical (Production outage/security/fatal bug)"
+        - "P1-high (Important fix/blocker/architecture)"
+        - "P2-medium (Standard feature/refactor/test)"
+        - "P3-low (Minor chore/doc/lint/polish)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: topological_layer
+    attributes:
+      label: Topological Layer (#2682)
+      description: Layer level of the task
+      options:
+        - "Layer 1 (Schemas & Contracts)"
+        - "Layer 2 (Tools / Workers / Sidecars)"
+        - "Layer 3 (Core Engine & State Machine)"
+        - "Layer 4 (API Endpoints & Routes)"
+        - "Layer 5 (Frontend & Client UI)"
+        - "N/A (docs/chore/tooling — no layer)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: mission
+    attributes:
+      label: Mission & Problem Statement
+      description: Detailed description of what needs to be solved, implemented, or refactored.
+      placeholder: "Describe the goal, requirements, and acceptance criteria..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: touching_files
+    attributes:
+      label: Touching Files (Scope Gate Boundary)
+      description: The exact 1-5 files this task is authorized to touch (one per line).
+      placeholder: |
+        - core/config/registry.py
+        - tests/test_config.py
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification_contract
+    attributes:
+      label: 3-Tier Verification Contract
+      description: Exact commands required to verify the implementation.
+      value: |
+        1. Reflection Check: `git grep -n "<symbol>"`
+        2. Boot Smoke Test: `python -c "import backend.main; print('Boot smoke passed')"`
+        3. Test Suite: `pytest <test_file_path> -v`
+    validations:
+      required: true
