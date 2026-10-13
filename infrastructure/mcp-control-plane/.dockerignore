@@ -1,0 +1,9 @@
+# Keep the build context minimal. NOTE: a bare "*.ts" pattern matches only
+# root-level .ts files (the one-off test scripts) — it does NOT exclude src/**,
+# which the builder stage needs. dist/ and node_modules/ are rebuilt in-image.
+node_modules
+dist
+*.ts
+test_*.ts
+render.yaml
+*.local.json

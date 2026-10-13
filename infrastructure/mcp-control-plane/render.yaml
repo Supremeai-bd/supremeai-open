@@ -1,0 +1,81 @@
+services:
+  - type: web
+    name: supremeai-mcp-tower
+    env: node
+    # INF-03/INF-04 (issues #506/#507): without rootDir, Render ran every
+    # command from the repo root: 'npm run start' hit the root package.json
+    # (no 'start' script -> instant crash) and 'npm run build' invoked turbo,
+    # which never compiled mcp-control-plane/src -> dist (node dist/index.js
+    # ENOENT). With rootDir set, npm install (uses this package's own
+    # package-lock.json), tsc build and 'npm run start' all resolve here.
+    # The Infisical bootstrap is vendored under scripts/runtime/ inside this
+    # package so the start command works without repo-root files.
+    rootDir: infrastructure/mcp-control-plane
+    # Issue #707: uv pinned (unpinned `pip install uv` = supply-chain risk on
+    # every build); current stable at the time of the fix. The tower's
+    # Dockerfile installs uv via the astral.sh installer for runtime use.
+    # Issue #1441: buildCommand-installed uv does NOT persist to the runtime
+    # service → 'spawn uv ENOENT' (verified live via memory_status, 2026-09-26).
+    # Instead provision backend/.venv at build time — the repo checkout IS
+    # persisted, and backend/.venv/bin/python is the MemorySubAdapter's
+    # preferred launcher. Only the `mcp` package is needed: the sidecar's
+    # core.* imports are stdlib-light and memory stores degrade gracefully.
+    buildCommand: pip install uv==0.12.17 && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build
+    startCommand: python scripts/runtime/infisical_bootstrap.py npm run start
+    envVars:
+      - key: MCP_API_KEY
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: INFISICAL_CLIENT_ID
+        sync: false
+      - key: INFISICAL_CLIENT_SECRET
+        sync: false
+      - key: INFISICAL_PROJECT_ID
+        sync: false
+      - key: INFISICAL_ENV
+        value: prod
+      - key: INFISICAL_SECRET_PATH
+        value: /
+      - key: INFISICAL_TOKEN
+        sync: false
+      - key: SUPREMEAI_ADMIN_PASSWORD_HASH
+        sync: false
+      - key: SUPREMEAI_JWT_SECRET
+        sync: false
+      # secrets_registry.yaml marks MCP_ADMIN_KEY + TOWER_AUTH_TOKEN critical
+      # for render-mcp (run 36061775854 criticality gaps). Declared here with
+      # sync:false — value is provisioned via the Render dashboard/Infisical,
+      # never committed.
+      - key: MCP_ADMIN_KEY
+        sync: false
+      - key: TOWER_AUTH_TOKEN
+        sync: false
+      - key: GH_TOKEN
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      # Task 4 fix: explicit backend path so MemorySubAdapter can find mcp_server.py
+      # without relying on __dirname traversal (fragile when Render changes rootDir).
+      # Render checks out the full repo; this points to backend/ from service root.
+      - key: SUPREMEAI_BACKEND_DIR
+        value: ../../backend
+

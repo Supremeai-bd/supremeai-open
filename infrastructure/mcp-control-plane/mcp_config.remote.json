@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "supremeai-control-tower": {
+      "url": "https://<YOUR-MCP-HOST>/mcp",
+      "headers": {
+        "Authorization": "Bearer <TOKEN_FROM_ADMIN_DASHBOARD>"
+      }
+    }
+  },
+  "connection": {
+    "protocol": "streamable-http",
+    "authentication": "bearer-token",
+    "defaultRole": "viewer",
+    "note": "Any MCP-compatible AI client can use the same endpoint and admin-issued token. Start with viewer access and explicitly promote only when needed. Replace placeholders and keep this file out of source control."
+  }
+}

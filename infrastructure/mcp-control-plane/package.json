@@ -1,0 +1,52 @@
+{
+  "name": "supremeai-mcp-control-plane",
+  "version": "1.0.0",
+  "description": "SupremeAI Unified MCP Control Tower \u2014 connects all services into a single AI-accessible interface",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding",
+    "test:integration": "tsx test_resource_list.ts",
+    "test:smoke": "tsx test_adapters.ts",
+    "test:smoke:report": "tsx scripts/smoke-report.ts",
+    "test:service-circles": "tsx test_service_circles.ts",
+    "test:timestamps": "tsx test_timestamps.ts",
+    "test:client-registry": "tsx test_client_registry.ts",
+    "test:slot-verification": "tsx test_slot_verification.ts",
+    "test:auto-register": "tsx test_auto_register.ts",
+    "test:tool-visibility": "tsx test_tool_visibility.ts",
+    "test:access": "tsx test_mcp_access.ts",
+    "test:health-history": "tsx test_health_history.ts",
+    "test:guardian": "tsx test_guardian.ts",
+    "test:heartbeat": "tsx test_heartbeat.ts",
+    "test:redis-rotation": "tsx test_redis_auto_rotation.ts",
+    "test:orchestrator": "tsx test_orchestrator_dispatch.ts",
+    "test:gemini-adapter": "tsx test_gemini_adapter.ts",
+    "test:bridge-onboarding": "tsx test_bridge_onboarding.ts",
+    "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
+    "test:mcp-presence": "tsx test_mcp_presence.ts"
+  },
+  "keywords": [
+    "mcp",
+    "supremeai",
+    "control-tower"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@upstash/redis": "^1.38.3",
+    "dotenv": "^17.4.2",
+    "firebase-admin": "^14.3.0",
+    "ioredis": "^6.0.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

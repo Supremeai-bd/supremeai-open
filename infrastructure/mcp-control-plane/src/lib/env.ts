@@ -1,0 +1,220 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Type-safe environment loader.
+ * Reads from process.env (injected by dotenv or Infisical at startup).
+ * NEVER hardcodes values — only reads env var NAMES.
+ */
+
+function required(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`[env] Required env var missing: ${name}`);
+  return v;
+}
+
+function optional(name: string, fallback = ""): string {
+  return process.env[name] ?? fallback;
+}
+
+function multiKey(name: string): string[] {
+  const v = optional(name);
+  const keys: string[] = v
+    ? v
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean)
+    : [];
+
+  // Also discover numbered env vars ${NAME}_1, ${NAME}_2, ... (e.g. GEMINI_API_KEY_1, FIRECRAWL_API_KEY_1)
+  for (let idx = 1; idx <= 20; idx++) {
+    const nextVal = optional(`${name}_${idx}`);
+    if (nextVal && !keys.includes(nextVal)) {
+      keys.push(nextVal);
+    }
+  }
+
+  return keys;
+}
+
+export const env = {
+  // ── MCP Server
+  // INF-05 fix (issue #528): Render injects PORT (not MCP_PORT) and probes
+  // 0.0.0.0:$PORT for readiness — preferring MCP_PORT made the control plane
+  // bind :3771 on Render, so port detection never saw a listener. Precedence:
+  // PORT (Render) → MCP_PORT (docker-compose mcp service sets it) → 3771.
+  get port(): number { return parseInt(optional("PORT", optional("MCP_PORT", "3771"))); },
+  get mcpApiKey(): string { return optional("MCP_API_KEY"); },
+  // ROOT-CAUSE FIX (#2720): the fallback `optional("MCP_ADMIN_KEY", optional("MCP_API_KEY"))`
+  // made MCP_ADMIN_KEY silently equal MCP_API_KEY when unset. Combined with
+  // index.ts:523 granting admin role to mcpApiKey holders, this meant the
+  // "agent" key was effectively an admin key. Admin must be a SEPARATE key —
+  // if MCP_ADMIN_KEY is unset, return empty (no admin access via env keys).
+  get mcpAdminKey(): string { return optional("MCP_ADMIN_KEY"); },
+  get mcpViewerKey(): string { return optional("MCP_VIEWER_KEY"); },
+  get mcpAgentKey(): string { return optional("MCP_AGENT_KEY"); },
+  get githubWebhookSecret(): string { return optional("GITHUB_WEBHOOK_SECRET"); },
+  get cloudflareWebhookSecret(): string { return optional("CLOUDFLARE_WEBHOOK_SECRET"); },
+  get nodeEnv(): string { return optional("NODE_ENV", "development"); },
+  get backendUrl(): string { return optional("SUPREMEAI_BACKEND_URL"); },
+  get backendServiceToken(): string { return optional("SUPREMEAI_BACKEND_SERVICE_TOKEN"); },
+
+  // ── Render (4 accounts)
+  render: {
+    primary: {
+      get apiKey(): string { return optional("RENDER_API_KEY_1", optional("RENDER_API_KEY")); },
+      get serviceId(): string { return optional("RENDER_PRIMARY_SVC_ID"); },
+      get url(): string { return optional("RENDER_PRIMARY_URL"); },
+    },
+    worker: {
+      get apiKey(): string { return optional("RENDER_API_KEY_2"); },
+      get serviceId(): string { return optional("RENDER_WORKER_SVC_ID"); },
+      get url(): string { return optional("RENDER_WORKER_URL"); },
+    },
+    scraper: {
+      get apiKey(): string { return optional("RENDER_API_KEY_3"); },
+      get serviceId(): string { return optional("RENDER_SCRAPER_SVC_ID"); },
+      get url(): string { return optional("RENDER_SCRAPER_URL"); },
+    },
+    controlTower: {
+      get apiKey(): string { return optional("RENDER_API_KEY_4"); },
+      get serviceId(): string { return optional("RENDER_MCP_SVC_ID"); },
+      get url(): string { return optional("RENDER_MCP_URL"); },
+    },
+  },
+
+  // ── Supabase
+  supabase: {
+    get url(): string { return optional("SUPABASE_URL"); },
+    get anonKey(): string { return optional("SUPABASE_KEY"); },
+    get serviceRoleKey(): string { return optional("SUPABASE_SERVICE_ROLE_KEY"); },
+    get dbUrl(): string { return optional("SUPABASE_DATABASE_URL"); },
+  },
+
+  // ── Redis / Upstash (dual mode)
+  redis: {
+    get restUrl(): string { return optional("UPSTASH_REDIS_REST_URL"); },
+    get restToken(): string { return optional("UPSTASH_REDIS_REST_TOKEN"); },
+    get url(): string { return optional("REDIS_URL"); }, // rediss:// protocol
+  },
+
+  // ── Infisical (machine identity — NOT token)
+  infisical: {
+    get clientId(): string { return optional("INFISICAL_CLIENT_ID"); },
+    get clientSecret(): string { return optional("INFISICAL_CLIENT_SECRET"); },
+    get projectId(): string { return optional("INFISICAL_PROJECT_ID"); },
+    get environment(): string { return optional("INFISICAL_ENVIRONMENT", "production"); },
+  },
+
+  // ── GitHub
+  github: {
+    get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
+    get repo(): string { return optional("GITHUB_REPO", "paykaribazaronline/supremeai"); },
+  },
+
+  // ── Cloudflare (5-account federation pool)
+  cloudflare: {
+    get apiToken(): string | undefined { return process.env.CLOUDFLARE_API_TOKEN; },
+    get accountId(): string | undefined { return process.env.CLOUDFLARE_ACCOUNT_ID; },
+    get zoneId(): string | undefined { return process.env.CLOUDFLARE_ZONE_ID; },
+    get workerUrl(): string | undefined { return process.env.CLOUDFLARE_WORKER_URL || process.env.SUPREMEAI_CF_WORKER_URL; },
+    secondary: {
+      get accountId(): string | undefined { return process.env.CLOUDFLARE_SECONDARY_ACCOUNT_ID; },
+      get workerUrl(): string | undefined { return process.env.CLOUDFLARE_SECONDARY_WORKER_URL; },
+    },
+    tertiary: {
+      get accountId(): string | undefined { return process.env.CLOUDFLARE_TERTIARY_ACCOUNT_ID; },
+      get workerUrl(): string | undefined { return process.env.CLOUDFLARE_TERTIARY_WORKER_URL; },
+    },
+    quaternary: {
+      get accountId(): string | undefined { return process.env.CLOUDFLARE_QUATERNARY_ACCOUNT_ID; },
+      get workerUrl(): string | undefined { return process.env.CLOUDFLARE_QUATERNARY_WORKER_URL; },
+    },
+    quinary: {
+      get accountId(): string | undefined { return process.env.CLOUDFLARE_QUINARY_ACCOUNT_ID; },
+      get workerUrl(): string | undefined { return process.env.CLOUDFLARE_QUINARY_WORKER_URL; },
+    },
+  },
+
+  // ── Firebase (SA key loaded from Infisical at runtime — not from file)
+  firebase: {
+    get serviceAccountJson(): string { return optional("FIREBASE_SERVICE_ACCOUNT_JSON"); },
+    get projectId(): string { return optional("GCP_PROJECT_ID", "supremeai-a"); },
+  },
+
+  // ── AI Providers (comma-separated multi-key pools)
+  ai: {
+    // Model identifiers are intentionally configuration-only. Runtime discovery or
+    // provider configuration supplies the selected model; no model is hardcoded.
+    get geminiModel(): string { return optional("MCP_GEMINI_MODEL"); },
+    get groqModel(): string { return optional("MCP_GROQ_MODEL"); },
+    get openrouterModel(): string { return optional("MCP_OPENROUTER_MODEL"); },
+    get githubModel(): string { return optional("MCP_GITHUB_MODEL"); },
+    get mistralModel(): string { return optional("MCP_MISTRAL_MODEL"); },
+    get geminiKeys(): string[] { return multiKey("GEMINI_API_KEY"); },
+    get groqKeys(): string[] { return multiKey("GROQ_API_KEY"); },
+    get openrouterKeys(): string[] { return multiKey("OPENROUTER_API_KEY"); },
+    get openaiKeys(): string[] { return multiKey("OPENAI_API_KEY"); },
+    get openaiModel(): string { return optional("MCP_OPENAI_MODEL", "gpt-4o-mini"); },
+    get anthropicKeys(): string[] { return multiKey("ANTHROPIC_API_KEY"); },
+    get anthropicModel(): string { return optional("MCP_ANTHROPIC_MODEL", "claude-3-5-haiku-20241022"); },
+    get githubModelsKeys(): string[] { return multiKey("GITHUB_MODELS_API_KEY"); },
+    get mistralKey(): string { return optional("MISTRAL_API_KEY"); },
+  },
+
+  // ── Kaggle (6-account pool)
+  kaggle: {
+    get tokens(): string[] {
+      const explicit = multiKey("KAGGLE_API_TOKENS");
+      if (explicit.length > 0) return explicit;
+      const collected: string[] = [];
+      for (let i = 1; i <= 6; i++) {
+        const val = optional(`KAGGLE_API_TOKEN_${i}`);
+        if (val) collected.push(val);
+      }
+      const single = optional("KAGGLE_API_TOKEN");
+      if (single) collected.push(single);
+      return collected;
+    },
+  },
+
+  // ── Notifications
+  notify: {
+    get telegramBotToken(): string { return optional("TELEGRAM_BOT_TOKEN"); },
+    get telegramChatId(): string { return optional("TELEGRAM_CHAT_ID"); },
+    get whatsappAccessToken(): string { return optional("WHATSAPP_ACCESS_TOKEN", optional("WHATSAPP_API_KEY")); },
+    get whatsappPhoneNumberId(): string { return optional("WHATSAPP_PHONE_NUMBER_ID"); },
+    get whatsappRecipientPhone(): string { return optional("WHATSAPP_RECIPIENT_PHONE", optional("WHATSAPP_PHONE")); },
+    get whatsappWebhookUrl(): string { return optional("WHATSAPP_WEBHOOK_URL", optional("WHATSAPP_API_URL")); },
+  },
+
+  // ── Stripe
+  stripe: {
+    get secretKey(): string { return optional("STRIPE_SECRET_KEY"); },
+    get webhookSecret(): string { return optional("STRIPE_WEBHOOK_SECRET"); },
+  },
+
+  // ── Qdrant
+  qdrant: {
+    get url(): string { return optional("QDRANT_URL"); },
+    get apiKey(): string { return optional("QDRANT_API_KEY"); },
+  },
+
+  // ── Vercel
+  vercel: {
+    get token(): string { return optional("VERCEL_TOKEN"); },
+    get projectId(): string { return optional("VERCEL_PROJECT_ID"); },
+  },
+
+  // ── Firecrawl
+  firecrawl: {
+    get apiKeys(): string[] { return multiKey("FIRECRAWL_API_KEY"); },
+  },
+};
+
+export type Env = typeof env;
+
+

@@ -1,0 +1,124 @@
+import { buildAccountRegistry } from "../../registry/account.registry.js";
+import { httpRequest, bearerAuth } from "../../lib/http.js";
+
+const DEFAULT_BASE_URL = "https://api.github.com/repos/paykaribazaronline/supremeai";
+
+export function getAccountConfig(accountId: string): { apiKey: string; baseUrl: string } {
+  const accounts = buildAccountRegistry();
+  const account = accounts.find((a) => a.id === accountId && a.provider === "github");
+  if (!account) throw new Error(`GitHub account not found: ${accountId}`);
+  if (!account.available) throw new Error(`GitHub account is not configured/available: ${accountId}`);
+
+  // বাংলা (Task 35): vault-থেকে-লোড-হওয়া PAT-ও ফলব্যাক-চেইনে রাখা হলো —
+  // যাতে paykaribazaronline-এর প্রতিটি রিপো-অ্যাকাউন্ট GITHUB_PAT_PAYKARIBAZARONLINE
+  // দিয়েই সক্রিয় হয় (Infisical pullSecretsIntoProcessEnv() রানটাইমে এটি ভরে)।
+  const apiKey =
+    process.env[account.apiKeyRef] ||
+    process.env.GITHUB_PAT_PAYKARIBAZARONLINE ||
+    process.env.GITHUB_TOKEN ||
+    process.env.GH_TOKEN ||
+    "";
+  if (!apiKey) throw new Error(`Missing GitHub Token in env for: ${account.apiKeyRef}`);
+  return { apiKey, baseUrl: account.url || DEFAULT_BASE_URL };
+}
+
+export function githubHeaders(token: string) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "SupremeAI-MCP-Control-Tower",
+  };
+}
+
+export async function getWorkflowRuns(accountId: string, limit = 5): Promise<unknown> {
+  const { apiKey: token, baseUrl } = getAccountConfig(accountId);
+  const res = await httpRequest(`${baseUrl}/actions/runs?per_page=${limit}`, {
+    headers: githubHeaders(token),
+  });
+  return res.data;
+}
+
+export async function getFailedLogs(accountId: string, runId: string): Promise<unknown> {
+  const { apiKey: token, baseUrl } = getAccountConfig(accountId);
+  // Get jobs for the run
+  const jobsRes = await httpRequest(`${baseUrl}/actions/runs/${runId}/jobs`, {
+    headers: githubHeaders(token),
+  });
+  
+  const jobs = (jobsRes.data as any).jobs || [];
+  const failedJobs = jobs.filter((j: any) => j.conclusion === "failure");
+
+  if (failedJobs.length === 0) {
+    return { message: "No failed jobs found for this run.", jobs };
+  }
+
+  // To get actual raw logs for a job, you hit /actions/jobs/{job_id}/logs
+  const failedJobLogs = await Promise.allSettled(
+    failedJobs.map(async (job: any) => {
+      try {
+        const logRes = await fetch(`${baseUrl}/actions/jobs/${job.id}/logs`, {
+          headers: githubHeaders(token),
+          redirect: 'follow'
+        });
+        if (!logRes.ok) throw new Error(`Failed to fetch logs: ${logRes.status}`);
+        const logText = await logRes.text();
+        // Return only the last 2000 characters of the log to prevent massive payloads
+        const snippet = logText.slice(-2000);
+        return { jobName: job.name, logsSnippet: snippet };
+      } catch (e) {
+        return { jobName: job.name, error: (e as Error).message };
+      }
+    })
+  );
+
+  return {
+    runId,
+    failedJobs: failedJobLogs.map(r => r.status === 'fulfilled' ? r.value : r.reason),
+  };
+}
+
+export async function listSecrets(accountId: string): Promise<unknown> {
+  const { apiKey: token, baseUrl } = getAccountConfig(accountId);
+  const res = await httpRequest(`${baseUrl}/actions/secrets`, {
+    headers: githubHeaders(token),
+  });
+  // GitHub returns only secret names, not values!
+  return res.data;
+}
+
+export async function readFile(accountId: string, path: string, ref: string = "main"): Promise<unknown> {
+  const { apiKey: token, baseUrl } = getAccountConfig(accountId);
+  const res = await httpRequest(`${baseUrl}/contents/${path}?ref=${ref}`, {
+    headers: githubHeaders(token),
+  });
+  const data = res.data as any;
+  if (data.content && data.encoding === "base64") {
+    const decoded = Buffer.from(data.content, "base64").toString("utf-8");
+    return {
+      path: data.path,
+      size: data.size,
+      sha: data.sha,
+      content: decoded,
+    };
+  }
+  return data;
+}
+
+export async function listPullRequests(accountId: string, state: string = "open", limit: number = 5): Promise<unknown> {
+  const { apiKey: token, baseUrl } = getAccountConfig(accountId);
+  const res = await httpRequest(`${baseUrl}/pulls?state=${state}&per_page=${limit}`, {
+    headers: githubHeaders(token),
+  });
+  const prs = res.data as any[];
+  return prs.map((pr: any) => ({
+    number: pr.number,
+    title: pr.title,
+    state: pr.state,
+    user: pr.user?.login,
+    htmlUrl: pr.html_url,
+    createdAt: pr.created_at,
+    updatedAt: pr.updated_at,
+  }));
+}
+
