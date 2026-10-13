@@ -13,8 +13,9 @@
 Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispatcher IS the existing `scripts/agents/continuous_agent_loop.py` — never build a new loop.
 
 > **Operational Note for External / Community Agents on this Repository:**  
-> If you are an external or web AI working on paykaribazaronline/supremeai-open without CLI/vault access, you do not run continuous_agent_loop.py directly; instead, follow **§2.1 Pathway 2 / §8 Bridge Lane** (stateless fork + branch bridge/<task-id> + Bridge Work Order issue). The private bridge automation ingests and executes the loop for you.
-
+> If you are an external or web AI working on paykaribazaronline/supremeai-open without CLI/vault access:
+> - **Primary & Recommended (Zero-Credential):** Follow **§2.1 Pathway 1 (MCP Control Tower Bridge)**. The MCP Control Tower directly provides relevant code, task specifications, and context to you via MCP tools. You implement in-context and return the solution; the Control Tower proxy bot handles branch creation, commits, and PR submission.
+> - **Alternative (With GitHub Token):** Follow **§2.1 Pathway 2 / §8 Bridge Lane** (stateless fork + branch bridge/<task-id> + Bridge Work Order issue). The private bridge automation ingests and executes the loop for you.
 
 | Step | Do | Existing tool |
 |---|---|---|
@@ -82,11 +83,11 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
   }
   ```
   *(Tokenless connections are automatically registered as guest viewers with read-only scopes via zero-manual-registration).*
-* **Execution:**
-  1. Agent reads tasks / context via MCP tools (`bridge.work_queue`, `bridge.guide`).
-  2. Submits completed file changes via `orchestrator_dispatch` or `agent_review_workflow_execute`.
-  3. Control Tower proxy bot (`supremeai-coder-1`) creates the branch, commits, and opens the PR autonomously.
-  4. Agent needs **zero** direct GitHub tokens or credentials.
+* **Execution & Code Delivery:**
+  1. **Code & Task Provisioning:** The MCP Control Tower directly provides relevant source files, task context, and schemas to the agent via MCP tools (`bridge.work_order`, `bridge.guide`, `source_read`). The agent does not need to guess, clone private repos, or have local filesystem access.
+  2. **In-Context Implementation:** The agent analyzes the provided code, develops the fix/feature inside its context, and submits the completed file diffs/payload via `orchestrator_dispatch` or `agent_review_workflow_execute`.
+  3. **Autonomous Submission & Landing:** Control Tower proxy bot (`supremeai-coder-1`) ingests the agent's code, creates the branch, commits, and opens the PR autonomously.
+  4. **Zero Credentials Needed:** Agent needs **zero** direct GitHub tokens, private keys, or credentials.
 
 ### Pathway 2: Public Window Fork & Pull Request (`supremeai-open`)
 * **Target:** External web agents without MCP or credentials (e.g., Mistral, Z.ai, ChatGPT, external contributors).
