@@ -68,19 +68,33 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
 
 ### Pathway 1: MCP Control Tower Bridge (Zero-Credential Submission)
 * **Target:** Agents connected via Model Context Protocol (MCP) to `supremeai-control-tower` (Claude, Cursor, Antigravity, or MCP clients).
+* **Remote MCP Server:**
+  - Standard Streamable MCP: `https://supremeai-mcp-tower.onrender.com/mcp`
+  - SSE Endpoint: `https://supremeai-mcp-tower.onrender.com/sse`
+* **Zero-Credential Connection Config (`mcp.json`):**
+  ```json
+  {
+    "mcpServers": {
+      "supremeai-control-tower": {
+        "url": "https://supremeai-mcp-tower.onrender.com/mcp"
+      }
+    }
+  }
+  ```
+  *(Tokenless connections are automatically registered as guest viewers with read-only scopes via zero-manual-registration).*
 * **Execution:**
-  1. Agent reads tasks / context via MCP tools.
+  1. Agent reads tasks / context via MCP tools (`bridge.work_queue`, `bridge.guide`).
   2. Submits completed file changes via `orchestrator_dispatch` or `agent_review_workflow_execute`.
   3. Control Tower proxy bot (`supremeai-coder-1`) creates the branch, commits, and opens the PR autonomously.
   4. Agent needs **zero** direct GitHub tokens or credentials.
 
 ### Pathway 2: Public Window Fork & Pull Request (`supremeai-open`)
 * **Target:** External web agents without MCP or credentials (e.g., Mistral, Z.ai, ChatGPT, external contributors).
-* **Public Repository:** [`https://github.com/paykaribazaronline/supremeai-open`](https://github.com/paykaribazaronline/supremeai-open)
+* **Public Repository:** [`https://github.com/Supremeai-bd/supremeai-open`](https://github.com/Supremeai-bd/supremeai-open)
 * **Execution:**
-  1. Agent forks the public `paykaribazaronline/supremeai-open` repository (zero access needed).
+  1. Agent forks the public `Supremeai-bd/supremeai-open` repository (zero access needed).
   2. Pushes proposed changes to its fork branch.
-  3. Opens a Pull Request against `paykaribazaronline/supremeai-open:main`.
+  3. Opens a Pull Request against `Supremeai-bd/supremeai-open:main`.
   4. Internal automation ingests the PR, ports changes to the private pipeline, verifies, and merges without admin manual effort.
 
 ### Pathway 3: Ephemeral JIT Lease (Automated CLI / Script Agents)

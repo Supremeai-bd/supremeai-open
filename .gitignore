@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pr_template_draft.md
+.env
+.env.*
+*.log

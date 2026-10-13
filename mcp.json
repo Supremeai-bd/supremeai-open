@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/mcp",
+  "mcpServers": {
+    "supremeai-control-tower": {
+      "type": "sse",
+      "url": "https://supremeai-mcp-tower.onrender.com/sse",
+      "transport": "sse"
+    }
+  }
+}
