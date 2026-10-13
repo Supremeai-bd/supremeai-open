@@ -6,11 +6,15 @@
 > **Control:** Admin/System controls **WHERE, WHAT, ACCESS, LIMITS, STOPPING and major architectural decisions**.
 >
 > **Canonical rule source:** [`AGENT_RULES.md`](./AGENT_RULES.md)
-> **Governance issue:** [#3095](https://github.com/SaifulHaqueNiloy/supremeai/issues/3095)
+> **Governance issue:** [#3095](https://github.com/paykaribazaronline/supremeai/issues/3095)
 
 ## 0. The Agent Loop — One Simple Entry Point
 
 Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispatcher IS the existing `scripts/agents/continuous_agent_loop.py` — never build a new loop.
+
+> **Operational Note for External / Community Agents on this Repository:**  
+> If you are an external or web AI working on paykaribazaronline/supremeai-open without CLI/vault access, you do not run continuous_agent_loop.py directly; instead, follow **§2.1 Pathway 2 / §8 Bridge Lane** (stateless fork + branch bridge/<task-id> + Bridge Work Order issue). The private bridge automation ingests and executes the loop for you.
+
 
 | Step | Do | Existing tool |
 |---|---|---|
@@ -88,7 +92,7 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
      ```
   2. Push the branch using the ephemeral token:
      ```bash
-     git push https://x-access-token:<TOKEN>@github.com/SaifulHaqueNiloy/supremeai.git <branch>
+     git push https://x-access-token:<TOKEN>@github.com/paykaribazaronline/supremeai.git <branch>
      ```
   3. Create the PR via GitHub REST API. Internal CI Guardian evaluates and merges autonomously.
 
@@ -97,11 +101,12 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
 A newly added agent should not need tribal knowledge. Start here, then follow the links in order:
 
 1. **This file** — authority, lifecycle and navigation.
-2. **[`AGENT_RULES.md`](./AGENT_RULES.md)** — global policies + role policies + verification + tooling.
-3. **Task Contract / Issue Template** — exact task type, scope, group, priority, sequence, dependencies and acceptance criteria.
-4. **Relevant group/domain document** — only the context required by the assigned task.
-5. **Issue + related PRs + evidence** — current state before making changes.
-6. **After work:** verification + decision ledger + linked evidence.
+2. **[ECOSYSTEM_MAP.md](./ECOSYSTEM_MAP.md)** — federation repository directory and cross-repo target routing.
+3. **[AGENT_RULES.md](./AGENT_RULES.md)** — global policies + role policies + verification + tooling.
+4. **Task Contract / Issue Template** — exact task type, scope, group, priority, sequence, dependencies and acceptance criteria.
+5. **Relevant group/domain document** — only the context required by the assigned task.
+6. **Issue + related PRs + evidence** — current state before making changes.
+7. **After work:** verification + decision ledger + linked evidence.
 
 If a referenced document is missing or contradictory, do not guess. Report the gap and follow the Admin Decision path when required.
 

@@ -6,7 +6,7 @@
 > `AGENT_RULES.md` = operational policy contracts.
 > Task templates, system gates and domain documents provide execution detail; they must not silently contradict these rules.
 >
-> Governance source: [Issue #3095](https://github.com/SaifulHaqueNiloy/supremeai/issues/3095)
+> Governance source: [Issue #3095](https://github.com/paykaribazaronline/supremeai/issues/3095)
 
 ---
 
