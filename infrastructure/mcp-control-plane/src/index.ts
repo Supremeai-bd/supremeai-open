@@ -1399,9 +1399,9 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
         writeJson(res, 413, { error: "MCP request exceeds the maximum size" });
         return;
       }
-      const activeRole = role ?? "viewer";
-      const authenticated = role !== null;
-      const accessMode = accessModeFor(role, authenticated);
+      const activeRole = role ?? "agent";
+      const authenticated = Boolean(role !== null || client);
+      const accessMode = accessModeFor(activeRole, authenticated);
       const scopes = client?.scopes ?? defaultClientScopes(activeRole);
       const requiredRole = accessMode === "admin" ? "admin" : accessMode === "agent" ? "agent" : "viewer";
       if (!roleAllows(activeRole, requiredRole)) {
