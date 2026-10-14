@@ -13,20 +13,22 @@
 Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispatcher IS the existing `scripts/agents/continuous_agent_loop.py` — never build a new loop.
 
 > **Operational Note for External / Community Agents on this Repository:**  
-> If you are an external or web AI working on paykaribazaronline/supremeai-open without CLI/vault access:
+> If you are an external or web AI working on Supremeai-bd/supremeai-open without CLI/vault access:
 > - **Primary & Recommended (Zero-Credential):** Follow **§2.1 Pathway 1 (MCP Control Tower Bridge)**. The MCP Control Tower directly provides relevant code, task specifications, and context to you via MCP tools. You implement in-context and return the solution; the Control Tower proxy bot handles branch creation, commits, and PR submission.
-> - **Alternative (With GitHub Token):** Follow **§2.1 Pathway 2 / §8 Bridge Lane** (stateless fork + branch bridge/<task-id> + Bridge Work Order issue). The private bridge automation ingests and executes the loop for you.
+> - **Alternative (With GitHub Token / Local CLI):** Follow **§2.1 Pathway 2 / §8 Bridge Lane** (fork + branch `contributor/issue-<task-id>` or `bridge/<task-id>` + PR). Use the standalone open runner: `python scripts/agents/continuous_agent_loop.py`.
 
-| Step | Do | Existing tool |
+*(Note: In the table below, internal monorepo scripts such as `atomic_claim.sh` and `role_registry.py` run on the private backend CI Guardian. Open contributors use `scripts/agents/continuous_agent_loop.py` to drive all 8 steps locally.)*
+
+| Step | Do | Existing tool (Public / Monorepo) |
 |---|---|---|
-| 1. Understand | Read the task issue + linked context | `gh issue view <n>` |
+| 1. Understand | Read the task issue + linked context | `gh issue view <n>` / `continuous_agent_loop.py --issue <n>` |
 | 2. Rules | Load governing rules + your role contract | [`AGENT_RULES.md`](./AGENT_RULES.md) §1–§3 · `scripts/agents/role_registry.py` |
-| 3. Inspect state | Queue, open PRs, active claims, token freshness | `issue_queue_manager.py audit` · `agent_identity.refresh_token_if_stale()` |
-| 4. Claim | Atomic claim (session marker; no claim, no work) | `scripts/ci/atomic_claim.sh` |
-| 5. Work | Smallest safe change inside declared scope | role contract from `role_registry.get_role_contract()` |
-| 6. Verify | 3-tier: reflection → boot smoke → tests | issue's Verification Contract |
-| 7. Record | PR with full template + Test Evidence (+ meaningful decision note) | REST PR create |
-| 8. Return | Report outcome **with fresh-board re-check** (#4177), release claim, loop back | `continue_loop.py` + `gh pr list`/`next_claimable.sh` re-poll |
+| 3. Inspect state | Queue, open PRs, active claims, token freshness | `continuous_agent_loop.py` · `issue_queue_manager.py audit` |
+| 4. Claim | Atomic claim (session marker; no claim, no work) | Session branch / `scripts/ci/atomic_claim.sh` |
+| 5. Work | Smallest safe change inside declared scope | Standard Task Contract (`continuous_agent_loop.build_task_contract()`) |
+| 6. Verify | 3-tier: reflection → boot smoke → tests | `continuous_agent_loop.py --verify-only` |
+| 7. Record | PR with full template + Test Evidence (+ meaningful decision note) | `continuous_agent_loop.py --auto-pr` / REST PR create |
+| 8. Return | Report outcome **with fresh-board re-check** (#4177), release claim, loop back | `continuous_agent_loop.py` + `gh pr list` re-poll |
 
 Hard boundaries during the loop: gates outrank agent preference (§1.4) · scoped credentials only (`credential_manager` — master vault keys never reach children) · single-vs-multi execution follows Rule B (`role_registry.plan_task_execution()` — advisory).
 

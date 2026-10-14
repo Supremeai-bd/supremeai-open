@@ -110,6 +110,13 @@ export async function listPullRequests(accountId: string, state: string = "open"
   const res = await httpRequest(`${baseUrl}/pulls?state=${state}&per_page=${limit}`, {
     headers: githubHeaders(token),
   });
+  if (!res.ok || !Array.isArray(res.data)) {
+    const errorMsg =
+      res.data && typeof res.data === "object" && "message" in (res.data as Record<string, unknown>)
+        ? String((res.data as Record<string, unknown>).message)
+        : `Failed to list PRs (HTTP ${res.status})`;
+    throw new Error(`GitHub API error: ${errorMsg}`);
+  }
   const prs = res.data as any[];
   return prs.map((pr: any) => ({
     number: pr.number,
