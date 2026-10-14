@@ -39,10 +39,19 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
+from typing import Any
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
 AGENTS_MD_PATH = REPO_ROOT / "AGENTS.md"
 AGENT_RULES_PATH = REPO_ROOT / "AGENT_RULES.md"
+
+VALID_TASK_TYPES = {
+    "AUDIT", "PLAN", "IMPLEMENT", "FIX_CI", "REVIEW",
+    "SECURITY_AUDIT", "DISCOVERY", "MERGE", "ADMIN_DECISION",
+}
+VALID_PRIORITIES = {"P0", "P1", "P2", "P3"}
+VALID_ADMIN_GATE_STATUSES = {"NOT_REQUIRED", "WAITING", "APPROVED", "REJECTED"}
 
 
 def log(icon: str, msg: str) -> None:
@@ -50,13 +59,108 @@ def log(icon: str, msg: str) -> None:
 
 
 def run_cmd(cmd: list[str], cwd: Path = REPO_ROOT, check: bool = False) -> tuple[int, str, str]:
-    """Execute command safely and return (returncode, stdout, stderr)."""
-    p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout = p.stdout.decode("utf-8", errors="replace").strip()
-    stderr = p.stderr.decode("utf-8", errors="replace").strip()
-    if check and p.returncode != 0:
-        raise RuntimeError(f"Command failed ({p.returncode}): {' '.join(cmd)}\n{stderr}")
-    return p.returncode, stdout, stderr
+    """Execute command safely and return (returncode, stdout, stderr).
+
+    Returns exit code 127 fail-honestly when binary is not found, preventing
+    unhandled FileNotFoundError on zero-credential environments without gh/git.
+    """
+    try:
+        p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout = p.stdout.decode("utf-8", errors="replace").strip()
+        stderr = p.stderr.decode("utf-8", errors="replace").strip()
+        if check and p.returncode != 0:
+            raise RuntimeError(f"Command failed ({p.returncode}): {' '.join(cmd)}\n{stderr}")
+        return p.returncode, stdout, stderr
+    except FileNotFoundError as exc:
+        binary = cmd[0] if cmd else "unknown"
+        err = f"Binary not found: '{binary}'. Please install it or proceed in zero-credential offline mode."
+        if check:
+            raise RuntimeError(err) from exc
+        return 127, "", err
+    except Exception as exc:
+        err = f"Execution error for {' '.join(cmd)}: {exc}"
+        if check:
+            raise RuntimeError(err) from exc
+        return 1, "", err
+
+
+def build_task_contract(
+    task_id: str,
+    issue: str | int | None = None,
+    task_type: str = "IMPLEMENT",
+    group: str = "open",
+    priority: str = "P2",
+    objective: str = "",
+    touching_files: list[str] | None = None,
+    forbidden_paths: list[str] | None = None,
+    dependencies: list[str] | None = None,
+    predecessor: str | int | None = None,
+    admin_gate_required: bool = False,
+    admin_gate_status: str = "NOT_REQUIRED",
+    role_policy: str = "contributor",
+    required_evidence: list[str] | None = None,
+    verification: list[str] | None = None,
+    acceptance: list[str] | None = None,
+    stop_conditions: list[str] | None = None,
+    output_format: str = "structured",
+) -> dict[str, Any]:
+    """Standard Task Contract builder adhering to AGENT_RULES.md §7."""
+    task_type_upper = task_type.upper()
+    if task_type_upper not in VALID_TASK_TYPES:
+        raise ValueError(
+            f"Invalid task_type: '{task_type}'. Must be one of: {sorted(VALID_TASK_TYPES)}"
+        )
+
+    priority_upper = priority.upper()
+    if priority_upper not in VALID_PRIORITIES:
+        raise ValueError(
+            f"Invalid priority: '{priority}'. Must be one of: {sorted(VALID_PRIORITIES)}"
+        )
+
+    gate_status_upper = admin_gate_status.upper()
+    if gate_status_upper not in VALID_ADMIN_GATE_STATUSES:
+        raise ValueError(
+            f"Invalid admin_gate_status: '{admin_gate_status}'. Must be one of: {sorted(VALID_ADMIN_GATE_STATUSES)}"
+        )
+
+    return {
+        "task_contract": {
+            "version": 1,
+            "task_id": str(task_id),
+            "issue": str(issue) if issue is not None else None,
+            "task_type": task_type_upper,
+            "group": group,
+            "priority": priority_upper,
+            "sequence": None,
+            "objective": objective or f"Task #{task_id}",
+            "scope": {
+                "touching_files": touching_files or [],
+                "forbidden_paths": forbidden_paths or [
+                    ".env*", "secrets/**", "credentials/**", "vault/**"
+                ],
+            },
+            "dependencies": dependencies or [],
+            "predecessor": str(predecessor) if predecessor is not None else None,
+            "admin_gate": {
+                "required": admin_gate_required,
+                "status": gate_status_upper,
+            },
+            "role_policy": role_policy,
+            "required_evidence": required_evidence or [
+                "3-tier test output", "diff check", "board freshness re-poll"
+            ],
+            "verification": verification or [
+                "py_compile", "json schema parse", "smoke validation"
+            ],
+            "acceptance": acceptance or [
+                "Passes local validation tests", "Zero unhandled crashes"
+            ],
+            "stop_conditions": stop_conditions or [
+                "Security boundary hit", "Out of declared scope"
+            ],
+            "output_format": output_format,
+        }
+    }
 
 
 def step_1_understand(issue_id: str | None = None) -> dict[str, str]:
@@ -169,11 +273,40 @@ def step_6_verify() -> bool:
     return True
 
 
-def step_7_record(task: dict[str, str], branch: str, auto_pr: bool = False) -> None:
+def step_7_record(
+    task: dict[str, str],
+    branch: str,
+    contract: dict[str, Any] | None = None,
+    auto_pr: bool = False,
+) -> None:
     """Step 7: Prepare PR body and submit PR."""
     log("📝", "[Step 7/8: Record] Generating Universal PR Template...")
     issue_num = task.get("id", "adhoc")
     
+    contract_yaml_snippet = ""
+    if contract and "task_contract" in contract:
+        tc = contract["task_contract"]
+        contract_yaml_snippet = f"""
+## Task Contract (§7 AGENT_RULES.md)
+```yaml
+task_contract:
+  version: {tc.get('version', 1)}
+  task_id: "{tc.get('task_id')}"
+  issue: "{tc.get('issue')}"
+  task_type: {tc.get('task_type')}
+  group: {tc.get('group')}
+  priority: {tc.get('priority')}
+  objective: "{tc.get('objective')}"
+  scope:
+    touching_files: {json.dumps(tc.get('scope', {}).get('touching_files', []))}
+    forbidden_paths: {json.dumps(tc.get('scope', {}).get('forbidden_paths', []))}
+  admin_gate:
+    required: {str(tc.get('admin_gate', {}).get('required', False)).lower()}
+    status: {tc.get('admin_gate', {}).get('status', 'NOT_REQUIRED')}
+  role_policy: {tc.get('role_policy')}
+```
+"""
+
     pr_body = f"""## Summary
 Autonomous contribution for issue #{issue_num}: {task.get('title')}.
 
@@ -182,7 +315,7 @@ Refs #{issue_num}
 
 ## Type of Change
 - [x] `feat` / `fix` / `docs` — Open contributor change
-
+{contract_yaml_snippet}
 ## Test Evidence (3-Tier যাচাই-চুক্তি)
 1. **Reflection Check:** Scoped to public open contracts.
 2. **Syntax/Boot:** Verified with `continuous_agent_loop.py` compilation checks.
@@ -227,7 +360,26 @@ def main() -> int:
     parser.add_argument("--issue", type=str, help="Specific GitHub issue number to claim and resolve")
     parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
     parser.add_argument("--verify-only", action="store_true", help="Only run 3-tier verification and exit")
+    parser.add_argument("--emit-contract", action="store_true", help="Emit JSON task contract adhering to AGENT_RULES.md §7 and exit")
+    parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
+    parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")
+    parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
     args = parser.parse_args()
+
+    touching_files = [f.strip() for f in args.touching_files.split(",")] if args.touching_files else []
+
+    if args.emit_contract:
+        issue_id = args.issue or "adhoc"
+        contract = build_task_contract(
+            task_id=f"task-{issue_id}",
+            issue=issue_id if issue_id != "adhoc" else None,
+            task_type=args.task_type,
+            priority=args.priority,
+            objective=f"Resolve issue #{issue_id}",
+            touching_files=touching_files,
+        )
+        print(json.dumps(contract, indent=2))
+        return 0
 
     print("======================================================================")
     print(" SupremeAI — Continuous Agent Loop (Open Contributor Runner) ")
@@ -241,6 +393,15 @@ def main() -> int:
     if not step_2_rules():
         return 1
 
+    contract = build_task_contract(
+        task_id=f"task-{task.get('id', 'adhoc')}",
+        issue=task.get("id"),
+        task_type=args.task_type,
+        priority=args.priority,
+        objective=task.get("title", ""),
+        touching_files=touching_files,
+    )
+
     step_3_inspect_state()
     branch = step_4_branch(task)
     step_5_work_notice()
@@ -250,10 +411,11 @@ def main() -> int:
         log("❌", "Verification failed. Please fix errors before proceeding.")
         return 1
 
-    step_7_record(task, branch, auto_pr=args.auto_pr)
+    step_7_record(task, branch, contract=contract, auto_pr=args.auto_pr)
     step_8_return()
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

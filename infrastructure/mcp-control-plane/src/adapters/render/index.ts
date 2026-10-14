@@ -35,9 +35,9 @@ export async function getServiceHealth(accountId: string, serviceId: string): Pr
     const deploysRes = await httpRequest(`${BASE_URL}/services/${serviceId}/deploys?limit=1`, {
       headers: bearerAuth(apiKey),
     });
-    const deploys = deploysRes.data as any[];
-    if (deploys && deploys.length > 0) {
-      deployStatus = deploys[0].deploy.status;
+    const deploys = deploysRes.data;
+    if (Array.isArray(deploys) && deploys.length > 0) {
+      deployStatus = deploys[0]?.deploy?.status ?? "unknown";
     }
   } catch (err) {
     // Ignore error for deploys
@@ -56,9 +56,13 @@ export async function getDeployLogs(accountId: string, serviceId: string): Promi
   const deploysRes = await httpRequest(`${BASE_URL}/services/${serviceId}/deploys?limit=1`, {
     headers: bearerAuth(apiKey),
   });
-  const deploys = deploysRes.data as any[];
-  if (!deploys || deploys.length === 0) {
-    throw new Error("No deploys found for this service");
+  const deploys = deploysRes.data;
+  if (!Array.isArray(deploys) || deploys.length === 0) {
+    const errorMsg =
+      deploys && typeof deploys === "object" && "message" in (deploys as Record<string, unknown>)
+        ? String((deploys as Record<string, unknown>).message)
+        : "No deploys found for this service";
+    throw new Error(errorMsg);
   }
 
   const deployId = deploys[0].deploy.id;
@@ -80,6 +84,13 @@ export async function getServiceEnvVars(accountId: string, serviceId: string): P
   // (#695). URLs with embedded credentials, bcrypt/argon hashes, JWTs,
   // high-entropy hex/base64 tokens and connection strings are masked even when
   // the variable's key name does not contain key/secret/token.
+  if (!res.ok || !Array.isArray(res.data)) {
+    const errorMsg =
+      res.data && typeof res.data === "object" && "message" in (res.data as Record<string, unknown>)
+        ? String((res.data as Record<string, unknown>).message)
+        : `Failed to fetch env vars (HTTP ${res.status})`;
+    throw new Error(`Render API error: ${errorMsg}`);
+  }
   const items = res.data as any[];
   return items.map((item: any) => ({
     key: item.envVar?.key,
