@@ -10,11 +10,11 @@ body:
         This task is open to **all autonomous agents** (Local Antigravity, Claude, ChatGPT, Mistral, external contributors).
         
         **How to solve this task:**
-        1. Fork `paykaribazaronline/supremeai-open` (zero credentials needed).
-        2. Create a branch: `bridge/<task-id>` (e.g. `bridge/20261013-fix-router`).
+        1. Fork `Supremeai-bd/supremeai-open` (zero credentials needed).
+        2. Create a branch: `contributor/issue-<task-id>` (or `bridge/<task-id>` for collaborator bridge lane).
         3. Work strictly within the declared **Touching Files**.
-        4. Run and satisfy the **3-Tier Verification Contract**.
-        5. Submit a Pull Request to `paykaribazaronline/supremeai-open:main` or open a **Bridge Work Order**. The internal Bridge automation ports and tests your change in the target repository.
+        4. Run and satisfy the **3-Tier Verification Contract** via `python scripts/agents/continuous_agent_loop.py --verify-only`.
+        5. Submit a Pull Request to `Supremeai-bd/supremeai-open:main` or open a **Bridge Work Order**. The internal Bridge automation ports and tests your change in the target repository.
 
   - type: dropdown
     id: target_repo
@@ -25,7 +25,7 @@ body:
         - paykaribazaronline/supremeai
         - paykaribazaronline/supremeai-api
         - paykaribazaronline/supremeai-studio
-        - paykaribazaronline/supremeai-open
+        - Supremeai-bd/supremeai-open
     validations:
       required: true
 

@@ -163,27 +163,50 @@ def build_task_contract(
     }
 
 
-def step_1_understand(issue_id: str | None = None) -> dict[str, str]:
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+
+def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) -> dict[str, str] | None:
     """Step 1: Fetch and display task contract / issue context."""
     log("📖", "[Step 1/8: Understand] Loading task contract...")
     
     if issue_id:
-        # Try fetching issue details using gh CLI
-        code, out, _ = run_cmd(["gh", "issue", "view", issue_id, "--repo", UPSTREAM_REPO, "--json", "number,title,body"])
+        code, out, _ = run_cmd(["gh", "issue", "view", str(issue_id), "--repo", UPSTREAM_REPO, "--json", "number,title,body,state"])
         if code == 0:
             try:
                 data = json.loads(out)
-                log("✅", f"Loaded Issue #{data.get('number')}: {data.get('title')}")
+                state = data.get("state", "OPEN").upper()
+                if state == "CLOSED":
+                    log("❌", f"[Fail-Closed] Issue #{data.get('number')} is CLOSED. Autonomous work on closed tasks is rejected.")
+                    return None
+                log("✅", f"Loaded Issue #{data.get('number')} ({state}): {data.get('title')}")
                 return {
                     "id": str(data.get("number")),
                     "title": data.get("title", ""),
-                    "body": data.get("body", "")
+                    "body": data.get("body", ""),
+                    "state": state,
                 }
-            except Exception:
-                pass
+            except Exception as e:
+                log("⚠️", f"Failed to parse issue JSON: {e}")
+        else:
+            log("ℹ️", f"Could not fetch issue #{issue_id} via gh CLI. Proceeding with offline task contract for #{issue_id}.")
+            return {
+                "id": str(issue_id),
+                "title": f"Task #{issue_id}",
+                "body": f"Implement smallest safe change for #{issue_id}.",
+                "state": "OFFLINE",
+            }
+
+    if not allow_adhoc:
+        log("❌", "[Fail-Closed Gate] No --issue specified! Multi-agent mode requires a specific issue contract.")
+        log("ℹ️", "Please provide --issue <number> or pass --allow-adhoc explicitly for local testing.")
+        return None
 
     # Fallback to interactive or default manual task
-    log("ℹ️", f"No specific issue provided. Checking active issues on {UPSTREAM_REPO}...")
+    log("ℹ️", f"Checking active issues on {UPSTREAM_REPO}...")
     code, out, _ = run_cmd(["gh", "issue", "list", "--repo", UPSTREAM_REPO, "--limit", "5", "--json", "number,title"])
     if code == 0 and out.strip() != "[]":
         try:
@@ -195,9 +218,10 @@ def step_1_understand(issue_id: str | None = None) -> dict[str, str]:
             pass
 
     return {
-        "id": issue_id or "adhoc",
+        "id": "adhoc",
         "title": "Autonomous Contribution Task",
-        "body": "Implement smallest safe change adhering to AGENTS.md contracts."
+        "body": "Implement smallest safe change adhering to AGENTS.md contracts.",
+        "state": "ADHOC",
     }
 
 
@@ -211,26 +235,47 @@ def step_2_rules() -> bool:
     return True
 
 
-def step_3_inspect_state() -> dict[str, str]:
+def step_3_inspect_state(force: bool = False) -> dict[str, str]:
     """Step 3: Inspect local git status, branch, and active remote."""
     log("🔍", "[Step 3/8: Inspect State] Checking git repository status...")
     _, status, _ = run_cmd(["git", "status", "--porcelain"])
     _, branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
     
     dirty = bool(status.strip())
-    log("ℹ️", f"Current branch: {branch} (uncommitted changes: {'YES' if dirty else 'NO'})")
-    return {"branch": branch, "dirty": str(dirty)}
+    if dirty:
+        log("⚠️", f"Current branch: {branch} (uncommitted changes: YES)")
+        if not force:
+            log("❌", "[Fail-Closed Workspace Isolation] Working tree has uncommitted modifications!")
+            log("❌", "Running multi-agent loop on a dirty workspace risks cross-contaminating agent sessions.")
+            log("ℹ️", "Commit or stash uncommitted changes before continuing, or run with --force.")
+            return {"branch": branch, "dirty": "True", "clean": "False"}
+    else:
+        log("ℹ️", f"Current branch: {branch} (uncommitted changes: NO)")
+    return {"branch": branch, "dirty": str(dirty), "clean": str(not dirty)}
 
 
 def step_4_branch(task: dict[str, str]) -> str:
-    """Step 4: Create atomic branch for task."""
+    """Step 4: Create atomic branch for task with collision avoidance."""
     issue_num = task.get("id", "adhoc")
-    target_branch = f"contributor/task-{issue_num}" if issue_num != "adhoc" else f"contributor/work-{int(time.time())}"
+    target_branch = f"contributor/issue-{issue_num}" if issue_num != "adhoc" else f"contributor/work-{int(time.time())}"
     log("🌿", f"[Step 4/8: Branch] Ensuring branch '{target_branch}'...")
     
-    code, _, _ = run_cmd(["git", "checkout", "-b", target_branch])
-    if code != 0:
-        run_cmd(["git", "checkout", target_branch])
+    # Check if branch exists
+    code, _, _ = run_cmd(["git", "rev-parse", "--verify", target_branch])
+    if code == 0:
+        _, curr_branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        if curr_branch == target_branch:
+            log("✅", f"Already on active branch '{target_branch}'")
+            return target_branch
+        
+        checkout_code, _, _ = run_cmd(["git", "checkout", target_branch])
+        if checkout_code != 0:
+            target_branch = f"contributor/issue-{issue_num}-{int(time.time())}"
+            log("🌿", f"Switched to isolated collision-safe branch '{target_branch}'")
+            run_cmd(["git", "checkout", "-b", target_branch])
+    else:
+        run_cmd(["git", "checkout", "-b", target_branch])
+
     log("✅", f"Active on branch '{target_branch}'")
     return target_branch
 
@@ -269,7 +314,37 @@ def step_6_verify() -> bool:
             log("❌", f"Invalid JSON in {jf.name}: {e}")
             return False
 
-    log("✅", "3-tier checks passed! Syntax and schemas are clean.")
+    # 3. YAML & OpenAPI Schema validation
+    if yaml is not None:
+        yaml_files = list(REPO_ROOT.glob("**/*.yaml")) + list(REPO_ROOT.glob("**/*.yml"))
+        for yf in yaml_files:
+            if ".git" in str(yf) or "node_modules" in str(yf):
+                continue
+            try:
+                with open(yf, "r", encoding="utf-8") as f:
+                    yaml.safe_load(f)
+            except Exception as e:
+                log("❌", f"Invalid YAML in {yf.name}: {e}")
+                return False
+
+    # 4. Self-test smoke checks (P6 validation)
+    try:
+        res_code, _, _ = run_cmd(["__test_nonexistent_binary_xyz_123__"])
+        if res_code != 127:
+            log("❌", f"run_cmd missing binary expected exit 127, got {res_code}")
+            return False
+
+        try:
+            build_task_contract("test", task_type="INVALID_TYPE")
+            log("❌", "build_task_contract failed to reject invalid task_type")
+            return False
+        except ValueError:
+            pass  # Expected fail-closed
+    except Exception as e:
+        log("❌", f"Self-test verification failed: {e}")
+        return False
+
+    log("✅", "3-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
     return True
 
 
@@ -278,7 +353,7 @@ def step_7_record(
     branch: str,
     contract: dict[str, Any] | None = None,
     auto_pr: bool = False,
-) -> None:
+) -> bool:
     """Step 7: Prepare PR body and submit PR."""
     log("📝", "[Step 7/8: Record] Generating Universal PR Template...")
     issue_num = task.get("id", "adhoc")
@@ -342,14 +417,27 @@ Refs #{issue_num}
         code, out, err = run_cmd(cmd)
         if code == 0:
             log("🎉", f"PR Successfully Created: {out}")
+            return True
         else:
-            log("⚠️", f"PR creation via gh CLI skipped or failed: {err}")
+            log("❌", f"PR creation via gh CLI failed ({code}): {err}")
             print(f"   Submit manually at: https://github.com/{UPSTREAM_REPO}/compare/main...{branch}")
+            return False
+
+    return True
 
 
 def step_8_return() -> None:
     """Step 8: Fresh-board re-check and clean exit."""
     log("🔄", "[Step 8/8: Return] Checking board freshness & cycle completed.")
+    code, out, _ = run_cmd(["gh", "pr", "list", "--repo", UPSTREAM_REPO, "--limit", "5", "--json", "number,title,headRefName"])
+    if code == 0 and out.strip() != "[]":
+        try:
+            prs = json.loads(out)
+            log("📋", "Active Open PRs on upstream board:")
+            for p in prs:
+                print(f"   #{p.get('number')} ({p.get('headRefName')}): {p.get('title')}")
+        except Exception:
+            pass
     print("----------------------------------------------------------------------")
     print(f"Cycle completed successfully. Ready for next task in {UPSTREAM_REPO}.")
     print("----------------------------------------------------------------------")
@@ -364,6 +452,8 @@ def main() -> int:
     parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
     parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")
     parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
+    parser.add_argument("--allow-adhoc", action="store_true", help="Allow adhoc task execution without --issue (offline testing only)")
+    parser.add_argument("--force", action="store_true", help="Bypass dirty workspace isolation gate (not recommended)")
     args = parser.parse_args()
 
     touching_files = [f.strip() for f in args.touching_files.split(",")] if args.touching_files else []
@@ -389,8 +479,15 @@ def main() -> int:
     if args.verify_only:
         return 0 if step_6_verify() else 1
 
-    task = step_1_understand(args.issue)
+    task = step_1_understand(args.issue, allow_adhoc=args.allow_adhoc)
+    if not task:
+        return 1
+
     if not step_2_rules():
+        return 1
+
+    state = step_3_inspect_state(force=args.force)
+    if state.get("clean") != "True" and not args.force:
         return 1
 
     contract = build_task_contract(
@@ -402,7 +499,6 @@ def main() -> int:
         touching_files=touching_files,
     )
 
-    step_3_inspect_state()
     branch = step_4_branch(task)
     step_5_work_notice()
 
@@ -411,11 +507,15 @@ def main() -> int:
         log("❌", "Verification failed. Please fix errors before proceeding.")
         return 1
 
-    step_7_record(task, branch, contract=contract, auto_pr=args.auto_pr)
+    if not step_7_record(task, branch, contract=contract, auto_pr=args.auto_pr):
+        log("❌", "Step 7 (Record) failed! Halting before completion return.")
+        return 1
+
     step_8_return()
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
