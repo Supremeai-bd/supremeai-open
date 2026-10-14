@@ -2,9 +2,13 @@
   "$schema": "https://json.schemastore.org/mcp",
   "mcpServers": {
     "supremeai-control-tower": {
+      "url": "https://supremeai-mcp-tower.onrender.com/mcp"
+    },
+    "supremeai-control-tower-sse": {
       "type": "sse",
       "url": "https://supremeai-mcp-tower.onrender.com/sse",
       "transport": "sse"
     }
   }
 }
+
