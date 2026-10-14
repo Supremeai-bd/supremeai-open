@@ -11,19 +11,28 @@
  * credentials with zero new dependencies (node:crypto RS256), caches them until
  * shortly before expiry, and fails honest: any absence or error returns ""
  * so callers keep their existing graceful unauthenticated fallback.
+ *
+ * Self-healing installation resolution (live incident 2026-10-14): the vault's
+ * `GITHUB_APP_INSTALLATION_ID` can go stale when the App is installed on a new
+ * account (the vault API requires client-side ciphertext for updates, so a
+ * plain API write is impossible). If minting with the configured installation
+ * fails, the minter lists the App's installations via the App JWT and resolves
+ * the one matching `GITHUB_APP_TARGET_ACCOUNT` (case-insensitive), falling back
+ * to the first active installation. The resolved id is cached in-process.
  */
 import crypto from "crypto";
 
 const GITHUB_API = "https://api.github.com";
 
 let cached: { token: string; expiresAtMs: number } | null = null;
+let resolvedInstallationId: string | null = null;
 let inFlight: Promise<string> | null = null;
 
 function appCreds(): { appId: string; installationId: string; pem: string } | null {
   const appId = process.env["GITHUB_APP_ID"] || "";
-  const installationId = process.env["GITHUB_APP_INSTALLATION_ID"] || "";
+  const installationId = resolvedInstallationId || process.env["GITHUB_APP_INSTALLATION_ID"] || "";
   const pem = (process.env["GITHUB_APP_PRIVATE_KEY"] || "").replace(/\\n/g, "\n");
-  if (!appId || !installationId || !pem.includes("PRIVATE KEY")) return null;
+  if (!appId || !pem.includes("PRIVATE KEY")) return null;
   return { appId, installationId, pem };
 }
 
@@ -37,6 +46,62 @@ export function signAppJwt(appId: string, pem: string, nowMs = Date.now()): stri
   signer.update(unsigned);
   const signature = signer.sign(pem).toString("base64url");
   return `${unsigned}.${signature}`;
+}
+
+interface AppInstallation {
+  id: number;
+  account: { login?: string } | null;
+  suspended_at: string | null;
+}
+
+/** List every installation of the App (App-JWT authenticated). Fails honest: []. */
+async function listAppInstallations(appId: string, pem: string): Promise<AppInstallation[]> {
+  const jwt = signAppJwt(appId, pem);
+  const res = await fetch(`${GITHUB_API}/app/installations?per_page=100`, {
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "SupremeAI-MCP-Control-Tower-Bridge",
+    },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as AppInstallation[];
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Resolve the installation to mint for: configured id if set and mintable,
+ * else auto-discovery (GITHUB_APP_TARGET_ACCOUNT match, else first active).
+ * Returns null when nothing is mintable (caller falls back unauthenticated).
+ */
+async function resolveInstallation(creds: { appId: string; pem: string; installationId: string }): Promise<{ installationId: string } | null> {
+  const tryMint = async (installationId: string): Promise<{ token: string; expiresAtMs: number } | null> => {
+    if (!installationId) return null;
+    try {
+      return await mintInstallationToken({ ...creds, installationId });
+    } catch {
+      return null;
+    }
+  };
+
+  const direct = await tryMint(creds.installationId);
+  if (direct) {
+    cached = direct;
+    return { installationId: creds.installationId };
+  }
+
+  // Auto-discovery — vault installation id is absent or stale.
+  const installations = await listAppInstallations(creds.appId, creds.pem);
+  const target = (process.env["GITHUB_APP_TARGET_ACCOUNT"] || "").toLowerCase();
+  const candidates = installations.filter((i) => !i.suspended_at);
+  const chosen =
+    candidates.find((i) => target && (i.account?.login || "").toLowerCase() === target) ?? candidates[0];
+  if (!chosen) return null;
+
+  const minted = await tryMint(String(chosen.id));
+  if (!minted) return null;
+  cached = minted;
+  return { installationId: String(chosen.id) };
 }
 
 async function mintInstallationToken(creds: { appId: string; installationId: string; pem: string }): Promise<{ token: string; expiresAtMs: number }> {
@@ -60,7 +125,8 @@ async function mintInstallationToken(creds: { appId: string; installationId: str
 
 /**
  * Returns a usable GitHub bearer token or "" (never throws).
- * Order: cached fresh token → mint from App creds → "".
+ * Order: cached fresh token → mint from App creds (with installation
+ * auto-discovery when the configured id is stale) → "".
  * Static PATs stay the caller's concern (checked before calling this).
  */
 export async function getGitHubAppInstallationToken(): Promise<string> {
@@ -70,9 +136,10 @@ export async function getGitHubAppInstallationToken(): Promise<string> {
   if (!creds) return "";
   inFlight = (async () => {
     try {
-      const minted = await mintInstallationToken(creds);
-      cached = minted;
-      return minted.token;
+      const resolved = await resolveInstallation(creds);
+      if (!resolved) return ""; // fail honest — caller keeps unauthenticated fallback
+      resolvedInstallationId = resolved.installationId;
+      return cached?.token ?? "";
     } catch {
       return ""; // fail honest — caller keeps unauthenticated fallback
     } finally {
@@ -85,5 +152,6 @@ export async function getGitHubAppInstallationToken(): Promise<string> {
 /** Test hook — reset cache between unit tests. */
 export function resetGitHubAppTokenCache(): void {
   cached = null;
+  resolvedInstallationId = null;
   inFlight = null;
 }
