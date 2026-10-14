@@ -85,7 +85,7 @@ const CLEANUP_PATCH = [
 const DEBUG_ADDED_PATCH = ["@@ -10,1 +10,3 @@", "+  console.log(\"debug a\");", "+  console.log(\"debug b\");", "   return result;"].join("\n");
 
 /** A patch that commits a credential — a severe, non-auto-fixable regression. */
-const SECRET_PATCH = ["@@ -1,1 +1,2 @@", '+const api_key = "abcdef123456";'].join("\n");
+const SECRET_PATCH = ["@@ -1,1 +1,2 @@", '+const api_key = "abcdef123456";'].join("\n"); // gitleaks:allow
 
 /** A patch that disables a test — a coverage regression the Guardian must not silently accept. */
 const DISABLED_TEST_PATCH = ["@@ -1,1 +1,2 @@", "+  test.skip(\"important behaviour\", () => {});"].join("\n");
