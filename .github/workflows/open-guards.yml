@@ -1,10 +1,12 @@
-# 🛡️ Open Guards (#63) — shift-left validation on FREE public runtime.
+# 🛡️ Open Guards (#63, #107) — shift-left validation on FREE public runtime.
 # বাংলা: প্রাইভেট repo-র Actions minute হলো সীমিত সম্পদ (Free org = 2,000 min/month)।
-# branch-naming ও issue-reference ভালাইখোরা প্রাইভেট CI-তে গিয়ে ব্যর্থ হওয়ার আগেই
-# এই সস্তা public guard ধরে ফেলে — invalid contribution বাউন্ডারিতেই থামে।
+# branch-naming, issue-reference ও boundary-sanitization ভালাইখোরা প্রাইভেট CI-তে
+# গিয়ে ব্যর্থ হওয়ার আগেই এই সস্তা public guard ধরে ফেলে — invalid contribution
+# বাউন্ডারিতেই থামে।
 # Zero-checkout (event-context-only) → প্রতি রান ~৫ সেকেন্ড, public repo-র
-# Actions minute ফ্রি ও আনলিমিটেড।
-name: 🛡️ Open Guards (branch naming + issue reference)
+# Actions minute ফ্রি ও আনলিমিটেড। (#107 exception: boundary-sanitization-guard
+# job content inspect করে, তাই checkout লাগে — তবু stdlib-only + <৩ মিনিট।)
+name: 🛡️ Open Guards (branch naming + issue reference + boundary)
 
 on:
   pull_request:
@@ -99,3 +101,32 @@ jobs:
             fi
           done
           echo "✅ No competing duplicate PRs detected for: $ISSUES"
+
+  boundary-sanitization-guard:
+    name: "🧱 Boundary Sanitization Guard (#107)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout repository (content inspection requires file bodies)
+        uses: actions/checkout@v4
+
+      - name: Guard self-test (guard-the-guard, offline fixtures)
+        run: python3 scripts/ci/boundary_sanitization_guard.py --self-test
+
+      - name: Scan PR changed files (fail-closed on violations)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+        run: |
+          FILES=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json files -q '.files[].path')
+          if [ -z "$FILES" ]; then
+            echo "::warning::No changed files detected via gh pr view — running full --check instead (fail-closed)."
+            exec python3 scripts/ci/boundary_sanitization_guard.py --check
+          fi
+          echo "Changed files under boundary scan:"
+          echo "$FILES"
+          # shellcheck disable=SC2086 — repo paths contain no whitespace
+          python3 scripts/ci/boundary_sanitization_guard.py --files $FILES
+
+      - name: Full-tree boundary audit (final fail-closed barrier)
+        run: python3 scripts/ci/boundary_sanitization_guard.py --check

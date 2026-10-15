@@ -112,4 +112,12 @@ jobs:
           sudo mv gitleaks /usr/local/bin/
 
       - name: Run Gitleaks Secret Detection
+        # #107 scope note: scan ONLY the commits this PR/branch introduces
+        # (origin/main..HEAD). The default --all sweep also walks OTHER
+        # agents' in-flight bridge/* branches, producing false positives from
+        # work-order fixtures that this PR neither contains nor owns — a PR
+        # must be judged on what it itself lands. (Main history was already
+        # scanned at PR time; push builds re-scan zero new commits, which is
+        # the correct no-op.)
         run: gitleaks detect --source=. --verbose --redact --log-opts="origin/main..HEAD"
+
