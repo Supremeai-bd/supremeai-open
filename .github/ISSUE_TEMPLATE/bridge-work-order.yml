@@ -41,9 +41,15 @@ body:
     attributes:
       label: Target Repo
       options:
-        - paykaribazaronline/supremeai
-        - paykaribazaronline/supremeai-api
-        - paykaribazaronline/supremeai-studio
+        - Supremeai-bd/supremeai-open
+        - Supremeai-bd/supremeai
+        - Supremeai-bd/supremeai-api
+        - Supremeai-bd/supremeai-archive
+        - Supremeai-bd/supremeai-core
+        - Supremeai-bd/supremeai-infrastructure
+        - Supremeai-bd/supremeai-mcp-control-plane
+        - Supremeai-bd/supremeai-sdk
+        - Supremeai-bd/supremeai-studio
     validations:
       required: true
   - type: textarea

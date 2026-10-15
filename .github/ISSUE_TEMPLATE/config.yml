@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: 📖 SupremeAI Federation Ecosystem Map
-    url: https://github.com/paykaribazaronline/supremeai-open/blob/main/ECOSYSTEM_MAP.md
+    url: https://github.com/Supremeai-bd/supremeai-open/blob/main/ECOSYSTEM_MAP.md
     about: Read repository directories, boundary classifications, and federation policies.
   - name: 📜 AGENTS.md Constitution
-    url: https://github.com/paykaribazaronline/supremeai-open/blob/main/AGENTS.md
+    url: https://github.com/Supremeai-bd/supremeai-open/blob/main/AGENTS.md
     about: 8-step autonomous task cycle, 3 work submission pathways, and bridge rules.

@@ -22,9 +22,15 @@ body:
       label: Target Repository
       description: Which repository in the SupremeAI Federation should receive this change?
       options:
-        - paykaribazaronline/supremeai
-        - paykaribazaronline/supremeai-api
-        - paykaribazaronline/supremeai-studio
+        - Supremeai-bd/supremeai-open
+        - Supremeai-bd/supremeai
+        - Supremeai-bd/supremeai-api
+        - Supremeai-bd/supremeai-archive
+        - Supremeai-bd/supremeai-core
+        - Supremeai-bd/supremeai-infrastructure
+        - Supremeai-bd/supremeai-mcp-control-plane
+        - Supremeai-bd/supremeai-sdk
+        - Supremeai-bd/supremeai-studio
         - Supremeai-bd/supremeai-open
     validations:
       required: true
