@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://supremeai.dev/schemas/guardian-evaluation.schema.json",
+  "title": "SupremeAI Guardian Evaluation",
+  "description": "Data contract for the CI Guardian's automated Pull Request evaluation: the four check categories, weighted scoring, the deterministic PASS/HOLD/REJECT verdict, the autonomous merge-eligibility threshold, and structured healing instructions. BN: CI গার্ডিয়ানের PR-মূল্যায়ন চুক্তি — মানদণ্ড, স্কোর, রায় ও স্বয়ংক্রিয় নিরাময়-নির্দেশনা।",
+  "type": "object",
+  "required": ["schema_version", "target", "evaluator", "checks", "score", "verdict", "merge_eligibility"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Contract version. MAJOR bump = verdict vocabulary or category set changed; MINOR bump = additive fields only."
+    },
+    "target": {
+      "type": "object",
+      "required": ["pr_number", "head_sha", "base_branch"],
+      "additionalProperties": false,
+      "description": "The exact PR state that was evaluated. Evaluations are bound to an immutable head SHA — a new push invalidates every prior evaluation.",
+      "properties": {
+        "pr_number": { "type": "integer", "minimum": 1 },
+        "pr_url": { "type": "string", "pattern": "^https://" },
+        "head_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Evaluated commit. Merge decisions MUST re-verify this still equals the PR's current head (fail-closed on drift)."
+        },
+        "base_branch": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evaluator": {
+      "type": "object",
+      "required": ["name", "contract_version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "Evaluator identity, e.g. ai-pr-evaluator." },
+        "version": { "type": "string", "description": "Evaluator build/version." },
+        "contract_version": { "type": "string", "description": "Cross-repo parity marker of the evaluation contract." }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "description": "Exactly the four standard categories — one entry each, so verdicts are comparable across PRs and repos.",
+      "items": { "$ref": "#/$defs/check" }
+    },
+    "score": {
+      "type": "object",
+      "required": ["overall", "threshold"],
+      "additionalProperties": false,
+      "description": "Weighted aggregate. overall = sum(category score × category weight) / 100, rounded down.",
+      "properties": {
+        "overall": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "The configured autonomous-merge eligibility threshold. PASS below it still requires a human/bot fix cycle."
+        }
+      }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "HOLD", "REJECT"],
+      "description": "Deterministic outcome — derived, never assigned by taste. Rules are SSOT'd in docs/GUARDIAN_EVALUATION.md."
+    },
+    "verdict_reasons": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Machine-referencable reasons for the verdict (one per decisive rule fired)."
+    },
+    "merge_eligibility": {
+      "type": "object",
+      "required": ["eligible"],
+      "additionalProperties": false,
+      "description": "Autonomous-merge gate. eligibility = (verdict == PASS) AND (overall >= threshold) AND (no category is security_scan with status fail).",
+      "properties": {
+        "eligible": { "type": "boolean" },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-empty when eligible=false — each entry cites the blocking rule."
+        }
+      }
+    },
+    "healing_instructions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/healing" },
+      "description": "Automated healing list — mandatory when verdict is HOLD or REJECT; each instruction is independently actionable by a coder agent."
+    }
+  },
+  "$defs": {
+    "checkCategory": {
+      "type": "string",
+      "enum": [
+        "template_adherence",
+        "scope_boundary",
+        "test_evidence",
+        "security_scan"
+      ],
+      "description": "The four standard evaluation categories. template_adherence = PR body/commit-message contract (summary, refs, closing keyword placement); scope_boundary = diff stays inside declared Touching Files and protected paths are untouched; test_evidence = 3-tier verification present and reproducible; security_scan = secret/boundary scanning clean."
+    },
+    "check": {
+      "type": "object",
+      "required": ["category", "status", "score", "weight"],
+      "additionalProperties": false,
+      "properties": {
+        "category": { "$ref": "#/$defs/checkCategory" },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "warn", "fail"],
+          "description": "pass = criterion met; warn = met with documented reservations (never blocks alone); fail = criterion unmet (blocks)."
+        },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "weight": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Relative weight in the overall score; the four weights sum to 100." },
+        "details": { "type": "string", "description": "Human-readable explanation of what was observed." },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Pointers the verdict can be re-derived from (log lines, file paths, check-run ids). No secrets."
+        }
+      }
+    },
+    "healing": {
+      "type": "object",
+      "required": ["category", "instruction"],
+      "additionalProperties": false,
+      "properties": {
+        "category": { "$ref": "#/$defs/checkCategory" },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Single, concrete fix step (the HOLD_AND_FIX list format)."
+        },
+        "automatable": {
+          "type": "boolean",
+          "description": "true = a coder agent can execute it without human judgement."
+        }
+      }
+    }
+  }
+}
