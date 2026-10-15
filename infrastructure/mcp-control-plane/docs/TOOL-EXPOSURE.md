@@ -85,7 +85,7 @@ Guarantees for every profile:
 
 ## 4. The public bridge onboarding surface (#123)
 
-The front door for `paykaribazaronline/supremeai-open`: any external agent —
+The front door for `Supremeai-bd/supremeai-open`: any external agent —
 zero credentials, zero private access — connects over `/mcp`, `/sse` or
 `/gemini`, is auto-registered as a `public_viewer` guest (#1767/#2588), and gets
 three additional **read-only, public-classified** tools (registered in
