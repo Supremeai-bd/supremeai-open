@@ -1885,6 +1885,11 @@ async function main(): Promise<void> {
     // #2596: টাস্ক-কিউ রেজিস্ট্রিও একই সারিতে হাইড্রেট — tower restart-এ
     // চালু লিজ হারাবে না; সাথে প্রথম সিঙ্ক এগিয়ে ছোড়া (non-blocking)।
     await initTaskRegistry();
+
+    // #66 taxonomy-drift guard: boot-এ resolved GitHub repo slug ছাপা হয়
+    // (zero-secret) — যাতে stale default বা ভুল GITHUB_REPO ভ্যালু সাইলেন্ট
+    // 404 হয়ে টুল-কলে ধরা না পড়ে, বরং স্টার্টআপ লগেই চোখে পড়ে।
+    console.error(`[MCP] GitHub adapter resolved repo → ${env.github.repo} (override via GITHUB_REPO)`);
     void refreshFromGitHub();
 
     const server = await createMcpServer(memoryAdapter);

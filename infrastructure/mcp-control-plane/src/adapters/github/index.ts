@@ -1,7 +1,7 @@
 import { buildAccountRegistry } from "../../registry/account.registry.js";
 import { httpRequest, bearerAuth } from "../../lib/http.js";
 
-const DEFAULT_BASE_URL = "https://api.github.com/repos/paykaribazaronline/supremeai";
+const DEFAULT_BASE_URL = "https://api.github.com/repos/Supremeai-bd/supremeai";
 
 export function getAccountConfig(accountId: string): { apiKey: string; baseUrl: string } {
   const accounts = buildAccountRegistry();
@@ -10,7 +10,7 @@ export function getAccountConfig(accountId: string): { apiKey: string; baseUrl: 
   if (!account.available) throw new Error(`GitHub account is not configured/available: ${accountId}`);
 
   // বাংলা (Task 35): vault-থেকে-লোড-হওয়া PAT-ও ফলব্যাক-চেইনে রাখা হলো —
-  // যাতে paykaribazaronline-এর প্রতিটি রিপো-অ্যাকাউন্ট GITHUB_PAT_PAYKARIBAZARONLINE
+  // যাতে মূল personal account-এর (org-migration-এর আগের) প্রতিটি রিপো-অ্যাকাউন্ট GITHUB_PAT_PAYKARIBAZARONLINE
   // দিয়েই সক্রিয় হয় (Infisical pullSecretsIntoProcessEnv() রানটাইমে এটি ভরে)।
   const apiKey =
     process.env[account.apiKeyRef] ||
