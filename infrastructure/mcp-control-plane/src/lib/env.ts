@@ -1,14 +1,28 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as dotenv from "dotenv";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Type-safe environment loader.
- * Reads from process.env (injected by dotenv or Infisical at startup).
+ * Type-safe environment loader — the SINGLE SSOT for environment config.
  * NEVER hardcodes values — only reads env var NAMES.
+ *
+ * Environment precedence (#109), highest first:
+ *   1. Real process environment (shell export / Render / Docker injects).
+ *   2. Repo-root `.env` file — loaded ONCE, below, by the only
+ *      `dotenv.config()` call site in the codebase. dotenv never overrides
+ *      already-set variables, so (1) always wins over (2).
+ *   3. Infisical vault pull (`pullSecretsIntoProcessEnv()` in index.ts
+ *      `main()`) — runs at boot AFTER this module has loaded, injecting
+ *      vault secrets into process.env for lazy getters to pick up.
+ *
+ * This module is imported by index.ts BEFORE the rest of the tool/registry
+ * import tree, so the `.env` file is available to every module body that
+ * reads process.env at import time (client-registry.ts, tenant.registry.ts).
  */
+dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 function required(name: string): string {
   const v = process.env[name];
@@ -18,6 +32,37 @@ function required(name: string): string {
 
 function optional(name: string, fallback = ""): string {
   return process.env[name] ?? fallback;
+}
+
+/**
+ * Positive-integer knob (rate limits, timeouts, byte caps). Unset → fallback.
+ * A set-but-invalid value (non-numeric, NaN, <= 0) FAILS LOUDLY (#109):
+ * the old inline `Number(...) ?? fallback` parsing silently turned garbage
+ * into NaN and NaN into the fallback, hiding misconfiguration.
+ */
+function positiveInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`[env] ${name} must be a positive number, got: ${JSON.stringify(raw)}`);
+  }
+  return Math.floor(value);
+}
+
+/**
+ * Non-negative-integer knob (session caps, idle reap intervals). Unset →
+ * fallback; 0 is meaningful ("disable the cap / never reap"); negative or
+ * non-numeric fails loudly (same rationale as positiveInt).
+ */
+function nonNegativeInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`[env] ${name} must be a non-negative number, got: ${JSON.stringify(raw)}`);
+  }
+  return Math.floor(value);
 }
 
 function multiKey(name: string): string[] {
@@ -117,6 +162,35 @@ export const env = {
     get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
     get repo(): string { return optional("GITHUB_REPO", "Supremeai-bd/supremeai"); },
   },
+
+  // ── Runtime knobs (#109) — rate limits, tool governance, session caps.
+  // Every knob below previously existed ONLY as an inline
+  // `Number(process.env[...])` parse in index.ts (NaN-propagating). They now
+  // validate through positiveInt/nonNegativeInt: a garbage value throws
+  // instead of silently degrading into a default. All lazy getters —
+  // re-read on each access so runtime env changes stay observable.
+  runtime: {
+    /** Transport selector: "http" (default) or "stdio". */
+    get transport(): string { return optional("MCP_TRANSPORT", "http"); },
+    /** Per-IP /mcp sliding window (#695). */
+    get mcpRateLimitMax(): number { return positiveInt("MCP_RATE_LIMIT_MAX", 60); },
+    get mcpRateLimitWindowMs(): number { return positiveInt("MCP_RATE_LIMIT_WINDOW_MS", 60_000); },
+    /** Tool governance caps (#686). */
+    get toolPayloadMaxBytes(): number { return positiveInt("MCP_TOOL_PAYLOAD_MAX_BYTES", 262_144); },
+    get toolResultMaxBytes(): number { return positiveInt("MCP_TOOL_RESULT_MAX_BYTES", 524_288); },
+    get toolTimeoutMs(): number { return positiveInt("MCP_TOOL_TIMEOUT_MS", 30_000); },
+    get toolRateLimitMax(): number { return positiveInt("MCP_TOOL_RATE_LIMIT_MAX", 20); },
+    get toolRateLimitWindowMs(): number { return positiveInt("MCP_TOOL_RATE_LIMIT_WINDOW_MS", 60_000); },
+    /** HTTP session hygiene: idle reap interval + bounded session tables. */
+    get httpSessionIdleMs(): number { return nonNegativeInt("MCP_HTTP_SESSION_IDLE_MS", 3_600_000); },
+    get maxSseSessions(): number { return nonNegativeInt("MCP_MAX_SSE_SESSIONS", 100); },
+    get maxHttpSessions(): number { return nonNegativeInt("MCP_MAX_HTTP_SESSIONS", 100); },
+  },
+
+  // ── Memory sidecar flags (#109 — moved out of index.ts inline reads)
+  get disableMemorySidecar(): boolean { return process.env.SUPREMEAI_DISABLE_MEMORY_SIDECAR === "1"; },
+  /** Local-dev only: block-and-log when the sidecar becomes ready. */
+  get logMemoryReady(): string { return optional("SUPREMEAI_LOG_MEMORY_READY"); },
 
   // ── Event-driven bridge intake (#69)
   // Arms the webhook → workflow-dispatch wake-up path. Fail-closed: disabled
@@ -233,5 +307,25 @@ export const env = {
 };
 
 export type Env = typeof env;
+
+/**
+ * Fail-fast knob validation (#109): touches every validated runtime getter so
+ * a misconfigured numeric env var aborts boot with a loud, named error
+ * instead of surfacing as NaN-driven misbehavior on the first request.
+ * Call once from main() inside the boot try-block.
+ */
+export function validateRuntimeKnobs(): void {
+  void env.runtime.transport;
+  void env.runtime.mcpRateLimitMax;
+  void env.runtime.mcpRateLimitWindowMs;
+  void env.runtime.toolPayloadMaxBytes;
+  void env.runtime.toolResultMaxBytes;
+  void env.runtime.toolTimeoutMs;
+  void env.runtime.toolRateLimitMax;
+  void env.runtime.toolRateLimitWindowMs;
+  void env.runtime.httpSessionIdleMs;
+  void env.runtime.maxSseSessions;
+  void env.runtime.maxHttpSessions;
+}
 
 
