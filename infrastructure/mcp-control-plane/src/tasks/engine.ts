@@ -1,12 +1,15 @@
 import * as crypto from "node:crypto";
 import { globalHealthEngine } from "../health/engine.js";
 
-export type TaskState = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+// #112: renamed from the colliding `TaskState` — this union is the EXECUTION
+// state machine (task engine). The lease lifecycle union in task-registry.ts
+// is a different machine and now carries its own name (TaskLeaseState).
+export type TaskExecutionState = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
 
 export interface Task {
   id: string;
   name: string;
-  state: TaskState;
+  state: TaskExecutionState;
   createdAt: string;
   updatedAt: string;
   error?: string;
