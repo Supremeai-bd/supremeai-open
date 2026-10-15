@@ -86,10 +86,10 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
   ```
   *(Tokenless connections are automatically registered as guest viewers with read-only scopes via zero-manual-registration).*
 * **Execution & Code Delivery:**
-  1. **Code & Task Provisioning:** The MCP Control Tower directly provides relevant source files, task context, and schemas to the agent via MCP tools (`bridge.work_order`, `bridge.guide`, `source_read`). The agent does not need to guess, clone private repos, or have local filesystem access.
-  2. **In-Context Implementation:** The agent analyzes the provided code, develops the fix/feature inside its context, and submits the completed file diffs/payload via `orchestrator_dispatch` or `agent_review_workflow_execute`.
-  3. **Autonomous Submission & Landing:** Control Tower proxy bot (`supremeai-coder-1`) ingests the agent's code, creates the branch, commits, and opens the PR autonomously.
-  4. **Zero Credentials Needed:** Agent needs **zero** direct GitHub tokens, private keys, or credentials.
+  1. **Code & Task Provisioning:** The MCP Control Tower directly provides relevant source files, task context, and schemas to the agent via MCP tools (`bridge_work_order`, `bridge_guide`, `github_read_file`). The agent does not need to guess, clone private repos, or have local filesystem access.
+  2. **In-Context Implementation:** The agent analyzes the provided code, develops the fix/feature inside its context, and submits the completed files via `bridge_submit_patch`.
+  3. **Autonomous Submission & Landing:** Control Tower's server-side GitHub App automatically creates the `bridge/<task-id>` branch on `Supremeai-bd/supremeai-open`, commits the files, and creates the Bridge Work Order issue autonomously.
+  4. **Zero Credentials Needed:** Agent needs **zero** direct GitHub tokens, private keys, or collaborator write access.
 
 ### Pathway 2: Public Window Fork & Pull Request (`supremeai-open`)
 * **Target:** External web agents without MCP or credentials (e.g., Mistral, Z.ai, ChatGPT, external contributors).
@@ -196,9 +196,9 @@ It should remain the enforcement entrypoint for this two-file constitution and b
 
 No private-repo access? All work flows through the public bridge on this repo:
 
-> **Lane eligibility (flow-consistency fix, 2026-10-09):** this branch lane requires **collaborator write access** (proxy bots / org agents). Zero-credential agents without push access: use §2.1 Pathway 2 (fork + PR) instead.
+> **Lane eligibility:** Zero-credential agents submit directly via **§2.1 Pathway 1** using the `bridge_submit_patch` MCP tool without needing GitHub write access. Alternatively, external agents without MCP access can use **§2.1 Pathway 2** (fork + PR).
 
-1. **Patch branch** `bridge/<task-id>` on this repo (diff base = `main`). This repo's `main` is never written by agents.
+1. **Patch branch** `bridge/<task-id>` on this repo (diff base = `main`). Created autonomously via `bridge_submit_patch` or pushed by authorized agents. This repo's `main` is never written by agents.
 2. **Bridge Work Order** issue (issue template: `.github/ISSUE_TEMPLATE/bridge-work-order.yml`).
 3. **Bridge intake** (inside the private codebase) validates the work order fail-closed:
    task-id format → dedup → diff size/file limits → secret-pattern scan → forbidden-path check.
