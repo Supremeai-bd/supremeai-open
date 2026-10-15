@@ -228,7 +228,7 @@ jobs:
       - name: Full-tree boundary audit (final fail-closed barrier)
         run: python3 scripts/ci/boundary_sanitization_guard.py --check
 
-  loop-contract-parity-guard:
+  loop_contract_parity_guard:
     name: "🔁 Loop-Contract Parity Guard (#118)"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -246,12 +246,12 @@ jobs:
   # ---------------------------------------------------------------------------
   test-matrix:
     name: Python ${{ matrix.python-version }} Matrix Smoke & Contract Validation
-    needs: [boundary_sanitization_guard, loop-contract-parity-guard]
+    needs: [boundary_sanitization_guard, loop_contract_parity_guard]
     if: |
       always() &&
       (github.event_name == 'push' ||
        (needs.boundary_sanitization_guard.result == 'success' &&
-        needs.loop-contract-parity-guard.result == 'success' &&
+        needs.loop_contract_parity_guard.result == 'success' &&
         needs.boundary_sanitization_guard.outputs.docs_only != 'true'))
     runs-on: ubuntu-latest
     strategy:
@@ -306,8 +306,17 @@ jobs:
           ]
           loop.run_cmd = lambda cmd: (0, json.dumps(stub2), '')
           assert loop.pick_next_issue() == '66', 'real P0 label must outrank prose titles'
+          stub3 = [
+              {'number': 78, 'title': 'private mirror work', 'labels': [{'name': 'status:unclaimed'}, {'name': 'mirror:private'}, {'name': 'P1-high'}]},
+              {'number': 90, 'title': 'public P2 work', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P2-medium'}]}
+          ]
+          loop.run_cmd = lambda cmd: (0, json.dumps(stub3), '')
+          assert loop.pick_next_issue() == '90', 'mirror:private issues are born non-claimable (#122)'
+          stub4 = [{'number': 81, 'title': 'only a mirror', 'labels': [{'name': 'status:unclaimed'}, {'name': 'mirror:private'}]}]
+          loop.run_cmd = lambda cmd: (0, json.dumps(stub4), '')
+          assert loop.pick_next_issue() is None, 'mirror-only board must no-op (#122)'
           assert loop.build_task_contract('ci-test')['task_contract']['version'] == 1
-          print('pick-next claim-filter contract: OK (#88)')
+          print('pick-next claim-filter contract: OK (#88, #122)')
           "
 
   # ---------------------------------------------------------------------------
@@ -400,9 +409,11 @@ jobs:
         id: board
         run: |
           set -euo pipefail
-          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title)
-          echo "claimable-board snapshot: $BOARD"
-          if [ "$BOARD" = "[]" ]; then
+          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title,labels)
+          # Mirror issues (#122) are born non-claimable — exclude the marker.
+          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select([.labels[].name] | index("mirror:private") | not)]')
+          echo "claimable-board snapshot: $CLAIMABLE"
+          if [ "$CLAIMABLE" = "[]" ]; then
             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
             echo "has_work=false" >> "$GITHUB_OUTPUT"
           else
