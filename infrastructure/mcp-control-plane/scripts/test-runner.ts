@@ -28,8 +28,9 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const PKG_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function runTest(file: string, requiredEnv: string[]): number {
   const missing = requiredEnv.filter((name) => {
@@ -44,7 +45,7 @@ function runTest(file: string, requiredEnv: string[]): number {
     return 0;
   }
   console.log(`▶️  RUN ${file}${requiredEnv.length ? ` (env: ${requiredEnv.join(",")})` : ""}`);
-  const result = spawnSync("tsx", [file], { stdio: "inherit", cwd: PKG_ROOT });
+  const result = spawnSync("tsx", [file], { stdio: "inherit", cwd: PKG_ROOT, shell: true });
   if (result.error) {
     console.error(`❌ failed to spawn tsx for ${file}: ${String(result.error)}`);
     return 1;
