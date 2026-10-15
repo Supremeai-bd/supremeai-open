@@ -28,7 +28,11 @@ import {
   listHeartbeats,
   type HeartbeatStatusEntry,
 } from "./agent_heartbeat.js";
-import { activeAccountChain, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
+import {
+  runWithAccountChain,
+  readAcrossAccountChain,
+  setTcpRedisCtor,
+} from "../adapters/redis/index.js";
 
 export const PRESENCE_KEY_PREFIX = "supremeai:mcp-presence:";
 export const PRESENCE_TTL_SECONDS = 300;
@@ -105,119 +109,22 @@ export function extractClientInfoName(body: unknown): string | undefined {
   return undefined;
 }
 
-// ── Redis transport: heartbeat-এর একই account-chain walker ─────────────────
-// (Upstash REST + ioredis TCP উভয় মোড; কোটা cooldown-সচেতন)
+// ── Redis transport: single shared account-chain implementation (#110) ─────
+// Client construction + the quota-aware fallback walk live in
+// adapters/redis/index.ts — the ONE implementation for the whole tower.
+// Presence keeps only its op bodies (sliding-TTL write, freshest-merge read).
 
-type PresenceRedisClient = {
-  get: (key: string) => Promise<string | null>;
-  setEx: (key: string, ttlSeconds: number, value: string) => Promise<void>;
-  keys: (pattern: string) => Promise<string[]>;
-};
+let ioredisRegistered = false;
 
-function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClient {
-  const restUrl = account.restUrl as string;
-  const auth = `Bearer ${account.restToken}`;
-  const call = async (body: unknown[]): Promise<unknown> => {
-    const res = await fetch(restUrl, {
-      method: "POST",
-      headers: { Authorization: auth, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-      // #110: quota-shape detection aligned with the heartbeat REST client —
-      // the RedisQuotaExhaustedError is what makes runWithAccountChain mark
-      // this account into cooldown and shift to the next one. Presence used
-      // to be the one routed path with NO quota marking; now all are identical.
-      const errText = await res.text().catch(() => "");
-      if (responseIndicatesQuotaExhaustion(res.status, errText)) {
-        throw new RedisQuotaExhaustedError(
-          account.label,
-          `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
-        );
-      }
-      throw new Error(`Upstash REST [${account.label}] returned HTTP ${res.status}`);
-    }
-    const payload = (await res.json()) as { result?: unknown; error?: string };
-    if (payload.error) {
-      if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
-        throw new RedisQuotaExhaustedError(
-          account.label,
-          `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
-        );
-      }
-      throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
-    }
-    return payload.result;
-  };
-  return {
-    get: async (key) => (await call(["GET", key])) as string | null,
-    setEx: async (key, ttl, value) => {
-      await call(["SET", key, value, "EX", String(ttl)]);
-    },
-    keys: async (pattern) => (await call(["KEYS", pattern])) as string[],
-  };
-}
-
-function makeTcpPresenceClient(account: RedisAccountConfig): PresenceRedisClient {
-  // বাংলা: lazy dynamic import এড়িয়ে heartbeat-এর একই সরল factory-প্যাটার্ন —
-  // presence-এর জন্য ioredis ছোট scoped connection ব্যবহার করে।
-  const Redis = (
-    globalThis as unknown as {
-      __presenceRedisCtor?: new (url: string, opts: object) => {
-        get: (k: string) => Promise<string | null>;
-        set: (k: string, v: string, mode: "EX", ttl: number) => Promise<void>;
-        keys: (p: string) => Promise<string[]>;
-        disconnect: () => void;
-      };
-    }
-  ).__presenceRedisCtor;
-  if (!Redis) {
-    throw new Error(
-      `TCP Redis account [${account.label}] ব্যবহারের আগে ioredis লোড করতে হবে (registerIoredis())`,
-    );
-  }
-  const connect = () => new Redis(account.tcpUrl as string, { maxRetriesPerRequest: 1, connectTimeout: 5000 });
-  return {
-    get: async (key) => {
-      const c = connect();
-      try {
-        return await c.get(key);
-      } finally {
-        c.disconnect();
-      }
-    },
-    setEx: async (key, ttl, value) => {
-      const c = connect();
-      try {
-        await c.set(key, value, "EX", ttl);
-      } finally {
-        c.disconnect();
-      }
-    },
-    keys: async (pattern) => {
-      const c = connect();
-      try {
-        return await c.keys(pattern);
-      } finally {
-        c.disconnect();
-      }
-    },
-  };
-}
-
-let ioredisCtor: (new (url: string, opts: object) => unknown) | null = null;
-
-/** index.ts boot-এ একবার ডাকে — presence TCP fallback-এর জন্য ioredis ctor। */
+/** index.ts boot-এ একবার ডাকে — shared TCP fallback-এর জন্য ioredis ctor। */
 export function registerIoredis(ctor: new (url: string, opts: object) => unknown): void {
-  ioredisCtor = ctor;
-  (globalThis as unknown as { __presenceRedisCtor?: unknown }).__presenceRedisCtor =
-    ctor as unknown as never;
+  setTcpRedisCtor(ctor);
+  ioredisRegistered = true;
 }
 
-function makePresenceClient(account: RedisAccountConfig): PresenceRedisClient {
-  if (account.restUrl && account.restToken) return makeRestPresenceClient(account);
-  return makeTcpPresenceClient(account);
+/** সততা probe: shared TCP fallback-এর জন্য ioredis ctor নিবন্ধিত কি না। */
+export function isIoredisRegistered(): boolean {
+  return ioredisRegistered;
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -244,12 +151,6 @@ export type RecordPresenceResult = {
 export async function recordPresence(
   input: RecordPresenceInput,
 ): Promise<RecordPresenceResult> {
-  const chain = activeAccountChain();
-  if (chain.length === 0) {
-    throw new Error(
-      "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — MCP presence cannot be stored",
-    );
-  }
   const nowMs = Date.now();
   const record: PresenceRecord = {
     clientName: sanitizePresenceToken(input.clientName) || "unknown-client",
@@ -261,21 +162,12 @@ export async function recordPresence(
   };
   const key = presenceKey(record.clientName, record.clientId);
   const value = JSON.stringify(record);
-  // #110: chain-walk + quota-marking through the single engine; the failure
-  // message stays byte-identical to the deleted hand-rolled loop.
-  const chainLength = chain.length;
   await runWithAccountChain(
-    async (acct) => {
-      await makePresenceClient(acct).setEx(key, PRESENCE_TTL_SECONDS, value);
-      return acct.label;
-    },
+    (client) => client.setEx(key, PRESENCE_TTL_SECONDS, value),
     {
-      aggregateError: (attempts) =>
-        new Error(
-          `All ${chainLength} Redis account(s) rejected the presence write: ${attempts
-            .map((a) => a.error ?? "unknown error")
-            .join(" | ")}`,
-        ),
+      opLabel: "mcp presence write",
+      noConfigMessage:
+        "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — MCP presence cannot be stored",
     },
   );
   return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS };
@@ -290,17 +182,10 @@ export type PresenceListResult = {
 
 /** সব সক্রিয় interactive-client presence (সব account-chain merge, freshest wins)। */
 export async function listPresence(nowMs: number = Date.now()): Promise<PresenceListResult> {
-  const chain = activeAccountChain();
-  if (chain.length === 0) {
-    throw new Error(
-      "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — MCP presence cannot be read",
-    );
-  }
   const freshest = new Map<string, PresenceRecord>();
   const pattern = `${PRESENCE_KEY_PREFIX}*`;
-  for (const account of chain) {
-    try {
-      const client = makePresenceClient(account);
+  await readAcrossAccountChain(
+    async (client) => {
       const keys = await client.keys(pattern);
       for (const key of keys.sort()) {
         const raw = await client.get(key);
@@ -316,10 +201,15 @@ export async function listPresence(nowMs: number = Date.now()): Promise<Presence
           freshest.set(key, record);
         }
       }
-    } catch {
-      // বাংলা: একটি account unreachable হলে বাকি chain থেকেই পড়া চলবে
-    }
-  }
+    },
+    {
+      opLabel: "mcp presence read",
+      noConfigMessage:
+        "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — MCP presence cannot be read",
+    },
+  );
+  // বাংলা: একটি account unreachable হলে বাকি chain থেকেই পড়া চলবে —
+  // (#110) per-account ফলাফল entries-এ থাকে; presence listing আজও সাইলেন্টলি ডিগ্রেড করে।
   const clients: PresenceStatusEntry[] = [...freshest.entries()]
     .map(([key, record]) => ({
       ...record,
