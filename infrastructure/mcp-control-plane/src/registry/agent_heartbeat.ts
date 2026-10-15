@@ -29,7 +29,7 @@ import Redis from "ioredis";
 import {
   activeAccountChain,
   buildAccountChain,
-  RedisQuotaExhaustedError,
+  markAccountQuotaExhausted,
   responseIndicatesQuotaExhaustion,
   runWithAccountChain,
   type RedisAccountConfig,
@@ -122,13 +122,12 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
-      // বাংলা মন্তব্য (#2613 R2): কোটা-ত্রুটি সনাক্ত হলে cooldown-marking এখন
-      // runWithAccountChain ইঞ্জিন করে (#110) — client শুধু quota-শেপড error
-      // throw করে, একটাই marking policy থাকে।
+      // বাংলা মন্তব্য (#2613 R2): কোটা-ত্রুটি সনাক্ত করে account-কে UTC রিসেট
+      // পর্যন্ত cooldown-এ ফেলি — পরের মুহূর্তেই chain এই account skip করবে।
       const errText = await res.text().catch(() => "");
       if (responseIndicatesQuotaExhaustion(res.status, errText)) {
-        throw new RedisQuotaExhaustedError(
-          account.label,
+        markAccountQuotaExhausted(account.label);
+        throw new Error(
           `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
         );
       }
@@ -137,8 +136,8 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
     const payload = (await res.json()) as { result?: unknown; error?: string };
     if (payload.error) {
       if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
-        throw new RedisQuotaExhaustedError(
-          account.label,
+        markAccountQuotaExhausted(account.label);
+        throw new Error(
           `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
         );
       }
@@ -293,31 +292,18 @@ export async function recordHeartbeat(
 
   // বাংলা মন্তব্য (#2613 R2): কোটা cooldown-এ থাকা account-এ একটিও request
   // না পাঠিয়ে সরাসরি active chain (cooldown-মুক্ত) থেকে write শুরু করি।
-  // #110: chain-walk + quota-marking এখন একটাই ইঞ্জিন (runWithAccountChain) —
-  // কপি করা loop নেই; ব্যর্থতার বার্তা আগের মতোই (byte-identical)।
-  const chainLength = chain.length;
-  const { account } = await runWithAccountChain(
-    async (acct) => {
-      const client = makeClient(acct);
-      // Primary write (issue #1994): write to hash for single-command HGETALL reading
-      await client.hset(HEARTBEAT_HASH_KEY, input.slot, value);
-      // Dual-write: maintain individual key with TTL for legacy readers
-      await client.setEx(
-        heartbeatKey(input.slot),
-        HEARTBEAT_TTL_SECONDS,
-        value,
-      ).catch(() => {});
-      return acct.label;
-    },
-    {
-      aggregateError: (attempts) =>
-        new Error(
-          `All ${chainLength} Redis account(s) rejected the heartbeat write: ${attempts
-            .map((a) => a.error ?? "unknown error")
-            .join(" | ")}`,
-        ),
-    },
-  );
+  // #110: the walk + canonical quota-marking live in runWithAccountChain().
+  const { account } = await runWithAccountChain(async (chainAccount) => {
+    const client = makeClient(chainAccount);
+    // Primary write (issue #1994): write to hash for single-command HGETALL reading
+    await client.hset(HEARTBEAT_HASH_KEY, input.slot, value);
+    // Dual-write: maintain individual key with TTL for legacy readers
+    await client.setEx(
+      heartbeatKey(input.slot),
+      HEARTBEAT_TTL_SECONDS,
+      value,
+    ).catch(() => {});
+  }, { context: "agent heartbeat write" });
   return {
     ok: true,
     slot: record.slot,
