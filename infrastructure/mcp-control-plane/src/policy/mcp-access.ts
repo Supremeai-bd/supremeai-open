@@ -40,7 +40,7 @@ export const publicSafeCapabilities: readonly McpCapabilityMetadata[] = [
   { name: "system.health", kind: "tool", access: "safe", requiredScope: "health:read", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
   { name: "system.summary", kind: "tool", access: "safe", requiredScope: "system:read", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
   // #123: Bridge onboarding surface — the zero-credential front door for
-  // external agents working from `paykaribazaronline/supremeai-open`.
+  // external agents working from `Supremeai-bd/supremeai-open`.
   // bridge.guide is pure static contract data (zero network); the queue tools
   // only read PUBLIC repo content (issues) and never accept or return
   // credentials. Read-only + public ⇒ callable by every access mode.
