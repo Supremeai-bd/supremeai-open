@@ -15,7 +15,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { z } from "zod";
 import { env } from "./lib/env.js";
 import { registerAllTools } from "./tools/index.js";
-import { RequestContextStore } from "./policy/auth.context.js";
+import { RequestContextStore, type UserRole } from "./policy/auth.context.js";
 import { getServiceDescriptors } from "./service-circles.js";
 import { nowTimestamp, timestampDetails, withTimestamp } from "./lib/timestamps.js";
 import { approveClient, changeClientProfile, changeClientProvider, changeClientRole, countClientsByTenant, defaultClientScopes, getClient, initClientRegistry, listClients, registerClient, resolveClient, revokeClient, rotateClient, roleAllows, scopeAllows, type ExternalClient } from "./policy/client-registry.js";
@@ -495,18 +495,15 @@ function safeEqual(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// #110: wire-role union mirrors the policy 6-tier ladder (+ null = anonymous).
-// বাংলা মন্তব্য: লোকাল ইউনিয়নটি এখন পলিসি স্তরের ৬-টিয়ার ল্যাডারের প্রতিফলন।
-export type UserRole =
-  | "supremeadmin"
-  | "admin"
-  | "agent"
-  | "repo_viewer"
-  | "restricted_viewer"
-  | "viewer"
-  | null;
+// #112: UserRole has a single definition in policy/auth.context.ts (the #110
+// 6-tier ladder). The wire-level "anonymous" state is expressed at the USE
+// SITE as `UserRole | null`, not baked into the type — the old local
+// duplicate (`+ null`) had already drifted from the policy ladder.
+// বাংলা মন্তব্য: লোকাল ডুপ্লিকেট ইউনিয়ন মুছে SSOT re-export — null এখন শুধু
+// ব্যবহারস্থলে (anonymous caller) প্রকাশ করা হয়।
+export type { UserRole };
 
-function resolveRole(req: IncomingMessage): UserRole {
+function resolveRole(req: IncomingMessage): UserRole | null {
   let token = "";
   const authHeader = req.headers.authorization ?? "";
   const prefix = "Bearer ";
@@ -541,7 +538,7 @@ function resolveRole(req: IncomingMessage): UserRole {
  * tenant admin token  → управляет своим tenant через заголовок x-tenant-id.
  */
 interface CallerContext {
-  role: UserRole;
+  role: UserRole | null;
   client?: ExternalClient;
   tenantId: string;
   isGlobalAdmin: boolean;
