@@ -88,12 +88,21 @@ jobs:
           python scripts/agents/continuous_agent_loop.py $ARGS
 
       # AGENT_RULES.md §10 — scheduled jobs must never silently disappear.
-      # The generated PR draft is persisted as run evidence even if a later step fails.
-      - name: Record scheduled-run evidence (PR draft artifact)
+      # #89: real verify-evidence artifact — the --verify-only transcript
+      # (ends with the CONTRACT_VERSION parity marker per AGENT_LOOP_SPEC §4b)
+      # is captured even when the loop step itself fails (replaces the dead
+      # pre-#63 draft-file upload — that writer no longer exists).
+      - name: Capture verification evidence (always)
+        if: always()
+        run: |
+          set -o pipefail
+          python scripts/agents/continuous_agent_loop.py --verify-only 2>&1 | tee agent-loop-verify-evidence.log
+
+      - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agent-loop-pr-draft-${{ github.run_id }}
-          path: .pr_template_draft.md
-          if-no-files-found: ignore
+          name: agent-loop-verify-evidence-${{ github.run_id }}
+          path: agent-loop-verify-evidence.log
+          if-no-files-found: error
           retention-days: 14
