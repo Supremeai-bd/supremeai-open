@@ -1,5 +1,7 @@
 # SupremeAI MCP Control Tower — multi-stage Docker build
-# Build context: infrastructure/mcp-control-plane/ (per docker-compose.yml and CI).
+# Build context: infrastructure/mcp-control-plane/ (this folder — the public repo
+# has no root docker-compose.yml; build with:
+#   docker build -f infrastructure/mcp-control-plane/Dockerfile infrastructure/mcp-control-plane)
 # Runtime: node dist/index.js — Streamable-HTTP MCP server.
 # Port: MCP_PORT (default 3771). Health: GET /health -> 200 JSON (see src/index.ts).
 # All runtime imports (src/lib/**, src/tools/**, src/policy/**, src/events/**,
@@ -15,9 +17,10 @@
 # SUPREMEAI_BACKEND_DIR points the adapter at that path.
 
 # ── Stage 1: builder (Node/TypeScript) ────────────────────────────────────────
-# INF-16 fix (issue #562): both stages must run the SAME Node major as CI and
-# the monorepo engines — .github/workflows/ci-mcp-build.yml sets NODE_VERSION: '24'
-# and root package.json engines.node is ">=24.0.0". Testing the build on Node 24
+# INF-16 fix (issue #562): both stages must run the SAME Node major as the
+# verification gate — this repo's ci.yml `tower-verify` job pins Node 24.
+# (The original monorepo-referenced note pointed at paths that do not exist in
+# this repository — corrected with #86.) Testing the build on Node 24
 # while shipping node:20-alpine meant Node 22+/24-only APIs (node:sqlite,
 # webcrypto additions, RegExp.escape) passed CI but broke at runtime.
 FROM node:24-alpine AS builder

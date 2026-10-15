@@ -43,6 +43,36 @@ jobs:
           except ValueError:
               pass"
 
+  tower-verify:
+    name: Tower TS Verification (typecheck + contract-safe tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/mcp-control-plane
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: infrastructure/mcp-control-plane/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # #86: the live Tower deployment source previously shipped with ZERO
+      # TypeScript verification — this gate closes that gap. Runs the
+      # credentials-free test set (test:tower-ci); service/credential-dependent
+      # suites are tracked in the follow-up issue linked from PR #86.
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Contract-safe Tower test suite
+        run: npm run test:tower-ci
+
   secret-scan:
     name: Secret Scanning
     runs-on: ubuntu-latest
