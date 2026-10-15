@@ -1,4 +1,5 @@
 node_modules/
+dist/
 
 #69: bridge intake durable outbox
 var/
