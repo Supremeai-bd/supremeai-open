@@ -1,3 +1,5 @@
+import { redactSecretsInText } from "./lib/masking.js";
+
 export type ServiceCircle = "ai" | "infrastructure" | "data" | "security" | "integration";
 export type ServiceState = "registered" | "configured" | "authenticated" | "reachable" | "healthy" | "degraded" | "disabled";
 
@@ -40,7 +42,11 @@ export function getServiceDescriptors(): ServiceDescriptor[] {
 }
 
 export function redactDiagnostic(value: unknown): string {
-  return String(value ?? "unknown").replace(/(token|key|secret|password|authorization)[^,;\s]*/gi, "$1=[redacted]");
+  // #117: single redaction implementation — delegate to the masking SSOT
+  // (src/lib/masking.ts) instead of maintaining a parallel key-name-only
+  // regex here. Value-shaped secrets (s*k-…, JWTs, connection URLs) are now
+  // masked too, and non-secret text passes through unchanged.
+  return redactSecretsInText(String(value ?? "unknown"));
 }
 
 export function getServiceDescriptor(provider: string): ServiceDescriptor | undefined {
