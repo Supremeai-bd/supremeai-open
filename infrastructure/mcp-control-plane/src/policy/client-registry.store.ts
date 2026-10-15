@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig, buildAccountChain } from "../lib/redis_chain.js";
+import { buildAccountChain, runWithAccountChain } from "../lib/redis_chain.js";
 
 export interface PersistedClientRecord {
   id: string;
@@ -106,26 +106,14 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
     return buildAccountChain().filter((account) => account.restUrl && account.restToken);
   }
 
-  private async restCall(account: RedisAccountConfig, command: unknown[]): Promise<unknown> {
-    const res = await fetch(account.restUrl as string, {
+  private async restCall(restUrl: string, restToken: string, command: unknown[]): Promise<unknown> {
+    const res = await fetch(restUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${account.restToken}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${restToken}`, "Content-Type": "application/json" },
       body: JSON.stringify(command),
       signal: AbortSignal.timeout(UpstashClientRegistryStore.REST_TIMEOUT_MS),
     });
-    if (!res.ok) {
-      // #110: quota-shape detection aligned with the other routed paths —
-      // the RedisQuotaExhaustedError is what runWithAccountChain marks into
-      // cooldown. (This store previously had NO quota marking at all.)
-      const errText = await res.text().catch(() => "");
-      if (responseIndicatesQuotaExhaustion(res.status, errText)) {
-        throw new RedisQuotaExhaustedError(
-          account.label,
-          `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
-        );
-      }
-      throw new Error(`Upstash REST returned HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`Upstash REST returned HTTP ${res.status}`);
     const payload = (await res.json()) as { result?: unknown; error?: string };
     if (payload.error) throw new Error(`Upstash error: ${payload.error}`);
     return payload.result;
@@ -136,40 +124,31 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
   }
 
   async loadAsync(): Promise<PersistedClientRecord[]> {
-    // #110: the hydration walk routes through the single account-chain engine
-    // (REST-only via skip), replacing the hand-rolled loop. The fail-closed
-    // semantics and error text below are byte-identical to the old loop: an
-    // UNREACHABLE store must never look like an empty one (#48 Invariant 5).
-    const chain = this.chain();
-    const chainLength = chain.length;
+    // #110: the walk + canonical quota-marking live in runWithAccountChain()
+    // (active/cooldown-free accounts first; a cooldown-only chain fail-opens
+    // inside the helper back to the full chain, so hydration still attempts
+    // every account before declaring the store unverifiable).
     try {
-      const { value } = await runWithAccountChain(
-        async (account) => {
-          const result = await this.restCall(account, ["GET", this.key]);
-          if (result == null) return [] as PersistedClientRecord[]; // reachable account, fresh registry — nothing stored yet
-          const parsed: unknown = JSON.parse(String(result));
-          if (!Array.isArray(parsed)) throw new Error("stored registry is not an array");
-          this.snapshot = parsed as PersistedClientRecord[];
-          this.lastStableJson = stableJson(this.snapshot);
-          return this.load();
-        },
-        {
-          skip: (account) => !account.restUrl || !account.restToken,
-          aggregateError: (attempts) =>
-            new Error(
-              `all ${chainLength} chain account(s) failed: ${attempts
-                .map((a) => `${a.account}: ${a.error ?? "unknown error"}`)
-                .join(" | ")}`,
-            ),
-        },
-      );
-      return value;
+      const { result } = await runWithAccountChain(async (account) => {
+        const stored = await this.restCall(account.restUrl as string, account.restToken as string, ["GET", this.key]);
+        if (stored == null) return []; // reachable account, fresh registry — nothing stored yet
+        const parsed: unknown = JSON.parse(String(stored));
+        if (!Array.isArray(parsed)) throw new Error("stored registry is not an array");
+        this.snapshot = parsed as PersistedClientRecord[];
+        this.lastStableJson = stableJson(this.snapshot);
+        return this.load();
+      }, { context: "client-registry hydration" });
+      return result;
     } catch (err) {
-      const reason = chainLength === 0
+      // #48 Invariant 5 (fail-closed): an UNREACHABLE store must never look
+      // like an empty one — authorization paths (refreshRegistryFromStore)
+      // treat a throw as "store unverifiable" and deny privileged operations.
+      // Boot-time callers (initClientRegistry) catch this and continue with
+      // the last-known snapshot, so startup behavior is unchanged.
+      const raw = err instanceof Error ? err.message : String(err);
+      const reason = raw.includes("No Redis configuration")
         ? "no reachable Upstash account configured (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN)"
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        : `all chain account(s) failed: ${raw}`;
       console.error(`[client-registry] hydration failed (${reason})`);
       throw new Error(`Client registry store unverifiable: ${reason}`);
     }
@@ -206,7 +185,9 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
         if (chain.length === 0) return;
         const body = JSON.stringify(this.snapshot);
         const results = await Promise.allSettled(
-          chain.map((account) => this.restCall(account, ["SET", this.key, body])),
+          chain.map((account) =>
+            this.restCall(account.restUrl as string, account.restToken as string, ["SET", this.key, body]),
+          ),
         );
         failures = results
           .map((r, i) => (r.status === "rejected" ? `${chain[i].label}: ${String(r.reason)}` : null))
