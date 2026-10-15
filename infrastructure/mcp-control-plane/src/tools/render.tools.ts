@@ -1,6 +1,39 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { listServices, getServiceHealth, getDeployLogs, getServiceEnvVars } from "../adapters/render/index.js";
+import {
+  listServices,
+  getServiceHealth,
+  getDeployLogs,
+  getServiceEnvVars,
+  listLogs,
+  RenderLogFilters,
+} from "../adapters/render/index.js";
+
+/** Shared shape for the render.get_logs optional filter block. */
+const renderLogFiltersSchema = {
+  startTime: z
+    .string()
+    .optional()
+    .describe("ISO 8601 window start (default: 15 minutes ago)"),
+  endTime: z.string().optional().describe("ISO 8601 window end (default: now)"),
+  level: z
+    .enum(["debug", "info", "warning", "error"])
+    .optional()
+    .describe("Severity filter (default: all levels)"),
+  type: z
+    .enum(["app", "build"])
+    .optional()
+    .describe("app = runtime logs, build = deploy/build logs (default: both). Public HTTP request logs need a Render Pro workspace and are intentionally not exposed."),
+  text: z.string().optional().describe("Substring search inside log messages"),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe("Max entries per page (default 50, API cap 100)"),
+  cursor: z.string().optional().describe("Pagination cursor returned by a previous call"),
+};
 
 export async function registerRenderTools(server: McpServer): Promise<void> {
   server.tool(
@@ -48,16 +81,18 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
 
   server.tool(
     "render.get_logs",
-    "Get the latest deploy logs for a specific Render service.",
+    "Query REAL Render application/build logs for a service (GET /v1/logs — not deploy metadata). Supports time window, severity, log type and text search; output is secret-sanitized and read-only.",
     {
       accountId: z.string().describe("The account ID (e.g. render-primary)"),
       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
+      ...renderLogFiltersSchema,
     },
-    async ({ accountId, serviceId }) => {
+    async ({ accountId, serviceId, startTime, endTime, level, type, text, limit, cursor }) => {
       try {
-        const logs = await getDeployLogs(accountId, serviceId);
+        const filters: RenderLogFilters = { startTime, endTime, level, type, text, limit, cursor };
+        const result = await listLogs(accountId, serviceId, filters);
         return {
-          content: [{ type: "text", text: JSON.stringify(logs, null, 2) }],
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         };
       } catch (err) {
         return {
