@@ -115,6 +115,20 @@ export const env = {
     get repo(): string { return optional("GITHUB_REPO", "Supremeai-bd/supremeai"); },
   },
 
+  // ── Event-driven bridge intake (#69)
+  // Arms the webhook → workflow-dispatch wake-up path. Fail-closed: disabled
+  // unless explicitly enabled. See docs/BRIDGE_INTAKE.md for activation steps.
+  bridgeIntake: {
+    get enabled(): boolean { return process.env.BRIDGE_INTAKE_ENABLED === "true"; },
+    get repo(): string { return optional("BRIDGE_INTAKE_REPO", "Supremeai-bd/supremeai-open"); },
+    get workflow(): string { return optional("BRIDGE_INTAKE_WORKFLOW", "continuous-agent-loop.yml"); },
+    get ref(): string { return optional("BRIDGE_INTAKE_REF", "main"); },
+    get minIntervalMs(): number { return parseInt(optional("BRIDGE_INTAKE_MIN_INTERVAL_MS", "60000"), 10) || 60000; },
+    get maxAttempts(): number { return parseInt(optional("BRIDGE_INTAKE_MAX_ATTEMPTS", "5"), 10) || 5; },
+    get outboxPath(): string { return optional("BRIDGE_INTAKE_OUTBOX_PATH", "var/bridge-intake-outbox.jsonl"); },
+    get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
+  },
+
   // ── Cloudflare (5-account federation pool)
   cloudflare: {
     get apiToken(): string | undefined { return process.env.CLOUDFLARE_API_TOKEN; },
