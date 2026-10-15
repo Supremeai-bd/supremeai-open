@@ -379,28 +379,59 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
 
 
 def pick_next_issue() -> str | None:
-    """Fetch the highest priority unclaimed open issue from GitHub."""
-    code, out, _ = run_cmd(["gh", "issue", "list", "--repo", UPSTREAM_REPO, "--state", "open", "--limit", "20", "--json", "number,title,labels"])
+    """Fetch the highest priority claimable open issue from GitHub.
+
+    Selection policy (#88):
+      - Claim-gated: only issues carrying ``status:unclaimed`` are eligible;
+        claimed/in-progress, sequence-held and blocked boards are never
+        (re)dispatched.
+      - Whole-board scope: pagination limit high enough that truncation cannot
+        starve old issues (verified: board regularly holds 35+ open issues).
+      - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose in
+        titles can no longer outrank a real priority label; age (lowest issue
+        number) breaks ties per AGENT_RULES.md §5.
+    """
+    code, out, _ = run_cmd([
+        "gh", "issue", "list",
+        "--repo", UPSTREAM_REPO,
+        "--state", "open",
+        "--limit", "200",
+        "--json", "number,title,labels",
+    ])
     if code != 0 or not out.strip():
         return None
     try:
         issues = json.loads(out)
 
-        def priority_key(item: dict[str, Any]) -> int:
-            title = item.get("title", "").lower()
-            labels = [l.get("name", "").lower() for l in item.get("labels", [])] if isinstance(item.get("labels"), list) else []
-            combined = f"{title} {' '.join(labels)}"
-            if "p0" in combined or "critical" in combined:
-                return 0
-            if "p1" in combined or "high" in combined:
-                return 1
-            if "p2" in combined or "medium" in combined:
-                return 2
-            if "p3" in combined or "low" in combined:
-                return 3
-            return 4
+        CLAIMABLE_LABEL = "status:unclaimed"
+        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream"}
 
-        sorted_issues = sorted(issues, key=priority_key)
+        def label_names(item: dict[str, Any]) -> list[str]:
+            labels = item.get("labels")
+            if not isinstance(labels, list):
+                return []
+            return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+
+        def is_claimable(item: dict[str, Any]) -> bool:
+            names = label_names(item)
+            if CLAIMABLE_LABEL not in names:
+                return False
+            return not (EXCLUDED_LABELS & set(names))
+
+        # Explicit priority map — LABELS ONLY (title prose must not influence).
+        PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
+
+        def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+            names = label_names(item)
+            tier = 4  # unlabeled sorts last
+            for marker, rank in PRIORITY_MAP:
+                if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
+                    tier = rank
+                    break
+            return (tier, int(item.get("number", 0)))  # number ASC = oldest first
+
+        candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
+        sorted_issues = sorted(candidates, key=priority_key)
         if sorted_issues:
             return str(sorted_issues[0].get("number"))
     except Exception:

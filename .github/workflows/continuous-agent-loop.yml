@@ -64,12 +64,14 @@ jobs:
       # is actionable when evidence confirms it… No-actionable-finding must be
       # recorded explicitly without creating issue storms." An empty upstream
       # board is a recorded no-op, NOT a red run and NOT a silent skip.
-      - name: Board pre-check (explicit no-op on empty board)
+      # #88: has_work reflects CLAIMABLE work only (status:unclaimed, whole
+      # board) so the cron no-ops when every open issue is already claimed.
+      - name: Board pre-check (explicit no-op on empty or fully-claimed board)
         id: board
         run: |
           set -euo pipefail
-          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 1 --json number,title)
-          echo "board snapshot: $BOARD"
+          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title)
+          echo "claimable-board snapshot: $BOARD"
           if [ "$BOARD" = "[]" ]; then
             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
             echo "has_work=false" >> "$GITHUB_OUTPUT"
