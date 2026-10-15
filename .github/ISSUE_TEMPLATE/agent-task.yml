@@ -19,18 +19,45 @@ body:
   - type: dropdown
     id: target_repo
     attributes:
-      label: Target Repository
+      label: Primary Group (Target Repository)
       description: Which repository in the SupremeAI Federation should receive this change?
       options:
         - Supremeai-bd/supremeai-open
         - Supremeai-bd/supremeai
+        - Supremeai-bd/supremeai-command
+        - Supremeai-bd/supremeai-skills
+        - Supremeai-bd/supremeai-vscode
+        - Supremeai-bd/supremeai-agents
+        - Supremeai-bd/supremeai-browser
         - Supremeai-bd/supremeai-api
-        - Supremeai-bd/supremeai-archive
-        - Supremeai-bd/supremeai-core
-        - Supremeai-bd/supremeai-infrastructure
-        - Supremeai-bd/supremeai-mcp-control-plane
-        - Supremeai-bd/supremeai-sdk
         - Supremeai-bd/supremeai-studio
+        - Supremeai-bd/supremeai-infrastructure
+        - Supremeai-bd/supremeai-core
+        - Supremeai-bd/supremeai-sdk
+        - Supremeai-bd/supremeai-mcp-control-plane
+        - Supremeai-bd/supremeai-archive
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sub_group
+    attributes:
+      label: Sub-Group / Functional Domain (Area)
+      description: Cross-cutting functional domain for ownership, labeling, and routing.
+      options:
+        - "security (Authentication, key-plane, boundaries, vulnerability)"
+        - "ci (Workflows, gates, lint, testing matrix)"
+        - "gateway (API endpoints, routing, provider failover)"
+        - "governance (Constitution, rules, templates, policies, ADRs)"
+        - "agent-orchestration (Lifecycle, loop, roles, worker dispatch)"
+        - "mcp-tower (MCP tools, JSON-RPC, SSE bridge, server endpoints)"
+        - "core-engine (Intelligence models, state machine, planning)"
+        - "frontend-ui (Studio, dashboard, visual UX, components)"
+        - "telemetry (Heartbeats, logging, watcher, metrics)"
+        - "memory (Archive, semantic memory, context history)"
+        - "llm-routing (Dynamic router, provider fallback, model selection)"
+        - "infra-ops (Docker, Terraform, actions runners, deployment configs)"
+        - "docs (Documentation, ecosystem maps, contributor guides)"
     validations:
       required: true
 
