@@ -15,12 +15,7 @@
  * the ORCHESTRATOR_ROLE_POOLS env JSON without code changes.
  */
 
-import {
-  activeAccountChain,
-  RedisQuotaExhaustedError,
-  responseIndicatesQuotaExhaustion,
-  runWithAccountChain,
-} from "../lib/redis_chain.js";
+import { runWithAccountChain } from "../adapters/redis/index.js";
 import {
   listHeartbeats,
   type HeartbeatStatusEntry,
@@ -163,96 +158,22 @@ type DispatchStore = {
   setEx(key: string, ttlSeconds: number, value: string): Promise<void>;
 };
 
+/**
+ * Dispatch state store — routes every get/setEx through the single shared
+ * account-chain walk (#110): cooldown-aware auto-rotation, canonical quota
+ * marking, aggregated failure reporting. Previously this module hand-rolled
+ * its own REST fetch loop (quota-marking copy #3, last-error-only throw) and
+ * a no-walk TCP hardcode — both gone; one rotation policy tower-wide.
+ */
 export async function makeDispatchStore(): Promise<DispatchStore> {
-  const chain = activeAccountChain();
-  if (chain.length === 0) {
-    throw new Error("No Redis configuration — orchestrator dispatch state unavailable");
-  }
-
-  // বাংলা মন্তব্য (#2613 R2): আগে এখানে chain[0] (primary) hardcode ছিল —
-  // primary-র দৈনিক কোটা শেষ হলে পুরো orchestrator dispatch-path ভেঙে
-  // যেত। এখন প্রতিটি call-এ active (cooldown-মুক্ত) account-দের মধ্যে
-  // chain-walk করা হয় — কোটা-ত্রুটি ধরা পড়লেই ওই account UTC রিসেট
-  // পর্যন্ত cooldown-এ যায় ও পরের account-এ shift হয় (#2452 free-tier fix)।
-  const restAccounts = chain.filter((account) => account.restUrl && account.restToken);
-  if (restAccounts.length > 0) {
-    const call = async (body: unknown[]): Promise<unknown> => {
-      // #110: the chain walk + quota marking is now the single engine
-      // (runWithAccountChain) — the hand-rolled loop (with its own lastErr
-      // bookkeeping and inline markAccountQuotaExhausted calls) is gone.
-      // Aggregation semantics preserved: rethrow the LAST failure, exactly
-      // like the old loop did.
-      try {
-        const { value } = await runWithAccountChain(
-          async (account) => {
-            const res = await fetch(account.restUrl as string, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${account.restToken}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(body),
-              signal: AbortSignal.timeout(10_000),
-            });
-            if (!res.ok) {
-              const errText = await res.text().catch(() => "");
-              if (responseIndicatesQuotaExhaustion(res.status, errText)) {
-                throw new RedisQuotaExhaustedError(
-                  account.label,
-                  `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
-                );
-              }
-              throw new Error(`Upstash REST [${account.label}] HTTP ${res.status}`);
-            }
-            const payload = (await res.json()) as { result?: unknown; error?: string };
-            if (payload.error) {
-              if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
-                throw new RedisQuotaExhaustedError(
-                  account.label,
-                  `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
-                );
-              }
-              throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
-            }
-            return payload.result;
-          },
-          {
-            skip: (account) => !account.restUrl || !account.restToken,
-            aggregateError: (attempts) => {
-              const last = attempts[attempts.length - 1]?.error;
-              return last
-                ? new Error(last)
-                : new Error("orchestrator dispatch: all chain accounts failed");
-            },
-          },
-        );
-        return value;
-      } catch (err) {
-        throw err instanceof Error
-          ? err
-          : new Error("orchestrator dispatch: all chain accounts failed");
-      }
-    };
-    return {
-      get: async (key) => (await call(["GET", key])) as string | null,
-      setEx: async (key, ttl, value) => {
-        await call(["SET", key, value, "EX", String(ttl)]);
-      },
-    };
-  }
-  const tcpAccount = chain.find((account) => account.tcpUrl);
-  if (!tcpAccount) {
-    throw new Error("No Redis configuration — orchestrator dispatch state unavailable");
-  }
-  const { Redis } = await import("ioredis");
-  const client = new (Redis as unknown as new (url: string, opts: object) => {
-    get(key: string): Promise<string | null>;
-    set(key: string, value: string, mode: "EX", ttl: number): Promise<"OK">;
-  })(tcpAccount.tcpUrl as string, { maxRetriesPerRequest: 2, lazyConnect: false });
+  const chainOpts = {
+    opLabel: "orchestrator dispatch state",
+    noConfigMessage: "No Redis configuration — orchestrator dispatch state unavailable",
+  } as const;
   return {
-    get: async (key) => client.get(key),
-    setEx: async (key, ttl, value) => {
-      await client.set(key, value, "EX", ttl);
+    get: async (key) => (await runWithAccountChain((c) => c.get(key), chainOpts)).result,
+    setEx: async (key, ttlSeconds, value) => {
+      await runWithAccountChain((c) => c.setEx(key, ttlSeconds, value), chainOpts);
     },
   };
 }
