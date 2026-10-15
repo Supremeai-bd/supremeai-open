@@ -83,6 +83,7 @@ jobs:
     name: "🛬 Autonomous Auto-Landing"
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # AGENT_RULES.md §12: one merge lock. Serialize landings; never cancel a
     # merge mid-flight (a half-landed state is worse than a queued one).
     concurrency:
@@ -97,18 +98,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
           DISPATCH_PR: ${{ github.event.inputs.pr_number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           PR_NUM=""
           if [ -n "$DISPATCH_PR" ]; then
             PR_NUM="$DISPATCH_PR"
           else
-            # Extract PR number from workflow_run payload or head branch
-            HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
-            PR_NUM=$(gh pr list --repo "${{ github.repository }}" --head "$HEAD_BRANCH" --state open --json number -q '.[0].number')
+            # Deterministic PR resolution by head commit SHA: works for fork
+            # PRs and never confuses reused branch names (the old head-branch
+            # match failed on both). The SHA comes from the signed event
+            # payload, but validate its format before inlining it into the
+            # jq program; ambiguity across multiple open PRs refuses to
+            # merge (fail-closed). Ported from merge-gate.yml (#111).
+            if ! echo "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::Unexpected head SHA format (${HEAD_SHA:-empty}); refusing heuristic PR resolution (fail-closed)."
+              echo "has_pr=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            MATCHES=$(gh pr list --repo "${{ github.repository }}" --state open --limit 200 \
+              --json number,headRefOid \
+              -q "[.[] | select(.headRefOid == \"$HEAD_SHA\") | .number]")
+            COUNT=$(echo "$MATCHES" | jq 'length')
+            if [ "$COUNT" -gt 1 ]; then
+              echo "::error::Ambiguous target: ${COUNT} open PRs share head SHA ${HEAD_SHA}. Refusing to auto-merge (fail-closed)."
+              echo "has_pr=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            PR_NUM=$(echo "$MATCHES" | jq -r '.[0] // empty')
           fi
 
-          if [ -z "$PR_NUM" ] || [ "$PR_NUM" = "null" ]; then
-            echo "No open PR associated with this run (branch: ${{ github.event.workflow_run.head_branch }}). Skipping."
+          if [ -z "$PR_NUM" ]; then
+            echo "No open PR associated with this run (head SHA: ${HEAD_SHA:-n/a}). Skipping."
             echo "has_pr=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -126,45 +146,62 @@ jobs:
         run: |
           echo "Evaluating PR #${PR_NUM} for autonomous auto-merge..."
 
-          # Fetch PR status and checks
-          PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json isDraft,mergeable,state,statusCheckRollup)
-          IS_DRAFT=$(echo "$PR_JSON" | jq -r '.isDraft')
-          MERGEABLE=$(echo "$PR_JSON" | jq -r '.mergeable')
-          STATE=$(echo "$PR_JSON" | jq -r '.state')
-
-          if [ "$STATE" != "OPEN" ]; then
-            if [ "$STATE" = "MERGED" ]; then
-              # Reconciliation channel (was the old dispatcher's
-              # workflow_dispatch): bridge orders exist only for landed
-              # patches, so an already-merged PR is dispatched, never
-              # re-merged. Nothing to do here beyond releasing the dispatch.
+          # Already-merged reconciliation channel (was the old dispatcher's
+          # workflow_dispatch): bridge orders exist only for landed patches,
+          # so an already-merged PR is dispatched, never re-merged. Release
+          # the dispatch and stop before mergeability polling.
+          STATE_NOW=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json state -q '.state')
+          if [ "$STATE_NOW" != "OPEN" ]; then
+            if [ "$STATE_NOW" = "MERGED" ]; then
               echo "PR #${PR_NUM} is already MERGED — dispatch-only reconciliation."
               echo "merged=dispatch-only" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "PR #${PR_NUM} is not open (state: $STATE). Skipping."
+            echo "PR #${PR_NUM} is not open (state: $STATE_NOW). Skipping."
             exit 0
           fi
 
-          if [ "$IS_DRAFT" = "true" ]; then
-            echo "PR #${PR_NUM} is marked as draft. Skipping auto-merge."
-            exit 0
-          fi
+          # Mergeability is computed asynchronously by GitHub — UNKNOWN
+          # (recompute in flight) must never pass the gate. Poll until a
+          # decision exists; give up fail-closed if it never resolves.
+          # Ported from merge-gate.yml (#111).
+          MERGEABLE="UNKNOWN"
+          for attempt in $(seq 1 24); do
+            PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json isDraft,mergeable,state)
+            if [ "$(echo "$PR_JSON" | jq -r '.state')" != "OPEN" ]; then
+              echo "PR #${PR_NUM} is not open. Skipping."
+              exit 0
+            fi
+            if [ "$(echo "$PR_JSON" | jq -r '.isDraft')" = "true" ]; then
+              echo "PR #${PR_NUM} is marked as draft. Skipping."
+              exit 0
+            fi
+            MERGEABLE=$(echo "$PR_JSON" | jq -r '.mergeable')
+            if [ "$MERGEABLE" != "UNKNOWN" ]; then break; fi
+            sleep 5
+          done
 
           if [ "$MERGEABLE" = "CONFLICTING" ]; then
             echo "::error::PR #${PR_NUM} has merge conflicts. Cannot auto-merge."
             gh pr comment "$PR_NUM" --repo "${{ github.repository }}" --body "## 🚦 Merge Gate — **BLOCKED**\n\nMerge conflicts detected against \`main\`. Please rebase and resolve conflicts."
             exit 1
           fi
-
-          # Verify all checks have passed (no failing or pending checks)
-          FAILING_CHECKS=$(echo "$PR_JSON" | jq -r '[.statusCheckRollup[]? | select(.conclusion == "FAILURE" or .conclusion == "TIMED_OUT")] | length')
-          if [ "$FAILING_CHECKS" -gt 0 ]; then
-            echo "::error::PR #${PR_NUM} has failing checks ($FAILING_CHECKS failures). Holding landing."
+          if [ "$MERGEABLE" = "UNKNOWN" ]; then
+            echo "::error::PR #${PR_NUM} mergeability stayed UNKNOWN after polling — refusing to merge on unknown state (fail-closed)."
             exit 1
           fi
 
-          echo "✅ All required checks passed! Executing autonomous squash-merge..."
+          # The race fix: wait for EVERY check on the PR head to reach a
+          # terminal state and fail on any failure. The triggering CI run is
+          # already green at this point; this covers the separately-triggered
+          # guard jobs that a snapshot could not see while pending.
+          # Ported from merge-gate.yml (#111).
+          if ! gh pr checks "$PR_NUM" --repo "${{ github.repository }}" --watch --fail-fast --interval 15; then
+            echo "::error::PR #${PR_NUM} checks are failing or incomplete — landing held (fail-closed)."
+            exit 1
+          fi
+
+          echo "✅ All checks green! Executing autonomous squash-merge..."
 
           # Fail-honest merge: the exit code gates everything downstream. A
           # "LANDED" comment plus a bridge dispatch fired after a failed
