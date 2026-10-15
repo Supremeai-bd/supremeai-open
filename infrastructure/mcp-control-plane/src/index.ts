@@ -2,11 +2,19 @@
 /**
  * SupremeAI MCP Control Tower — Main Entry Point
  * Supports both stdio (local: Claude Desktop, Cursor) and HTTP Streamable (remote)
- *
- * Environment loading (#109): ALL environment config — including the single
- * repo-root `.env` load — lives in `lib/env.ts` (SSOT). This file must not
- * parse `process.env` directly; every knob is a validated getter on `env`.
  */
+
+import * as dotenv from "dotenv";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __currentFile = fileURLToPath(import.meta.url);
+const __currentDir = path.dirname(__currentFile);
+// #109: exactly ONE explicit dotenv load — repo-root .env resolved relative to
+// this module (cwd-independent, deterministic precedence). The previous
+// `import "dotenv/config"` (cwd-relative) + this call created an
+// order-dependent dual-source precedence; the repo-root load wins now.
+dotenv.config({ path: path.resolve(__currentDir, "../../../.env") });
 
 import { timingSafeEqual, randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -32,7 +40,6 @@ import { attachDiscoveryFilter, isValidToolProfile } from "./policy/tool-visibil
 import { verifyApprovalLink } from "./policy/approvals/signing.js";
 import { hasWebhookSignature } from "./lib/webhook_signature.js";
 import { registerBridgeIntake } from "./events/bridge_intake.js";
-import { validateRuntimeKnobs } from "./lib/env.js";
 import { pullSecretsIntoProcessEnv } from "./adapters/infisical/index.js";
 import { MemorySubAdapter } from "./adapters/memory/index.js";
 import {
@@ -77,9 +84,12 @@ const mcpRateBuckets = new Map<string, number[]>();
 const toolIdentityRateBuckets = new Map<string, number[]>();
 
 function mcpRateLimitConfig(): { max: number; windowMs: number } {
-  // #109: reads through the validated env SSOT — a garbage value throws
-  // (validateRuntimeKnobs at boot) instead of silently becoming NaN/60.
-  return { max: env.runtime.mcpRateLimitMax, windowMs: env.runtime.mcpRateLimitWindowMs };
+  const max = Number(process.env["MCP_RATE_LIMIT_MAX"] ?? 60);
+  const windowMs = Number(process.env["MCP_RATE_LIMIT_WINDOW_MS"] ?? 60_000);
+  return {
+    max: Number.isFinite(max) && max > 0 ? Math.floor(max) : 60,
+    windowMs: Number.isFinite(windowMs) && windowMs > 0 ? Math.floor(windowMs) : 60_000,
+  };
 }
 
 /**
@@ -133,8 +143,35 @@ function consumeMcpRateLimit(key: string): { allowed: boolean; retryAfterMs: num
 //     MCP_TOOL_RATE_LIMIT_WINDOW_MS (defaults: 20 / 60 000 ms), keyed by
 //     `<tenant>|<principal>||<tool>`. The per-IP limiter above only bounds the
 //     transport; this bounds actual executions per caller per tool.
-// #686 knob defaults now live in lib/env.ts (`env.runtime.*`, #109) —
-// validated positiveInt getters; garbage values fail loudly at boot.
+const TOOL_PAYLOAD_MAX_BYTES_DEFAULT = 262_144;
+const TOOL_RESULT_MAX_BYTES_DEFAULT = 524_288;
+const TOOL_TIMEOUT_MS_DEFAULT = 30_000;
+const TOOL_RATE_LIMIT_MAX_DEFAULT = 20;
+const TOOL_RATE_LIMIT_WINDOW_MS_DEFAULT = 60_000;
+
+function positiveIntEnv(name: string, fallback: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function toolPayloadMaxBytes(): number {
+  return positiveIntEnv("MCP_TOOL_PAYLOAD_MAX_BYTES", TOOL_PAYLOAD_MAX_BYTES_DEFAULT);
+}
+
+function toolResultMaxBytes(): number {
+  return positiveIntEnv("MCP_TOOL_RESULT_MAX_BYTES", TOOL_RESULT_MAX_BYTES_DEFAULT);
+}
+
+function toolTimeoutMs(): number {
+  return positiveIntEnv("MCP_TOOL_TIMEOUT_MS", TOOL_TIMEOUT_MS_DEFAULT);
+}
+
+function toolRateLimitConfig(): { max: number; windowMs: number } {
+  return {
+    max: positiveIntEnv("MCP_TOOL_RATE_LIMIT_MAX", TOOL_RATE_LIMIT_MAX_DEFAULT),
+    windowMs: positiveIntEnv("MCP_TOOL_RATE_LIMIT_WINDOW_MS", TOOL_RATE_LIMIT_WINDOW_MS_DEFAULT),
+  };
+}
 
 /**
  * Rate-limit identity for the per-(identity, tool) limiter: the tenant plus the
@@ -151,7 +188,7 @@ function toolRateLimitIdentity(): string {
 }
 
 function consumeToolRateLimit(toolName: string): { allowed: boolean; retryAfterMs: number } {
-  const { max, windowMs } = { max: env.runtime.toolRateLimitMax, windowMs: env.runtime.toolRateLimitWindowMs };
+  const { max, windowMs } = toolRateLimitConfig();
   return consumeSlidingWindow(toolIdentityRateBuckets, `${toolRateLimitIdentity()}||${toolName}`, max, windowMs);
 }
 
@@ -171,7 +208,7 @@ function toolPayloadError(toolName: string, toolArgs: unknown): string | null {
   } catch {
     return `Invalid arguments for tool '${toolName}': arguments are not JSON-serializable.`;
   }
-  const maxBytes = env.runtime.toolPayloadMaxBytes;
+  const maxBytes = toolPayloadMaxBytes();
   const byteLength = Buffer.byteLength(serialized, "utf8");
   if (byteLength > maxBytes) {
     return `Payload too large for tool '${toolName}': ${byteLength} bytes exceeds the ${maxBytes}-byte limit (MCP_TOOL_PAYLOAD_MAX_BYTES).`;
@@ -203,7 +240,7 @@ function truncateToolResult(toolName: string, result: unknown): unknown {
   }
   if (serialized === undefined) return result;
   const originalBytes = Buffer.byteLength(serialized, "utf8");
-  const maxBytes = env.runtime.toolResultMaxBytes;
+  const maxBytes = toolResultMaxBytes();
   if (originalBytes <= maxBytes) return result;
   const clipped = Buffer.from(serialized, "utf8").subarray(0, maxBytes).toString("utf8");
   const truncatedBytes = originalBytes - maxBytes;
@@ -271,7 +308,7 @@ async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpSer
             isError: true,
             content: [{
               type: "text",
-              text: `Rate limit exceeded for tool '${sanitizedName}' (max ${env.runtime.toolRateLimitMax} per ${env.runtime.toolRateLimitWindowMs}ms per identity). Retry in ~${Math.ceil(toolRate.retryAfterMs / 1000)}s.`,
+              text: `Rate limit exceeded for tool '${sanitizedName}' (max ${toolRateLimitConfig().max} per ${toolRateLimitConfig().windowMs}ms per identity). Retry in ~${Math.ceil(toolRate.retryAfterMs / 1000)}s.`,
             }],
             metadata: { rateLimited: true, tool: sanitizedName, retryAfterMs: toolRate.retryAfterMs },
           };
@@ -286,7 +323,7 @@ async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpSer
         // 4) Hard execution timeout (#686 item 3). The handler promise cannot
         // be cancelled, but the caller is released with a structured isError
         // denial as soon as the budget is spent.
-        const timeoutBudgetMs = env.runtime.toolTimeoutMs;
+        const timeoutBudgetMs = toolTimeoutMs();
         let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
         let result: unknown;
         try {
@@ -495,18 +532,16 @@ function safeEqual(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// #110: wire-role union mirrors the policy 6-tier ladder (+ null = anonymous).
-// বাংলা মন্তব্য: লোকাল ইউনিয়নটি এখন পলিসি স্তরের ৬-টিয়ার ল্যাডারের প্রতিফলন।
-export type UserRole =
-  | "supremeadmin"
-  | "admin"
-  | "agent"
-  | "repo_viewer"
-  | "restricted_viewer"
-  | "viewer"
-  | null;
+// #112: UserRole SSOT — single non-null definition in policy/auth.context.ts.
+// Re-exported here for backward compatibility (nobody imported it from index,
+// but the exported name stays stable). The drifted local union (which included
+// `| null`) is deleted; nullability is expressed at the use sites instead.
+import type { UserRole } from "./policy/auth.context.js";
+export type { UserRole };
 
-function resolveRole(req: IncomingMessage): UserRole {
+// #112: role is null for anonymous callers (resolveRole returns null when no
+// token is presented) — nullability lives at the use site per the SSOT move.
+function resolveRole(req: IncomingMessage): UserRole | null {
   let token = "";
   const authHeader = req.headers.authorization ?? "";
   const prefix = "Bearer ";
@@ -541,7 +576,7 @@ function resolveRole(req: IncomingMessage): UserRole {
  * tenant admin token  → управляет своим tenant через заголовок x-tenant-id.
  */
 interface CallerContext {
-  role: UserRole;
+  role: UserRole | null;
   client?: ExternalClient;
   tenantId: string;
   isGlobalAdmin: boolean;
@@ -625,12 +660,12 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
     slot?: { slotId: string; credentialId?: string };
   }
   const httpSessions = new Map<string, HttpSessionEntry>();
+  const HTTP_SESSION_IDLE_MS_DEFAULT = 3_600_000; // reap sessions idle > 1h
 
   /** Drop idle /mcp sessions so long-lived processes cannot leak transports. */
   function reapIdleHttpSessions(): void {
-    // #109: idle interval through the validated env SSOT (0 = never reap).
-    const idleMs = env.runtime.httpSessionIdleMs;
-    if (idleMs <= 0 || httpSessions.size === 0) return;
+    const idleMs = Number(process.env["MCP_HTTP_SESSION_IDLE_MS"] ?? HTTP_SESSION_IDLE_MS_DEFAULT);
+    if (!Number.isFinite(idleMs) || idleMs <= 0 || httpSessions.size === 0) return;
     const cutoff = Date.now() - idleMs;
     for (const entry of httpSessions.values()) {
       if (entry.lastActivityMs >= cutoff) continue;
@@ -1211,9 +1246,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
     if (pathname === "/sse" && req.method === "GET") {
       // Bounded session table: each SSE session pins a transport + socket.
       // Without a cap, reconnect storms exhaust memory on small instances.
-      // #109: cap through the validated env SSOT (0 = refuse all sessions).
-      const maxSseSessions = env.runtime.maxSseSessions;
-      if (sseSessions.size >= maxSseSessions) {
+      const maxSseSessions = Number(process.env["MCP_MAX_SSE_SESSIONS"] ?? 100);
+      if (Number.isFinite(maxSseSessions) && sseSessions.size >= maxSseSessions) {
         writeJson(res, 503, { error: "Too many concurrent SSE sessions", activeSessions: sseSessions.size });
         return;
       }
@@ -1460,8 +1494,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
 
         // Bounded session table (mirror of the SSE cap) + idle reaping.
         reapIdleHttpSessions();
-        const maxHttpSessions = env.runtime.maxHttpSessions;
-        if (httpSessions.size >= maxHttpSessions) {
+        const maxHttpSessions = Number(process.env["MCP_MAX_HTTP_SESSIONS"] ?? 100);
+        if (Number.isFinite(maxHttpSessions) && httpSessions.size >= maxHttpSessions) {
           writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "Too many concurrent MCP sessions", activeSessions: httpSessions.size }, id: null });
           return;
         }
@@ -1800,10 +1834,7 @@ async function startStdioServer(server: McpServer): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  // #109: single SSOT read for transport + fail-fast validation of every
-  // numeric knob — a garbage value aborts boot here, loudly.
-  validateRuntimeKnobs();
-  const mode = env.runtime.transport;
+  const mode = process.env["MCP_TRANSPORT"] ?? "http";
 
   // #3297 auto-presence: TCP-fallback account-গুলোর জন্য ioredis ctor
   // presence-মডিউলে রেজিস্টার করা (Upstash REST হলে দরকারই পড়ে না)।
@@ -1818,7 +1849,7 @@ async function main(): Promise<void> {
   // Non-blocking start — tools degrade gracefully while it spawns.
   // Disable with SUPREMEAI_DISABLE_MEMORY_SIDECAR=1.
   const memoryAdapter = new MemorySubAdapter();
-  if (!env.disableMemorySidecar) {
+  if (process.env["SUPREMEAI_DISABLE_MEMORY_SIDECAR"] !== "1") {
     memoryAdapter.start().catch((err) =>
       console.error("[Memory Sidecar] Background start failed:", err),
     );
@@ -1830,7 +1861,7 @@ async function main(): Promise<void> {
     process.on("SIGTERM", () => { shutdown(); process.exit(0); });
   }
   // For local dev / debugging only: block until the sidecar is ready.
-  const logReady = env.logMemoryReady;
+  const logReady = process.env["SUPREMEAI_LOG_MEMORY_READY"];
   if (logReady && logReady !== "0" && logReady !== "false") {
     try {
       const tools = await memoryAdapter.listTools();
