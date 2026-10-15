@@ -42,13 +42,20 @@ export async function httpRequest<T = unknown>(
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      const requestBody =
+        body === undefined || body === null
+          ? undefined
+          : typeof body === "string"
+            ? body
+            : JSON.stringify(body);
+
       const res = await fetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",
           ...headers,
         },
-        body: body ? JSON.stringify(body) : undefined,
+        body: requestBody,
         signal: controller.signal,
       });
 

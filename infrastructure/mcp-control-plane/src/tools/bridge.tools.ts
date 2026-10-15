@@ -365,20 +365,21 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         );
 
         if (!refRes.ok) {
-          const createRefRes = await httpRequest(
+          const createRefRes = await httpRequest<{ message?: string }>(
             `https://api.github.com/repos/${repo}/git/refs`,
             {
               method: "POST",
               headers,
-              body: JSON.stringify({
+              body: {
                 ref: `refs/heads/${branchName}`,
                 sha: mainSha,
-              }),
+              },
               timeoutMs: 15_000,
             }
           );
           if (!createRefRes.ok) {
-            return { isError: true, content: [{ type: "text", text: `Failed to create branch ${branchName}: HTTP ${createRefRes.status}` }] };
+            const msg = createRefRes.data?.message ? `: ${createRefRes.data.message}` : "";
+            return { isError: true, content: [{ type: "text", text: `Failed to create branch ${branchName}: HTTP ${createRefRes.status}${msg}` }] };
           }
         }
 
@@ -390,22 +391,23 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           );
           const fileSha = getFileRes.ok ? getFileRes.data?.sha : undefined;
 
-          const putFileRes = await httpRequest(
+          const putFileRes = await httpRequest<{ message?: string }>(
             `https://api.github.com/repos/${repo}/contents/${file.path}`,
             {
               method: "PUT",
               headers,
-              body: JSON.stringify({
+              body: {
                 message: `feat(bridge): ${taskId} — update ${file.path}`,
                 content: Buffer.from(file.content, "utf-8").toString("base64"),
                 branch: branchName,
                 ...(fileSha ? { sha: fileSha } : {}),
-              }),
+              },
               timeoutMs: 15_000,
             }
           );
           if (!putFileRes.ok) {
-            return { isError: true, content: [{ type: "text", text: `Failed to commit ${file.path} to ${branchName}: HTTP ${putFileRes.status}` }] };
+            const msg = putFileRes.data?.message ? `: ${putFileRes.data.message}` : "";
+            return { isError: true, content: [{ type: "text", text: `Failed to commit ${file.path} to ${branchName}: HTTP ${putFileRes.status}${msg}` }] };
           }
         }
 
@@ -436,24 +438,25 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
         ].join("\n");
 
-        const issueRes = await httpRequest<{ number?: number; html_url?: string }>(
+        const issueRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
           `https://api.github.com/repos/${repo}/issues`,
           {
             method: "POST",
             headers,
-            body: JSON.stringify({
+            body: {
               title: `🌉 Bridge Work Order — ${summary} (${taskId})`,
               labels: [BRIDGE_QUEUE_LABEL],
               body: issueBody,
-            }),
+            },
             timeoutMs: 15_000,
           }
         );
 
         if (!issueRes.ok) {
+          const msg = issueRes.data?.message ? `: ${issueRes.data.message}` : "";
           return {
             isError: true,
-            content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}` }],
+            content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}${msg}` }],
           };
         }
 
