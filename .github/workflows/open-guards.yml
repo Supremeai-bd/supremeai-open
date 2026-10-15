@@ -6,7 +6,9 @@
 # Zero-checkout (event-context-only) → প্রতি রান ~৫ সেকেন্ড, public repo-র
 # Actions minute ফ্রি ও আনলিমিটেড। (#107 exception: boundary-sanitization-guard
 # job content inspect করে, তাই checkout লাগে — তবু stdlib-only + <৩ মিনিট।)
-name: 🛡️ Open Guards (branch naming + issue reference + boundary)
+# Loop-contract parity guard (#118): docs/code SSOT sync —
+# scripts/agents/check_loop_contract_parity.py (tiers, guard list, flag table).
+name: 🛡️ Open Guards (branch naming + issue reference + duplicate + boundary + parity)
 
 on:
   pull_request:
@@ -151,3 +153,14 @@ jobs:
 
       - name: Full-tree boundary audit (final fail-closed barrier)
         run: python3 scripts/ci/boundary_sanitization_guard.py --check
+
+  loop-contract-parity-guard:
+    name: "🔁 Loop-Contract Parity Guard (#118)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout repository (parity inspects file bodies)
+        uses: actions/checkout@v4
+
+      - name: Assert loop-contract SSOT parity (tiers, guards, flag table)
+        run: python3 scripts/agents/check_loop_contract_parity.py

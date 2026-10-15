@@ -96,7 +96,7 @@ either list is an ADMIN_DECISION.
 | `--emit-prompt` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
 | `--emit-contract` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
 | `--group <name>` | ✅ new | canonical group override |
-| `--verify-only` | ✅ extended | tiers 1–5 (syntax / JSON / YAML / binary guard / contract guard) + **tier 6** group-registry guard + **tier 7** envelope-determinism check |
+| `--verify-only` | ✅ extended | tiers 1–8 (syntax / JSON / YAML / binary guard / contract guard / group-registry guard / envelope-determinism / machine-path-isolation). **This row is the tier-count SSOT** — parity-enforced by `scripts/agents/check_loop_contract_parity.py` |
 
 Deprecated shims keep running automation alive; removal is a future admin
 decision after private-mirror parity (do not remove in a drive-by change).
@@ -128,7 +128,7 @@ parity contract:
    |------|-------|-----------|
    | `--task-envelope` | shared (canonical) | unified envelope JSON on stdout, banner → stderr |
    | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
-   | `--verify-only` | shared | 3-tier verification + parity marker line |
+   | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
    | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role |
    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
    | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private `continuous-agent-loop.yml` workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
@@ -143,16 +143,27 @@ parity contract:
 
 ## 5. Open Guards — shift-left on free public runtime
 
-`.github/workflows/open-guards.yml` runs **zero-checkout** (~5s) on every PR
+`.github/workflows/open-guards.yml` runs on every PR
 to `supremeai-open` — free, unlimited public Actions minutes — so invalid
 contributions fail at the public boundary instead of burning the private
-repo's limited quota (Free org ≈ 2,000 min/month):
+repo's limited quota (Free org ≈ 2,000 min/month). The first three guards
+are zero-checkout (~5s each); the boundary and parity guards check out the
+tree for content inspection (stdlib-only, still minutes-bounded):
 
 1. **Branch Naming Guard** — head branch must match
    `^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/…`
    (bot branches `dependabot|github-actions|copilot/*` auto-allowed).
 2. **Issue Reference Guard** — PR title/body must contain `#<number>`
    (admin escape hatch: `guard-exempt` label).
+3. **Anti-Duplicate PR Guard** — whole-token `#N` comparison across other
+   open PRs (titles, bodies, fork-branch names); a competing PR for the
+   same issue fails the gate (AGENT_RULES U4).
+4. **Boundary Sanitization Guard (#107)** — guard self-test + PR
+   changed-files scan + full-tree public/private boundary barrier.
+5. **Loop-Contract Parity Guard (#118)** — asserts the loop's contract
+   surface stays in sync: evidence tier count (code emission vs §4),
+   this guard list vs the workflow job set, and no flag-table copies
+   in CONTRIBUTING.
 
 ## 6. Submission flow (Pathway 1 wiring)
 
