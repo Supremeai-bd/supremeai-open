@@ -7,7 +7,7 @@ import { env } from "../lib/env.js";
 /**
  * Bridge onboarding tools — the zero-credential front door for external agents.
  *
- * বাংলা মন্তব্য (#123): `paykaribazaronline/supremeai-open`-এ ঢুকা যেকোনো
+ * বাংলা মন্তব্য (#123): `Supremeai-bd/supremeai-open`-এ ঢুকা যেকোনো
  * এজেন্ট (ChatGPT Web, Claude Web, Mistral, Cursor, community) — কোনো প্রাইভেট
  * টোকেন ছাড়াই — টাওয়ারে সংযোগ করে সরাসরি দুটি জিনিস জানতে পারে:
  *   ১. কীভাবে কাজ করতে হবে (canonical onboarding contract — `bridge.guide`)

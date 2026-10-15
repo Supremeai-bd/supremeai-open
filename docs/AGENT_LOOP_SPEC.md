@@ -92,6 +92,46 @@ registry** — keep the two in sync when the taxonomy changes.
 Deprecated shims keep running automation alive; removal is a future admin
 decision after private-mirror parity (do not remove in a drive-by change).
 
+## 4b. Canonical flag surface + `CONTRACT_VERSION` parity (#67)
+
+The same file name (`scripts/agents/continuous_agent_loop.py`) exists in this
+repo **and** in the private mirror `Supremeai-bd/supremeai`. They are deployed
+by different workflows, so drift is invisible until something breaks. The
+parity contract:
+
+1. **`CONTRACT_VERSION` marker** — both copies define
+   `CONTRACT_VERSION = "agent-loop-contract/1"` and MUST print
+   `CONTRACT_VERSION=agent-loop-contract/1` as the **final stdout line** of
+   `--verify-only` (exit code independent). Cross-repo check:
+
+   ```bash
+   python scripts/agents/continuous_agent_loop.py --verify-only 2>/dev/null | tail -1
+   # → CONTRACT_VERSION=agent-loop-contract/1   (byte-identical on both repos)
+   ```
+
+   Changing flag behaviour or envelope semantics without bumping
+   `CONTRACT_VERSION` on **both** copies is a spec violation.
+
+2. **Canonical flag surface (union of both copies)** — any flag marked
+   "shared" must behave identically on both copies:
+
+   | Flag | Scope | Behaviour |
+   |------|-------|-----------|
+   | `--task-envelope` | shared (canonical) | unified envelope JSON on stdout, banner → stderr |
+   | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
+   | `--verify-only` | shared | 3-tier verification + parity marker line |
+   | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role |
+   | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
+   | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private `continuous-agent-loop.yml` workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
+
+3. **Envelope parity** — the same issue on both copies must yield a
+   `task_envelope` whose contract sections are byte-identical modulo
+   `problem_statement.state` timestamps.
+
+4. **Port rule** — changes to the shared core (envelope builder, `VALID_GROUPS`
+   registry, guards) land in this repo first, then port to the private mirror
+   **via a bridge work order** (never hand-edit the private copy).
+
 ## 5. Open Guards — shift-left on free public runtime
 
 `.github/workflows/open-guards.yml` runs **zero-checkout** (~5s) on every PR

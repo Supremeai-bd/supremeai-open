@@ -90,7 +90,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
     },
 
     // ── GitHub — SupremeAI Primary (Supremeai-bd/supremeai) ────────
-    // Note: SaifulHaqueNiloy/supremeai and paykaribazaronline/paykaribazar (e-commerce)
+    // Note: SaifulHaqueNiloy/supremeai and the pre-migration personal e-commerce namespace
     // are excluded. Only canonical SupremeAI ecosystem repositories are monitored.
     {
       id: "github-primary",

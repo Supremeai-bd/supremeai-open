@@ -112,7 +112,7 @@ export const env = {
   // ── GitHub
   github: {
     get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
-    get repo(): string { return optional("GITHUB_REPO", "paykaribazaronline/supremeai"); },
+    get repo(): string { return optional("GITHUB_REPO", "Supremeai-bd/supremeai"); },
   },
 
   // ── Cloudflare (5-account federation pool)
