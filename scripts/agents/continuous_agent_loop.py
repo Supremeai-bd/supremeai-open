@@ -268,6 +268,40 @@ def resolve_group(explicit: str | None, task: dict[str, Any] | None = None) -> s
     return DEFAULT_GROUP
 
 
+def build_pr_body(
+    task: dict[str, Any],
+    issue_ref: str | int,
+    contract_yaml_snippet: str = "",
+    evidence_block: str = "",
+) -> str:
+    """Single PR-body construction site (#114).
+
+    The envelope's submission.pr_body_template and the --auto-pr submission
+    body are produced by this one builder — identical by construction, so a
+    change to the PR contract can no longer silently diverge between two
+    f-strings (the defect class the #63 envelope unification eliminates).
+    The envelope calls it with no snippet/evidence; step_7_record passes the
+    contract YAML snippet and the recorded evidence block.
+    """
+    evidence_section = (
+        f"\n## Dynamic Test Evidence (3-Tier যাচাই-চুক্তি)\n{evidence_block}\n"
+        if evidence_block
+        else ""
+    )
+    return f"""## Summary
+Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
+
+## Linked Issue / Claim
+Refs #{issue_ref}
+
+## Type of Change
+- [x] `feat` / `fix` / `docs` — Open contributor change
+{contract_yaml_snippet}{evidence_section}
+## Rollback Path
+- [x] `git revert`-safe (no private state dependencies)
+"""
+
+
 def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any]) -> dict[str, Any]:
     """Build the Single Deterministic Task Envelope (#63).
 
@@ -279,18 +313,9 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
     """
     tc = contract["task_contract"]
     issue_ref = tc.get("issue") or task.get("id")
-    pr_body_template = f"""## Summary
-Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
-
-## Linked Issue / Claim
-Refs #{issue_ref}
-
-## Type of Change
-- [x] `feat` / `fix` / `docs` — Open contributor change
-
-## Rollback Path
-- [x] `git revert`-safe (no private state dependencies)
-"""
+    # #114: one PR-body builder — the envelope template is the same body the
+    # --auto-pr path submits, minus the contract/evidence sections.
+    pr_body_template = build_pr_body(task, issue_ref)
     return {
         "task_envelope": {
             "envelope_version": ENVELOPE_VERSION,
@@ -785,21 +810,14 @@ task_contract:
         evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}")
     evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All 3-tier checks verified."
 
-    pr_body = f"""## Summary
-Autonomous contribution for issue #{issue_num}: {task.get('title')}.
-
-## Linked Issue / Claim
-Refs #{issue_num}
-
-## Type of Change
-- [x] `feat` / `fix` / `docs` — Open contributor change
-{contract_yaml_snippet}
-## Dynamic Test Evidence (3-Tier যাচাই-চুক্তি)
-{evidence_block}
-
-## Rollback Path
-- [x] `git revert`-safe (no private state dependencies)
-"""
+    # #114: single PR-body construction site — same builder the envelope uses
+    # (submission.pr_body_template), so the comment below is finally true.
+    pr_body = build_pr_body(
+        task,
+        issue_num,
+        contract_yaml_snippet=contract_yaml_snippet,
+        evidence_block=evidence_block,
+    )
 
     # #63: no intermediate filesystem draft — the PR body goes inline to gh,
     # and agents consuming the Task Envelope get the same template via
