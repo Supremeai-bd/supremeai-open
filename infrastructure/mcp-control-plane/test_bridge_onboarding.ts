@@ -76,10 +76,10 @@ await RequestContextStore.run(anonCtx, async () => {
 
 // ─── ৩. Queue normalization (pure) ───────────────────────────────────────────
 const rawIssues = [
-  { number: 41, title: "docs: update client example", state: "open", html_url: "https://github.com/paykaribazaronline/supremeai-open/issues/41", created_at: "2026-10-12T10:00:00Z", labels: [{ name: "bridge:queued" }, "good first issue"], comments: 2 },
-  { number: 42, title: "test: client harness", state: "open", html_url: "https://github.com/paykaribazaronline/supremeai-open/issues/42", created_at: "2026-10-12T11:00:00Z", labels: [{ name: "bridge:queued" }], comments: 0 },
-  { number: 43, title: "PR thread, not a work order", state: "open", html_url: "https://github.com/paykaribazaronline/supremeai-open/pull/43", created_at: "2026-10-12T12:00:00Z", labels: [], pull_request: { url: "x" } },
-  { number: 44, title: "closed again", state: "closed", html_url: "https://github.com/paykaribazaronline/supremeai-open/issues/44", labels: [] },
+  { number: 41, title: "docs: update client example", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/41", created_at: "2026-10-12T10:00:00Z", labels: [{ name: "bridge:queued" }, "good first issue"], comments: 2 },
+  { number: 42, title: "test: client harness", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/42", created_at: "2026-10-12T11:00:00Z", labels: [{ name: "bridge:queued" }], comments: 0 },
+  { number: 43, title: "PR thread, not a work order", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/pull/43", created_at: "2026-10-12T12:00:00Z", labels: [], pull_request: { url: "x" } },
+  { number: 44, title: "closed again", state: "closed", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/44", labels: [] },
   null,
 ];
 
