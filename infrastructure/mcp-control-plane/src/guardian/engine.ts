@@ -22,16 +22,9 @@ import {
 import {
   buildMetricsFromEvidence,
   type CiSummary,
-  type EvidenceBundle,
   type MetricBuildResult,
   type SignalCounts,
 } from "./signals.js";
-
-// #112: EvidenceBundle has a single definition (guardian/signals.ts — the
-// module that consumes it to build metrics). Re-exported here so existing
-// `import ... from "./engine.js"` call sites (e.g. test_guardian.ts) keep
-// working without a byte-identical duplicate drifting apart again.
-export type { EvidenceBundle };
 import {
   DEFAULT_IMPROVEMENT_POLICY,
   buildRegressionReport,
@@ -89,6 +82,14 @@ export interface GuardianEvaluation {
   /** Metrics intentionally not evaluated, with the reason (honest limitations). */
   skipped: string[];
   evaluatedAt: string;
+}
+
+export interface EvidenceBundle {
+  pr: PullRequestEvidence;
+  files: PullRequestFileEvidence[];
+  candidateChecks: CheckRunEvidence[];
+  baselineChecks: CheckRunEvidence[];
+  scopePrefixes?: string[];
 }
 
 function deltaFrom(files: PullRequestFileEvidence[], scopePrefixes: string[]): SourceDelta {
