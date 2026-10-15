@@ -27,6 +27,10 @@ import {
   deriveState,
   listHeartbeats,
   type HeartbeatStatusEntry,
+  // #112: HeartbeatState SSOT — single declaration lives in agent_heartbeat.ts;
+  // the local re-declaration here was a pure SSOT slip (this module already
+  // imports four other symbols from the same owner).
+  type HeartbeatState,
 } from "./agent_heartbeat.js";
 import { activeAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
 
@@ -43,8 +47,6 @@ export type PresenceRecord = {
   updatedAtMs: number;
   updatedAt: string; // ISO-8601
 };
-
-export type HeartbeatState = "online" | "stale" | "expired";
 
 export type PresenceStatusEntry = PresenceRecord & {
   ageSeconds: number;
