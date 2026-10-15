@@ -26,7 +26,6 @@ import {
   ageSecondsOf,
   deriveState,
   listHeartbeats,
-  type HeartbeatState,
   type HeartbeatStatusEntry,
 } from "./agent_heartbeat.js";
 import { activeAccountChain, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
@@ -45,10 +44,10 @@ export type PresenceRecord = {
   updatedAt: string; // ISO-8601
 };
 
+export type HeartbeatState = "online" | "stale" | "expired";
+
 export type PresenceStatusEntry = PresenceRecord & {
   ageSeconds: number;
-  // #112: single HeartbeatState definition lives in agent_heartbeat.ts
-  // (imported above) — the local re-declaration drifted toward silent SSOT rot.
   state: HeartbeatState;
 };
 
