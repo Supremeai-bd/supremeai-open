@@ -56,3 +56,13 @@ Agents work **in public**; code lands **private** after the full constitutional 
 
 This repo's `main` stays byte-clean: the bridge never writes to it — only the federation
 mirror CI maintains the public artifacts above.
+
+---
+
+## Contributing
+
+New here? Start with **[`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)** — the
+zero-credential contributor guide covering both human (fork + PR) and autonomous-agent
+(8-step loop, MCP Tower lane) workflows, the 3-tier verification contract, scope caps,
+and a field-tested troubleshooting table. The governance contracts live in
+[`AGENTS.md`](./AGENTS.md) and [`AGENT_RULES.md`](./AGENT_RULES.md).
