@@ -57,6 +57,8 @@ After clean exit (locks released, heartbeat stopped), the agent loop must **reru
 
 **Critical ordering reminder:** `atomic_claim.sh` → code changes → `gh pr create`. A PR opened before the claim comment exists will be auto-closed by the Claim Gate (#2644, #2892).
 
+**Closing-keyword placement (squash doctrine, #165):** `Closes #N` fires on landing only from the **squash commit message** — the landed commit's message MUST carry it (the PR body keeps the claim + keyword as belt-and-suspenders). A body-only keyword leaves the issue open after merge and violates the Zero-Admin close-on-landing expectation.
+
 ## U9 — Similar-Problem Sweep / Pattern-Aware Resolution
 When any defect, antipattern, stale reference, or policy gap is found, the agent MUST NOT treat it as isolated by default. First classify: isolated one-off, or member of a defect/problem class? Perform a targeted sweep for sibling occurrences — same pattern, same file family, same reference-set, same CI/checker surface. If siblings share the same root cause AND the same scope, address them within the same task (or an explicitly linked task series) before closing the original. If they fall outside scope or risk, file linked follow-up issue(s) instead of silently expanding. Report format: `similar found: N | fixed in-task: M | filed follow-up: K`.
 
