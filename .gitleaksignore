@@ -1,2 +1,4 @@
 # Gitleaks ignore list for known mock test fixtures in git history
 ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/test_guardian.ts:generic-api-key:88
+# Placeholder docstring example in threat-model prose of masking.ts (issue #695), not a real credential - see org rule for the matched shape in .gitleaks.toml
+ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/src/lib/masking.ts:supremeai-internal-database-url:6
