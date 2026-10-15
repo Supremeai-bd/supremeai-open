@@ -10,7 +10,7 @@ makes the drift machine-visible:
      SSOT row in ``docs/AGENT_LOOP_SPEC.md`` §4 ("tiers 1–N"), with no gaps.
   2. No hardcoded "<N>-tier checks passed" / "All <N>-tier checks" literal in
      the loop code — the count must be derived from the evidence list.
-  3. SPEC §5 must name every job that ``open-guards.yml`` actually runs.
+  3. SPEC §5 must name every guard job that ``pipeline.yml`` actually runs.
   4. CONTRIBUTING.md must carry no flag-table copy (SSOT is SPEC §4).
   5. The SSOT pointers must exist (SPEC §4b → §4; CONTRIBUTING → this guard).
 
@@ -32,8 +32,9 @@ LOOP = ROOT / "scripts" / "agents" / "continuous_agent_loop.py"
 SPEC = ROOT / "docs" / "AGENT_LOOP_SPEC.md"
 CONTRIB = ROOT / "docs" / "CONTRIBUTING.md"
 GUARDS_WF = ROOT / ".github" / "workflows" / "pipeline.yml"
-if not GUARDS_WF.is_file():
-    GUARDS_WF = ROOT / ".github" / "workflows" / "open-guards.yml"
+# The open-guards.yml fallback was removed with the #155 workflow diet: a
+# missing guard workflow is now a fail-closed guard-environment error, not a
+# silent fallback to a deleted file.
 
 
 def main() -> int:
@@ -76,7 +77,7 @@ def main() -> int:
             "derive the count from the evidence list instead"
         )
 
-    # 3. SPEC §5 guard list vs open-guards.yml job set (name-level parity).
+    # 3. SPEC §5 guard list vs pipeline.yml guard job set (name-level parity).
     def norm(name: str) -> str:
         name = re.sub(r"\(#[0-9]+\)", "", name)
         name = re.sub(r"[^A-Za-z ]+", " ", name)
@@ -91,7 +92,7 @@ def main() -> int:
     sec5 = norm(spec.split("## 5.")[1].split("## 6.")[0])
     for job in sorted(job_names):
         if job and job not in sec5:
-            failures.append(f"SPEC §5 does not document open-guards job: '{job}'")
+            failures.append(f"SPEC §5 does not document pipeline guard job: '{job}'")
 
     # 4. No flag-table copy in CONTRIBUTING (SSOT is SPEC §4).
     if re.search(r"^\|\s*`--", contrib, flags=re.M):
