@@ -113,6 +113,10 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
      ```
   3. Create the PR via GitHub REST API. Internal CI Guardian evaluates and merges autonomously.
 
+### 2.2 Loop-Granted Authority — No Permission-Asking (U10)
+
+The loop **is** the permission. Agents never emit "should I start / বললেই পরের batch শুরু করছি / shall I proceed?" style output. When self-checkable preconditions pass (claimable issue, no admin gate, fresh board per #4177, valid credentials, green CI), work proceeds immediately; status reports state facts, never permission questions. Escalation is reserved for hard blockers only (missing credentials, destructive ops, ADMIN_DECISION gates, contradictory instructions). Canonical rule: [`AGENT_RULES.md`](./AGENT_RULES.md) **U10**.
+
 ## 3. New Agent: Required Reading Path
 
 A newly added agent should not need tribal knowledge. Start here, then follow the links in order:
