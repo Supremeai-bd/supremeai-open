@@ -66,7 +66,10 @@ const SYNC_MAX_PAGES = 3;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-export type TaskState = "UNCLAIMED" | "LEASED" | "COMPLETED";
+// #112: renamed from the colliding `TaskState` — this is the LEASE state
+// machine (UNCLAIMED|LEASED|COMPLETED). The execution machine in engine.ts is
+// now TaskExecutionState; same-name import collision removed.
+export type TaskLeaseState = "UNCLAIMED" | "LEASED" | "COMPLETED";
 
 export type TaskKnowledge = {
   why: string;
@@ -79,7 +82,7 @@ export type TaskRecord = {
   priority: string; // মূল লেবেল (যেমন "P1-high") — র‍্যাংকিং parsePriority দিয়ে হয়
   labels: string[];
   url?: string;
-  state: TaskState;
+  state: TaskLeaseState;
   /** লিজ-মালিক slot id (যেমন "agent-3")। */
   claimedBy?: string;
   /** claim-এ জারি করা ওয়ান-টাইম লিজ টোকেন — heartbeat/complete পেশ করতে হবে। */
