@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://supremeai.ai/schemas/guardian-evaluation.schema.json",
+  "title": "CI Guardian Pull-Request Evaluation Result",
+  "description": "Data contract for the CI Guardian's automated evaluation of an incoming Pull Request (issue #37). One evaluation covers exactly one PR head state. The Guardian derives its decision from a fixed criteria catalog that maps 1:1 onto the real public-boundary guards (.github/workflows/pipeline.yml) and the landing evaluation steps (.github/workflows/landing.yml), so a PASS verdict is always backed by machine-checked facts — never a hardcoded status (AGENT_RULES.md §13 bans fake health/pass status). Human-readable companion: docs/GUARDIAN_EVALUATION.md.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "pr_number",
+    "head_sha",
+    "evaluated_at",
+    "decision",
+    "decision_reason",
+    "criteria",
+    "score",
+    "autonomous_merge_eligible"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Contract version of this evaluation result. The criteria catalog and decision rules are SSOT'd in docs/GUARDIAN_EVALUATION.md; any rule change MUST bump this version so downstream consumers (auto-merge workflows, private-side CI Guardian, audit tooling) can distinguish contract generations."
+    },
+    "pr_number": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The evaluated pull request number in the target repository."
+    },
+    "head_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Full 40-hex git commit SHA of the evaluated PR head. Evaluations are immutable per head SHA: a new push always produces a new evaluation record, never an update to a previous one."
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "description": "Owner/name of the repository the PR targets (e.g. 'Supremeai-bd/supremeai-open'). Required when evaluations are cross-published to the federation; optional for single-repo guardians because the evaluation is normally bound to the repository that ran it."
+    },
+    "guardian_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$",
+      "description": "Identifier of the guardian instance that produced this evaluation (e.g. 'merge-gate-public' for the public auto-landing workflow, 'ci-guardian-private' for the private monorepo's CI Guardian). Enables federation-wide audit of which surface made which decision."
+    },
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 / ISO 8601 UTC timestamp at which the evaluation completed (e.g. '2026-10-16T03:30:00Z')."
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["PASS", "HOLD", "REJECT"],
+      "description": "Guardian verdict. PASS = every criterion passed; the PR is eligible for autonomous landing (subject to the merge queue). HOLD = at least one healable criterion failed or was skipped — the finding is fixable in-channel (rebase, template fix, evidence), so the PR waits. REJECT = at least one integrity-class criterion (security_scan, scope_boundary, duplicate_free) failed — the PR must be reworked, it cannot be healed by a comment. Decision mapping is normative in docs/GUARDIAN_EVALUATION.md §2."
+    },
+    "decision_reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable sentence stating WHY the decision was reached, naming the failing criterion identifiers when the decision is not PASS. Posted verbatim in the guardian's PR comment (e.g. the 'Merge Gate — BLOCKED' landing comment)."
+    },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/criterionResult" },
+      "description": "Per-criterion evaluation records. Every criterion in the run's catalog MUST appear exactly once — a criterion that could not run is recorded with status 'skipped' and a reason, never omitted (omission would fake a pass by absence)."
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Informational aggregate: sum of weights of criteria with status 'pass'. Skipped and failed criteria contribute 0 (a skipped tier is never credited as a pass — AGENT_RULES.md §13). The score is a reporting aid only; eligibility is NOT score-based, it is the fail-closed conjunction defined by autonomous_merge_eligible."
+    },
+    "autonomous_merge_eligible": {
+      "type": "boolean",
+      "description": "The autonomous merge eligibility threshold (issue #37): true if and only if every criterion in the catalog has status 'pass'. This is a strict conjunction — there is no partial-credit path to landing, matching the real gate behavior (any failing or pending check holds the landing; .github/workflows/landing.yml watches all checks to terminal state and fails on any failure). MUST be true exactly when decision == 'PASS'."
+    },
+    "healing_instructions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Aggregated, ordered remediation steps for the PR author, assembled from the failing criteria's healing_instructions. Required whenever decision is HOLD or REJECT; forbidden (absent or empty) on PASS because a passing PR has nothing to heal."
+    },
+    "guard_results_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Optional deep link to the workflow run or check suite backing this evaluation (e.g. the pipeline.yml run URL), for audit traceability from the verdict back to raw logs."
+    }
+  },
+  "$defs": {
+    "criterionId": {
+      "type": "string",
+      "enum": [
+        "template_adherence",
+        "issue_reference",
+        "branch_naming",
+        "duplicate_free",
+        "scope_boundary",
+        "test_evidence",
+        "security_scan",
+        "loop_contract_parity",
+        "checks_green",
+        "mergeable_state"
+      ],
+      "description": "Identifier of one evaluation criterion. The catalog is grounded in the public boundary: the first six guard jobs of .github/workflows/pipeline.yml (branch-naming-guard, issue-reference-guard, duplicate-pr-guard, boundary_sanitization_guard, loop_contract_parity_guard) plus the validation matrix, the secrets-scan job, and the landing.yml evaluation steps. AGENT_RULES.md §15 carries the federation-side GUARD-* IDs; the mapping table lives in docs/GUARDIAN_EVALUATION.md §3."
+    },
+    "criterionStatus": {
+      "type": "string",
+      "enum": ["pass", "fail", "skipped"],
+      "description": "Outcome of one criterion. 'skipped' is an honest third state: the check could not run (e.g. workflow infra failure). It never counts as a pass and it blocks autonomous merge eligibility."
+    },
+    "criterionResult": {
+      "type": "object",
+      "required": ["criterion", "status", "weight", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "criterion": { "$ref": "#/$defs/criterionId" },
+        "status": { "$ref": "#/$defs/criterionStatus" },
+        "weight": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "This criterion's contribution to the 0-100 score when passed. Weights across the catalog SHOULD sum to 100; weight 0 marks purely informational criteria that still block eligibility when not passed (blocking is status-driven, not weight-driven)."
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Machine-derived factual finding for this criterion (e.g. 'head branch docs/foo matches ^(feat|fix|docs|chore|agent)/' or 'gitleaks: 0 secret families detected'). Must describe what was actually checked — fabricated or hardcoded statuses are forbidden (AGENT_RULES.md §13)."
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Where the fact came from: workflow job id, script, or API field (e.g. 'pipeline.yml/branch-naming-guard', 'landing.yml/evaluate', 'gh pr view .mergeable')."
+        },
+        "healing_instructions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Concrete remediation steps for this criterion when status is 'fail'. Required on fail so the author always receives actionable healing guidance (issue #37: 'Pass / Hold / Reject with automated healing instructions'). SHOULD be command-level where possible (e.g. 'git fetch origin main && git rebase origin/main')."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "fail" } }, "required": ["status"] },
+          "then": { "required": ["criterion", "status", "weight", "detail", "healing_instructions"] }
+        }
+      ],
+      "description": "One criterion result. A 'fail' record MUST carry healing_instructions; 'pass' and 'skipped' records may omit them (a skipped criterion explains itself via detail + top-level healing instead)."
+    }
+  },
+  "allOf": [
+    {
+      "description": "Cross-field contract: PASS verdicts are all-green verdicts.",
+      "if": {
+        "properties": { "decision": { "const": "PASS" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "autonomous_merge_eligible": { "const": true },
+          "healing_instructions": {
+            "not": {}
+          }
+        }
+      }
+    },
+    {
+      "description": "Cross-field contract: HOLD/REJECT verdicts always name the finding and always ship healing instructions.",
+      "if": {
+        "properties": { "decision": { "enum": ["HOLD", "REJECT"] } },
+        "required": ["decision"]
+      },
+      "then": {
+        "required": ["healing_instructions"],
+        "properties": {
+          "autonomous_merge_eligible": { "const": false }
+        }
+      }
+    },
+    {
+      "description": "Cross-field contract: REJECT is reserved for integrity-class failures — at least one of security_scan, scope_boundary, duplicate_free must have status 'fail'.",
+      "if": {
+        "properties": { "decision": { "const": "REJECT" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "criteria": {
+            "contains": {
+              "type": "object",
+              "properties": {
+                "criterion": { "enum": ["security_scan", "scope_boundary", "duplicate_free"] },
+                "status": { "const": "fail" }
+              },
+              "required": ["criterion", "status"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Cross-field contract: decision PASS requires every recorded criterion to have status 'pass' — no skipped, no failed (mirrors the real gate: any non-terminal or failing check holds the landing).",
+      "if": {
+        "properties": { "decision": { "const": "PASS" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "properties": { "status": { "const": "pass" } }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
