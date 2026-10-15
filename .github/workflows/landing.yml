@@ -281,7 +281,24 @@ jobs:
                 exit 1
                 ;;
             esac
-            echo "Processing dispatch for PR #${PR_NUM}..."
+          fi
+
+          # Channel resolution:
+          #   pull_request (USER-token merge) -> the event payload is complete.
+          #   workflow_dispatch / workflow_run (auto-merge and the dispatch-only
+          #     reconciliation channel) -> resolve via the API: workflow_run
+          #     carries NO pull_request payload, so the event-value path left
+          #     PR_SHA empty and hard-failed "merge commit unavailable" on the
+          #     first live reconciliation run (PR #184). Both API-path channels
+          #     also re-check state != MERGED and bridge/ loop prevention.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "Processing merged PR #${PR_NUM} (pull_request channel)..."
+            PR_TITLE="$EVENT_PR_TITLE"
+            PR_SHA="$EVENT_PR_SHA"
+            PR_HEAD_SHA="$EVENT_PR_HEAD_SHA"
+            BASE_SHA="$EVENT_PR_BASE_SHA"
+          else
+            echo "Processing landed PR #${PR_NUM} (API resolution)..."
             PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json title,mergeCommit,baseRefOid,headRefOid,headRefName,state)
             STATE=$(echo "$PR_JSON" | jq -r '.state')
             if [ "$STATE" != "MERGED" ]; then
@@ -302,12 +319,6 @@ jobs:
               # recorded base head — diff pair stays valid).
               BASE_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUM}" -q '.base.sha')
             fi
-          else
-            echo "Processing merged PR #${PR_NUM}..."
-            PR_TITLE="$EVENT_PR_TITLE"
-            PR_SHA="$EVENT_PR_SHA"
-            PR_HEAD_SHA="$EVENT_PR_HEAD_SHA"
-            BASE_SHA="$EVENT_PR_BASE_SHA"
           fi
 
           if [ -z "$PR_SHA" ] || [ "$PR_SHA" = "null" ]; then
