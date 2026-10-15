@@ -1,12 +1,31 @@
 # =============================================================================
-# SupremeAI Open — Autonomous Bridge Work Order Automation (Zero-Admin Policy)
+# SupremeAI Open — Autonomous Bridge Work Order Dispatcher (Zero-Admin Policy)
 # =============================================================================
+# Renamed from auto-bridge-order.yml by #107 (same single dispatcher, enriched
+# dispatch payload — do NOT re-introduce a second merge-triggered bridge
+# workflow: two dispatchers = double dispatch + duplicate work orders).
+#
 # বাংলা মন্তব্য:
 # যখনই supremeai-open:main-এ কোনো পাবলিক PR সফলভাবে merge হবে, এই workflow
 # স্বয়ংক্রিয়ভাবে:
 #   ১. একটি bridge/<task-id> patch branch তৈরি ও push করবে।
 #   ২. 'bridge:queued' label সহ একটি Bridge Work Order issue file করবে।
-#   ৩. Webhook / Dispatch এর মাধ্যমে private bridge intake-কে তাৎক্ষণিক সিগন্যাল দেবে।
+#   ৩. repository_dispatch (event_type=bridge_order_queued) + client_payload
+#      এর মাধ্যমে private monorepo-র Bridge Intake (scripts/bridge/)-কে
+#      landed patch-এর full reference stream করবে: PR number, merge/head/base
+#      SHA, bridge branch ref এবং touched-file manifest।
+#
+# Patch-streaming design (by-reference, deterministic):
+#   - Public repo readable, তাই private intake শুধু
+#     `git fetch https://github.com/Supremeai-bd/supremeai-open.git <bridge_branch>`
+#     দিয়ে exact landed patch pull করতে পারে — payload ছোট থাকে, কোনো base64
+#     blob সীমা ভাঙে না, আর head SHA সবসময় immutable।
+#   - event_type অপরিবর্তিত (bridge_order_queued) — existing private listener
+#     backward compatible; নতুন client_payload শুধু extra signal।
+#   - BRIDGE_DISPATCH_TOKEN না থাকলে dispatcher notify-only mode-এ নামে:
+#     durable WO issue তবুও file হয় (durable record), শুধু low-latency signal
+#     miss হয় — ::warning:: annotation দিয়ে দৃশ্যমানভাবে লগ হয়, merge
+#     automation fail করে না (degradation policy, fail-loud not fail-merge)।
 #
 # এর ফলে কোনো মানুষের manual হস্তক্ষেপ ছাড়াই public merge স্বয়ংক্রিয়ভাবে private
 # monorepo-র constitutional gate-এ পৌঁছে যাবে (Zero-Admin doctrine: human budget <= 0.01%)।
@@ -61,6 +80,7 @@ jobs:
           echo "should_bridge=$SHOULD_BRIDGE" >> "$GITHUB_OUTPUT"
 
       - name: Create Bridge Branch & File Work Order
+        id: create_wo
         if: steps.check_scope.outputs.should_bridge == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,6 +92,10 @@ jobs:
           DATE_STR=$(date +%Y%m%d)
           TASK_ID="bridge-${DATE_STR}-pr${PR_NUM}-sync"
           BRANCH_NAME="bridge/${TASK_ID}"
+
+          # Expose identity to the dispatch step (patch-stream payload)
+          echo "task_id=${TASK_ID}" >> "$GITHUB_OUTPUT"
+          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
           
           echo "Creating patch branch ${BRANCH_NAME} pointing to ${PR_HEAD_SHA}..."
           git config user.name "github-actions[bot]"
@@ -120,14 +144,57 @@ jobs:
             --body-file /tmp/bridge_wo.md \
             --label "bridge:queued"
 
-      - name: Trigger Private Webhook / Dispatch (Zero Latency)
-        if: steps.check_scope.outputs.should_bridge == 'true' && env.BRIDGE_DISPATCH_TOKEN != ''
+      - name: Stream landed patch reference to private Bridge Intake (#107)
+        if: steps.check_scope.outputs.should_bridge == 'true'
         env:
           BRIDGE_DISPATCH_TOKEN: ${{ secrets.BRIDGE_DISPATCH_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TASK_ID: ${{ steps.create_wo.outputs.task_id }}
+          BRANCH_NAME: ${{ steps.create_wo.outputs.branch_name }}
         run: |
-          echo "Triggering private repository intake webhook..."
-          curl -s -X POST \
+          if [ -z "${BRIDGE_DISPATCH_TOKEN}" ]; then
+            echo "::warning::BRIDGE_DISPATCH_TOKEN not configured — repository_dispatch skipped (notify-only mode)."
+            echo "Durable Bridge Work Order issue was already filed; private intake will reconcile on its next poll."
+            exit 0
+          fi
+
+          # Build the patch-stream payload deterministically (JSON-safe quoting via python3)
+          export FILES_RAW="$(git diff --name-only "${BASE_SHA}" "${PR_HEAD_SHA}")"
+          PAYLOAD=$(python3 - <<'PYEOF'
+          import json, os
+          files = [f for f in os.environ.get("FILES_RAW", "").splitlines() if f.strip()]
+          payload = {
+              "event_kind": "bridge.order.queued",
+              "source_repo": os.environ["GITHUB_REPOSITORY"],
+              "pr_number": int(os.environ["PR_NUM"]),
+              "pr_title": os.environ["PR_TITLE"],
+              "task_id": os.environ["TASK_ID"],
+              "bridge_branch": os.environ["BRANCH_NAME"],
+              "merge_sha": os.environ["PR_SHA"],
+              "head_sha": os.environ["PR_HEAD_SHA"],
+              "base_sha": os.environ["BASE_SHA"],
+              "file_count": len(files),
+              "files_truncated": len(files) > 100,
+              "files": files[:100],
+          }
+          print(json.dumps({"event_type": "bridge_order_queued", "client_payload": payload}))
+          PYEOF
+          )
+
+          echo "Dispatching bridge_order_queued → Supremeai-bd/supremeai (private Bridge Intake)..."
+          echo "  task_id: ${TASK_ID} | bridge branch: ${BRANCH_NAME} | head: ${PR_HEAD_SHA}"
+          HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \
             https://api.github.com/repos/Supremeai-bd/supremeai/dispatches \
-            -d '{"event_type": "bridge_order_queued"}' || true
+            -d "${PAYLOAD}")
+          if [ "${HTTP}" = "204" ]; then
+            echo "✅ Private Bridge Intake dispatched (HTTP 204) — landed patch reference streamed."
+          else
+            echo "::warning::Private dispatch returned HTTP ${HTTP} (response below). Durable WO issue already filed — degradation is visible, merge automation not failed."
+            cat /tmp/dispatch_resp.txt || true
+          fi
