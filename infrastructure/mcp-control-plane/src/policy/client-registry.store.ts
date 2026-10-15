@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { activeAccountChain } from "../lib/redis_chain.js";
-import { runWithAccountChain, clientForAccount } from "../adapters/redis/index.js";
+import { RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig, buildAccountChain } from "../lib/redis_chain.js";
 
 export interface PersistedClientRecord {
   id: string;
@@ -87,6 +86,7 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
 
   private static readonly STABLE_FLUSH_MS = 5_000;
   private static readonly VOLATILE_FLUSH_MS = 300_000;
+  private static readonly REST_TIMEOUT_MS = 10_000;
   /** #2588: retry cadence after a failed flush (Render sleep / transient outage). */
   private static readonly FLUSH_RETRY_INITIAL_MS = 30_000;
   private static readonly FLUSH_RETRY_MAX_MS = 300_000;
@@ -101,36 +101,75 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
 
   constructor(private readonly key: string = process.env.MCP_CLIENT_REGISTRY_KEY || "supremeai:mcp:client-registry") {}
 
+  /** Lazy chain construction — env may be injected after import (Infisical pull in main()). */
+  private chain() {
+    return buildAccountChain().filter((account) => account.restUrl && account.restToken);
+  }
+
+  private async restCall(account: RedisAccountConfig, command: unknown[]): Promise<unknown> {
+    const res = await fetch(account.restUrl as string, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${account.restToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(command),
+      signal: AbortSignal.timeout(UpstashClientRegistryStore.REST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      // #110: quota-shape detection aligned with the other routed paths —
+      // the RedisQuotaExhaustedError is what runWithAccountChain marks into
+      // cooldown. (This store previously had NO quota marking at all.)
+      const errText = await res.text().catch(() => "");
+      if (responseIndicatesQuotaExhaustion(res.status, errText)) {
+        throw new RedisQuotaExhaustedError(
+          account.label,
+          `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
+        );
+      }
+      throw new Error(`Upstash REST returned HTTP ${res.status}`);
+    }
+    const payload = (await res.json()) as { result?: unknown; error?: string };
+    if (payload.error) throw new Error(`Upstash error: ${payload.error}`);
+    return payload.result;
+  }
+
   load(): PersistedClientRecord[] {
     return this.snapshot.map((record) => ({ ...record, scopes: [...record.scopes] }));
   }
 
   async loadAsync(): Promise<PersistedClientRecord[]> {
+    // #110: the hydration walk routes through the single account-chain engine
+    // (REST-only via skip), replacing the hand-rolled loop. The fail-closed
+    // semantics and error text below are byte-identical to the old loop: an
+    // UNREACHABLE store must never look like an empty one (#48 Invariant 5).
+    const chain = this.chain();
+    const chainLength = chain.length;
     try {
-      const { result } = await runWithAccountChain(
-        async (client) => {
-          const raw = await client.get(this.key);
-          if (raw == null) return []; // reachable account, fresh registry — nothing stored yet
-          const parsed: unknown = JSON.parse(raw);
+      const { value } = await runWithAccountChain(
+        async (account) => {
+          const result = await this.restCall(account, ["GET", this.key]);
+          if (result == null) return [] as PersistedClientRecord[]; // reachable account, fresh registry — nothing stored yet
+          const parsed: unknown = JSON.parse(String(result));
           if (!Array.isArray(parsed)) throw new Error("stored registry is not an array");
           this.snapshot = parsed as PersistedClientRecord[];
           this.lastStableJson = stableJson(this.snapshot);
           return this.load();
         },
         {
-          opLabel: "client registry hydration",
-          noConfigMessage:
-            "no reachable Upstash account configured (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN)",
+          skip: (account) => !account.restUrl || !account.restToken,
+          aggregateError: (attempts) =>
+            new Error(
+              `all ${chainLength} chain account(s) failed: ${attempts
+                .map((a) => `${a.account}: ${a.error ?? "unknown error"}`)
+                .join(" | ")}`,
+            ),
         },
       );
-      return result;
+      return value;
     } catch (err) {
-      // #48 Invariant 5 (fail-closed): an UNREACHABLE store must never look
-      // like an empty one — authorization paths (refreshRegistryFromStore)
-      // treat a throw as "store unverifiable" and deny privileged operations.
-      // Boot-time callers (initClientRegistry) catch this and continue with
-      // the last-known snapshot, so startup behavior is unchanged.
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = chainLength === 0
+        ? "no reachable Upstash account configured (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN)"
+        : err instanceof Error
+          ? err.message
+          : String(err);
       console.error(`[client-registry] hydration failed (${reason})`);
       throw new Error(`Client registry store unverifiable: ${reason}`);
     }
@@ -162,24 +201,15 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
     try {
       do {
         this.flushQueuedAgain = false;
-        // Fan-out replication to ALL reachable accounts (documented write
-        // contract above) — via the shared per-account client factory (#110)
-        // so transport + quota marking come from the one implementation.
-        // Cooldown-aware: exhausted accounts are skipped (no wasted requests,
-        // #2613 R2) — one rotation policy tower-wide.
-        const chain = activeAccountChain();
+        const chain = this.chain();
         chainLength = chain.length;
         if (chain.length === 0) return;
         const body = JSON.stringify(this.snapshot);
-        const targets = chain.flatMap((account) => {
-          const client = clientForAccount(account);
-          return client ? [{ account, client }] : [];
-        });
         const results = await Promise.allSettled(
-          targets.map(({ client }) => client.set(this.key, body)),
+          chain.map((account) => this.restCall(account, ["SET", this.key, body])),
         );
         failures = results
-          .map((r, i) => (r.status === "rejected" ? `${targets[i].account.label}: ${String(r.reason)}` : null))
+          .map((r, i) => (r.status === "rejected" ? `${chain[i].label}: ${String(r.reason)}` : null))
           .filter(Boolean) as string[];
         if (failures.length > 0) {
           console.error(`[client-registry] flush partial failure (${failures.length}/${chain.length}): ${failures.join(" | ")}`);
