@@ -145,7 +145,12 @@ jobs:
           # a silently dropped trigger means zero patch branch and zero
           # work order (exactly the failure mode that froze the bridge).
           echo "🌉 PR #${PR_NUM} landed — triggering auto-bridge-dispatcher (Zero-Admin Policy)..."
-          BEFORE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # Run ids are monotonically increasing per repo — compare ids, not
+          # timestamps (runner clock vs GitHub API clock skew would make a
+          # ts comparison false-negative on every dispatch).
+          BEFORE_ID=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?per_page=1" \
+            -q '.workflow_runs[0].id // 0' 2>/dev/null || echo 0)
 
           if ! gh workflow run auto-bridge-dispatcher.yml \
             --repo "${{ github.repository }}" \
@@ -157,11 +162,12 @@ jobs:
           CONFIRMED="false"
           for attempt in $(seq 1 12); do
             sleep 5
-            RUN_COUNT=$(gh api \
-              "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?event=workflow_dispatch&per_page=10" \
-              -q "[.workflow_runs[] | select(.created_at > \"$BEFORE_TS\")] | length" 2>/dev/null || echo 0)
-            if [ "${RUN_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            NEW_ID=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?event=workflow_dispatch&per_page=5" \
+              -q "[.workflow_runs[] | select(.id > ${BEFORE_ID})] | .[0].id // empty" 2>/dev/null || true)
+            if [ -n "$NEW_ID" ]; then
               CONFIRMED="true"
+              echo "auto-bridge-dispatcher run ${NEW_ID} created."
               break
             fi
             echo "Waiting for dispatcher run to appear (attempt ${attempt}/12)..."
