@@ -26,7 +26,7 @@ Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispat
 | 3. Inspect state | Queue, open PRs, active claims, token freshness | `continuous_agent_loop.py` · `issue_queue_manager.py audit` |
 | 4. Claim | Atomic claim (session marker; no claim, no work) | Session branch / `scripts/ci/atomic_claim.sh` |
 | 5. Work | Smallest safe change inside declared scope | Standard Task Contract (`continuous_agent_loop.build_task_contract()`) |
-| 6. Verify | 3-tier: reflection → boot smoke → tests | `continuous_agent_loop.py --verify-only` |
+| 6. Verify | 3-tier contract (process phases): reflection → boot smoke → tests · evidence tiers SSOT: AGENT_LOOP_SPEC §4 | `continuous_agent_loop.py --verify-only` |
 | 7. Record | PR with full template + Test Evidence (+ meaningful decision note; `Closes #N` must also ride in the **commit message** — squash auto-close doctrine, AGENT_RULES U8) | `continuous_agent_loop.py --auto-pr` / REST PR create |
 | 8. Return | Report outcome **with fresh-board re-check** (#4177), release claim, loop back | `continuous_agent_loop.py` + `gh pr list` re-poll |
 
