@@ -13,7 +13,7 @@ This loop operates as the "Lazy Team Leader":
   - Classifies the task and selects the specialized agent role (Coder, Auditor, CI Fixer, etc.).
   - Builds a contract-bound, scoped prompt with strict file boundaries.
   - Executes isolated branch and workspace setup.
-  - Enforces strict 3-tier automated safety gates.
+  - Enforces strict multi-tier automated safety gates (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4).
   - Records dynamic, verified test evidence in PRs.
   - Performs fresh-board checks before looping to the next task.
 """
@@ -182,7 +182,7 @@ def build_task_contract(
             },
             "role_policy": role_policy,
             "required_evidence": required_evidence or [
-                "3-tier test output", "diff check", "board freshness re-poll"
+                "verification tier output", "diff check", "board freshness re-poll"
             ],
             "verification": verification or [
                 "py_compile", "json schema parse", "smoke validation"
@@ -387,7 +387,8 @@ def pick_next_issue() -> str | None:
 
     Selection policy (#88):
       - Claim-gated: only issues carrying ``status:unclaimed`` are eligible;
-        claimed/in-progress, sequence-held and blocked boards are never
+        claimed/in-progress, sequence-held, blocked and private-mirror
+        boards are never
         (re)dispatched.
       - Whole-board scope: pagination limit high enough that truncation cannot
         starve old issues (verified: board regularly holds 35+ open issues).
@@ -408,7 +409,10 @@ def pick_next_issue() -> str | None:
         issues = json.loads(out)
 
         CLAIMABLE_LABEL = "status:unclaimed"
-        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream"}
+        # mirror:private (#122) — issues mirrored from the private monorepo
+        # declare a non-public target repository; no public lane can act on
+        # private-only paths, so mirrors are born non-claimable.
+        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream", "mirror:private"}
 
         def label_names(item: dict[str, Any]) -> list[str]:
             labels = item.get("labels")
@@ -596,8 +600,8 @@ def step_5_work_notice(role: str, prompt: str) -> None:
 
 
 def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
-    """Step 6: Run 3-tier verification and collect dynamic evidence."""
-    log("🧪", "[Step 6/8: Verify] Running 3-Tier Verification Contract...")
+    """Step 6: Run the verification tiers and collect dynamic evidence."""
+    log("🧪", "[Step 6/8: Verify] Running the verification contract (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4)...")
     evidence: list[dict[str, Any]] = []
 
     # 1. Python Syntax / Compile smoke
@@ -709,7 +713,8 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
         log("❌", f"Self-test verification failed: {e}")
         return False, evidence
 
-    log("✅", "3-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
+    tier_count = len({e["tier"] for e in evidence})
+    log("✅", f"{tier_count}-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
     return True, evidence
 
 
@@ -783,7 +788,7 @@ task_contract:
         if not ev.get("passed") and ev.get("reason"):
             extra = f"{extra} (skipped: {ev['reason']})" if ev.get("skipped") else f"{extra} ({ev['reason']})"
         evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}")
-    evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All 3-tier checks verified."
+    evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All verification tiers passed."
 
     pr_body = f"""## Summary
 Autonomous contribution for issue #{issue_num}: {task.get('title')}.
@@ -794,7 +799,7 @@ Refs #{issue_num}
 ## Type of Change
 - [x] `feat` / `fix` / `docs` — Open contributor change
 {contract_yaml_snippet}
-## Dynamic Test Evidence (3-Tier যাচাই-চুক্তি)
+## Dynamic Test Evidence (verification tiers — SSOT: docs/AGENT_LOOP_SPEC.md §4)
 {evidence_block}
 
 ## Rollback Path
@@ -917,7 +922,7 @@ def main() -> int:
     parser.add_argument("--group", type=str, default=None, help="Canonical group from the VALID_GROUPS registry (agent-orchestration, mcp-tower, core-engine, schemas-contracts, infra-ops)")
     parser.add_argument("--emit-prompt", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
     parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
-    parser.add_argument("--verify-only", action="store_true", help="Only run 3-tier verification and exit")
+    parser.add_argument("--verify-only", action="store_true", help="Only run the verification tiers and exit")
     parser.add_argument("--emit-contract", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
     parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
     parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")

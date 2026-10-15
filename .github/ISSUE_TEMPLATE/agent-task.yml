@@ -13,7 +13,7 @@ body:
         1. Fork `Supremeai-bd/supremeai-open` (zero credentials needed).
         2. Create a branch: `contributor/issue-<task-id>` (or `bridge/<task-id>` for collaborator bridge lane).
         3. Work strictly within the declared **Touching Files**.
-        4. Run and satisfy the **3-Tier Verification Contract** via `python scripts/agents/continuous_agent_loop.py --verify-only`.
+        4. Run and satisfy the **3-Tier Verification Contract** via `python scripts/agents/continuous_agent_loop.py --verify-only` (the 3 tiers are the process phases; the automated evidence tiers are SSOT'd in `docs/AGENT_LOOP_SPEC.md` §4).
         5. Submit a Pull Request to `Supremeai-bd/supremeai-open:main` or open a **Bridge Work Order**. The internal Bridge automation ports and tests your change in the target repository.
 
   - type: dropdown
