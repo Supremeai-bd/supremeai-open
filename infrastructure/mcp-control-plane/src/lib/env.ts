@@ -80,7 +80,10 @@ export const env = {
       get url(): string { return optional("RENDER_SCRAPER_URL"); },
     },
     controlTower: {
-      get apiKey(): string { return optional("RENDER_API_KEY_4"); },
+      // Fallback to RENDER_API_KEY mirrors render.primary above: render.yaml
+      // declares RENDER_API_KEY (sync:false) for this service, while the
+      // numbered RENDER_API_KEY_4 only exists when Infisical injects it.
+      get apiKey(): string { return optional("RENDER_API_KEY_4", optional("RENDER_API_KEY")); },
       get serviceId(): string { return optional("RENDER_MCP_SVC_ID"); },
       get url(): string { return optional("RENDER_MCP_URL"); },
     },

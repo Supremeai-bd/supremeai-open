@@ -12,7 +12,6 @@ import { fileURLToPath } from "node:url";
 const __currentFile = fileURLToPath(import.meta.url);
 const __currentDir = path.dirname(__currentFile);
 dotenv.config({ path: path.resolve(__currentDir, "../../../.env") });
-dotenv.config({ path: "F:/supremeai/.env" });
 
 import { timingSafeEqual, randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

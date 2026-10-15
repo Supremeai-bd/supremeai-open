@@ -120,3 +120,4 @@ jobs:
         # scanned at PR time; push builds re-scan zero new commits, which is
         # the correct no-op.)
         run: gitleaks detect --source=. --verbose --redact --log-opts="origin/main..HEAD"
+
