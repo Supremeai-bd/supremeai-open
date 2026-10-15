@@ -1,49 +1,50 @@
 # =============================================================================
-# SupremeAI Open — Autonomous Bridge Work Order Dispatcher (Zero-Admin Policy)
+# SupremeAI Open — Unified Autonomous Landing & Bridge Dispatch (#155)
 # =============================================================================
-# Renamed from auto-bridge-order.yml by #107 (same single dispatcher, enriched
-# dispatch payload — do NOT re-introduce a second merge-triggered bridge
-# workflow: two dispatchers = double dispatch + duplicate work orders).
+# Federation Workflow Diet — public boundary 5 -> 2 workflows.
+# Replaces (do NOT re-introduce these files):
+#   - merge-gate.yml             (autonomous auto-merge)
+#   - auto-bridge-dispatcher.yml (public merge -> private bridge queue)
 #
-# বাংলা মন্তব্য:
-# যখনই supremeai-open:main-এ কোনো পাবলিক PR সফলভাবে merge হবে, এই workflow
-# স্বয়ংক্রিয়ভাবে:
-#   ১. একটি bridge/<task-id> patch branch তৈরি ও push করবে।
-#   ২. 'bridge:queued' label সহ একটি Bridge Work Order issue file করবে।
-#   ৩. repository_dispatch (event_type=bridge_order_queued) + client_payload
-#      এর মাধ্যমে private monorepo-র Bridge Intake (scripts/bridge/)-কে
-#      landed patch-এর full reference stream করবে: PR number, merge/head/base
-#      SHA, bridge branch ref এবং touched-file manifest।
+# Zero-Admin Doctrine: Admin manual effort budget <= 0.01%. When all
+# constitutional gates and validation tests pass on a Pull Request, this
+# workflow autonomously squash-merges it and — in the SAME run — streams the
+# landed patch reference into the private monorepo's Bridge Intake.
 #
-# Patch-streaming design (by-reference, deterministic):
+# Why one workflow instead of merge-gate + a called dispatcher (history #113):
+#   merges run with GITHUB_TOKEN, and GitHub suppresses the pull_request
+#   event for token-driven actions (loop prevention) — so the old dispatcher
+#   could not ride `pull_request:closed` for auto-merges, and merge-gate had
+#   to fire a cross-workflow `gh workflow run` (workflow_dispatch is a
+#   documented exception to the suppression) and then poll for the new run id.
+#   Consolidating both phases into one run removes that detour entirely:
+#   job ordering inside a run is deterministic, so "merge succeeded, THEN
+#   dispatch" is structural (fail-honest: no LANDED comment and no dispatch
+#   can happen unless `gh pr merge` actually completed). The backfill channel
+#   for USER-token merges is preserved via pull_request:[closed].
+#
+# Trigger channels (one dispatcher, deterministic — never add a second one):
+#   - workflow_run (CI — Open Unified Pipeline, success)  -> evaluate + land + dispatch
+#   - workflow_dispatch(pr_number)                        -> evaluate + land + dispatch
+#     (also the reconciliation channel: an ALREADY-merged PR is dispatched
+#      without re-merging — "bridge orders exist only for landed patches")
+#   - pull_request:[closed]                               -> dispatch ONLY
+#     (fires for merges made with a USER token; token-driven merges are
+#      suppressed by GitHub, so no loop is possible)
+#
+# Patch-streaming design (by-reference, deterministic — preserved from #107):
 #   - Public repo readable, তাই private intake শুধু
 #     `git fetch https://github.com/Supremeai-bd/supremeai-open.git <bridge_branch>`
 #     দিয়ে exact landed patch pull করতে পারে — payload ছোট থাকে, কোনো base64
 #     blob সীমা ভাঙে না, আর head SHA সবসময় immutable।
-#   - event_type অপরিবর্তিত (bridge_order_queued) — existing private listener
-#     backward compatible; নতুন client_payload শুধু extra signal।
 #   - BRIDGE_DISPATCH_TOKEN না থাকলে dispatcher notify-only mode-এ নামে:
 #     durable WO issue তবুও file হয় (durable record), শুধু low-latency signal
-#     miss হয় — ::warning:: annotation দিয়ে দৃশ্যমানভাবে লগ হয়, merge
+#     miss হয় — ::warning:: annotation দিয়ে দৃশ্যমাণভাবে লগ হয়, merge
 #     automation fail করে না (degradation policy, fail-loud not fail-merge)।
-#
-# Trigger paths (single dispatcher, two channels — #113):
-#   - pull_request:[closed] — only fires for merges made with a USER token.
-#     merge-gate.yml merges with GITHUB_TOKEN, and GitHub suppresses the
-#     pull_request event for token-driven actions (loop prevention), so this
-#     channel alone never fired for auto-merges (zero sync branches / zero
-#     work orders ever produced).
-#   - workflow_dispatch(pr_number) — merge-gate calls it immediately after
-#     every landing merge (workflow_dispatch is a documented exception to the
-#     suppression), and humans can use it for backfill/reconciliation.
-#   NEVER add a second bridge workflow: two dispatchers = double dispatch +
-#   duplicate work orders. Re-dispatch is idempotent instead: deterministic
-#   task id, branch re-pointed to the immutable merge commit, duplicate WO
-#   filing skipped.
 #
 # Branch-point doctrine (#113):
 #   The patch branch is created from the MERGE COMMIT (merge_commit_sha),
-#   never from the PR head SHA. The Merge Gate merges with --delete-branch,
+#   never from the PR head SHA. The auto-merge merges with --delete-branch,
 #   so by the time this workflow runs the head ref is gone and the head
 #   commit object is no longer fetched — `git branch <name> <head_sha>`
 #   failed with "not a valid branch point" on 100% of eligible merges
@@ -57,38 +58,158 @@
 # Rollback / Identity) — single field vocabulary, two producers.
 # =============================================================================
 
-name: Auto-Bridge Work Order (Public Merge -> Private Bridge Queue)
+name: Landing — Auto-Merge & Bridge Dispatch
 
 on:
+  workflow_run:
+    workflows: ["CI — Open Unified Pipeline"]
+    types: [completed]
   pull_request:
     types: [closed]
     branches: [main]
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "PR number to bridge into private repo"
-        required: true
+        description: "PR number to land (empty = derive from the triggering run / closed PR)"
+        required: false
 
 permissions:
   contents: write
+  pull-requests: write
   issues: write
-  pull-requests: read
-
-concurrency:
-  # Serialize dispatches for the same PR (deterministic task id + merge
-  # commit): a re-dispatch that overlaps the original would race on the
-  # same patch branch and work order.
-  group: auto-bridge-${{ github.event.inputs.pr_number || github.event.pull_request.number }}
-  cancel-in-progress: false
 
 jobs:
-  auto-bridge:
-    name: "🌉 Create Auto Bridge Work Order"
-    # Only run on merged PRs, and never run on bridge branches (loop prevention)
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
+  auto_merge:
+    name: "🛬 Autonomous Auto-Landing"
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    # AGENT_RULES.md §12: one merge lock. Serialize landings; never cancel a
+    # merge mid-flight (a half-landed state is worse than a queued one).
+    concurrency:
+      group: landing-merge-open
+      cancel-in-progress: false
+    outputs:
+      pr_number: ${{ steps.target_pr.outputs.pr_number }}
+      merged: ${{ steps.evaluate.outputs.merged }}
+    steps:
+      - name: Determine Target PR
+        id: target_pr
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+          DISPATCH_PR: ${{ github.event.inputs.pr_number }}
+        run: |
+          PR_NUM=""
+          if [ -n "$DISPATCH_PR" ]; then
+            PR_NUM="$DISPATCH_PR"
+          else
+            # Extract PR number from workflow_run payload or head branch
+            HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+            PR_NUM=$(gh pr list --repo "${{ github.repository }}" --head "$HEAD_BRANCH" --state open --json number -q '.[0].number')
+          fi
+
+          if [ -z "$PR_NUM" ] || [ "$PR_NUM" = "null" ]; then
+            echo "No open PR associated with this run (branch: ${{ github.event.workflow_run.head_branch }}). Skipping."
+            echo "has_pr=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Found open PR #${PR_NUM}."
+          echo "pr_number=${PR_NUM}" >> "$GITHUB_OUTPUT"
+          echo "has_pr=true" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate Constitutional Gates & Auto-Merge
+        id: evaluate
+        if: steps.target_pr.outputs.has_pr == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ steps.target_pr.outputs.pr_number }}
+        run: |
+          echo "Evaluating PR #${PR_NUM} for autonomous auto-merge..."
+
+          # Fetch PR status and checks
+          PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json isDraft,mergeable,state,statusCheckRollup)
+          IS_DRAFT=$(echo "$PR_JSON" | jq -r '.isDraft')
+          MERGEABLE=$(echo "$PR_JSON" | jq -r '.mergeable')
+          STATE=$(echo "$PR_JSON" | jq -r '.state')
+
+          if [ "$STATE" != "OPEN" ]; then
+            if [ "$STATE" = "MERGED" ]; then
+              # Reconciliation channel (was the old dispatcher's
+              # workflow_dispatch): bridge orders exist only for landed
+              # patches, so an already-merged PR is dispatched, never
+              # re-merged. Nothing to do here beyond releasing the dispatch.
+              echo "PR #${PR_NUM} is already MERGED — dispatch-only reconciliation."
+              echo "merged=dispatch-only" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "PR #${PR_NUM} is not open (state: $STATE). Skipping."
+            exit 0
+          fi
+
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "PR #${PR_NUM} is marked as draft. Skipping auto-merge."
+            exit 0
+          fi
+
+          if [ "$MERGEABLE" = "CONFLICTING" ]; then
+            echo "::error::PR #${PR_NUM} has merge conflicts. Cannot auto-merge."
+            gh pr comment "$PR_NUM" --repo "${{ github.repository }}" --body "## 🚦 Merge Gate — **BLOCKED**\n\nMerge conflicts detected against \`main\`. Please rebase and resolve conflicts."
+            exit 1
+          fi
+
+          # Verify all checks have passed (no failing or pending checks)
+          FAILING_CHECKS=$(echo "$PR_JSON" | jq -r '[.statusCheckRollup[]? | select(.conclusion == "FAILURE" or .conclusion == "TIMED_OUT")] | length')
+          if [ "$FAILING_CHECKS" -gt 0 ]; then
+            echo "::error::PR #${PR_NUM} has failing checks ($FAILING_CHECKS failures). Holding landing."
+            exit 1
+          fi
+
+          echo "✅ All required checks passed! Executing autonomous squash-merge..."
+
+          # Fail-honest merge: the exit code gates everything downstream. A
+          # "LANDED" comment plus a bridge dispatch fired after a failed
+          # merge desynchronizes the bridge channel (the dispatcher then
+          # hard-fails on state != MERGED). Hold both until the merge
+          # actually completes.
+          if ! gh pr merge "$PR_NUM" \
+            --repo "${{ github.repository }}" \
+            --squash \
+            --delete-branch \
+            --subject "Auto-merged PR #${PR_NUM} via Merge Gate"; then
+            echo "::error::gh pr merge failed for PR #${PR_NUM} — landing comment and bridge dispatch held."
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+          # Post landing comment
+          gh pr comment "$PR_NUM" \
+            --repo "${{ github.repository }}" \
+            --body "## 🚦 Merge Gate — **LANDED** ✓\n\n- PR #${PR_NUM} met all constitutional gate contracts.\n- Auto-merged autonomously into \`main\` (Zero-Admin Policy, Admin Effort <= 0.01%).\n- Bridge dispatch continues in the same run (🌉 job)."
+
+          echo "✅ PR #${PR_NUM} successfully auto-merged."
+
+  bridge-dispatch:
+    name: "🌉 Bridge Work Order — Public Merge → Private Bridge Queue"
+    needs: auto_merge
+    # Dispatch when: (a) this run merged the PR or is reconciling an
+    # already-merged one, or (b) a USER-token merge closed the PR (the
+    # suppressed pull_request event never fires for token-driven merges, so
+    # there is no loop risk in either branch). Never dispatch for bridge/*
+    # branches (loop prevention) — same rule as the old dispatcher.
+    if: |
+      needs.auto_merge.outputs.merged == 'true' ||
+      needs.auto_merge.outputs.merged == 'dispatch-only' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # E4 dedup race (preserved from #169-era doctrine): serialize dispatches
+    # for the same PR and never cancel mid-run — a cancelled run could push
+    # the patch branch without writing the dedup marker, and the next run
+    # would then false-reject as a duplicate.
+    concurrency:
+      group: landing-bridge-${{ needs.auto_merge.outputs.pr_number || github.event.pull_request.number }}
+      cancel-in-progress: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -99,10 +220,21 @@ jobs:
         id: check_scope
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Resolved for ALL trigger channels: this run's merged/reconciled PR
+          # number (needs output) or the closed PR's number (event context).
+          PR_NUM: ${{ needs.auto_merge.outputs.pr_number || github.event.pull_request.number }}
           # Inputs pass through env — never interpolated into the shell
           # (workflow_dispatch inputs are free text and fated for a shell).
           DISPATCH_PR: ${{ github.event.inputs.pr_number }}
           EVENT_NAME: ${{ github.event_name }}
+          # Untrusted event payload (PR title is attacker-controlled free
+          # text) — pass through env, never interpolate into the shell body.
+          # The old dispatcher carried this injection vector inline; the #155
+          # consolidation fixes it rather than inheriting it.
+          EVENT_PR_TITLE: ${{ github.event.pull_request.title }}
+          EVENT_PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             PR_NUM="$DISPATCH_PR"
@@ -134,12 +266,11 @@ jobs:
               BASE_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUM}" -q '.base.sha')
             fi
           else
-            PR_NUM="${{ github.event.pull_request.number }}"
-            PR_TITLE="${{ github.event.pull_request.title }}"
-            PR_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-            PR_HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
             echo "Processing merged PR #${PR_NUM}..."
+            PR_TITLE="$EVENT_PR_TITLE"
+            PR_SHA="$EVENT_PR_SHA"
+            PR_HEAD_SHA="$EVENT_PR_HEAD_SHA"
+            BASE_SHA="$EVENT_PR_BASE_SHA"
           fi
 
           if [ -z "$PR_SHA" ] || [ "$PR_SHA" = "null" ]; then
@@ -157,7 +288,7 @@ jobs:
           FILES=$(git diff --name-only "$BASE_SHA" "$PR_SHA")
           echo "Touched files:"
           echo "$FILES"
-          
+
           # Check if any shared core/doc/script files are touched
           SHOULD_BRIDGE="false"
           for f in $FILES; do
@@ -168,7 +299,7 @@ jobs:
                 ;;
             esac
           done
-          
+
           echo "should_bridge=$SHOULD_BRIDGE" >> "$GITHUB_OUTPUT"
 
       - name: Create Bridge Branch & File Work Order
@@ -214,8 +345,8 @@ jobs:
           echo "task_id=${TASK_ID}" >> "$GITHUB_OUTPUT"
           echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
 
-          # The merge commit must exist in this checkout. Both trigger paths
-          # check out main AFTER landing, so it is an ancestor of HEAD; a
+          # The merge commit must exist in this checkout. Both trigger
+          # paths check out main AFTER landing, so it is an ancestor of HEAD; a
           # missing object means the dispatch raced the merge landing.
           if ! git cat-file -e "${PR_SHA}^{commit}" 2>/dev/null; then
             echo "::error::merge commit ${PR_SHA} absent from checkout — dispatch likely raced the merge landing on main. Re-dispatch."
@@ -227,7 +358,7 @@ jobs:
 
           # Create and push bridge patch branch.
           # #113: branch from the MERGE COMMIT — the head ref is deleted by
-          # the Merge Gate's --delete-branch, and any git operation anchored
+          # the auto-merge's --delete-branch, and any git operation anchored
           # on PR_HEAD_SHA fatal-exits with "not a valid branch point".
           # Idempotent: TASK_ID is anchored to the PR's merge commit date, so
           # a re-dispatch re-points the same ref to the same immutable object

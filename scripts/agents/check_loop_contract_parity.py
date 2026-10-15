@@ -31,7 +31,9 @@ ROOT = Path(__file__).resolve().parents[2]
 LOOP = ROOT / "scripts" / "agents" / "continuous_agent_loop.py"
 SPEC = ROOT / "docs" / "AGENT_LOOP_SPEC.md"
 CONTRIB = ROOT / "docs" / "CONTRIBUTING.md"
-GUARDS_WF = ROOT / ".github" / "workflows" / "open-guards.yml"
+GUARDS_WF = ROOT / ".github" / "workflows" / "pipeline.yml"
+if not GUARDS_WF.is_file():
+    GUARDS_WF = ROOT / ".github" / "workflows" / "open-guards.yml"
 
 
 def main() -> int:
@@ -81,7 +83,11 @@ def main() -> int:
         return re.sub(r"\s+", " ", name).strip()
 
     wf = yaml.safe_load(GUARDS_WF.read_text(encoding="utf-8"))
-    job_names = {norm(j.get("name") or jid) for jid, j in wf["jobs"].items()}
+    job_names = {
+        norm(j.get("name") or jid)
+        for jid, j in wf["jobs"].items()
+        if "guard" in jid.lower() or "guard" in (j.get("name") or "").lower()
+    }
     sec5 = norm(spec.split("## 5.")[1].split("## 6.")[0])
     for job in sorted(job_names):
         if job and job not in sec5:

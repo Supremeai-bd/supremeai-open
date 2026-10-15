@@ -1,0 +1,43 @@
+# =============================================================================
+# Reusable composite action — standardized secret scanning (#155)
+# =============================================================================
+# Part of the Federation Workflow Diet's "Lightweight & Reusable Components"
+# catalog: one zero-config gitleaks scanner shared by every workflow instead
+# of a hand-rolled install+run block per file. Drop-in on any repository.
+#
+# Inputs are passed through env — never interpolated into the shell body
+# (workflow_dispatch inputs are free text and fated for a shell).
+# =============================================================================
+name: "Gitleaks Secret Scan"
+description: "Install Gitleaks and scan the checkout for secrets (PR-introduced range or full history)"
+inputs:
+  log_opts:
+    description: "git revision range passed to gitleaks --log-opts (default: origin/main..HEAD — only the commits this PR/branch introduces)"
+    required: false
+    default: "origin/main..HEAD"
+runs:
+  using: composite
+  steps:
+    - name: Install Gitleaks
+      shell: bash
+      run: |
+        curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar -xz gitleaks
+        sudo mv gitleaks /usr/local/bin/
+
+    - name: Run Gitleaks Secret Detection
+      shell: bash
+      env:
+        LOG_OPTS: ${{ inputs.log_opts }}
+      run: |
+        # #107 scope note (preserved from ci.yml): scan ONLY the commits this
+        # PR/branch introduces (origin/main..HEAD). The default --all sweep
+        # also walks OTHER agents' in-flight bridge/* branches, producing
+        # false positives from work-order fixtures that this PR neither
+        # contains nor owns — a PR must be judged on what it itself lands.
+        # (Main history was already scanned at PR time; push builds re-scan
+        # zero new commits, which is the correct no-op.)
+        if [ -n "$LOG_OPTS" ]; then
+          gitleaks detect --source=. --verbose --redact --log-opts="$LOG_OPTS"
+        else
+          gitleaks detect --source=. --verbose --redact
+        fi

@@ -31,6 +31,9 @@ scripts/agents/continuous_agent_loop.py   # 8-step autonomous agent loop (Python
 infrastructure/mcp-control-plane/         # Source of the MCP Control Tower (TypeScript)
 docs/                                     # Documentation (this file lives here)
 .github/ISSUE_TEMPLATE/                   # Task envelope + Bridge Work Order templates
+.github/actions/                          # Reusable composite actions (setup-node-tower, gitleaks-scan — #155)
+.github/workflows/pipeline.yml            # Unified validation: guards -> Python 3.10-3.13 matrix + Tower TS + secret scan + agent-loop cron
+.github/workflows/landing.yml             # Unified autonomous landing: auto-merge -> bridge dispatch in the same run
 AGENTS.md, AGENT_RULES.md                 # Governance contracts (see §1)
 README.md                                 # What this repo is and is not
 ```
@@ -157,7 +160,32 @@ The bridge intake is **fail-closed** — it rejects rather than sanitizes:
 - **External agents never write to `main`.** Landing authority belongs to the
   constitutional gates only.
 
-## 8. Branch, commit, and naming conventions
+## 8. Public boundary vs. private monorepo (Public-First SSOT, #155)
+
+This repository is the **public SSOT**; `Supremeai-bd/supremeai` is the private
+SSOT for everything that needs private context. Landed public work is
+**automatically bridged** into the private monorepo by `landing.yml` — you
+never move it by hand.
+
+**Never in this repo (private exclusives):** proprietary core/backend logic,
+production secrets & vault keys, live database migrations, production
+deployment pipelines needing private context, and anything requiring private
+packages. The boundary is machine-enforced: `boundary_sanitization_guard.py`
+(pipeline.yml guard job) fail-closes on proprietary paths/content, and gitleaks
+fail-closes on credentials.
+
+**Zero-duplicate rule (AGENT_RULES.md U4):** because your merged public PR
+flows into the private repo automatically, **never open a duplicate manual PR
+on `Supremeai-bd/supremeai`** for work handled here. One issue = at most one
+open PR, anywhere in the federation.
+
+**Shift-left benefit:** branch naming, issue reference, anti-duplicate PR,
+the full Python 3.10–3.13 matrix, Tower TypeScript checks, secret scanning,
+boundary audits, docs/link checks and lint all run **here, for free** — so the
+private pipeline runs only what needs private context (integration smoke,
+deployment, bridge intake, ops maintenance). See `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`.
+
+## 9. Branch, commit, and naming conventions
 
 - Task branches: `bridge/<task-id>` where task id = `bridge-YYYYMMDD-<slug>`
   (e.g. `bridge-20261015-contributing-guide`).
@@ -165,7 +193,7 @@ The bridge intake is **fail-closed** — it rejects rather than sanitizes:
 - Commits: conventional style — `fix(scope): …`, `feat(scope): …`, `docs(scope): …`.
 - One logical change per branch. The smallest safe change wins.
 
-## 9. Submission paths (pick by role)
+## 10. Submission paths (pick by role)
 
 | Path | Who | How |
 |------|-----|-----|
@@ -176,7 +204,7 @@ The bridge intake is **fail-closed** — it rejects rather than sanitizes:
 Work orders use the [Bridge Work Order template](../.github/ISSUE_TEMPLATE/bridge-work-order.yml);
 task envelopes use the [Agent Task template](../.github/ISSUE_TEMPLATE/agent-task.yml).
 
-## 10. Troubleshooting (field-tested)
+## 11. Troubleshooting (field-tested)
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
@@ -187,7 +215,7 @@ task envelopes use the [Agent Task template](../.github/ISSUE_TEMPLATE/agent-tas
 | `bridge_work_queue` 403 with rate-limit text | Tower egress IP throttled by GitHub | Transient — retry shortly; the queue itself needs no credentials |
 | Loop crashes on missing tooling | Should not happen since the graceful-degradation fix | Update to latest `main`; if it still crashes, that is a bug — file it with the traceback |
 
-## 11. Question, don't guess
+## 12. Question, don't guess
 
 If the issue is ambiguous, say so in your PR/work order and state the assumption
 you coded against. Reviewers would rather correct a stated assumption than

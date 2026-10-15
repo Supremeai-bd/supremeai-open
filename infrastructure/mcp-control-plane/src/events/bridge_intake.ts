@@ -35,7 +35,7 @@ export interface BridgeIntakeConfig {
   enabled: boolean;
   /** Repo owning the polling workflow (default: Supremeai-bd/supremeai-open). */
   repo: string;
-  /** Workflow filename for the dispatch API (default: continuous-agent-loop.yml). */
+  /** Workflow filename for the dispatch API (default: pipeline.yml). */
   workflow: string;
   /** Git ref to dispatch against (default: main). */
   ref: string;

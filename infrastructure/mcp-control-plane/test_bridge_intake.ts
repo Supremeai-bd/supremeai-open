@@ -29,7 +29,7 @@ function baseConfig(overrides: Partial<BridgeIntakeConfig> = {}): BridgeIntakeCo
   return {
     enabled: true,
     repo: "Supremeai-bd/supremeai-open",
-    workflow: "continuous-agent-loop.yml",
+    workflow: "pipeline.yml",
     ref: "main",
     minIntervalMs: 0,
     maxAttempts: 3,

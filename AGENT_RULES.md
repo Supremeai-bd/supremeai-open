@@ -33,6 +33,8 @@ Before claiming or creating work, inspect the relevant group, active issues, ope
    - If the existing PR is active/green: Do NOT intervene. Let CI Guardian and auto-merge complete the landing.
    - If the existing PR is failing checks or abandoned (stale > 2 hours): The agent may follow up on that branch or review it, but MUST NOT create a blind duplicate PR from scratch without explicitly closing or superseding the previous PR first.
 
+**Zero-Duplicate across the federation (#155, Public-First SSOT):** `supremeai-open` is the public SSOT; landed public work is auto-bridged into `Supremeai-bd/supremeai` by `landing.yml`. Therefore **no agent or contributor may open a manual PR on the private repository** for work handled at the public boundary — one issue = at most one open PR, anywhere in the federation. Machine-enforced at the public boundary by the `duplicate-pr-guard` job in `pipeline.yml`; the private intake dedups bridge work orders.
+
 ## U5 — Freshness & Ownership
 Claim state before work. Verify current `main`/PR state before push. Do not work on `state:seq-hold` or work blocked by upstream. Never push stale work.
 
