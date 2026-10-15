@@ -161,7 +161,7 @@ jobs:
           done
           echo "✅ No competing duplicate PRs detected for: $ISSUES"
 
-  boundary-sanitization-guard:
+  boundary_sanitization_guard:
     name: "🧱 Boundary Sanitization Guard (#107)"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -221,10 +221,10 @@ jobs:
   # ---------------------------------------------------------------------------
   test-matrix:
     name: Python ${{ matrix.python-version }} Matrix Smoke & Contract Validation
-    needs: boundary-sanitization-guard
+    needs: boundary_sanitization_guard
     if: |
       github.event_name == 'push' ||
-      (needs.boundary-sanitization-guard.result == 'success' && needs.boundary-sanitization-guard.outputs.docs_only != 'true')
+      (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -288,10 +288,10 @@ jobs:
   # ---------------------------------------------------------------------------
   secrets-scan:
     name: Secret Scanning
-    needs: boundary-sanitization-guard
+    needs: boundary_sanitization_guard
     if: |
       github.event_name == 'push' ||
-      needs.boundary-sanitization-guard.result == 'success'
+      needs.boundary_sanitization_guard.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -307,10 +307,10 @@ jobs:
   # ---------------------------------------------------------------------------
   mcp-tower:
     name: Tower TS Verification (typecheck + contract-safe tests)
-    needs: boundary-sanitization-guard
+    needs: boundary_sanitization_guard
     if: |
       github.event_name == 'push' ||
-      (needs.boundary-sanitization-guard.result == 'success' && needs.boundary-sanitization-guard.outputs.docs_only != 'true')
+      (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

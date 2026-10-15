@@ -11,7 +11,7 @@
 name: "Gitleaks Secret Scan"
 description: "Install Gitleaks and scan the checkout for secrets (PR-introduced range or full history)"
 inputs:
-  log-opts:
+  log_opts:
     description: "git revision range passed to gitleaks --log-opts (default: origin/main..HEAD — only the commits this PR/branch introduces)"
     required: false
     default: "origin/main..HEAD"
@@ -27,7 +27,7 @@ runs:
     - name: Run Gitleaks Secret Detection
       shell: bash
       env:
-        LOG_OPTS: ${{ inputs.log-opts }}
+        LOG_OPTS: ${{ inputs.log_opts }}
       run: |
         # #107 scope note (preserved from ci.yml): scan ONLY the commits this
         # PR/branch introduces (origin/main..HEAD). The default --all sweep

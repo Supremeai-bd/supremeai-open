@@ -79,9 +79,10 @@ permissions:
   issues: write
 
 jobs:
-  auto-merge:
+  auto_merge:
     name: "🛬 Autonomous Auto-Landing"
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
     # AGENT_RULES.md §12: one merge lock. Serialize landings; never cancel a
     # merge mid-flight (a half-landed state is worse than a queued one).
     concurrency:
@@ -190,15 +191,15 @@ jobs:
 
   bridge-dispatch:
     name: "🌉 Bridge Work Order — Public Merge → Private Bridge Queue"
-    needs: auto-merge
+    needs: auto_merge
     # Dispatch when: (a) this run merged the PR or is reconciling an
     # already-merged one, or (b) a USER-token merge closed the PR (the
     # suppressed pull_request event never fires for token-driven merges, so
     # there is no loop risk in either branch). Never dispatch for bridge/*
     # branches (loop prevention) — same rule as the old dispatcher.
     if: |
-      needs.auto-merge.outputs.merged == 'true' ||
-      needs.auto-merge.outputs.merged == 'dispatch-only' ||
+      needs.auto_merge.outputs.merged == 'true' ||
+      needs.auto_merge.outputs.merged == 'dispatch-only' ||
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -207,7 +208,7 @@ jobs:
     # the patch branch without writing the dedup marker, and the next run
     # would then false-reject as a duplicate.
     concurrency:
-      group: landing-bridge-${{ needs.auto-merge.outputs.pr_number || github.event.pull_request.number }}
+      group: landing-bridge-${{ needs.auto_merge.outputs.pr_number || github.event.pull_request.number }}
       cancel-in-progress: false
     steps:
       - name: Checkout repository
@@ -221,11 +222,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Resolved for ALL trigger channels: this run's merged/reconciled PR
           # number (needs output) or the closed PR's number (event context).
-          PR_NUM: ${{ needs.auto-merge.outputs.pr_number || github.event.pull_request.number }}
+          PR_NUM: ${{ needs.auto_merge.outputs.pr_number || github.event.pull_request.number }}
           # Inputs pass through env — never interpolated into the shell
           # (workflow_dispatch inputs are free text and fated for a shell).
           DISPATCH_PR: ${{ github.event.inputs.pr_number }}
           EVENT_NAME: ${{ github.event_name }}
+          # Untrusted event payload (PR title is attacker-controlled free
+          # text) — pass through env, never interpolate into the shell body.
+          # The old dispatcher carried this injection vector inline; the #155
+          # consolidation fixes it rather than inheriting it.
+          EVENT_PR_TITLE: ${{ github.event.pull_request.title }}
+          EVENT_PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             PR_NUM="$DISPATCH_PR"
@@ -258,10 +267,10 @@ jobs:
             fi
           else
             echo "Processing merged PR #${PR_NUM}..."
-            PR_TITLE="${{ github.event.pull_request.title }}"
-            PR_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-            PR_HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            PR_TITLE="$EVENT_PR_TITLE"
+            PR_SHA="$EVENT_PR_SHA"
+            PR_HEAD_SHA="$EVENT_PR_HEAD_SHA"
+            BASE_SHA="$EVENT_PR_BASE_SHA"
           fi
 
           if [ -z "$PR_SHA" ] || [ "$PR_SHA" = "null" ]; then
