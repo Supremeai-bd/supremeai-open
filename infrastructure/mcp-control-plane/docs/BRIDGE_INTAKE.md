@@ -3,8 +3,8 @@
 Webhook → workflow-dispatch wake-up path that replaces high-frequency **polling**
 latency with **event-driven** intake for the SupremeAI agent loop.
 
-- **Problem:** the agent loop only ran every 30 minutes (cron
-  `continuous-agent-loop.yml`), so a new Bridge Work Order / PR waited up to a
+- **Problem:** the agent loop only ran every 30 minutes (cron in the unified
+  `pipeline.yml`), so a new Bridge Work Order / PR waited up to a
   full interval before any agent picked it up. Scheduled runs also burned
   Actions minutes on empty boards.
 - **Solution:** the already-deployed MCP Control Tower `/webhooks/github` route
@@ -27,7 +27,7 @@ GitHub webhook ──► /webhooks/github (HMAC sha256 over raw body, prod)
                                      POST /repos/{repo}/actions/workflows/{workflow}/dispatches
                                                      │
                                                      ▼
-                            continuous-agent-loop.yml runs immediately (--pick-next)
+                             pipeline.yml runs immediately (--pick-next)
 ```
 
 ## Activation (owner-side, one time)
@@ -43,7 +43,7 @@ GitHub webhook ──► /webhooks/github (HMAC sha256 over raw body, prod)
    |---|---|---|
    | `BRIDGE_INTAKE_ENABLED` | `false` | **fail-closed master switch** |
    | `BRIDGE_INTAKE_REPO` | `Supremeai-bd/supremeai-open` | repo owning the workflow |
-   | `BRIDGE_INTAKE_WORKFLOW` | `continuous-agent-loop.yml` | dispatch target |
+    | `BRIDGE_INTAKE_WORKFLOW` | `pipeline.yml` | dispatch target |
    | `BRIDGE_INTAKE_REF` | `main` | dispatch ref |
    | `BRIDGE_INTAKE_MIN_INTERVAL_MS` | `60000` | min spacing between dispatches |
    | `BRIDGE_INTAKE_MAX_ATTEMPTS` | `5` | retry ceiling → dead-letter |
@@ -90,7 +90,7 @@ be measured in deployment logs (`agent-loop` job start vs `[BRIDGE_INTAKE]`).
 
 ## Rollout & cron retirement criteria
 
-The 30-minute cron in `continuous-agent-loop.yml` **stays** as the
+The 30-minute cron in `pipeline.yml` **stays** as the
 reconciliation fallback during rollout. Retire (or lower) it only after **all**
 of:
 

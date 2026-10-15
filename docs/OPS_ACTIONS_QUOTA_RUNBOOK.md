@@ -80,9 +80,32 @@ should run this weekly (org-owner PAT with `admin:org` billing read).
 | **cancel-in-progress: true** | `archive-mirror.yml` (PR #169) | pure mirror is newest-wins — superseded runs cancel cleanly |
 | **concurrency v3 bump** | both workflows (PR #169) | group-rename escape hatch — fresh groups bypass poisoned group state |
 | **cancel-in-progress stays false** | `bridge-intake.yml` (PR #169) | E4 dedup race: mid-run cancel would push the branch without writing the dedup marker → later false-rejects |
-| **shift-left guards** | `supremeai-open` `.github/workflows/open-guards.yml` (PR #64) | invalid contributions fail on the free public runtime (~5s) instead of burning private minutes |
+| **shift-left guards** | `supremeai-open` `.github/workflows/pipeline.yml` (PR #64, consolidated by #155) | invalid contributions fail on the free public runtime (~5s) instead of burning private minutes |
 
-## 6. Support-ticket checklist (org owner, AC1)
+## 6. Federation Workflow Diet (#155) — the structural quota fix
+
+Volume pathology (§3) is treated at the root, not with per-run patches: the
+public boundary and the private monorepo each run the **minimum safest
+workflow set**, and every check that the free public runtime already proves is
+eliminated from private CI (shift-left de-duplication).
+
+| Surface | Before | After (2 files) |
+|---|---|---|
+| `supremeai-open` | 5 workflows (`open-guards`, `ci`, `continuous-agent-loop`, `merge-gate`, `auto-bridge-dispatcher`) | `pipeline.yml` (validation + cron engine) + `landing.yml` (auto-merge + bridge dispatch) |
+| `supremeai` (private) | 18 workflows | 4 (`pr-pipeline`, `deploy-train`, `bridge-intake`, `ops-maintenance`) — private-side change, tracked there |
+
+Eliminated from private CI because `supremeai-open` proves them first (free
+runtime, unlimited minutes): branch naming, issue reference, anti-duplicate PR,
+full Python matrix (3.10–3.13; private pins 3.11), Tower TS typecheck/tests,
+gitleaks full-history scan, boundary sanitization audit, docs/link checks,
+lint/format passes, dependency vulnerability scans, AI PR evaluation.
+
+Contributor rule: because landed public work is auto-bridged into
+`Supremeai-bd/supremeai`, **never open a duplicate manual PR on the private
+repository** for work handled at the public boundary (AGENT_RULES.md U4,
+zero-duplicate mandate).
+
+## 7. Support-ticket checklist (org owner, AC1)
 
 Include: repo `Supremeai-bd/supremeai`; onset `2026-10-15T14:48Z` (+ prior
 batches Oct 9/10/13); run IDs from §2; one raw 409 response body for cancel;
@@ -95,4 +118,5 @@ Link the ticket back into issue #68 when filed.
 
 - Issue #68 (this runbook's tracking issue) · PR #169 (E11 + concurrency v3)
 - PR #64 (task envelope + open guards) · Issue #63 (taxonomy drift fix)
+- Issue #155 (Federation Workflow Diet — public 5→2 workflows, private 18→4)
 - `docs/AGENT_LOOP_SPEC.md §4b` (CONTRACT_VERSION parity contract)

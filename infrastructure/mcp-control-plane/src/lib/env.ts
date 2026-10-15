@@ -198,7 +198,7 @@ export const env = {
   bridgeIntake: {
     get enabled(): boolean { return process.env.BRIDGE_INTAKE_ENABLED === "true"; },
     get repo(): string { return optional("BRIDGE_INTAKE_REPO", "Supremeai-bd/supremeai-open"); },
-    get workflow(): string { return optional("BRIDGE_INTAKE_WORKFLOW", "continuous-agent-loop.yml"); },
+    get workflow(): string { return optional("BRIDGE_INTAKE_WORKFLOW", "pipeline.yml"); },
     get ref(): string { return optional("BRIDGE_INTAKE_REF", "main"); },
     get minIntervalMs(): number { return parseInt(optional("BRIDGE_INTAKE_MIN_INTERVAL_MS", "60000"), 10) || 60000; },
     get maxAttempts(): number { return parseInt(optional("BRIDGE_INTAKE_MAX_ATTEMPTS", "5"), 10) || 5; },

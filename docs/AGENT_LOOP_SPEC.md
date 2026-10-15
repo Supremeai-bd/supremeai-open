@@ -50,7 +50,7 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
       "base_branch": "main",
       "pr_title_prefix": "feat(open):",
       "issue_reference_required": true,
-      "branch_convention": "^(feat|fix|docs|…|agent)/<slug> — enforced by open-guards.yml",
+      "branch_convention": "^(feat|fix|docs|…|agent)/<slug> — enforced by pipeline.yml",
       "pr_body_template": "…markdown PR body (legacy draft file content)…"
     }
   }
@@ -131,7 +131,7 @@ parity contract:
    | `--verify-only` | shared | 3-tier verification + parity marker line |
    | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role |
    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
-   | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private `continuous-agent-loop.yml` workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
+    | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private agent-loop workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
 
 3. **Envelope parity** — the same issue on both copies must yield a
    `task_envelope` whose contract sections are byte-identical modulo
@@ -143,7 +143,9 @@ parity contract:
 
 ## 5. Open Guards — shift-left on free public runtime
 
-`.github/workflows/open-guards.yml` runs **zero-checkout** (~5s) on every PR
+The guard jobs in `.github/workflows/pipeline.yml` (branch-naming,
+issue-reference, anti-duplicate PR, boundary-sanitization) run
+**zero-checkout** (~5s) on every PR
 to `supremeai-open` — free, unlimited public Actions minutes — so invalid
 contributions fail at the public boundary instead of burning the private
 repo's limited quota (Free org ≈ 2,000 min/month):

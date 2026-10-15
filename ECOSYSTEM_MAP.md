@@ -70,3 +70,22 @@ Every bridge patch is inspected by fail-closed automated scanners:
 - **Diff Size:** ≤ 200 KB diff and ≤ 30 files per task.
 - **Zero Secrets:** Never include API keys, tokens, or credentials in diffs or commit messages.
 - **Protected Paths:** Changes targeting `.github/`, `.env*`, or credentials require explicit admin review.
+
+## 6. Automation Topology & the Zero-Duplicate Rule (#155)
+
+This repo runs the **minimum safest workflow set** on the free public runtime:
+
+| Workflow | Jobs |
+|---|---|
+| `pipeline.yml` | guards (branch naming, issue reference, anti-duplicate PR, boundary sanitization) → Python 3.10–3.13 matrix + Tower TS verification + secret scan; 30-minute agent-loop cron + event-driven intake |
+| `landing.yml` | autonomous squash-merge on full gate success → same-run bridge dispatch of the landed patch reference into the private queue |
+
+Because landed public work is **automatically bridged** into `Supremeai-bd/supremeai`:
+- **Never open a duplicate manual PR on the private repository** for work handled here (AGENT_RULES.md U4 — one issue, at most one open PR, anywhere in the federation).
+- The private monorepo runs only what needs private context: integration smoke, production deployment, bridge intake, ops maintenance. It never re-runs checks already proven here (full matrix, gitleaks, boundary audit, lint, docs checks).
+
+Reusable building blocks (cross-federation SSOT): `scripts/ci/boundary_sanitization_guard.py` (stdlib-only, identical on both sides) and `.github/actions/` composite actions (`setup-node-tower`, `gitleaks-scan`). Full doctrine: `AGENTS.md` §2.2.
+
+---
+
+**Related:** [`AGENTS.md`](./AGENTS.md) (constitution) · [`AGENT_RULES.md`](./AGENT_RULES.md) (policy) · [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) (contributor guide) · [`docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`](./docs/OPS_ACTIONS_QUOTA_RUNBOOK.md) (quota & diet)

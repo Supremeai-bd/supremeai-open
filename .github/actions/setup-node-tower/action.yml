@@ -1,0 +1,32 @@
+# =============================================================================
+# Reusable composite action — Node 24 setup for the MCP Control Tower (#155)
+# =============================================================================
+# Part of the Federation Workflow Diet's "Lightweight & Reusable Components"
+# catalog: bundles Node 24 setup, npm caching, dependency install and the
+# `tsc` compilation gate into ONE action, cutting ~40 lines of duplicated
+# YAML per workflow. Reused identically by every workflow that builds the
+# Tower — public pipeline today, private pipelines after the 18 -> 4 diet.
+# =============================================================================
+name: "Setup Node — MCP Tower"
+description: "Node 24 + npm cache + npm ci + tsc --noEmit for infrastructure/mcp-control-plane"
+runs:
+  using: composite
+  steps:
+    - name: Set up Node 24
+      uses: actions/setup-node@v4
+      with:
+        node-version: "24"
+        cache: npm
+        cache-dependency-path: infrastructure/mcp-control-plane/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+      working-directory: infrastructure/mcp-control-plane
+
+    # #86: the live Tower deployment source ships with TypeScript verification
+    # in this composite so no workflow can accidentally omit it again.
+    - name: Typecheck (tsc --noEmit)
+      run: npm run typecheck
+      shell: bash
+      working-directory: infrastructure/mcp-control-plane

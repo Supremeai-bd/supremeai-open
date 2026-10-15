@@ -18,7 +18,7 @@
 
 # ── Stage 1: builder (Node/TypeScript) ────────────────────────────────────────
 # INF-16 fix (issue #562): both stages must run the SAME Node major as the
-# verification gate — this repo's ci.yml `tower-verify` job pins Node 24.
+# verification gate — pipeline.yml (unified, #155) `mcp-tower` job pins Node 24.
 # (The original monorepo-referenced note pointed at paths that do not exist in
 # this repository — corrected with #86.) Testing the build on Node 24
 # while shipping node:20-alpine meant Node 22+/24-only APIs (node:sqlite,

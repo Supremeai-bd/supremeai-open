@@ -3,7 +3,7 @@
 # Implements open issue #41: org-specific secret detection rules for the
 # credential families this federation actually issues, on top of the upstream
 # default ruleset. CI runs `gitleaks detect --source=. --verbose --redact`
-# (see .github/workflows/ci.yml) which exits non-zero on ANY finding — that
+# (see .github/workflows/pipeline.yml) which exits non-zero on ANY finding — that
 # non-zero exit IS the fail-closed gate. Nothing in this file may weaken it:
 # no global allowlists, no severity downgrades, no per-rule `?ignore` hints.
 #

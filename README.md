@@ -13,7 +13,8 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
 | `ECOSYSTEM_MAP.md` | **The Federation Ecosystem Map** — architecture directory for agents working across repos |
 | `AGENTS.md` | Agent entrypoint: autonomous work-submission loop, submission pathways, bridge lane |
 | `AGENT_RULES.md` | Agent policy constitution: universal rules, policies, roles, fail-closed guards |
-| `.github/workflows/continuous-agent-loop.yml` | 30-minute cron that starts the existing dispatcher `scripts/agents/continuous_agent_loop.py --pick-next` (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch) |
+| `.github/workflows/pipeline.yml` | Unified validation & cron engine (#155): guards → Python 3.10–3.13 matrix + Tower TS verification + secret scan, plus the 30-minute cron that starts the existing dispatcher `scripts/agents/continuous_agent_loop.py --pick-next` (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch; event-driven intake via the MCP Tower, see `infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md`) |
+| `.github/workflows/landing.yml` | Unified autonomous landing & bridge dispatch (#155): auto-squash-merge on full gate success, then the same run streams the landed patch reference into the private bridge queue |
 | `.github/ISSUE_TEMPLATE/bridge-work-order.yml` | Work-order template for bridge submissions (task id, patch branch, test evidence) |
 | `LICENSE` | MIT |
 

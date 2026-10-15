@@ -27,7 +27,7 @@ MODES
   --check                 Full audit of every git-tracked file in the current
                           checkout (boot smoke test / final barrier).
   --files F [F...]        Scan exactly these paths (PR changed-files mode,
-                          used by open-guards.yml on every pull request).
+                          used by pipeline.yml on every pull request).
   --base SHA --head SHA   Scan files changed between two revisions
                           (git diff --name-only base..head).
   --self-test             Offline guard-the-guard fixtures: violations must be
@@ -90,7 +90,7 @@ APPROVED_ROOT_FILES = {
 # depth>=3 inherits approval from the depth-2 subtree.
 APPROVED_SUBTREES = {
     "scripts": {"agents", "ops", "ci"},  # ci/ added by #107
-    ".github": {"ISSUE_TEMPLATE", "workflows"},
+    ".github": {"ISSUE_TEMPLATE", "workflows", "actions"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
 }
 
