@@ -112,4 +112,4 @@ jobs:
           sudo mv gitleaks /usr/local/bin/
 
       - name: Run Gitleaks Secret Detection
-        run: gitleaks detect --source=. --verbose --redact
+        run: gitleaks detect --source=. --verbose --redact --log-opts="origin/main..HEAD"

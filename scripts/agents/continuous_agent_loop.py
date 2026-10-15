@@ -4,6 +4,10 @@
 Target: External and autonomous agents contributing to SupremeAI Open Foundation
 Repository: Supremeai-bd/supremeai-open
 
+Pathway 2 (fork-based) support: pass --fork-owner <owner> (or set
+SUPREMEAI_FORK_OWNER) so step 7 pushes the session branch to that fork and
+opens the PR with head "<owner>:<branch>" against the upstream repository.
+
 This loop operates as the "Lazy Team Leader":
   - Inspects open issues and task queues.
   - Classifies the task and selects the specialized agent role (Coder, Auditor, CI Fixer, etc.).
@@ -672,6 +676,35 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
             evidence.append({"tier": 7, "name": "Envelope Determinism", "passed": False})
             return False, evidence
         evidence.append({"tier": 7, "name": "Envelope Determinism (byte-identical rebuild)", "passed": True})
+
+        # Tier 8: Hardcoded Machine Path Guard (P6 Defect Class Prevention)
+        # Rejects absolute host drive paths (e.g. F:/, C:/, \Users\) hardcoded into operational source
+        machine_path_pattern = re.compile(r'["\'](?:[A-Za-z]:[\\/]|\\\\Users\\\\)')
+        path_violations = []
+        scan_targets = [
+            f for f in REPO_ROOT.glob("**/*")
+            if f.suffix in {".py", ".ts", ".js"}
+            and "node_modules" not in f.parts
+            and ".git" not in f.parts
+            and "dist" not in f.parts
+        ]
+        for target in scan_targets:
+            try:
+                content = target.read_text(encoding="utf-8", errors="ignore")
+                for line_idx, line in enumerate(content.splitlines(), start=1):
+                    stripped = line.strip()
+                    if stripped.startswith(("#", "//", "/*", "*")):
+                        continue
+                    if machine_path_pattern.search(line):
+                        path_violations.append(f"{target.relative_to(REPO_ROOT)}:{line_idx}")
+            except Exception:
+                pass
+
+        if path_violations:
+            log("❌", f"Hardcoded machine paths detected in source: {path_violations[:3]}")
+            evidence.append({"tier": 8, "name": "Machine Path Isolation Guard", "passed": False, "violations": path_violations})
+            return False, evidence
+        evidence.append({"tier": 8, "name": "Machine Path Isolation Guard", "passed": True, "files_scanned": len(scan_targets)})
     except Exception as e:
         log("❌", f"Self-test verification failed: {e}")
         return False, evidence
@@ -680,12 +713,36 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
     return True, evidence
 
 
+def push_branch_to_fork(fork_owner: str, branch: str) -> tuple[bool, str]:
+    """Pathway 2 (AGENTS.md §2.1): ensure the fork exists and push the session branch.
+
+    Idempotent: `gh repo fork` is a no-op when the fork already exists; the push
+    is force-with-lease safe for a session-scoped contributor branch.
+    """
+    fork_code, fork_out, fork_err = run_cmd(
+        ["gh", "repo", "fork", UPSTREAM_REPO, "--clone=false"],
+        check=False,
+    )
+    if fork_code != 0:
+        return False, f"fork ensure failed ({fork_code}): {fork_err or fork_out}"
+    push_code, push_out, push_err = run_cmd(
+        ["git", "push", "--force-with-lease",
+         f"https://github.com/{fork_owner}/{UPSTREAM_REPO.split('/')[-1]}.git",
+         f"{branch}:{branch}"],
+        check=False,
+    )
+    if push_code != 0:
+        return False, f"fork push failed ({push_code}): {push_err or push_out}"
+    return True, f"pushed {branch} to {fork_owner}/{UPSTREAM_REPO.split('/')[-1]}"
+
+
 def step_7_record(
     task: dict[str, Any],
     branch: str,
     contract: dict[str, Any] | None = None,
     evidence: list[dict[str, Any]] | None = None,
     auto_pr: bool = False,
+    fork_owner: str | None = None,
 ) -> bool:
     """Step 7: Prepare PR body with dynamic test evidence and submit PR."""
     log("📝", "[Step 7/8: Record] Generating Universal PR Template...")
@@ -748,12 +805,20 @@ Refs #{issue_num}
     # and agents consuming the Task Envelope get the same template via
     # submission.pr_body_template (single source of truth).
     if auto_pr:
-        log("🚀", f"Opening Pull Request against {UPSTREAM_REPO}:main...")
+        head_ref = branch
+        if fork_owner:
+            log("🍴", f"Pathway 2: ensuring fork + pushing branch to {fork_owner}...")
+            pushed, push_detail = push_branch_to_fork(fork_owner, branch)
+            if not pushed:
+                log("❌", f"[Fail-Closed Gate] Fork push failed: {push_detail}")
+                return False
+            head_ref = f"{fork_owner}:{branch}"
+        log("🚀", f"Opening Pull Request against {UPSTREAM_REPO}:main (head: {head_ref})...")
         cmd = [
             "gh", "pr", "create",
             "--repo", UPSTREAM_REPO,
             "--base", "main",
-            "--head", branch,
+            "--head", head_ref,
             "--title", f"feat(open): {task.get('title')}",
             "--body", pr_body
         ]
@@ -832,7 +897,8 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
         log("❌", "Verification failed. Please fix errors before proceeding.")
         return 1
 
-    if not step_7_record(task, branch, contract=contract, evidence=evidence, auto_pr=args.auto_pr):
+    fork_owner = getattr(args, "fork_owner", None) or os.environ.get("SUPREMEAI_FORK_OWNER", "").strip() or None
+    if not step_7_record(task, branch, contract=contract, evidence=evidence, auto_pr=args.auto_pr, fork_owner=fork_owner):
         log("❌", "Step 7 (Record) failed! Halting before completion return.")
         return 1
 
@@ -858,6 +924,10 @@ def main() -> int:
     parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
     parser.add_argument("--allow-adhoc", action="store_true", help="Allow adhoc task execution without --issue (offline testing only)")
     parser.add_argument("--force", action="store_true", help="Bypass dirty workspace isolation gate (not recommended)")
+    parser.add_argument("--fork-owner", type=str, default=None,
+                        help="Pathway 2: GitHub owner of your fork; step 7 pushes the branch "
+                             "there and opens the PR with head '<owner>:<branch>' "
+                             "(env fallback: SUPREMEAI_FORK_OWNER)")
     args = parser.parse_args()
 
     banner = (

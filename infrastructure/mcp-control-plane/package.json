@@ -12,6 +12,7 @@
     "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake",
     "test:integration": "tsx test_resource_list.ts",
     "test:smoke": "tsx test_adapters.ts",
+    "test:render-logs": "tsx test_render_logs.ts",
     "test:smoke:report": "tsx scripts/smoke-report.ts",
     "test:service-circles": "tsx test_service_circles.ts",
     "test:timestamps": "tsx test_timestamps.ts",
