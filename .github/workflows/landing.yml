@@ -240,6 +240,19 @@ jobs:
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The bridge branch is created FROM the merge commit, so it can contain
+    # .github/workflows/* changes — exactly what the #155 diet lands most.
+    # GitHub refuses an App-token push that creates/updates workflow files
+    # without the `workflows` scope (observed live: PR #184's dispatch failed
+    # with "refusing to allow a GitHub App to create or update workflow
+    # .github/workflows/landing.yml without `workflows` permission" and its
+    # work order never filed). Job-level permissions replace the workflow-level
+    # set, so this job declares its full least-privilege set explicitly.
+    permissions:
+      contents: write
+      pull-requests: read
+      issues: write
+      workflows: write
     # E4 dedup race (preserved from #169-era doctrine): serialize dispatches
     # for the same PR and never cancel mid-run — a cancelled run could push
     # the patch branch without writing the dedup marker, and the next run
