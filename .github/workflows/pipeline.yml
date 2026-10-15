@@ -408,6 +408,14 @@ jobs:
           set -euo pipefail
           python scripts/ci/stale_claim_releaser.py --auto-release --claim-to-branch-min 10.0 --branch-to-pr-min 30.0
 
+      # Auto-Bridge PR Opener (Zero-Admin Submission):
+      # Automatically converts submitted bridge branches into Pull Requests
+      # so CI tests run and Landing Merge Gate can auto-merge them.
+      - name: Auto-Bridge PR Opener (Zero-Admin Submission)
+        run: |
+          set -euo pipefail
+          python scripts/ci/auto_bridge_pr_opener.py --auto-open
+
       # AGENT_RULES.md §10 — "A job that runs but produces no expected result
       # is actionable when evidence confirms it… No-actionable-finding must be
       # recorded explicitly without creating issue storms." An empty upstream
