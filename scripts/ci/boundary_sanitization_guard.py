@@ -72,6 +72,12 @@ APPROVED_TOP_LEVEL_DIRS = {
     "examples",
     "infrastructure",
     "scripts",
+    # tests/ — approved for issue #45 (validate_schemas CLI test suite);
+    # expansion per the process documented in this module's docstring:
+    # registry changes ride a PR that references the governing issue.
+    # Content-layer checks (PROPRIETARY-LOGIC scan) still apply to every
+    # file under this surface — path approval never bypasses content rules.
+    "tests",
 }
 
 APPROVED_ROOT_FILES = {
@@ -89,7 +95,13 @@ APPROVED_ROOT_FILES = {
 # depth-2 granularity for dirs that host executable/config material;
 # depth>=3 inherits approval from the depth-2 subtree.
 APPROVED_SUBTREES = {
-    "scripts": {"agents", "ops", "ci"},  # ci/ added by #107
+    # scripts/: agents/, ops/, ci/ are directory subtrees (ci/ added by #107).
+    # "validate_schemas.py" is a FILE entry — the issue-#45 schema-validation
+    # CLI lives at the issue's declared Touching-Files path (top level of
+    # scripts/). Registry entries are second-level path segments; a file is
+    # as valid a segment as a directory. Expansion per the process documented
+    # in this module's docstring (PR references the governing issue #45).
+    "scripts": {"agents", "ops", "ci", "validate_schemas.py"},
     ".github": {"ISSUE_TEMPLATE", "workflows", "actions"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
 }
