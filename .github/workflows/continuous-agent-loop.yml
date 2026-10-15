@@ -70,9 +70,11 @@ jobs:
         id: board
         run: |
           set -euo pipefail
-          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title)
-          echo "claimable-board snapshot: $BOARD"
-          if [ "$BOARD" = "[]" ]; then
+          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title,labels)
+          # Mirror issues (#122) are born non-claimable — exclude the marker.
+          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select([.labels[].name] | index("mirror:private") | not)]')
+          echo "claimable-board snapshot: $CLAIMABLE"
+          if [ "$CLAIMABLE" = "[]" ]; then
             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
             echo "has_work=false" >> "$GITHUB_OUTPUT"
           else

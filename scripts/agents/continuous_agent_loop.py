@@ -387,7 +387,8 @@ def pick_next_issue() -> str | None:
 
     Selection policy (#88):
       - Claim-gated: only issues carrying ``status:unclaimed`` are eligible;
-        claimed/in-progress, sequence-held and blocked boards are never
+        claimed/in-progress, sequence-held, blocked and private-mirror
+        boards are never
         (re)dispatched.
       - Whole-board scope: pagination limit high enough that truncation cannot
         starve old issues (verified: board regularly holds 35+ open issues).
@@ -408,7 +409,10 @@ def pick_next_issue() -> str | None:
         issues = json.loads(out)
 
         CLAIMABLE_LABEL = "status:unclaimed"
-        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream"}
+        # mirror:private (#122) — issues mirrored from the private monorepo
+        # declare a non-public target repository; no public lane can act on
+        # private-only paths, so mirrors are born non-claimable.
+        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream", "mirror:private"}
 
         def label_names(item: dict[str, Any]) -> list[str]:
             labels = item.get("labels")
