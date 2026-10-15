@@ -1,0 +1,126 @@
+# AGENT LOOP SPEC — Single Deterministic Task Envelope (task-envelope-v1)
+
+> Source of truth: `scripts/agents/continuous_agent_loop.py`
+> Ref: issue #63 · Philosophy: `AGENTS.md` §6 — *"Simple + effective > clever + complex."*
+
+## 1. Why
+
+Before #63 the loop runner produced **4 disparate output formats** that external
+autonomous agents (Z.ai, Claude, Antigravity, …) had to reconcile:
+
+| # | Legacy format | Replaced by (envelope field) |
+|---|---------------|------------------------------|
+| 1 | Multi-step terminal console logs | `problem_statement` + `objective` |
+| 2 | `--emit-prompt` markdown specialist prompt | `specialist_prompt` |
+| 3 | `--emit-contract` raw JSON contract | embedded contract fields (`group`, `scope`, `admin_gate`, …) |
+| 4 | `.pr_template_draft.md` filesystem draft | `submission.pr_body_template` |
+
+Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JSON.
+
+## 2. Envelope schema (v1)
+
+```jsonc
+{
+  "task_envelope": {
+    "envelope_version": 1,
+    "output_format": "task-envelope-v1",
+    "task_id":   "task-63",
+    "issue":     "63",
+    "task_type": "IMPLEMENT",          // VALID_TASK_TYPES
+    "group":     "agent-orchestration",// VALID_GROUPS registry — fail-closed
+    "priority":  "P2",                 // P0..P3
+    "objective": "…",
+    "problem_statement": { "id", "title", "body", "labels", "state" },
+    "role": "coder",                   // one of the 7 specialist roles
+    "role_policy": "contributor",
+    "role_description": "…",
+    "scope": {
+      "touching_files": ["…"],         // Scope Gate boundary
+      "forbidden_paths": [".env*", "secrets/**", "credentials/**", "vault/**"]
+    },
+    "acceptance": ["…"],
+    "verification": ["…"],
+    "required_evidence": ["…"],
+    "stop_conditions": ["…"],
+    "admin_gate": { "required": false, "status": "NOT_REQUIRED" },
+    "specialist_prompt": "…markdown prompt (legacy --emit-prompt content)…",
+    "submission": {
+      "pathway": "bridge_submit_patch | pull_request",
+      "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
+      "base_branch": "main",
+      "pr_title_prefix": "feat(open):",
+      "issue_reference_required": true,
+      "branch_convention": "^(feat|fix|docs|…|agent)/<slug> — enforced by open-guards.yml",
+      "pr_body_template": "…markdown PR body (legacy draft file content)…"
+    }
+  }
+}
+```
+
+## 3. Group taxonomy — `VALID_GROUPS` (fail-closed)
+
+Agents **cannot** invent arbitrary group names. Any task contract with an
+unlisted group raises `ValueError` inside `build_task_contract()` **and**
+`resolve_group()` — invalid work never reaches private CI.
+
+| Group | Domain |
+|-------|--------|
+| `agent-orchestration` | continuous loop, agent dispatch, specialist roles, task envelopes, agent lifecycle |
+| `mcp-tower` | MCP Control Plane tools, health probes, bridge adapters, remote endpoints, server infra |
+| `core-engine` | core federation business logic, state machines, models |
+| `schemas-contracts` | OpenAPI schemas, contract definitions, protocol envelopes |
+| `infra-ops` | deployment configs, CI actions, cloud runtime configurations |
+
+**Resolution order (deterministic):**
+1. `--group <name>` CLI flag (must be in registry, else exit 2)
+2. Issue body/label scan (first registry match, sorted order)
+3. Default: `agent-orchestration`
+
+`.github/ISSUE_TEMPLATE/agent-task.yml` carries a **dropdown aligned to this
+registry** — keep the two in sync when the taxonomy changes.
+
+## 4. CLI surface after #63
+
+| Command | Status | Behaviour |
+|---------|--------|-----------|
+| `--task-envelope` | ✅ canonical | emits the unified envelope JSON, exit 0 |
+| `--emit-prompt` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
+| `--emit-contract` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
+| `--group <name>` | ✅ new | canonical group override |
+| `--verify-only` | ✅ extended | tiers 1–5 (syntax / JSON / YAML / binary guard / contract guard) + **tier 6** group-registry guard + **tier 7** envelope-determinism check |
+
+Deprecated shims keep running automation alive; removal is a future admin
+decision after private-mirror parity (do not remove in a drive-by change).
+
+## 5. Open Guards — shift-left on free public runtime
+
+`.github/workflows/open-guards.yml` runs **zero-checkout** (~5s) on every PR
+to `supremeai-open` — free, unlimited public Actions minutes — so invalid
+contributions fail at the public boundary instead of burning the private
+repo's limited quota (Free org ≈ 2,000 min/month):
+
+1. **Branch Naming Guard** — head branch must match
+   `^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/…`
+   (bot branches `dependabot|github-actions|copilot/*` auto-allowed).
+2. **Issue Reference Guard** — PR title/body must contain `#<number>`
+   (admin escape hatch: `guard-exempt` label).
+
+## 6. Submission flow (Pathway 1 wiring)
+
+Agents consume the envelope, implement inside `scope.touching_files`, then
+submit **without intermediate filesystem drafts**:
+
+- **Pull request** (zero-credential): fork/branch → PR to `supremeai-open:main`
+  using `submission.pr_body_template` + issue reference.
+- **Bridge lane** (collaborator): push `bridge/<task-id>` branch to this repo →
+  Bridge Work Order issue → private gate battery lands the change
+  (or `bridge_submit_patch` MCP tool per AGENTS.md §8).
+
+## 7. Verification quick-start
+
+```bash
+git grep -n "VALID_GROUPS" scripts/agents/continuous_agent_loop.py
+python scripts/agents/continuous_agent_loop.py --verify-only
+python scripts/agents/continuous_agent_loop.py --issue 63 --task-envelope
+python scripts/agents/continuous_agent_loop.py --task-envelope --allow-adhoc --group not-a-group   # → exit 2 (fail-closed demo)
+```
