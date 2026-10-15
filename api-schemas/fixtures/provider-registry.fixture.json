@@ -1,0 +1,241 @@
+{
+  "schema_version": "1.0",
+  "providers": [
+    {
+      "id": "openai",
+      "display_name": "OpenAI",
+      "status": "active",
+      "base_url": "https://api.openai.com",
+      "auth": { "scheme": "bearer", "env_var": "OPENAI_API_KEY" },
+      "capabilities": {
+        "streaming": true,
+        "tool_calling": true,
+        "reasoning_tokens": true,
+        "json_mode": true,
+        "max_context_tokens": 128000,
+        "rate_limits": { "requests_per_minute": 500, "tokens_per_minute": 300000, "concurrent_requests": 10 }
+      },
+      "errors": {
+        "mappings": [
+          { "code": "rate_limited", "upstream_status": 429, "upstream_pattern": "rate limit", "action": "backoff_then_retry" },
+          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "quota", "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
+          { "code": "timeout", "upstream_status": 408, "action": "retry" },
+          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 502, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
+          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context length", "action": "abort" },
+          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content policy", "action": "abort" }
+        ]
+      },
+      "failover": {
+        "priority": 1,
+        "fallback_ids": ["anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"],
+        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
+      }
+    },
+    {
+      "id": "anthropic",
+      "display_name": "Anthropic",
+      "status": "active",
+      "base_url": "https://api.anthropic.com",
+      "auth": { "scheme": "api-key-header", "header_name": "x-api-key", "env_var": "ANTHROPIC_API_KEY" },
+      "capabilities": {
+        "streaming": true,
+        "tool_calling": true,
+        "reasoning_tokens": true,
+        "json_mode": true,
+        "max_context_tokens": 200000,
+        "rate_limits": { "requests_per_minute": 400, "tokens_per_minute": 400000, "concurrent_requests": 8 }
+      },
+      "errors": {
+        "mappings": [
+          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
+          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "credit", "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
+          { "code": "timeout", "upstream_status": 408, "action": "retry" },
+          { "code": "provider_unavailable", "upstream_status": 529, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
+          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
+          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content", "action": "abort" }
+        ]
+      },
+      "failover": {
+        "priority": 2,
+        "fallback_ids": ["gemini", "openai", "groq", "openrouter", "mistral", "deepseek"],
+        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
+      }
+    },
+    {
+      "id": "gemini",
+      "display_name": "Google Gemini",
+      "status": "active",
+      "base_url": "https://generativelanguage.googleapis.com",
+      "auth": { "scheme": "query-param", "env_var": "GEMINI_API_KEY" },
+      "capabilities": {
+        "streaming": true,
+        "tool_calling": true,
+        "reasoning_tokens": true,
+        "json_mode": true,
+        "max_context_tokens": 1000000,
+        "rate_limits": { "requests_per_minute": 300, "tokens_per_minute": 1000000, "concurrent_requests": 8 }
+      },
+      "errors": {
+        "mappings": [
+          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
+          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "RESOURCE_EXHAUSTED", "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
+          { "code": "timeout", "upstream_status": 408, "action": "retry" },
+          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
+          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "token limit", "action": "abort" },
+          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "SAFETY", "action": "abort" }
+        ]
+      },
+      "failover": {
+        "priority": 3,
+        "fallback_ids": ["anthropic", "openai", "groq", "openrouter", "mistral", "deepseek"],
+        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
+      }
+    },
+    {
+      "id": "groq",
+      "display_name": "Groq",
+      "status": "active",
+      "base_url": "https://api.groq.com",
+      "auth": { "scheme": "bearer", "env_var": "GROQ_API_KEY" },
+      "capabilities": {
+        "streaming": true,
+        "tool_calling": true,
+        "reasoning_tokens": false,
+        "json_mode": true,
+        "max_context_tokens": 128000,
+        "rate_limits": { "requests_per_minute": 30, "tokens_per_minute": 6000, "concurrent_requests": 5 }
+      },
+      "errors": {
+        "mappings": [
+          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
+          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "quota", "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
+          { "code": "timeout", "upstream_status": 408, "action": "retry" },
+          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
+          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
+          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content", "action": "abort" }
+        ]
+      },
+      "failover": {
+        "priority": 4,
+        "fallback_ids": ["openrouter", "mistral", "deepseek", "openai", "anthropic", "gemini"],
+        "retry_policy": { "max_retries": 3, "backoff_base_ms": 3000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
+      }
+    },
+    {
+      "id": "openrouter",
+      "display_name": "OpenRouter",
+      "status": "active",
+      "base_url": "https://openrouter.ai",
+      "auth": { "scheme": "bearer", "env_var": "OPENROUTER_API_KEY" },
+      "capabilities": {
+        "streaming": true,
+        "tool_calling": true,
+        "reasoning_tokens": true,
+        "json_mode": true,
+        "max_context_tokens": 128000,
+        "rate_limits": { "requests_per_minute": 200, "tokens_per_minute": 400000, "concurrent_requests": 10 }
+      },
+      "errors": {
+        "mappings": [
+          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
+          { "code": "quota_exhausted", "upstream_status": 402, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
+          { "code": "timeout", "upstream_status": 408, "action": "retry" },
+          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 502, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
+          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
+          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "moderation", "action": "abort" }
+        ]
+      },
+      "failover": {
+        "priority": 5,
+        "fallback_ids": ["groq", "mistral", "deepseek", "openai", "anthropic", "gemini"],
+        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
+      }
+    },
+    {
+      "id": "mistral",
+      "display_name": "Mistral AI",
+      "status": "active",
+      "base_url": "https://api.mistral.ai",
+      "auth": { "scheme": "bearer", "env_var": "MISTRAL_API_KEY" },
+      "capabilities": {
+        "streaming": true,
+        "tool_calling": true,
+        "reasoning_tokens": false,
+        "json_mode": true,
+        "max_context_tokens": 128000,
+        "rate_limits": { "requests_per_minute": 240, "tokens_per_minute": 500000, "concurrent_requests": 6 }
+      },
+      "errors": {
+        "mappings": [
+          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
+          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "quota", "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
+          { "code": "timeout", "upstream_status": 408, "action": "retry" },
+          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 502, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
+          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
+          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content", "action": "abort" }
+        ]
+      },
+      "failover": {
+        "priority": 6,
+        "fallback_ids": ["deepseek", "groq", "openrouter", "openai", "anthropic", "gemini"],
+        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
+      }
+    },
+    {
+      "id": "deepseek",
+      "display_name": "DeepSeek",
+      "status": "active",
+      "base_url": "https://api.deepseek.com",
+      "auth": { "scheme": "bearer", "env_var": "DEEPSEEK_API_KEY" },
+      "capabilities": {
+        "streaming": true,
+        "tool_calling": true,
+        "reasoning_tokens": true,
+        "json_mode": true,
+        "max_context_tokens": 64000,
+        "rate_limits": { "requests_per_minute": 60, "tokens_per_minute": 100000, "concurrent_requests": 5 }
+      },
+      "errors": {
+        "mappings": [
+          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
+          { "code": "quota_exhausted", "upstream_status": 402, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
+          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
+          { "code": "timeout", "upstream_status": 408, "action": "retry" },
+          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
+          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
+          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
+          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content", "action": "abort" }
+        ]
+      },
+      "failover": {
+        "priority": 7,
+        "fallback_ids": ["mistral", "groq", "openrouter", "openai", "anthropic", "gemini"],
+        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
+      }
+    }
+  ],
+  "failover_cascade": ["openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"]
+}
