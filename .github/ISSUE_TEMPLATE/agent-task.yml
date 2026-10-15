@@ -57,6 +57,23 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: task_group
+    attributes:
+      label: Task Group (VALID_GROUPS registry)
+      description: >
+        Canonical taxonomy (#63) — arbitrary/invented group names are rejected
+        fail-closed by build_task_contract(). Keep aligned with VALID_GROUPS in
+        scripts/agents/continuous_agent_loop.py.
+      options:
+        - agent-orchestration
+        - mcp-tower
+        - core-engine
+        - schemas-contracts
+        - infra-ops
+    validations:
+      required: true
+
   - type: textarea
     id: mission
     attributes:

@@ -46,6 +46,20 @@ VALID_TASK_TYPES = {
 VALID_PRIORITIES = {"P0", "P1", "P2", "P3"}
 VALID_ADMIN_GATE_STATUSES = {"NOT_REQUIRED", "WAITING", "APPROVED", "REJECTED"}
 
+# Canonical group taxonomy (#63): agents CANNOT invent arbitrary group names.
+# Fail-closed: build_task_contract() / resolve_group() reject any group not
+# listed here. The .github/ISSUE_TEMPLATE/agent-task.yml dropdown must stay
+# aligned with this registry.
+VALID_GROUPS = frozenset({
+    "agent-orchestration",  # continuous loop, agent dispatch, roles, envelopes, lifecycle
+    "mcp-tower",            # MCP Control Plane tools, health probes, bridge adapters, endpoints
+    "core-engine",          # federation business logic, state machines, models
+    "schemas-contracts",    # OpenAPI schemas, contract definitions, protocol envelopes
+    "infra-ops",            # deploy configs, CI actions, cloud runtime configuration
+})
+DEFAULT_GROUP = "agent-orchestration"
+ENVELOPE_VERSION = 1  # task-envelope-v1 (#63)
+
 # The 7 Specialist Agent Roles
 ROLES: dict[str, str] = {
     "coder": "Implementation specialist (features, bug fixes, refactoring)",
@@ -92,7 +106,7 @@ def build_task_contract(
     task_id: str,
     issue: str | int | None = None,
     task_type: str = "IMPLEMENT",
-    group: str = "open",
+    group: str = DEFAULT_GROUP,
     priority: str = "P2",
     objective: str = "",
     touching_files: list[str] | None = None,
@@ -125,6 +139,13 @@ def build_task_contract(
     if gate_status_upper not in VALID_ADMIN_GATE_STATUSES:
         raise ValueError(
             f"Invalid admin_gate_status: '{admin_gate_status}'. Must be one of: {sorted(VALID_ADMIN_GATE_STATUSES)}"
+        )
+
+    # #63 fail-closed gate: arbitrary/invented group names are rejected here —
+    # invalid contracts can no longer travel downstream to private CI.
+    if group not in VALID_GROUPS:
+        raise ValueError(
+            f"Invalid group: '{group}'. Must be one of the canonical registry: {sorted(VALID_GROUPS)}"
         )
 
     return {
@@ -214,6 +235,141 @@ Issue #{task.get('id')}: {task.get('title')}
 - Do NOT hallucinate private credentials or internal monorepo scripts.
 - Satisfy the 3-Tier Verification Contract before handoff.
 """
+
+
+def resolve_group(explicit: str | None, task: dict[str, Any] | None = None) -> str:
+    """Deterministic group resolution (#63): --group flag > issue body/label scan > canonical default.
+
+    Fail-closed: an unknown explicit group raises ValueError — agents cannot
+    invent arbitrary group names outside the VALID_GROUPS registry.
+    """
+    if explicit:
+        group = explicit.strip().lower()
+        if group not in VALID_GROUPS:
+            raise ValueError(
+                f"Invalid group: '{explicit}'. Must be one of the canonical registry: {sorted(VALID_GROUPS)}"
+            )
+        return group
+    if task:
+        haystack = " ".join(task.get("labels", []) or []).lower() + "\n" + str(task.get("body") or "").lower()
+        for group in sorted(VALID_GROUPS):
+            if group in haystack:
+                return group
+    return DEFAULT_GROUP
+
+
+def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any]) -> dict[str, Any]:
+    """Build the Single Deterministic Task Envelope (#63).
+
+    One canonical JSON payload that replaces the four legacy output formats:
+      1. multi-step console logs   -> problem_statement + objective fields
+      2. --emit-prompt markdown    -> specialist_prompt field
+      3. --emit-contract raw JSON  -> embedded contract fields (group/scope/admin_gate)
+      4. .pr_template_draft.md     -> submission.pr_body_template field
+    """
+    tc = contract["task_contract"]
+    issue_ref = tc.get("issue") or task.get("id")
+    pr_body_template = f"""## Summary
+Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
+
+## Linked Issue / Claim
+Refs #{issue_ref}
+
+## Type of Change
+- [x] `feat` / `fix` / `docs` — Open contributor change
+
+## Rollback Path
+- [x] `git revert`-safe (no private state dependencies)
+"""
+    return {
+        "task_envelope": {
+            "envelope_version": ENVELOPE_VERSION,
+            "output_format": "task-envelope-v1",
+            "task_id": tc.get("task_id"),
+            "issue": tc.get("issue"),
+            "task_type": tc.get("task_type"),
+            "group": tc.get("group"),
+            "priority": tc.get("priority"),
+            "objective": tc.get("objective"),
+            "problem_statement": {
+                "id": task.get("id"),
+                "title": task.get("title"),
+                "body": task.get("body"),
+                "labels": task.get("labels", []),
+                "state": task.get("state"),
+            },
+            "role": role,
+            "role_policy": tc.get("role_policy"),
+            "role_description": ROLES.get(role, ""),
+            "scope": tc.get("scope", {}),
+            "acceptance": tc.get("acceptance", []),
+            "verification": tc.get("verification", []),
+            "required_evidence": tc.get("required_evidence", []),
+            "stop_conditions": tc.get("stop_conditions", []),
+            "admin_gate": tc.get("admin_gate", {}),
+            "specialist_prompt": build_agent_prompt(task, role, contract),
+            "submission": {
+                "pathway": "bridge_submit_patch | pull_request",
+                "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
+                "base_branch": "main",
+                "pr_title_prefix": "feat(open):",
+                "issue_reference_required": True,
+                "branch_convention": (
+                    "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|"
+                    "hotfix|release|copilot|agent)/<slug> — enforced by .github/workflows/open-guards.yml"
+                ),
+                "pr_body_template": pr_body_template,
+            },
+        }
+    }
+
+
+def emit_task_envelope(args: argparse.Namespace) -> int:
+    """Emit the Single Deterministic Task Envelope (#63) — read-only, fail-closed."""
+    issue_id = args.issue
+    task: dict[str, Any] | None = None
+    if issue_id:
+        task = step_1_understand(issue_id)  # fail-closed: missing/closed issue -> None
+        if not task:
+            return 1
+    elif args.allow_adhoc:
+        task = {
+            "id": "adhoc",
+            "title": "Autonomous Contribution Task",
+            "body": "Implement smallest safe change adhering to AGENTS.md contracts.",
+            "state": "ADHOC",
+            "labels": [],
+        }
+    else:
+        log("❌", "[Fail-Closed Gate] --task-envelope requires --issue <number> (or --allow-adhoc for offline testing).")
+        return 1
+
+    try:
+        group = resolve_group(args.group, task)
+    except ValueError as exc:
+        log("❌", f"[Group Registry Fail-Closed Gate] {exc}")
+        return 2
+
+    try:
+        contract = build_task_contract(
+            task_id=f"task-{task['id']}",
+            issue=task["id"] if task["id"] != "adhoc" else None,
+            task_type=args.task_type,
+            group=group,
+            priority=args.priority,
+            objective=task.get("title") or f"Resolve issue #{task['id']}",
+            touching_files=[f.strip() for f in args.touching_files.split(",")] if args.touching_files else [],
+        )
+    except ValueError as exc:
+        log("❌", f"[Task Contract Fail-Closed Gate] {exc}")
+        return 2
+
+    role = args.role or classify_task_role(
+        task.get("title", ""), task.get("labels", []), task.get("body", "")
+    )
+    envelope = build_task_envelope(task, role, contract)
+    print(json.dumps(envelope, indent=2))
+    return 0
 
 
 def pick_next_issue() -> str | None:
@@ -463,6 +619,22 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
             return False, evidence
         except ValueError:
             evidence.append({"tier": 5, "name": "Task Contract Fail-Closed Guard (ValueError)", "passed": True})
+
+        # Tier 6 (#63): group registry fail-closed guard — invented group names rejected
+        try:
+            build_task_contract("group-guard-test", group="not-a-canonical-group")
+            evidence.append({"tier": 6, "name": "Group Registry Fail-Closed Guard", "passed": False})
+            return False, evidence
+        except ValueError:
+            evidence.append({"tier": 6, "name": "Group Registry Fail-Closed Guard (ValueError)", "passed": True})
+
+        # Tier 7 (#63): envelope determinism — identical inputs produce byte-identical contracts
+        _c1 = build_task_contract("env-test", issue="0", group=DEFAULT_GROUP)
+        _c2 = build_task_contract("env-test", issue="0", group=DEFAULT_GROUP)
+        if json.dumps(_c1, sort_keys=True) != json.dumps(_c2, sort_keys=True):
+            evidence.append({"tier": 7, "name": "Envelope Determinism", "passed": False})
+            return False, evidence
+        evidence.append({"tier": 7, "name": "Envelope Determinism (byte-identical rebuild)", "passed": True})
     except Exception as e:
         log("❌", f"Self-test verification failed: {e}")
         return False, evidence
@@ -529,10 +701,9 @@ Refs #{issue_num}
 - [x] `git revert`-safe (no private state dependencies)
 """
 
-    pr_file = REPO_ROOT / ".pr_template_draft.md"
-    pr_file.write_text(pr_body, encoding="utf-8")
-    log("📄", f"PR body draft saved to {pr_file.name}")
-
+    # #63: no intermediate filesystem draft — the PR body goes inline to gh,
+    # and agents consuming the Task Envelope get the same template via
+    # submission.pr_body_template (single source of truth).
     if auto_pr:
         log("🚀", f"Opening Pull Request against {UPSTREAM_REPO}:main...")
         cmd = [
@@ -541,7 +712,7 @@ Refs #{issue_num}
             "--base", "main",
             "--head", branch,
             "--title", f"feat(open): {task.get('title')}",
-            "--body-file", str(pr_file)
+            "--body", pr_body
         ]
         code, out, err = run_cmd(cmd)
         if code == 0:
@@ -592,10 +763,12 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
     log("🎯", f"Classified Task Role: '{assigned_role.upper()}' ({ROLES.get(assigned_role, '')})")
 
     touching_files = [f.strip() for f in args.touching_files.split(",")] if args.touching_files else []
+    resolved_group = resolve_group(args.group, task)  # #63: canonical taxonomy, fail-closed
     contract = build_task_contract(
         task_id=f"task-{task.get('id', 'adhoc')}",
         issue=task.get("id"),
         task_type=args.task_type,
+        group=resolved_group,
         priority=args.priority,
         objective=task.get("title", ""),
         touching_files=touching_files,
@@ -603,13 +776,6 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
     )
 
     agent_prompt = build_agent_prompt(task, assigned_role, contract)
-
-    if args.emit_prompt:
-        print("\n" + "=" * 70)
-        print("--- SPECIALIST AGENT PROMPT ---")
-        print(agent_prompt)
-        print("=" * 70 + "\n")
-        return 0
 
     branch = step_4_branch(task)
     if not branch:
@@ -638,10 +804,12 @@ def main() -> int:
     parser.add_argument("--loop", action="store_true", help="Continuous mode: process eligible issues sequentially")
     parser.add_argument("--max-tasks", type=int, default=5, help="Maximum number of tasks to process in loop mode (default: 5)")
     parser.add_argument("--role", type=str, help=f"Force specific agent role: {', '.join(ROLES.keys())}")
-    parser.add_argument("--emit-prompt", action="store_true", help="Emit specialist agent prompt and exit")
+    parser.add_argument("--task-envelope", action="store_true", help="Emit the unified deterministic Task Envelope (canonical single payload, #63) and exit")
+    parser.add_argument("--group", type=str, default=None, help="Canonical group from the VALID_GROUPS registry (agent-orchestration, mcp-tower, core-engine, schemas-contracts, infra-ops)")
+    parser.add_argument("--emit-prompt", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
     parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
     parser.add_argument("--verify-only", action="store_true", help="Only run 3-tier verification and exit")
-    parser.add_argument("--emit-contract", action="store_true", help="Emit JSON task contract adhering to AGENT_RULES.md §7 and exit")
+    parser.add_argument("--emit-contract", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
     parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
     parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")
     parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
@@ -649,27 +817,29 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="Bypass dirty workspace isolation gate (not recommended)")
     args = parser.parse_args()
 
-    print("======================================================================")
-    print(" SupremeAI — Continuous Agent Loop (Lazy Team Leader Runner) ")
-    print(f" Target: {UPSTREAM_REPO}")
-    print("======================================================================")
+    banner = (
+        "======================================================================\n"
+        " SupremeAI — Continuous Agent Loop (Lazy Team Leader Runner) \n"
+        f" Target: {UPSTREAM_REPO}\n"
+        "======================================================================"
+    )
+    if args.task_envelope or args.emit_prompt or args.emit_contract:
+        # #63: envelope mode keeps stdout PURE JSON (machine-parseable single
+        # payload) — the human banner goes to stderr instead.
+        print(banner, file=sys.stderr)
+    else:
+        print(banner)
 
     if args.verify_only:
         passed, _ = step_6_verify()
         return 0 if passed else 1
 
-    if args.emit_contract:
-        issue_id = args.issue or "adhoc"
-        contract = build_task_contract(
-            task_id=f"task-{issue_id}",
-            issue=issue_id if issue_id != "adhoc" else None,
-            task_type=args.task_type,
-            priority=args.priority,
-            objective=f"Resolve issue #{issue_id}",
-            touching_files=[f.strip() for f in args.touching_files.split(",")] if args.touching_files else [],
-        )
-        print(json.dumps(contract, indent=2))
-        return 0
+    if args.emit_prompt or args.emit_contract:
+        print("⚠️  DEPRECATION WARNING (#63): --emit-prompt / --emit-contract are deprecated.", file=sys.stderr)
+        print("    Use the canonical unified payload: --task-envelope", file=sys.stderr)
+
+    if args.task_envelope or args.emit_prompt or args.emit_contract:
+        return emit_task_envelope(args)
 
     if args.loop:
         log("🔄", f"[Continuous Loop Mode] Starting task runner (max tasks: {args.max_tasks})...")
