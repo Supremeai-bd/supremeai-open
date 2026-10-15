@@ -7,6 +7,11 @@
 #   2. CI Multi-Platform Python Matrix (3.10 - 3.13)
 #   3. Secret Scanning (Gitleaks)
 # This workflow automatically executes squash-merge and deletes the branch.
+# Because merges run with GITHUB_TOKEN, GitHub suppresses the pull_request
+# event (loop prevention) — so immediately after landing, this workflow calls
+# `gh workflow run auto-bridge-dispatcher.yml` (workflow_dispatch is a
+# documented exception to the suppression) to sync the landed patch into the
+# private monorepo. See #113.
 # =============================================================================
 
 name: 🚦 Merge Gate (Autonomous Auto-Merge)
@@ -41,7 +46,7 @@ jobs:
       - name: Determine Target PR
         id: target_pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
           DISPATCH_PR: ${{ github.event.inputs.pr_number }}
         run: |
           PR_NUM=""
@@ -64,9 +69,10 @@ jobs:
           echo "has_pr=true" >> "$GITHUB_OUTPUT"
 
       - name: Evaluate Constitutional Gates & Auto-Merge
+        id: evaluate
         if: steps.target_pr.outputs.has_pr == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
           PR_NUM: ${{ steps.target_pr.outputs.pr_number }}
         run: |
           echo "Evaluating PR #${PR_NUM} for autonomous auto-merge..."
@@ -101,12 +107,22 @@ jobs:
           fi
 
           echo "✅ All required checks passed! Executing autonomous squash-merge..."
-          
-          gh pr merge "$PR_NUM" \
+
+          # Fail-honest merge: the exit code gates everything downstream. A
+          # "LANDED" comment plus a bridge dispatch fired after a failed
+          # merge desynchronizes the bridge channel (the dispatcher then
+          # hard-fails on state != MERGED). Hold both until the merge
+          # actually completes.
+          if ! gh pr merge "$PR_NUM" \
             --repo "${{ github.repository }}" \
             --squash \
             --delete-branch \
-            --subject "Auto-merged PR #${PR_NUM} via Merge Gate"
+            --subject "Auto-merged PR #${PR_NUM} via Merge Gate"; then
+            echo "::error::gh pr merge failed for PR #${PR_NUM} — landing comment and bridge dispatch held."
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "merged=true" >> "$GITHUB_OUTPUT"
 
           # Post landing comment
           gh pr comment "$PR_NUM" \
@@ -115,8 +131,44 @@ jobs:
 
           echo "✅ PR #${PR_NUM} successfully auto-merged."
 
-          # Trigger auto-bridge-dispatcher autonomously (Zero-Admin Policy)
-          echo "🌉 Dispatching auto-bridge work order for PR #${PR_NUM}..."
-          gh workflow run auto-bridge-dispatcher.yml \
+      - name: Bridge Dispatch — trigger auto-bridge-dispatcher (#113)
+        if: steps.evaluate.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ steps.target_pr.outputs.pr_number }}
+        run: |
+          # GitHub suppresses pull_request events for merges performed with
+          # GITHUB_TOKEN (loop prevention) — the dispatcher can no longer
+          # ride pull_request:closed. workflow_dispatch is a documented
+          # exception, so we trigger the single dispatcher directly after
+          # every landing merge, then verify the run was actually created:
+          # a silently dropped trigger means zero patch branch and zero
+          # work order (exactly the failure mode that froze the bridge).
+          echo "🌉 PR #${PR_NUM} landed — triggering auto-bridge-dispatcher (Zero-Admin Policy)..."
+          BEFORE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          if ! gh workflow run auto-bridge-dispatcher.yml \
             --repo "${{ github.repository }}" \
-            -f pr_number="$PR_NUM" || echo "::warning::auto-bridge-dispatcher trigger skipped or failed"
+            -f pr_number="$PR_NUM"; then
+            echo "::warning::workflow_dispatch call failed for PR #${PR_NUM} — no bridge sync will occur automatically; re-dispatch manually."
+            exit 0
+          fi
+
+          CONFIRMED="false"
+          for attempt in $(seq 1 12); do
+            sleep 5
+            RUN_COUNT=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?event=workflow_dispatch&per_page=10" \
+              -q "[.workflow_runs[] | select(.created_at > \"$BEFORE_TS\")] | length" 2>/dev/null || echo 0)
+            if [ "${RUN_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+              CONFIRMED="true"
+              break
+            fi
+            echo "Waiting for dispatcher run to appear (attempt ${attempt}/12)..."
+          done
+
+          if [ "$CONFIRMED" = "true" ]; then
+            echo "✅ auto-bridge-dispatcher run confirmed for PR #${PR_NUM} — patch branch + work order landing in the private queue."
+          else
+            echo "::warning::auto-bridge-dispatcher run not observed within 60s — trigger accepted but unverified; re-dispatch manually if no work order appears."
+          fi
