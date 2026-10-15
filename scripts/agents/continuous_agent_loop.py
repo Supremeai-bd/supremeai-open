@@ -13,7 +13,7 @@ This loop operates as the "Lazy Team Leader":
   - Classifies the task and selects the specialized agent role (Coder, Auditor, CI Fixer, etc.).
   - Builds a contract-bound, scoped prompt with strict file boundaries.
   - Executes isolated branch and workspace setup.
-  - Enforces strict multi-tier automated safety gates (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4).
+  - Enforces strict 3-tier automated safety gates.
   - Records dynamic, verified test evidence in PRs.
   - Performs fresh-board checks before looping to the next task.
 """
@@ -182,7 +182,7 @@ def build_task_contract(
             },
             "role_policy": role_policy,
             "required_evidence": required_evidence or [
-                "verification tier output", "diff check", "board freshness re-poll"
+                "3-tier test output", "diff check", "board freshness re-poll"
             ],
             "verification": verification or [
                 "py_compile", "json schema parse", "smoke validation"
@@ -382,69 +382,130 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
     return 0
 
 
+def _declared_target_repository(body: Any) -> str | None:
+    """Unwrap the ``### Target Repository`` template field value (lowercased).
+
+    Accepts both template layouts (value on the next non-blank line, or on the
+    same line after a colon). Returns ``None`` when the field is absent,
+    empty, or its captured line is itself a template artifact (another
+    header, an HTML comment, a table/quote line) — callers must treat ``None``
+    as "no declared target" so legacy issues stay claimable (fail-open for
+    absence; the #122 mirror gate only fires on an explicit declaration).
+    """
+    if not isinstance(body, str) or not body.strip():
+        return None
+    lines = body.splitlines()
+    for idx, line in enumerate(lines):
+        if re.match(r"\s*#+\s*Target\s*Repository\s*:?\s*$", line, re.IGNORECASE):
+            for follow in lines[idx + 1:]:
+                if follow.strip():
+                    return _clean_target_value(follow)
+            return None
+        same_line = re.match(r"\s*#+\s*Target\s*Repository\s*:\s*(.+)$", line, re.IGNORECASE)
+        if same_line:
+            return _clean_target_value(same_line.group(1))
+    return None
+
+
+def _clean_target_value(value: str) -> str | None:
+    value = value.strip().strip("`").strip("*").strip()
+    if not value or value.startswith(("#", "<", "|", ">")):
+        return None
+    return value.lower() or None
+
+
+def declares_non_public_target(item: dict[str, Any]) -> bool:
+    """#122 mirror gate: True when the issue body DECLARES a non-public target repo.
+
+    Private-monorepo mirror issues (#78–#81 class) are born with
+    ``status:unclaimed`` + ``handoff:coder`` yet target
+    ``Supremeai-bd/supremeai`` — no sanctioned public lane can act on them
+    (bridge diffs base on THIS repo's main; their touching files do not exist
+    here), so dispatching them only burns CI and produces blocked handoffs.
+
+    Detection is field-anchored (``### Target Repository``) on purpose: prose
+    mentions of the private repo — e.g. triage issues that QUOTE the
+    ``MIRROR_SOURCE`` marker — must NOT trigger exclusion.
+    """
+    target = _declared_target_repository(item.get("body"))
+    if target is None:
+        return False
+    return target != UPSTREAM_REPO.lower()
+
+
+def select_claimable_issue(issues: list[Any]) -> str | None:
+    """Pure claimable-scan over an already-fetched issue list (#88 + #122).
+
+    Selection policy:
+      - Claim-gated (#88): only issues carrying ``status:unclaimed`` are
+        eligible; claimed/in-progress, sequence-held and blocked boards are
+        never (re)dispatched.
+      - Mirror-gated (#122): issues whose body declares a non-public target
+        repository (private-monorepo mirrors) are never dispatched.
+      - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose
+        in titles can no longer outrank a real priority label; age (lowest
+        issue number) breaks ties per AGENT_RULES.md §5.
+    """
+    CLAIMABLE_LABEL = "status:unclaimed"
+    EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream"}
+
+    def label_names(item: dict[str, Any]) -> list[str]:
+        labels = item.get("labels")
+        if not isinstance(labels, list):
+            return []
+        return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+
+    def is_claimable(item: dict[str, Any]) -> bool:
+        names = label_names(item)
+        if CLAIMABLE_LABEL not in names:
+            return False
+        return not (EXCLUDED_LABELS & set(names))
+
+    # Explicit priority map — LABELS ONLY (title prose must not influence).
+    PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
+
+    def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+        names = label_names(item)
+        tier = 4  # unlabeled sorts last
+        for marker, rank in PRIORITY_MAP:
+            if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
+                tier = rank
+                break
+        return (tier, int(item.get("number", 0)))  # number ASC = oldest first
+
+    candidates = [
+        i for i in issues
+        if isinstance(i, dict) and is_claimable(i) and not declares_non_public_target(i)
+    ]
+    sorted_issues = sorted(candidates, key=priority_key)
+    if sorted_issues:
+        return str(sorted_issues[0].get("number"))
+    return None
+
+
 def pick_next_issue() -> str | None:
     """Fetch the highest priority claimable open issue from GitHub.
 
-    Selection policy (#88):
-      - Claim-gated: only issues carrying ``status:unclaimed`` are eligible;
-        claimed/in-progress, sequence-held, blocked and private-mirror
-        boards are never
-        (re)dispatched.
-      - Whole-board scope: pagination limit high enough that truncation cannot
-        starve old issues (verified: board regularly holds 35+ open issues).
-      - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose in
-        titles can no longer outrank a real priority label; age (lowest issue
-        number) breaks ties per AGENT_RULES.md §5.
+    Fetches ``body`` alongside labels so the #122 mirror gate can reject
+    private-monorepo mirror issues before dispatch. Whole-board scope:
+    pagination limit high enough that truncation cannot starve old issues
+    (verified: board regularly holds 35+ open issues). See
+    ``select_claimable_issue()`` for the full selection policy.
     """
     code, out, _ = run_cmd([
         "gh", "issue", "list",
         "--repo", UPSTREAM_REPO,
         "--state", "open",
         "--limit", "200",
-        "--json", "number,title,labels",
+        "--json", "number,title,labels,body",
     ])
     if code != 0 or not out.strip():
         return None
     try:
         issues = json.loads(out)
-
-        CLAIMABLE_LABEL = "status:unclaimed"
-        # mirror:private (#122) — issues mirrored from the private monorepo
-        # declare a non-public target repository; no public lane can act on
-        # private-only paths, so mirrors are born non-claimable.
-        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream", "mirror:private"}
-
-        def label_names(item: dict[str, Any]) -> list[str]:
-            labels = item.get("labels")
-            if not isinstance(labels, list):
-                return []
-            return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
-
-        def is_claimable(item: dict[str, Any]) -> bool:
-            names = label_names(item)
-            if CLAIMABLE_LABEL not in names:
-                return False
-            return not (EXCLUDED_LABELS & set(names))
-
-        # Explicit priority map — LABELS ONLY (title prose must not influence).
-        PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
-
-        def priority_key(item: dict[str, Any]) -> tuple[int, int]:
-            names = label_names(item)
-            tier = 4  # unlabeled sorts last
-            for marker, rank in PRIORITY_MAP:
-                if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
-                    tier = rank
-                    break
-            return (tier, int(item.get("number", 0)))  # number ASC = oldest first
-
-        candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
-        sorted_issues = sorted(candidates, key=priority_key)
-        if sorted_issues:
-            return str(sorted_issues[0].get("number"))
+        return select_claimable_issue(issues)
     except Exception:
-        pass
-    return None
+        return None
 
 
 try:
@@ -600,8 +661,8 @@ def step_5_work_notice(role: str, prompt: str) -> None:
 
 
 def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
-    """Step 6: Run the verification tiers and collect dynamic evidence."""
-    log("🧪", "[Step 6/8: Verify] Running the verification contract (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4)...")
+    """Step 6: Run 3-tier verification and collect dynamic evidence."""
+    log("🧪", "[Step 6/8: Verify] Running 3-Tier Verification Contract...")
     evidence: list[dict[str, Any]] = []
 
     # 1. Python Syntax / Compile smoke
@@ -713,8 +774,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
         log("❌", f"Self-test verification failed: {e}")
         return False, evidence
 
-    tier_count = len({e["tier"] for e in evidence})
-    log("✅", f"{tier_count}-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
+    log("✅", "3-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
     return True, evidence
 
 
@@ -788,7 +848,7 @@ task_contract:
         if not ev.get("passed") and ev.get("reason"):
             extra = f"{extra} (skipped: {ev['reason']})" if ev.get("skipped") else f"{extra} ({ev['reason']})"
         evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}")
-    evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All verification tiers passed."
+    evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All 3-tier checks verified."
 
     pr_body = f"""## Summary
 Autonomous contribution for issue #{issue_num}: {task.get('title')}.
@@ -799,7 +859,7 @@ Refs #{issue_num}
 ## Type of Change
 - [x] `feat` / `fix` / `docs` — Open contributor change
 {contract_yaml_snippet}
-## Dynamic Test Evidence (verification tiers — SSOT: docs/AGENT_LOOP_SPEC.md §4)
+## Dynamic Test Evidence (3-Tier যাচাই-চুক্তি)
 {evidence_block}
 
 ## Rollback Path
@@ -922,7 +982,7 @@ def main() -> int:
     parser.add_argument("--group", type=str, default=None, help="Canonical group from the VALID_GROUPS registry (agent-orchestration, mcp-tower, core-engine, schemas-contracts, infra-ops)")
     parser.add_argument("--emit-prompt", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
     parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
-    parser.add_argument("--verify-only", action="store_true", help="Only run the verification tiers and exit")
+    parser.add_argument("--verify-only", action="store_true", help="Only run 3-tier verification and exit")
     parser.add_argument("--emit-contract", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
     parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
     parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")
