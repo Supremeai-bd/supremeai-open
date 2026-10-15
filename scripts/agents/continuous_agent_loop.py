@@ -59,6 +59,12 @@ VALID_GROUPS = frozenset({
 })
 DEFAULT_GROUP = "agent-orchestration"
 ENVELOPE_VERSION = 1  # task-envelope-v1 (#63)
+# #67 parity marker: BOTH copies of this program (public supremeai-open and
+# the private Supremeai-bd/supremeai mirror) MUST print this exact string as
+# the final stdout line of `--verify-only`. Copies that disagree on flag
+# behaviour must not claim the same CONTRACT_VERSION — bump both sides
+# together (see docs/AGENT_LOOP_SPEC.md §4b).
+CONTRACT_VERSION = "agent-loop-contract/1"
 
 # The 7 Specialist Agent Roles
 ROLES: dict[str, str] = {
@@ -832,6 +838,9 @@ def main() -> int:
 
     if args.verify_only:
         passed, _ = step_6_verify()
+        # #67 parity marker — final stdout line, byte-identical across the
+        # public and private copies (grep target for cross-repo parity check).
+        print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
         return 0 if passed else 1
 
     if args.emit_prompt or args.emit_contract:
