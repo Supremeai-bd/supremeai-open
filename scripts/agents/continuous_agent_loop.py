@@ -688,7 +688,13 @@ task_contract:
     for ev in (evidence or []):
         status_icon = "✅" if ev.get("passed") else "❌"
         extra = f" ({ev.get('count')} files verified)" if "count" in ev else ""
-        evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** PASS{extra}")
+        # #89: verdict text MUST derive from the recorded result — a skipped or
+        # failed tier renders FAIL with its reason, never a hardcoded PASS
+        # (AGENT_RULES.md §13 fake-pass-status ban).
+        verdict = "PASS" if ev.get("passed") else "FAIL"
+        if not ev.get("passed") and ev.get("reason"):
+            extra = f"{extra} (skipped: {ev['reason']})" if ev.get("skipped") else f"{extra} ({ev['reason']})"
+        evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}")
     evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All 3-tier checks verified."
 
     pr_body = f"""## Summary
