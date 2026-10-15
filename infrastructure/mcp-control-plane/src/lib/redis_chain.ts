@@ -148,3 +148,94 @@ export function quotaChainStatus(nowMs: number = Date.now()): { label: string; c
     };
   });
 }
+
+// ── Single account-chain walk engine (#110) ─────────────────────────────────
+// The first-responder fallback walk (try accounts in order, mark quota-exhausted
+// ones into cooldown, fail with aggregated errors) used to be re-implemented by
+// hand in four modules. This is the ONE walk — every fallback path routes
+// through it, so rotation policy is whatever this file says, not whichever
+// copy happened to execute.
+
+/** Thrown by an op when the response is a daily-quota exhaustion (auto-shift). */
+export class RedisQuotaExhaustedError extends Error {
+  readonly accountLabel: string;
+  constructor(accountLabel: string, message?: string) {
+    super(message ?? `Upstash [${accountLabel}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`);
+    this.name = "RedisQuotaExhaustedError";
+    this.accountLabel = accountLabel;
+  }
+}
+
+export type ChainWalkAttempt = {
+  account: string;
+  ok: boolean;
+  error?: string;
+};
+
+export type ChainWalkResult<T> = {
+  value: T;
+  /** The account whose op succeeded (the one that "answered"). */
+  account: RedisAccountConfig;
+  attempts: ChainWalkAttempt[];
+};
+
+export type RunWithAccountChainOptions = {
+  /**
+   * Skip an account without attempting it and without recording an attempt
+   * (e.g. REST-only callers skipping TCP-only accounts).
+   */
+  skip?: (account: RedisAccountConfig) => boolean;
+  /**
+   * Build the aggregated all-accounts-failed error. Defaults to
+   * `All <n> Redis account(s) failed: <label>: <err> | ...`. Callers that
+   * had a caller-specific message keep it byte-identical through this hook.
+   */
+  aggregateError?: (attempts: ChainWalkAttempt[]) => Error;
+};
+
+/**
+ * Walk the ACTIVE (cooldown-free) account chain; the first account whose op
+ * resolves wins. A thrown error records the attempt and moves to the next
+ * account; quota-shaped failures (RedisQuotaExhaustedError, or a message that
+ * matches responseIndicatesQuotaExhaustion) additionally mark the account into
+ * cooldown so the rest of the fleet skips it until UTC reset. When every
+ * account failed, throws the aggregated error (via aggregateError hook).
+ *
+ * This is the only place in src/ that iterates `activeAccountChain()` directly
+ * for failover (#110 AC1) — the canonical read-only health walker in
+ * adapters/redis keeps its own loop over a captured chain reference, and the
+ * fan-out MERGE readers (presence/heartbeat listing) are deliberately NOT
+ * routed here: their semantics are "read every account, freshest wins", not
+ * "stop at the first responder".
+ */
+export async function runWithAccountChain<T>(
+  op: (account: RedisAccountConfig) => Promise<T>,
+  opts: RunWithAccountChainOptions = {},
+): Promise<ChainWalkResult<T>> {
+  const chain = activeAccountChain();
+  if (chain.length === 0) {
+    throw new Error("No Redis configuration found (missing REST or TCP credentials)");
+  }
+  const attempts: ChainWalkAttempt[] = [];
+  for (const account of activeAccountChain()) {
+    if (opts.skip?.(account)) continue;
+    try {
+      const value = await op(account);
+      attempts.push({ account: account.label, ok: true });
+      return { value, account, attempts };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (err instanceof RedisQuotaExhaustedError || responseIndicatesQuotaExhaustion(0, message)) {
+        markAccountQuotaExhausted(account.label);
+      }
+      attempts.push({ account: account.label, ok: false, error: message });
+    }
+  }
+  if (opts.aggregateError) {
+    throw opts.aggregateError(attempts);
+  }
+  const failures = attempts
+    .map((a) => `${a.account}: ${a.error ?? "unknown error"}`)
+    .join(" | ");
+  throw new Error(`All ${attempts.length} Redis account(s) failed: ${failures}`);
+}

@@ -9,7 +9,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake",
+    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:quota-routing",
     "test:integration": "tsx test_resource_list.ts",
     "test:smoke": "tsx test_adapters.ts",
     "test:render-logs": "tsx test_render_logs.ts",
@@ -31,7 +31,8 @@
     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
     "test:mcp-presence": "tsx test_mcp_presence.ts",
     "test:bridge-intake": "tsx test_bridge_intake.ts",
-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake"
+    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake",
+    "test:quota-routing": "tsx test_redis_quota_routing.ts"
   },
   "keywords": [
     "mcp",

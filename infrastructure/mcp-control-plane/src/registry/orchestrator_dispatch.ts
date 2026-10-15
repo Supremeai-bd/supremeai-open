@@ -17,8 +17,9 @@
 
 import {
   activeAccountChain,
-  markAccountQuotaExhausted,
+  RedisQuotaExhaustedError,
   responseIndicatesQuotaExhaustion,
+  runWithAccountChain,
 } from "../lib/redis_chain.js";
 import {
   listHeartbeats,
@@ -176,47 +177,61 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
   const restAccounts = chain.filter((account) => account.restUrl && account.restToken);
   if (restAccounts.length > 0) {
     const call = async (body: unknown[]): Promise<unknown> => {
-      let lastErr: unknown = null;
-      for (const account of activeAccountChain()) {
-        if (!account.restUrl || !account.restToken) continue;
-        try {
-          const res = await fetch(account.restUrl as string, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${account.restToken}`,
-              "Content-Type": "application/json",
+      // #110: the chain walk + quota marking is now the single engine
+      // (runWithAccountChain) — the hand-rolled loop (with its own lastErr
+      // bookkeeping and inline markAccountQuotaExhausted calls) is gone.
+      // Aggregation semantics preserved: rethrow the LAST failure, exactly
+      // like the old loop did.
+      try {
+        const { value } = await runWithAccountChain(
+          async (account) => {
+            const res = await fetch(account.restUrl as string, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${account.restToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(10_000),
+            });
+            if (!res.ok) {
+              const errText = await res.text().catch(() => "");
+              if (responseIndicatesQuotaExhaustion(res.status, errText)) {
+                throw new RedisQuotaExhaustedError(
+                  account.label,
+                  `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
+                );
+              }
+              throw new Error(`Upstash REST [${account.label}] HTTP ${res.status}`);
+            }
+            const payload = (await res.json()) as { result?: unknown; error?: string };
+            if (payload.error) {
+              if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
+                throw new RedisQuotaExhaustedError(
+                  account.label,
+                  `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
+                );
+              }
+              throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
+            }
+            return payload.result;
+          },
+          {
+            skip: (account) => !account.restUrl || !account.restToken,
+            aggregateError: (attempts) => {
+              const last = attempts[attempts.length - 1]?.error;
+              return last
+                ? new Error(last)
+                : new Error("orchestrator dispatch: all chain accounts failed");
             },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(10_000),
-          });
-          if (!res.ok) {
-            const errText = await res.text().catch(() => "");
-            if (responseIndicatesQuotaExhaustion(res.status, errText)) {
-              markAccountQuotaExhausted(account.label);
-              throw new Error(
-                `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
-              );
-            }
-            throw new Error(`Upstash REST [${account.label}] HTTP ${res.status}`);
-          }
-          const payload = (await res.json()) as { result?: unknown; error?: string };
-          if (payload.error) {
-            if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
-              markAccountQuotaExhausted(account.label);
-              throw new Error(
-                `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
-              );
-            }
-            throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
-          }
-          return payload.result;
-        } catch (err) {
-          lastErr = err;
-        }
+          },
+        );
+        return value;
+      } catch (err) {
+        throw err instanceof Error
+          ? err
+          : new Error("orchestrator dispatch: all chain accounts failed");
       }
-      throw lastErr instanceof Error
-        ? lastErr
-        : new Error("orchestrator dispatch: all chain accounts failed");
     };
     return {
       get: async (key) => (await call(["GET", key])) as string | null,
