@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://supremeai.ai/schemas/heartbeat.schema.json",
+  "title": "Agent Heartbeat Payload",
+  "description": "Telemetry payload emitted by every running agent to assert liveness on its claimed task. Agents without a heartbeat within ttl_seconds are considered orphaned and their task is released for re-claim. See docs/HEARTBEAT_PROTOCOL.md.",
+  "type": "object",
+  "required": ["agent_id", "task_id", "status", "timestamp", "ttl_seconds"],
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "pattern": "^agent-[a-zA-Z0-9_-]{1,64}$",
+      "description": "Unique identifier of the reporting agent (e.g. agent-1, agent-planner, agent-coder)."
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^$|^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$",
+      "description": "Identifier of the task the agent is currently holding. Empty string if the agent is idle and holds no task."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["alive", "busy", "idle"],
+      "description": "Current agent lifecycle status. 'alive' = active and responsive on an assigned task; 'busy' = actively executing work; 'idle' = running but awaiting assignment."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 / ISO 8601 UTC timestamp at which the heartbeat was emitted (e.g. 2026-10-15T14:30:00Z)."
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 3600,
+      "default": 300,
+      "description": "Lease duration in seconds. If no heartbeat is received within this interval from the last heartbeat timestamp, the agent's task is considered orphaned and eligible for release. Default registry TTL is 300s (5 min); orphan-release threshold is 30 min."
+    },
+    "task_group": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$",
+      "description": "Optional: VALID_GROUPS registry tag for the task (e.g. 'agent-orchestration', 'quality', 'telemetry'). Enables queue-audit by group."
+    },
+    "heartbeat_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Optional: monotonic sequence number for the agent's heartbeat stream, used for ordering and gap detection."
+    }
+  }
+}
