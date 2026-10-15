@@ -114,7 +114,7 @@ never scheduled while other repos stayed green; request purge of limbo runs.
 
 Link the ticket back into issue #68 when filed.
 
-## 8. References
+## 7. References
 
 - Issue #68 (this runbook's tracking issue) · PR #169 (E11 + concurrency v3)
 - PR #64 (task envelope + open guards) · Issue #63 (taxonomy drift fix)
