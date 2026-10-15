@@ -166,14 +166,10 @@ export function countOutOfScopeFiles(files: PullRequestFileEvidence[], scopePref
   return files.filter((f) => !scopePrefixes.some((p) => f.filename.startsWith(p))).length;
 }
 
-export interface EvidenceBundle {
-  pr: PullRequestEvidence;
-  files: PullRequestFileEvidence[];
-  candidateChecks: CheckRunEvidence[];
-  baselineChecks: CheckRunEvidence[];
-  /** Optional declared scope; empty array means "scope not asserted". */
-  scopePrefixes?: string[];
-}
+// #112: single EvidenceBundle definition lives in ./engine.ts (the guardian
+// owner; test_guardian.ts already imports it from there). Type-only import —
+// erased at runtime, so no engine ⇄ signals runtime cycle.
+import type { EvidenceBundle } from "./engine.js";
 
 /**
  * Build the full metric set. Candidate values describe the PR head; baseline
