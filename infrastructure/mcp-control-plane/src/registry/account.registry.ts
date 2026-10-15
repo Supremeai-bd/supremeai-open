@@ -46,7 +46,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
       apiKeyRef: "RENDER_API_KEY_1",
       url: env.render.primary.url,
       serviceId: env.render.primary.serviceId,
-      healthPath: "/api/v1/health", // FastAPI core API
+      healthPath: "/health", // FastAPI core API public health check
       available: isAvailable("RENDER_API_KEY_1") || isAvailable("RENDER_API_KEY"),
     },
     {

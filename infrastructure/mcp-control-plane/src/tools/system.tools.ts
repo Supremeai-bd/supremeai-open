@@ -210,7 +210,7 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
 
   // ── Infisical: public status endpoint (secrets-plane reachability) ──
   if (svc.provider === "infisical") {
-    const url = "https://app.infisical.com/api/v1/status";
+    const url = "https://app.infisical.com/api/status";
     const out = await probeHttp(url);
     if (out === "unreachable") return { ...base, url, status: "unreachable", httpStatus: null, latencyMs: null, error: "connection failed" };
     if (out === "degraded") return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, error: "status endpoint responded non-2xx" };
