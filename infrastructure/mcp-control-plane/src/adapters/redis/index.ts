@@ -21,12 +21,9 @@
 import { Redis as UpstashRedis } from "@upstash/redis";
 import Redis from "ioredis";
 import {
-  buildAccountChain,
-  activeAccountChain,
-  markAccountQuotaExhausted,
-  responseIndicatesQuotaExhaustion,
   getActiveRedisAccount,
   quotaChainStatus,
+  runWithAccountChain,
   type RedisAccountConfig,
 } from "../../lib/redis_chain.js";
 
@@ -95,36 +92,31 @@ function clientForAccount(account: RedisAccountConfig): ChainClient | null {
 async function firstRespondingClient(
   op: (client: ChainClient) => Promise<unknown>,
 ): Promise<{ client: ChainClient; result: unknown; attempts: AccountAttempt[] }> {
-  // Walk active non-exhausted accounts first (auto-rotated pool)
-  const chain = activeAccountChain();
-  if (chain.length === 0) {
-    throw new Error("No Redis configuration found (missing REST or TCP credentials)");
-  }
-  const attempts: AccountAttempt[] = [];
-  for (const account of chain) {
-    const client = clientForAccount(account);
-    if (!client) continue;
-    try {
-      const result = await op(client);
-      attempts.push({ account: client.account, mode: client.mode, ok: true });
-      return { client, result, attempts };
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (responseIndicatesQuotaExhaustion(0, errMsg)) {
-        markAccountQuotaExhausted(client.account);
+  // #110: the walk, cooldown marking and aggregated throw live in the shared
+  // lib/redis_chain.ts runWithAccountChain() — this site only supplies its
+  // per-account client factory and preserves the structured attempt report.
+  const modes = new Map<string, "upstash-rest" | "ioredis-tcp">();
+  const { result: opOutcome, attempts } = await runWithAccountChain(
+    async (account: RedisAccountConfig) => {
+      const chainClient = clientForAccount(account);
+      if (!chainClient) {
+        throw new Error("no usable client (REST/TCP credentials missing)");
       }
-      attempts.push({
-        account: client.account,
-        mode: client.mode,
-        ok: false,
-        error: errMsg,
-      });
-    }
-  }
-  const failures = attempts
-    .map((a) => `${a.account}: ${a.error ?? "unknown error"}`)
-    .join(" | ");
-  throw new Error(`All ${attempts.length} Redis account(s) failed: ${failures}`);
+      modes.set(account.label, chainClient.mode);
+      return { client: chainClient, result: await op(chainClient) };
+    },
+  );
+  const { client, result } = opOutcome;
+  return {
+    client,
+    result,
+    attempts: attempts.map(({ label, ok, error }) => ({
+      account: label,
+      mode: modes.get(label) ?? client.mode,
+      ok,
+      error,
+    })),
+  };
 }
 
 export async function pingRedis(): Promise<unknown> {
