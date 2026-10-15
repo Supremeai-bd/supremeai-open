@@ -6,7 +6,7 @@
 > **Control:** Admin/System controls **WHERE, WHAT, ACCESS, LIMITS, STOPPING and major architectural decisions**.
 >
 > **Canonical rule source:** [`AGENT_RULES.md`](./AGENT_RULES.md)
-> **Governance issue:** [#3095](https://github.com/paykaribazaronline/supremeai/issues/3095)
+> **Governance issue:** [#3095](https://github.com/Supremeai-bd/supremeai/issues/3095)
 
 ## 0. The Agent Loop — One Simple Entry Point
 
@@ -109,7 +109,7 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
      ```
   2. Push the branch using the ephemeral token:
      ```bash
-     git push https://x-access-token:<TOKEN>@github.com/paykaribazaronline/supremeai.git <branch>
+     git push https://x-access-token:<TOKEN>@github.com/Supremeai-bd/supremeai.git <branch>
      ```
   3. Create the PR via GitHub REST API. Internal CI Guardian evaluates and merges autonomously.
 

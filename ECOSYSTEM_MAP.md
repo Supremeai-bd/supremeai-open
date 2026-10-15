@@ -1,7 +1,7 @@
 # 🗺️ SupremeAI Federation Ecosystem Map
 
 > **The Definitive Repository Guide for Autonomous, External & Free AI Agents**  
-> **Host Repository:** [`paykaribazaronline/supremeai-open`](https://github.com/paykaribazaronline/supremeai-open)  
+> **Host Repository:** [`Supremeai-bd/supremeai-open`](https://github.com/Supremeai-bd/supremeai-open)  
 > **Architecture:** Public Gateway / Embassy to Private Federated Systems  
 
 ---
@@ -16,7 +16,7 @@ You do not need credentials or access to private repositories. You can inspect p
 
 ## 2. Federation Repository Directory
 
-The SupremeAI platform consists of specialized repositories under the **`paykaribazaronline`** organization:
+The SupremeAI platform consists of specialized repositories under the **`Supremeai-bd`** organization:
 
 | Repository | Scope & Responsibility | What Can Be Changed From Here |
 |---|---|---|
@@ -39,7 +39,7 @@ Agent Forks/Clones supremeai-open
   ├─ 2. Make your proposed changes within the declared scope.
   └─ 3. Open a Bridge Work Order issue (or PR) specifying:
         • Task ID: `bridge-YYYYMMDD-<slug>`
-        • Target Repo: (e.g. `paykaribazaronline/supremeai-api`)
+        • Target Repo: (e.g. `Supremeai-bd/supremeai-api`)
         • Summary & Scope Paths
         • Test Evidence & Rollback Plan
 ```
