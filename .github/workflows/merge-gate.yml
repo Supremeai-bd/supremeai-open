@@ -25,6 +25,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write
 
 concurrency:
   group: merge-gate-open
@@ -113,3 +114,9 @@ jobs:
             --body "## 🚦 Merge Gate — **LANDED** ✓\n\n- PR #${PR_NUM} met all constitutional gate contracts.\n- Auto-merged autonomously into \`main\` (Zero-Admin Policy, Admin Effort <= 0.01%)."
 
           echo "✅ PR #${PR_NUM} successfully auto-merged."
+
+          # Trigger auto-bridge-dispatcher autonomously (Zero-Admin Policy)
+          echo "🌉 Dispatching auto-bridge work order for PR #${PR_NUM}..."
+          gh workflow run auto-bridge-dispatcher.yml \
+            --repo "${{ github.repository }}" \
+            -f pr_number="$PR_NUM" || echo "::warning::auto-bridge-dispatcher trigger skipped or failed"
