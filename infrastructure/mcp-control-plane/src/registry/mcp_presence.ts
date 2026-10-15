@@ -28,7 +28,13 @@ import {
   listHeartbeats,
   type HeartbeatStatusEntry,
 } from "./agent_heartbeat.js";
-import { activeAccountChain, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
+import {
+  activeAccountChain,
+  markAccountQuotaExhausted,
+  responseIndicatesQuotaExhaustion,
+  runWithAccountChain,
+  type RedisAccountConfig,
+} from "../lib/redis_chain.js";
 
 export const PRESENCE_KEY_PREFIX = "supremeai:mcp-presence:";
 export const PRESENCE_TTL_SECONDS = 300;
@@ -125,14 +131,12 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
-      // #110: quota-shape detection aligned with the heartbeat REST client —
-      // the RedisQuotaExhaustedError is what makes runWithAccountChain mark
-      // this account into cooldown and shift to the next one. Presence used
-      // to be the one routed path with NO quota marking; now all are identical.
+      // #110: uniform quota-marking policy — the presence copies previously
+      // never marked cooldown, so an exhausted account was retried forever.
       const errText = await res.text().catch(() => "");
       if (responseIndicatesQuotaExhaustion(res.status, errText)) {
-        throw new RedisQuotaExhaustedError(
-          account.label,
+        markAccountQuotaExhausted(account.label);
+        throw new Error(
           `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
         );
       }
@@ -141,9 +145,9 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
     const payload = (await res.json()) as { result?: unknown; error?: string };
     if (payload.error) {
       if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
-        throw new RedisQuotaExhaustedError(
-          account.label,
-          `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
+        markAccountQuotaExhausted(account.label);
+        throw new Error(
+          `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
         );
       }
       throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
@@ -261,23 +265,10 @@ export async function recordPresence(
   };
   const key = presenceKey(record.clientName, record.clientId);
   const value = JSON.stringify(record);
-  // #110: chain-walk + quota-marking through the single engine; the failure
-  // message stays byte-identical to the deleted hand-rolled loop.
-  const chainLength = chain.length;
-  await runWithAccountChain(
-    async (acct) => {
-      await makePresenceClient(acct).setEx(key, PRESENCE_TTL_SECONDS, value);
-      return acct.label;
-    },
-    {
-      aggregateError: (attempts) =>
-        new Error(
-          `All ${chainLength} Redis account(s) rejected the presence write: ${attempts
-            .map((a) => a.error ?? "unknown error")
-            .join(" | ")}`,
-        ),
-    },
-  );
+  // #110: the walk + canonical quota-marking live in runWithAccountChain().
+  await runWithAccountChain(async (account) => {
+    await makePresenceClient(account).setEx(key, PRESENCE_TTL_SECONDS, value);
+  }, { context: "MCP presence write" });
   return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS };
 }
 
