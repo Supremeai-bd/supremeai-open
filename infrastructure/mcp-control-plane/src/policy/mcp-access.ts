@@ -48,6 +48,7 @@ export const publicSafeCapabilities: readonly McpCapabilityMetadata[] = [
   { name: "bridge_guide", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
   { name: "bridge_work_queue", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
   { name: "bridge_work_order", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+  { name: "bridge_submit_patch", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
 ];
 
 export function canAccessCapability(context: McpAccessContext, capability: McpCapabilityMetadata): boolean {
@@ -71,7 +72,7 @@ export function canAccessCapability(context: McpAccessContext, capability: McpCa
 }
 
 export function accessModeFor(role: UserRole | null, authenticated: boolean): McpAccessMode {
-  if (!authenticated || role === null) return "agent";
+  if (!authenticated || role === null) return "public_viewer";
   return role;
 }
 
@@ -142,13 +143,13 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
   // agents. bridge.guide serves the static contract; the queue tools read ONLY
   // public repo issue content (never credentials, never private data) and
   // return sanitized fields. Read-only + public ⇒ safe for public_viewer.
-  if (name === "bridge_guide" || name === "bridge_work_queue" || name === "bridge_work_order") {
+  if (name === "bridge_guide" || name === "bridge_work_queue" || name === "bridge_work_order" || name === "bridge_submit_patch") {
     return {
       name,
       kind: "tool",
       access: "safe",
       requiredScope: undefined,
-      riskLevel: "R0",
+      riskLevel: name === "bridge_submit_patch" ? "R1" : "R0",
       dataClassification: "public",
       approvalRequired: false,
     };
