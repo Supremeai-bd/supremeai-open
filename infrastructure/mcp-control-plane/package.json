@@ -29,7 +29,8 @@
     "test:bridge-onboarding": "tsx test_bridge_onboarding.ts",
     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
     "test:mcp-presence": "tsx test_mcp_presence.ts",
-    "test:bridge-intake": "tsx test_bridge_intake.ts"
+    "test:bridge-intake": "tsx test_bridge_intake.ts",
+    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake"
   },
   "keywords": [
     "mcp",
