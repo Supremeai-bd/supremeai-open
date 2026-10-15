@@ -177,6 +177,38 @@ INFRASTRUCTURE
 
 Every issue has exactly one primary group. Secondary `area:*` labels may describe cross-cutting scope.
 
+### Registry relationship (reconciled with the dispatch contract — #90)
+
+The §5 Primary Groups and the dispatcher's `VALID_GROUPS` registry are **two
+different taxonomies serving two different surfaces** — not a contradiction:
+
+- **§5 Primary Groups (8)** are **policy domains**: constitutional
+  classification of what *kind of concern* work is. They govern private/mono
+  governance tooling (e.g. the #3088 group-first enforcement scripts referenced
+  above — those live in the private codebase, not in this public repository).
+- **`VALID_GROUPS` (5)** in `scripts/agents/continuous_agent_loop.py` is the
+  **machine registry of execution surfaces** for the public board: fail-closed
+  enforced by `build_task_contract()`/`resolve_group()` and mirrored by the
+  `agent-task.yml` dropdown. It is authoritative for dispatch.
+
+When an issue carries only a §5 domain, route it to the registry surface with
+this default mapping; when the template dropdown is filled, the **registry
+group governs dispatch** and the §5 domain rides along as a policy tag:
+
+| §5 policy domain | Default `VALID_GROUPS` surface |
+|---|---|
+| GOVERNANCE | `agent-orchestration` |
+| SECURITY | `mcp-tower` |
+| PIPELINE | `infra-ops` |
+| ARCHITECTURE | `core-engine` |
+| RELIABILITY | `infra-ops` |
+| PRODUCT | `schemas-contracts` |
+| INTELLIGENCE | `agent-orchestration` |
+| INFRASTRUCTURE | `infra-ops` |
+
+Renaming or merging either taxonomy is an **ADMIN_DECISION** (§1.3) and must
+not be done by agents. Full taxonomy table: `docs/AGENT_LOOP_SPEC.md` §3.
+
 ## Priority
 - `P0-critical` — production/security/data-loss/merge-train emergency.
 - `P1-high` — ecosystem/founder/agent-system blocker.

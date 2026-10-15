@@ -79,6 +79,15 @@ unlisted group raises `ValueError` inside `build_task_contract()` **and**
 `.github/ISSUE_TEMPLATE/agent-task.yml` carries a **dropdown aligned to this
 registry** — keep the two in sync when the taxonomy changes.
 
+**Relationship to `AGENT_RULES.md` §5 (#90):** §5's eight Primary Groups
+(GOVERNANCE, SECURITY, PIPELINE, ARCHITECTURE, RELIABILITY, PRODUCT,
+INTELLIGENCE, INFRASTRUCTURE) are *policy domains* of the constitutional
+taxonomy — a different surface from this *execution registry*. They are
+reconciled by a default-routing map in `AGENT_RULES.md` §5 ("Registry
+relationship"); on the public board the registry group below is authoritative
+for dispatch, and a §5 domain never substitutes for a registry group. Changing
+either list is an ADMIN_DECISION.
+
 ## 4. CLI surface after #63
 
 | Command | Status | Behaviour |
