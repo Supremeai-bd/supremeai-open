@@ -398,9 +398,9 @@ function viewerFallback(
   recordSlotAudit({ slotId, operation: "connect", outcome: "denied", reason, clientIp, tenantId });
   return {
     client: guest,
-    role: "agent",
-    authenticated: true,
-    scopes: defaultClientScopes("agent"),
+    role: "viewer",
+    authenticated: false,
+    scopes: defaultClientScopes("viewer"),
     slotId,
     slotVerified: false,
     fallbackReason: reason,
