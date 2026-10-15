@@ -375,15 +375,16 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
     concurrency:
       # AGENT_RULES.md §12 — single execution under the parent controller.
       # Never run two loop instances concurrently; queue instead of duplicating.
       group: continuous-agent-loop
       cancel-in-progress: false
     env:
-      # Read-only token for `gh` (pre-installed on ubuntu runners).
-      # The dispatcher explicitly targets the upstream repo for issue reads.
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -398,6 +399,14 @@ jobs:
       # Without this, tier 3 is recorded skipped/failed in the run evidence.
       - name: Install PyYAML (dispatcher tier-3 verification dependency)
         run: python -m pip install --quiet pyyaml
+
+      # 2-Stage Graduated Claim Lease Gate (Heartbeat Protocol §4):
+      # Stage 1: Auto-release if no branch is pushed within 10 min of claim.
+      # Stage 2: Auto-release if branch exists but no PR is created within 30 min.
+      - name: 2-Stage Graduated Claim Lease Gate (10m branch / 30m PR timeout)
+        run: |
+          set -euo pipefail
+          python scripts/ci/stale_claim_releaser.py --auto-release --claim-to-branch-min 10.0 --branch-to-pr-min 30.0
 
       # AGENT_RULES.md §10 — "A job that runs but produces no expected result
       # is actionable when evidence confirms it… No-actionable-finding must be
