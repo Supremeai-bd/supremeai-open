@@ -189,8 +189,21 @@ jobs:
           fi
           echo "Changed files under boundary scan:"
           echo "$FILES"
-          # shellcheck disable=SC2086 — repo paths contain no whitespace
-          python3 scripts/ci/boundary_sanitization_guard.py --files $FILES
+          # Filter to existing files in checkout (skip deleted files; full-tree audit follows in next step):
+          SCAN_FILES=""
+          for f in $FILES; do
+            if [ -e "$f" ]; then
+              SCAN_FILES="$SCAN_FILES $f"
+            fi
+          done
+
+          if [ -n "$SCAN_FILES" ]; then
+            # shellcheck disable=SC2086 — repo paths contain no whitespace
+            python3 scripts/ci/boundary_sanitization_guard.py --files $SCAN_FILES
+          else
+            echo "All changed files were deleted — running full-tree audit instead."
+            python3 scripts/ci/boundary_sanitization_guard.py --check
+          fi
 
           # Path-filtered fast path (#155): a diff that touches ONLY docs/**
           # or *.md cannot break compilation or tests — skip the expensive
