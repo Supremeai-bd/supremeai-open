@@ -30,7 +30,7 @@ Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispat
 | 7. Record | PR with full template + Test Evidence (+ meaningful decision note) | `continuous_agent_loop.py --auto-pr` / REST PR create |
 | 8. Return | Report outcome **with fresh-board re-check** (#4177), release claim, loop back | `continuous_agent_loop.py` + `gh pr list` re-poll |
 
-Hard boundaries during the loop: gates outrank agent preference (§1.4) · scoped credentials only (`credential_manager` — master vault keys never reach children) · single-vs-multi execution follows Rule B (`role_registry.plan_task_execution()` — advisory).
+Hard boundaries during the loop: gates outrank agent preference (§1.4) · no competing/duplicate PRs for issues with an active open PR (AGENT_RULES.md U4) · scoped credentials only (`credential_manager` — master vault keys never reach children) · single-vs-multi execution follows Rule B (`role_registry.plan_task_execution()` — advisory).
 
 ## 1. First Rule: Authority
 

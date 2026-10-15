@@ -66,3 +66,36 @@ jobs:
           echo "The Task Envelope's submission.issue_reference_required=true documents this contract (#63)."
           echo "(Admin escape hatch: add the 'guard-exempt' label.)"
           exit 1
+
+  duplicate-pr-guard:
+    name: "👥 Anti-Duplicate PR Guard"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify no competing open PR exists for the same issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: |
+          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
+            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
+          fi
+          ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
+          if [ -z "$ISSUES" ]; then
+            exit 0
+          fi
+          # Check other open PRs for the same issue reference
+          OTHER_PRS=$(gh pr list --repo "${{ github.repository }}" --state open --json number,title,body -q ".[] | select(.number != ${PR_NUM}) | \"PR #\" + (.number|tostring) + \": \" + .title + \" \" + .body" || true)
+          for iss in $ISSUES; do
+            MATCH=$(echo "$OTHER_PRS" | grep -F "$iss" || true)
+            if [ -n "$MATCH" ]; then
+              echo "::error::Competing PR detected! Another open PR already targets $iss."
+              echo "Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden."
+              echo "Conflicting PR details: $MATCH"
+              exit 1
+            fi
+          done
+          echo "✅ No competing duplicate PRs detected for: $ISSUES"
