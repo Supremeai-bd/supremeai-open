@@ -5,13 +5,16 @@ export interface NormalizedEvent {
   message: string;
   payload: any;
   timestamp: string;
+  /** GitHub `X-GitHub-Delivery` id (#69) — used for webhook idempotency. */
+  deliveryId?: string;
 }
 
 export class EventNormalizer {
   /**
    * Normalizes a GitHub webhook payload.
+   * `deliveryId` is the `X-GitHub-Delivery` header value (#69 idempotency).
    */
-  public normalizeGitHubEvent(eventName: string, payload: any): NormalizedEvent {
+  public normalizeGitHubEvent(eventName: string, payload: any, deliveryId?: string): NormalizedEvent {
     let severity: "INFO" | "WARNING" | "CRITICAL" = "INFO";
     let message = `GitHub Event: ${eventName}`;
 
@@ -30,7 +33,8 @@ export class EventNormalizer {
       severity,
       message,
       payload,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      deliveryId,
     };
   }
 

@@ -9,6 +9,13 @@ name: Continuous Agent Loop Cron
 # issue contract, so each tick runs ONE --pick-next dispatch cycle; the
 # concurrency group serializes ticks and the next scheduled tick continues
 # where this one stopped.
+#
+# EVENT-DRIVEN INTAKE (#69): the MCP Control Tower now dispatches this exact
+# workflow via workflow_dispatch the moment a relevant issue/PR/comment webhook
+# lands (see infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md). This
+# 30-minute cron REMAINS as the low-frequency reconciliation fallback until the
+# retirement criteria in BRIDGE_INTAKE.md are met (soak window + zero
+# dead-letters + dispatch-path scheduler defect resolved).
 
 on:
   schedule:

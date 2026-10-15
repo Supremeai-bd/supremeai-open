@@ -14,7 +14,7 @@ const __currentDir = path.dirname(__currentFile);
 dotenv.config({ path: path.resolve(__currentDir, "../../../.env") });
 dotenv.config({ path: "F:/supremeai/.env" });
 
-import { timingSafeEqual, createHmac, randomUUID } from "node:crypto";
+import { timingSafeEqual, randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -36,6 +36,8 @@ import {
 } from "./policy/slot-verification.js";
 import { attachDiscoveryFilter, isValidToolProfile } from "./policy/tool-visibility.js";
 import { verifyApprovalLink } from "./policy/approvals/signing.js";
+import { hasWebhookSignature } from "./lib/webhook_signature.js";
+import { registerBridgeIntake } from "./events/bridge_intake.js";
 import { pullSecretsIntoProcessEnv } from "./adapters/infisical/index.js";
 import { MemorySubAdapter } from "./adapters/memory/index.js";
 import {
@@ -617,12 +619,8 @@ function resolveCaller(req: IncomingMessage): CallerContext {
   return { role, client, tenantId, isGlobalAdmin };
 }
 
-function hasWebhookSignature(req: IncomingMessage, body: string, secret: string, header: string): boolean {
-  const signature = req.headers[header]?.toString() ?? "";
-  if (!secret || !signature.startsWith("sha256=")) return false;
-  const expected = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
-  return safeEqual(signature, expected);
-}
+// #69: signature verification extracted to src/lib/webhook_signature.ts for
+// unit testing — behavior unchanged (fail-closed, raw-body HMAC, constant-time).
 
 async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise<void> {
   // Dynamically import transports
@@ -1746,7 +1744,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
           const isGithub = url === "/webhooks/github";
           const secret = isGithub ? env.githubWebhookSecret : env.cloudflareWebhookSecret;
           const signatureHeader = isGithub ? "x-hub-signature-256" : "x-cloudflare-signature";
-          if (env.nodeEnv === "production" && !hasWebhookSignature(req, body, secret, signatureHeader)) {
+          if (env.nodeEnv === "production" && !hasWebhookSignature(req.headers[signatureHeader]?.toString(), body, secret ?? "")) {
             res.writeHead(401, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Invalid webhook signature" }));
             return;
@@ -1757,7 +1755,9 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
 
           if (url === "/webhooks/github") {
             const eventName = req.headers["x-github-event"] as string || "unknown";
-            const normalized = globalEventNormalizer.normalizeGitHubEvent(eventName, payload);
+            // #69: delivery id rides the normalized event for idempotency.
+            const deliveryId = (req.headers["x-github-delivery"] as string) || undefined;
+            const normalized = globalEventNormalizer.normalizeGitHubEvent(eventName, payload, deliveryId);
             await globalEventGateway.dispatch(normalized);
           } else if (url === "/webhooks/cloudflare") {
             const normalized = globalEventNormalizer.normalizeCloudflareEvent(payload);
@@ -1891,6 +1891,12 @@ async function main(): Promise<void> {
     // 404 হয়ে টুল-কলে ধরা না পড়ে, বরং স্টার্টআপ লগেই চোখে পড়ে।
     console.error(`[MCP] GitHub adapter resolved repo → ${env.github.repo} (override via GITHUB_REPO)`);
     void refreshFromGitHub();
+
+    // #69: event-driven bridge intake — webhook → workflow_dispatch wake-up.
+    // Idempotent, fail-closed (no-op unless BRIDGE_INTAKE_ENABLED=true) and
+    // replays the durable outbox on boot. Must be armed BEFORE the server
+    // accepts webhook traffic.
+    registerBridgeIntake();
 
     const server = await createMcpServer(memoryAdapter);
 
