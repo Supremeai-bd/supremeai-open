@@ -24,15 +24,16 @@
  * without a separate timestamp key (Upstash REST has no write-time command).
  */
 
+import { env } from "../lib/env.js";
+import Redis from "ioredis";
 import {
   activeAccountChain,
   buildAccountChain,
+  RedisQuotaExhaustedError,
+  responseIndicatesQuotaExhaustion,
+  runWithAccountChain,
   type RedisAccountConfig,
 } from "../lib/redis_chain.js";
-import {
-  runWithAccountChain,
-  readAcrossAccountChain,
-} from "../adapters/redis/index.js";
 
 export type { RedisAccountConfig };
 // Back-compat re-export: chain construction moved to lib/redis_chain.ts but
@@ -92,13 +93,154 @@ export function ageSecondsOf(updatedAtMs: number, nowMs: number): number {
   return Math.max(0, Math.floor((nowMs - updatedAtMs) / 1000));
 }
 
-// ── Redis transport: single shared account-chain implementation (#110) ─────
-// Chain construction lives in lib/redis_chain.ts and the per-account client
-// factory + quota-aware fallback walk live in adapters/redis/index.ts — the
-// ONE implementation for the whole tower (issue #110). This module keeps only
-// its heartbeat-specific op bodies: the write path routes through
-// runWithAccountChain (first responder wins) and the read path through
-// readAcrossAccountChain (merge across accounts, freshest record wins).
+// ── Redis transport: Upstash multi-account fallback chain ──────────────────
+// Chain construction lives in lib/redis_chain.ts (shared with the read-only
+// health adapter so fleet health reflects real chain capability). This module
+// keeps the write path: walk the chain until one account accepts the write,
+// and the read path: merge across accounts keeping the freshest record.
+
+type HeartbeatRedisClient = {
+  mode: "upstash-rest" | "ioredis-tcp";
+  account: string;
+  get: (key: string) => Promise<string | null>;
+  setEx: (key: string, ttlSeconds: number, value: string) => Promise<void>;
+  keys: (pattern: string) => Promise<string[]>;
+  hset: (key: string, field: string, value: string) => Promise<void>;
+  hgetall: (key: string) => Promise<Record<string, string>>;
+};
+
+// buildAccountChain() moved to lib/redis_chain.ts (shared with adapters/redis)
+
+function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
+  const restUrl = account.restUrl as string;
+  const auth = `Bearer ${account.restToken}`;
+  const call = async (body: unknown[]): Promise<unknown> => {
+    const res = await fetch(restUrl, {
+      method: "POST",
+      headers: { Authorization: auth, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      // বাংলা মন্তব্য (#2613 R2): কোটা-ত্রুটি সনাক্ত হলে cooldown-marking এখন
+      // runWithAccountChain ইঞ্জিন করে (#110) — client শুধু quota-শেপড error
+      // throw করে, একটাই marking policy থাকে।
+      const errText = await res.text().catch(() => "");
+      if (responseIndicatesQuotaExhaustion(res.status, errText)) {
+        throw new RedisQuotaExhaustedError(
+          account.label,
+          `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
+        );
+      }
+      throw new Error(`Upstash REST [${account.label}] returned HTTP ${res.status}`);
+    }
+    const payload = (await res.json()) as { result?: unknown; error?: string };
+    if (payload.error) {
+      if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
+        throw new RedisQuotaExhaustedError(
+          account.label,
+          `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
+        );
+      }
+      throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
+    }
+    return payload.result;
+  };
+  return {
+    mode: "upstash-rest",
+    account: account.label,
+    get: async (key) => (await call(["GET", key])) as string | null,
+    setEx: async (key, ttl, value) => {
+      await call(["SET", key, value, "EX", String(ttl)]);
+    },
+    keys: async (pattern) => (await call(["KEYS", pattern])) as string[],
+    hset: async (key, field, value) => {
+      await call(["HSET", key, field, value]);
+    },
+    hgetall: async (key) => {
+      const raw = await call(["HGETALL", key]);
+      const result: Record<string, string> = {};
+      if (!raw) return result;
+      if (Array.isArray(raw)) {
+        for (let i = 0; i < raw.length; i += 2) {
+          const k = String(raw[i]);
+          const v = String(raw[i + 1] ?? "");
+          if (k) result[k] = v;
+        }
+      } else if (typeof raw === "object") {
+        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+          if (v != null) result[k] = typeof v === "string" ? v : JSON.stringify(v);
+        }
+      }
+      return result;
+    },
+  };
+}
+
+function makeTcpClient(account: RedisAccountConfig): HeartbeatRedisClient {
+  const connect = () =>
+    new (Redis as unknown as new (
+      url: string,
+      opts?: object,
+    ) => {
+      get: (key: string) => Promise<string | null>;
+      set: (key: string, value: string, mode: "EX", ttl: number) => Promise<void>;
+      keys: (pattern: string) => Promise<string[]>;
+      hset: (key: string, field: string, value: string) => Promise<number>;
+      hgetall: (key: string) => Promise<Record<string, string>>;
+      disconnect: () => void;
+    })(account.tcpUrl as string, { maxRetriesPerRequest: 1, connectTimeout: 5000 });
+  return {
+    mode: "ioredis-tcp",
+    account: account.label,
+    get: async (key) => {
+      const c = connect();
+      try {
+        return await c.get(key);
+      } finally {
+        c.disconnect();
+      }
+    },
+    setEx: async (key, ttl, value) => {
+      const c = connect();
+      try {
+        await c.set(key, value, "EX", ttl);
+      } finally {
+        c.disconnect();
+      }
+    },
+    keys: async (pattern) => {
+      const c = connect();
+      try {
+        return await c.keys(pattern);
+      } finally {
+        c.disconnect();
+      }
+    },
+    hset: async (key, field, value) => {
+      const c = connect();
+      try {
+        await c.hset(key, field, value);
+      } finally {
+        c.disconnect();
+      }
+    },
+    hgetall: async (key) => {
+      const c = connect();
+      try {
+        return (await c.hgetall(key)) || {};
+      } finally {
+        c.disconnect();
+      }
+    },
+  };
+}
+
+function makeClient(account: RedisAccountConfig): HeartbeatRedisClient {
+  return account.restUrl && account.restToken
+    ? makeRestClient(account)
+    : makeTcpClient(account);
+}
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -121,15 +263,22 @@ export type RecordHeartbeatResult = {
 
 /**
  * Writes a heartbeat for `slot`, walking the account chain until one accepts
- * the write (shared #110 walk). The dashboard merges across the same chain,
- * so any MCP-connected agent becomes visible in real time without running
- * its own HTTP client (issue #1402 recommendation).
+ * the write. The dashboard merges across the same chain, so any MCP-connected
+ * agent becomes visible in real time without running its own HTTP client
+ * (issue #1402 recommendation).
  */
 export async function recordHeartbeat(
   input: RecordHeartbeatInput,
 ): Promise<RecordHeartbeatResult> {
   const slotError = validateSlot(input.slot);
   if (slotError) throw new Error(slotError);
+
+  const chain = activeAccountChain();
+  if (chain.length === 0) {
+    throw new Error(
+      "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — agent heartbeats cannot be stored",
+    );
+  }
 
   const nowMs = Date.now();
   const record: HeartbeatRecord = {
@@ -142,31 +291,42 @@ export async function recordHeartbeat(
   };
   const value = JSON.stringify(record);
 
-  const { result } = await runWithAccountChain(
-    async (client) => {
+  // বাংলা মন্তব্য (#2613 R2): কোটা cooldown-এ থাকা account-এ একটিও request
+  // না পাঠিয়ে সরাসরি active chain (cooldown-মুক্ত) থেকে write শুরু করি।
+  // #110: chain-walk + quota-marking এখন একটাই ইঞ্জিন (runWithAccountChain) —
+  // কপি করা loop নেই; ব্যর্থতার বার্তা আগের মতোই (byte-identical)।
+  const chainLength = chain.length;
+  const { account } = await runWithAccountChain(
+    async (acct) => {
+      const client = makeClient(acct);
       // Primary write (issue #1994): write to hash for single-command HGETALL reading
       await client.hset(HEARTBEAT_HASH_KEY, input.slot, value);
-      // Dual-write: maintain individual key with TTL for legacy readers (best-effort)
-      await client
-        .setEx(heartbeatKey(input.slot), HEARTBEAT_TTL_SECONDS, value)
-        .catch(() => {});
-      return {
-        ok: true as const,
-        slot: record.slot,
-        agentId: record.agentId,
-        heartbeatAt: record.updatedAt,
-        ttlSeconds: HEARTBEAT_TTL_SECONDS,
-        redisAccount: client.account,
-        onlineThreshold: `ping again within ${HEARTBEAT_ONLINE_THRESHOLD_SECONDS}s to stay 'online'`,
-      };
+      // Dual-write: maintain individual key with TTL for legacy readers
+      await client.setEx(
+        heartbeatKey(input.slot),
+        HEARTBEAT_TTL_SECONDS,
+        value,
+      ).catch(() => {});
+      return acct.label;
     },
     {
-      opLabel: "agent heartbeat write",
-      noConfigMessage:
-        "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — agent heartbeats cannot be stored",
+      aggregateError: (attempts) =>
+        new Error(
+          `All ${chainLength} Redis account(s) rejected the heartbeat write: ${attempts
+            .map((a) => a.error ?? "unknown error")
+            .join(" | ")}`,
+        ),
     },
   );
-  return result;
+  return {
+    ok: true,
+    slot: record.slot,
+    agentId: record.agentId,
+    heartbeatAt: record.updatedAt,
+    ttlSeconds: HEARTBEAT_TTL_SECONDS,
+    redisAccount: account.label,
+    onlineThreshold: `ping again within ${HEARTBEAT_ONLINE_THRESHOLD_SECONDS}s to stay 'online'`,
+  };
 }
 
 export type AccountReadStatus = {
@@ -187,6 +347,13 @@ export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
   accounts: AccountReadStatus[];
   slots: HeartbeatStatusEntry[];
 }> {
+  const chain = activeAccountChain();
+  if (chain.length === 0) {
+    throw new Error(
+      "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — agent heartbeats cannot be read",
+    );
+  }
+
   // slot → freshest record across accounts (a recovered primary may hold an
   // older copy of a slot that failed over to secondary — keep the freshest).
   const freshest = new Map<string, HeartbeatRecord>();
@@ -210,11 +377,13 @@ export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
     }
   }
 
-  const { entries } = await readAcrossAccountChain(
-    async (client) => {
-      let records = 0;
+  for (const account of activeChain) {
+    const status: AccountReadStatus = { account: account.label, reachable: false, records: 0 };
+    try {
+      const client = makeClient(account);
       // Fast path (issue #1994): single HGETALL command instead of KEYS + N*GET per account
       const hashRecords = await client.hgetall(HEARTBEAT_HASH_KEY);
+      status.reachable = true;
       let hasRecords = false;
       for (const [slot, raw] of Object.entries(hashRecords)) {
         if (!raw) continue;
@@ -225,7 +394,7 @@ export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
           continue; // corrupt payload — skip rather than break listing
         }
         hasRecords = true;
-        records += 1;
+        status.records += 1;
         const existing = freshest.get(slot);
         if (!existing || record.updatedAtMs > existing.updatedAtMs) {
           freshest.set(slot, record);
@@ -244,7 +413,7 @@ export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
           } catch {
             continue; // corrupt payload — skip rather than break the listing
           }
-          records += 1;
+          status.records += 1;
           const slot = key.slice(HEARTBEAT_KEY_PREFIX.length);
           const existing = freshest.get(slot);
           if (!existing || record.updatedAtMs > existing.updatedAtMs) {
@@ -252,22 +421,9 @@ export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
           }
         }
       }
-      return { records };
-    },
-    {
-      opLabel: "agent heartbeat read",
-      noConfigMessage:
-        "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — agent heartbeats cannot be read",
-    },
-  );
-
-  for (const entry of entries) {
-    const status: AccountReadStatus = {
-      account: entry.account,
-      reachable: entry.ok,
-      records: entry.ok ? entry.value?.records ?? 0 : 0,
-    };
-    if (!entry.ok) status.error = entry.error;
+    } catch (err) {
+      status.error = (err as Error).message;
+    }
     accounts.push(status);
   }
 
