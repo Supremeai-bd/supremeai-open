@@ -33,15 +33,46 @@ export function bridgeOpenRepo(): string {
 /** The queue label upstream work orders carry in the open repo. */
 export const BRIDGE_QUEUE_LABEL = "bridge:queued";
 
+/**
+ * Secret scan patterns for the bridge intake gate (U6: fail-closed).
+ *
+ * Replaces the naive substring check (file.content.includes(secretFamily))
+ * with anchored, structure-aware regexes. Each pattern requires a word
+ * boundary before the known prefix and sufficient high-entropy characters
+ * after, so common English substrings that merely contain the prefix
+ * (e.g. "task-" containing "sk-") do not trigger false positives.
+ */
+const SECRET_SCAN_PATTERNS: ReadonlyArray<{ family: string; pattern: RegExp }> = [
+  { family: "ghs_",          pattern: /(?:^|[^A-Za-z0-9])ghs_[A-Za-z0-9]{36}/ },
+  { family: "ghp_",          pattern: /(?:^|[^A-Za-z0-9])ghp_[A-Za-z0-9]{36}/ },
+  { family: "github_pat_",   pattern: /(?:^|[^A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}/ },
+  { family: "sk-",           pattern: /(?:^|[^A-Za-z0-9])sk(?:[-_])[A-Za-z0-9_-]{16,}/ },
+  { family: "AKIA",          pattern: /(?:^|[^A-Za-z0-9])AKIA[0-9A-Z]{16}/ },
+  { family: "xox",           pattern: /(?:^|[^A-Za-z0-9])xox[abprs]-[A-Za-z0-9-]{10,}/ },
+  { family: "AIza",          pattern: /(?:^|[^A-Za-z0-9])AIza[0-9A-Za-z_-]{20,}/ },
+  { family: "PEM",           pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { family: "literal-secret", pattern: /(?:^|[^A-Za-z0-9])literal-secret/ },
+  { family: "redis-url",     pattern: /(?:^|[^A-Za-z0-9])redis-url/ },
+];
+
+/**
+ * Scan file content for known secret shapes. Returns the family name of the
+ * first match, or null if the content is clean. Exported for testability.
+ */
+export function scanFileForSecrets(content: string): string | null {
+  for (const { family, pattern } of SECRET_SCAN_PATTERNS) {
+    if (pattern.test(content)) return family;
+  }
+  return null;
+}
+
 /** Operator-contract numbers — single source of truth for the guide payload. */
 const BRIDGE_CONTRACT = {
   taskIdFormat: "bridge-YYYYMMDD-<slug>",
   branchFormat: "bridge/<task-id>",
   maxDiffBytes: 200 * 1024,
   maxFiles: 30,
-  secretScanFamilies: [
-    "ghs_", "ghp_", "github_pat_", "sk-", "AKIA", "xox", "AIza", "PEM", "literal-secret", "redis-url",
-  ],
+  secretScanFamilies: SECRET_SCAN_PATTERNS.map((p) => p.family),
   protectedPaths: [
     ".github/", "docs/ledger/", "docs/master_docs/", "prisma/", "*credential*", "*.pem", "*.key", "*.p12", ".env*",
   ],
@@ -316,15 +347,14 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         };
       }
 
-      // 2. Secret scanning
+      // 2. Secret scanning (structure-aware regex; rejects "task-" false positives)
       for (const file of files) {
-        for (const secretFamily of BRIDGE_CONTRACT.secretScanFamilies) {
-          if (file.content.includes(secretFamily)) {
-            return {
-              isError: true,
-              content: [{ type: "text", text: `Secret scan violation: pattern '${secretFamily}' found in '${file.path}'. Remove secrets and retry.` }],
-            };
-          }
+        const hit = scanFileForSecrets(file.content);
+        if (hit) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `Secret scan violation: pattern '${hit}' found in '${file.path}'. Remove secrets and retry.` }],
+          };
         }
       }
 

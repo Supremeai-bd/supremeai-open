@@ -14,6 +14,7 @@ import {
   normalizeQueueItem,
   queueFromIssues,
   registerBridgeTools,
+  scanFileForSecrets,
 } from "./src/tools/bridge.tools.js";
 
 /**
@@ -176,5 +177,45 @@ async function makeBridgeServer(): Promise<McpServer> {
 
 // ─── ৭. No-context fail-closed stays intact for the new tools ────────────────
 assert.ok(toolAccessError("bridge_guide"), "no request context ⇒ bridge tools stay denied (fail-closed)");
+
+// ─── ৮. Secret scan: false-positive prevention + real-key detection ───────────
+console.log("\n=== 8. Secret scan (structure-aware: reject benign 'sk-' substrings, catch real keys) ===");
+
+const benignSamples = [
+  `ENVELOPE_VERSION = 1 # task-envelope-v1`,
+  `task_id=f"task-abc-123"`,
+  `parser.add_argument("--task-envelope", ...)`,
+  `// task_registry handles task-queue lease management`,
+  `function task_envelope() { return sk_identity() }`,
+  `const mask_key = ref("task-key")`,
+  `disk-key rotation policy`,
+  `slack-key integration`,
+  `The desk-key is stored in redis-v2 config.`,
+];
+for (const s of benignSamples) {
+  assert.equal(scanFileForSecrets(s), null, `benign sample must NOT trigger: ${s}`);
+}
+console.log("  ✓ all benign 'sk-' substrings pass without false positive");
+
+const realSecrets: Array<[string, string]> = [
+  [`sk_key = "sk-proj-abc123def456ghi789jkl012mno345pqr678ste"`, "sk-"], // gitleaks:allow
+  [`token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789ABCD"`, "ghp_"], // gitleaks:allow
+  [`app_token = "ghs_rstuvwxyzabcdefghijklmnopqrstuvwxyz0123456789AB"`, "ghs_"], // gitleaks:allow
+  [`pat = "github_pat_1234567890abcdefghijklmnopqrstuvwxyzA"`, "github_pat_"], // gitleaks:allow
+  [`aws_key = "AKIAIOSFODNN7EXAMPLE1234"`, "AKIA"], // gitleaks:allow
+  [`slack = "xoxb-12345678901-abcdef1234567"`, "xox"], // gitleaks:allow
+  [`api_key = "AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8"`, "AIza"], // gitleaks:allow
+  [`// PEM\n-----BEGIN PRIVATE KEY-----\nMIIEvA==`, "PEM"], // gitleaks:allow
+  [`var x = "literal-secret-value-12345"`, "literal-secret"], // gitleaks:allow
+  [`config = { "redis-url": "redis://user:pass@host:6379" }`, "redis-url"], // gitleaks:allow
+];
+for (const [content, family] of realSecrets) {
+  const hit = scanFileForSecrets(content);
+  assert.equal(hit, family, `real ${family} secret must be detected in: ${content.slice(0, 40)}`);
+}
+console.log("  ✓ all real secret shapes detected");
+
+assert.equal(guide.contract.secretScanFamilies.includes("sk-"), true, "sk- family still documented in contract");
+assert.equal(guide.contract.secretScanFamilies.includes("ghp_"), true, "ghp_ family still documented in contract");
 
 console.log("Bridge onboarding contract tests passed (#123)");

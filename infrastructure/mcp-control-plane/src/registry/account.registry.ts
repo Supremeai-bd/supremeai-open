@@ -12,6 +12,12 @@ export interface ProviderAccount {
   capabilities: Capability[];
   /** Env var name for API key — NOT the value itself */
   apiKeyRef: string;
+  /** Optional fallback env var NAMES, tried in order when apiKeyRef is
+   *  absent. Fixes the render-mcp / render.yaml mismatch: render.yaml
+   *  declares RENDER_API_KEY while accounts referenced RENDER_API_KEY_4 —
+   *  deployment only receives RENDER_API_KEY, so the account must be
+   *  resolvable (and marked available) via the generic key. */
+  apiKeyRefs?: string[];
   /** Optional: URL or endpoint */
   url?: string;
   /** Optional: service/resource ID */
@@ -44,6 +50,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
       environment: "production",
       capabilities: ["health", "logs", "deploy", "restart", "env_vars"],
       apiKeyRef: "RENDER_API_KEY_1",
+      apiKeyRefs: ["RENDER_API_KEY"],
       url: env.render.primary.url,
       serviceId: env.render.primary.serviceId,
       healthPath: "/health", // FastAPI core API public health check
@@ -83,10 +90,15 @@ export function buildAccountRegistry(): ProviderAccount[] {
       environment: "production",
       capabilities: ["health", "logs", "deploy", "restart", "env_vars"],
       apiKeyRef: "RENDER_API_KEY_4",
+      apiKeyRefs: ["RENDER_API_KEY"],
       url: env.render.controlTower.url,
       serviceId: env.render.controlTower.serviceId,
       healthPath: "/health", // control tower's own health endpoint
-      available: isAvailable("RENDER_API_KEY_4"),
+      // render.yaml declares RENDER_API_KEY (sync:false) for this service;
+      // RENDER_API_KEY_4 may only exist if Infisical provides it explicitly.
+      // Without this fallback the tower was marked unavailable and every
+      // render.* tool failed even though a valid key was provisioned.
+      available: isAvailable("RENDER_API_KEY_4") || isAvailable("RENDER_API_KEY"),
     },
 
     // ── GitHub — SupremeAI Primary (Supremeai-bd/supremeai) ────────
