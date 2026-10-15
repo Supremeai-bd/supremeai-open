@@ -23,8 +23,15 @@ Do not claim success, failure, security, health or verification without evidence
 ## U3 — Validity Before Action
 An issue is not automatically valid because it exists. Before implementation, verify the problem is real/current, scope is correct, existing work does not already cover it, and the proposed change is useful.
 
-## U4 — Existing Work First
+## U4 — Existing Work First & Anti-Duplicate PR Doctrine
 Before claiming or creating work, inspect the relevant group, active issues, open PRs, dependencies and recent solutions. Prefer updating/linking existing work over duplicate work.
+
+**Strict Anti-Duplicate PR Mandate (একই ইস্যুর দ্বৈত পিআর কঠোরভাবে নিষিদ্ধ):**
+1. **Mandatory Preflight PR Check:** Before claiming an issue or writing any code, an agent MUST query active open pull requests (`gh pr list`). If an open PR already targets the issue (e.g., references `#N` in title, body, or branch), the agent **MUST NOT** claim the issue or start writing parallel code.
+2. **Competing PRs Prohibited:** Opening a competing, parallel, or redundant PR for an issue that already has an active PR is **STRICTLY FORBIDDEN**. Parallel work wastes CI compute, creates merge conflicts, and fragments review.
+3. **Handling Existing Open PRs:**
+   - If the existing PR is active/green: Do NOT intervene. Let CI Guardian and auto-merge complete the landing.
+   - If the existing PR is failing checks or abandoned (stale > 2 hours): The agent may follow up on that branch or review it, but MUST NOT create a blind duplicate PR from scratch without explicitly closing or superseding the previous PR first.
 
 ## U5 — Freshness & Ownership
 Claim state before work. Verify current `main`/PR state before push. Do not work on `state:seq-hold` or work blocked by upstream. Never push stale work.
