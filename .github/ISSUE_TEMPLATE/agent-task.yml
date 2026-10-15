@@ -31,7 +31,6 @@ body:
         - Supremeai-bd/supremeai-mcp-control-plane
         - Supremeai-bd/supremeai-sdk
         - Supremeai-bd/supremeai-studio
-        - Supremeai-bd/supremeai-open
     validations:
       required: true
 
