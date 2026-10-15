@@ -43,6 +43,30 @@ jobs:
           except ValueError:
               pass"
 
+      - name: Pick-Next Claim-Filter Contract Test (#88, offline stub)
+        run: |
+          python -c "
+          import json
+          import scripts.agents.continuous_agent_loop as loop
+          stub = [
+              {'number': 101, 'title': 'old unclaimed P1', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P1-high'}]},
+              {'number': 102, 'title': 'claimed p0 critical words', 'labels': [{'name': 'status:in-progress'}, {'name': 'P0-critical'}]},
+              {'number': 103, 'title': 'held work', 'labels': [{'name': 'status:unclaimed'}, {'name': 'state:seq-hold'}]},
+              {'number': 104, 'title': 'unlabeled tail', 'labels': [{'name': 'status:unclaimed'}]}
+          ]
+          loop.run_cmd = lambda cmd: (0, json.dumps(stub), '')
+          picked = loop.pick_next_issue()
+          assert picked == '101', f'expected oldest claimable 101, got {picked}'
+          stub2 = [
+              {'number': 55, 'title': 'totally high-level prose title', 'labels': [{'name': 'status:unclaimed'}]},
+              {'number': 66, 'title': 'nothing special', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P0-critical'}]}
+          ]
+          loop.run_cmd = lambda cmd: (0, json.dumps(stub2), '')
+          assert loop.pick_next_issue() == '66', 'real P0 label must outrank prose titles'
+          assert loop.build_task_contract('ci-test')['task_contract']['version'] == 1
+          print('pick-next claim-filter contract: OK (#88)')
+          "
+
   tower-verify:
     name: Tower TS Verification (typecheck + contract-safe tests)
     runs-on: ubuntu-latest
