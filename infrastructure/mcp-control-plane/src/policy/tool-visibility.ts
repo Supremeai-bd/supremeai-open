@@ -115,6 +115,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
   "bridge_guide",
   "bridge_work_queue",
   "bridge_work_order",
+  "bridge_submit_patch",
   // docs
   "docs_search",
   "docs_list",
@@ -123,7 +124,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
 ];
 
 /** The mutating tools inside the curated surface (excluded from `readonly`). */
-const MUTATING_TOOLS: readonly string[] = ["notify_telegram", "agent_review_workflow_execute"];
+const MUTATING_TOOLS: readonly string[] = ["notify_telegram", "agent_review_workflow_execute", "bridge_submit_patch"];
 
 export const TOOL_PROFILES: Record<ToolProfile, readonly string[]> = {
   chatgpt: CHATGPT_CURATED_TOOLS,

@@ -143,12 +143,6 @@ export function queueFromIssues(rawIssues: unknown, limit = 20) {
     .slice(0, Math.min(Math.max(1, limit), 50));
 }
 
-/**
- * Authorization chain for bridge-lane GitHub reads:
- *   static GITHUB_TOKEN/GH_TOKEN → GitHub App installation token (minted from
- *   GITHUB_APP_* creds delivered by the Infisical bootstrap) → unauthenticated
- *   (callers already fall back gracefully on 401/403).
- */
 async function githubHeaders(withAuth = true): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
@@ -275,6 +269,213 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         return {
           isError: true,
           content: [{ type: "text", text: `Work order #${number} fetch failed: ${(err as Error).message}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "bridge.submit_patch",
+    "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
+    {
+      taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
+      summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
+      scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
+      testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
+      files: z.array(z.object({
+        path: z.string().min(1),
+        content: z.string(),
+      })).min(1).max(30).describe("Files to commit on the patch branch"),
+      rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
+      agentIdentity: z.string().optional().describe("Agent name / session attribution"),
+    },
+    async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity }) => {
+      // 1. Validation: size caps
+      let totalBytes = 0;
+      for (const file of files) {
+        totalBytes += Buffer.byteLength(file.content, "utf-8");
+        // Path validation: no traversal
+        if (file.path.startsWith("/") || file.path.includes("..") || file.path.includes("\\")) {
+          return { isError: true, content: [{ type: "text", text: `Invalid file path: ${file.path}` }] };
+        }
+        // Protected path check
+        for (const protectedPath of BRIDGE_CONTRACT.protectedPaths) {
+          const cleanPattern = protectedPath.replace(/\*/g, "");
+          if (file.path.startsWith(cleanPattern) || file.path.includes(cleanPattern)) {
+            return {
+              isError: true,
+              content: [{ type: "text", text: `Path '${file.path}' is protected (${protectedPath}). Bridge lane does not accept automatic writes to protected paths.` }],
+            };
+          }
+        }
+      }
+      if (totalBytes > BRIDGE_CONTRACT.maxDiffBytes) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Total patch size (${totalBytes} bytes) exceeds maximum allowed (${BRIDGE_CONTRACT.maxDiffBytes} bytes).` }],
+        };
+      }
+
+      // 2. Secret scanning
+      for (const file of files) {
+        for (const secretFamily of BRIDGE_CONTRACT.secretScanFamilies) {
+          if (file.content.includes(secretFamily)) {
+            return {
+              isError: true,
+              content: [{ type: "text", text: `Secret scan violation: pattern '${secretFamily}' found in '${file.path}'. Remove secrets and retry.` }],
+            };
+          }
+        }
+      }
+
+      // 3. Resolve GitHub token (App installation token or PAT)
+      const token = env.github.token || process.env["GH_TOKEN"] || (await getGitHubAppInstallationToken()) || "";
+      if (!token) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "GitHub App token minting unavailable on the server. Please check Tower credentials." }],
+        };
+      }
+
+      const repo = bridgeOpenRepo();
+      const headers: Record<string, string> = {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "SupremeAI-MCP-Control-Tower-Bridge",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+
+      try {
+        // Step A: Get main branch SHA
+        const mainRes = await httpRequest<{ object?: { sha?: string } }>(
+          `https://api.github.com/repos/${repo}/git/ref/heads/main`,
+          { headers, timeoutMs: 15_000 }
+        );
+        if (!mainRes.ok || !mainRes.data?.object?.sha) {
+          return { isError: true, content: [{ type: "text", text: `Failed to resolve main branch on ${repo}: HTTP ${mainRes.status}` }] };
+        }
+        const mainSha = mainRes.data.object.sha;
+
+        // Step B: Create branch bridge/<taskId> if not exists
+        const branchName = `bridge/${taskId}`;
+        const refRes = await httpRequest<{ ref?: string }>(
+          `https://api.github.com/repos/${repo}/git/ref/heads/${branchName}`,
+          { headers, timeoutMs: 15_000 }
+        );
+
+        if (!refRes.ok) {
+          const createRefRes = await httpRequest(
+            `https://api.github.com/repos/${repo}/git/refs`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                ref: `refs/heads/${branchName}`,
+                sha: mainSha,
+              }),
+              timeoutMs: 15_000,
+            }
+          );
+          if (!createRefRes.ok) {
+            return { isError: true, content: [{ type: "text", text: `Failed to create branch ${branchName}: HTTP ${createRefRes.status}` }] };
+          }
+        }
+
+        // Step C: Commit files to the branch
+        for (const file of files) {
+          const getFileRes = await httpRequest<{ sha?: string }>(
+            `https://api.github.com/repos/${repo}/contents/${file.path}?ref=${branchName}`,
+            { headers, timeoutMs: 15_000 }
+          );
+          const fileSha = getFileRes.ok ? getFileRes.data?.sha : undefined;
+
+          const putFileRes = await httpRequest(
+            `https://api.github.com/repos/${repo}/contents/${file.path}`,
+            {
+              method: "PUT",
+              headers,
+              body: JSON.stringify({
+                message: `feat(bridge): ${taskId} — update ${file.path}`,
+                content: Buffer.from(file.content, "utf-8").toString("base64"),
+                branch: branchName,
+                ...(fileSha ? { sha: fileSha } : {}),
+              }),
+              timeoutMs: 15_000,
+            }
+          );
+          if (!putFileRes.ok) {
+            return { isError: true, content: [{ type: "text", text: `Failed to commit ${file.path} to ${branchName}: HTTP ${putFileRes.status}` }] };
+          }
+        }
+
+        // Step D: Create Bridge Work Order Issue
+        const issueBody = [
+          "### Task ID",
+          taskId,
+          "",
+          "### Patch Branch",
+          branchName,
+          "",
+          "### Target Repo",
+          "paykaribazaronline/supremeai",
+          "",
+          "### Agent Identity",
+          agentIdentity || "zero-credential-mcp-agent",
+          "",
+          "### Summary (what + why)",
+          summary,
+          "",
+          "### Scope Paths",
+          scopePaths.map((p) => `- ${p}`).join("\n"),
+          "",
+          "### Test Evidence (3-tier contract)",
+          testsEvidence,
+          "",
+          "### Rollback Path",
+          rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
+        ].join("\n");
+
+        const issueRes = await httpRequest<{ number?: number; html_url?: string }>(
+          `https://api.github.com/repos/${repo}/issues`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              title: `🌉 Bridge Work Order — ${summary} (${taskId})`,
+              labels: [BRIDGE_QUEUE_LABEL],
+              body: issueBody,
+            }),
+            timeoutMs: 15_000,
+          }
+        );
+
+        if (!issueRes.ok) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}` }],
+          };
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              taskId,
+              branch: branchName,
+              branchUrl: `https://github.com/${repo}/tree/${branchName}`,
+              issueNumber: issueRes.data?.number,
+              issueUrl: issueRes.data?.html_url,
+              status: "bridge:queued",
+              message: "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
+            }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Bridge patch submission error: ${(err as Error).message}` }],
         };
       }
     }

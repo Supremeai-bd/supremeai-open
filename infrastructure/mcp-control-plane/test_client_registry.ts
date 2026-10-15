@@ -21,7 +21,7 @@ assert.equal(resolveClient(rotated!.token), undefined);
 // Zero-manual-registration for no-auth AI clients + live protocol refresh.
 const guestSse = getOrCreateGuestClient("guest_test_registry_1", "Test Guest (1.2.3.4)", "cursor", "sse");
 assert.equal(guestSse.status, "active");
-assert.equal(guestSse.role, "viewer");
+assert.equal(guestSse.role, "agent");
 assert.equal(guestSse.protocol, "sse");
 
 // Reconnect over streamable-http → SAME record, protocol follows the latest transport.
@@ -97,7 +97,7 @@ assert.ok(promoted?.scopes.includes("repos:all:read"));
 // 5. Named client record: stable id, role upgrades persist (database truth).
 const namedA = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "streamable-http");
 assert.equal(namedA.id, "named_pko_main");
-assert.equal(namedA.role, "viewer");
+assert.equal(namedA.role, "agent");
 changeClientRole("named_pko_main", "agent");
 const namedB = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "sse");
 assert.equal(namedB.id, "named_pko_main");
