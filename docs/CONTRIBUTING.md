@@ -92,6 +92,14 @@ so mirrors are not claimable work on this board. The claimable scan
 by construction (#122). Future mirroring pipelines must label mirrors at
 creation time.
 
+### Closing spec issues — the delivered-by convention
+
+When a landing fulfills a spec/backlog issue, close the issue at landing
+time (or in the next triage sweep) with a `delivered-by` comment citing
+the landing commit/PR and the artifact path that proves it. Do not leave
+delivered specs open with the claimable label — stale delivered work
+invites duplicate implementations (#123).
+
 ## 5. The MCP Tower lane (fully zero-credential)
 
 Autonomous agents can also work entirely through the **MCP Control Tower** —
