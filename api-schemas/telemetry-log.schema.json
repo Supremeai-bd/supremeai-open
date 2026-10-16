@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://supremeai.ai/schemas/telemetry-log.schema.json",
+  "title": "SupremeAI Structured Telemetry Log Record",
+  "description": "Standard structured JSON log format for all SupremeAI services, aligned with OpenTelemetry conventions. Every record carries the mission's seven fields: RFC 3339 timestamp, severity level, W3C trace_id (32 hex), agent_id (heartbeat-compatible identity, optional for non-agent services), component, message, and an open context object. Optional OpenTelemetry enrichments: span_id, severity_number (1-24), service_name, and metric samples from the canonical federation catalog (request latency, token consumption, agent task completion rate). Records are one JSON object per line (JSONL) so they stream, grep, and ship cleanly. See issue #38.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "timestamp",
+    "level",
+    "trace_id",
+    "component",
+    "message",
+    "context"
+  ],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})$",
+      "description": "RFC 3339 UTC emission instant (explicit pattern: format is annotation-only in Draft 2020-12)."
+    },
+    "level": {
+      "enum": [
+        "DEBUG",
+        "INFO",
+        "WARN",
+        "ERROR",
+        "FATAL"
+      ],
+      "description": "Severity level; maps to OTel severity_number 5/9/13/17/21 respectively."
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^(?!0{32}$)[0-9a-f]{32}$",
+      "description": "W3C Trace Context trace id: 32 lowercase hex chars, not all zeroes (W3C-invalid zero id rejected by pattern)."
+    },
+    "span_id": {
+      "type": "string",
+      "pattern": "^(?!0{16}$)[0-9a-f]{16}$",
+      "description": "Optional W3C span id: 16 lowercase hex chars, not all zeroes."
+    },
+    "agent_id": {
+      "type": "string",
+      "pattern": "^agent-[a-zA-Z0-9_-]{1,64}$",
+      "description": "Emitting agent identity (mirrors heartbeat.schema.json); optional for non-agent services."
+    },
+    "service_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{2,63}$",
+      "description": "OTel service.name resource attribute (e.g. mcp-tower, bridge-lane)."
+    },
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$",
+      "description": "Emitting component within the service (e.g. gate, health-probe, dispatcher)."
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Honest human-readable log message; never includes secrets."
+    },
+    "context": {
+      "type": "object",
+      "description": "Open structured context bag (request params, task ids, durations). Values must be JSON-serializable; secrets are forbidden by the constitutional log hygiene rule."
+    },
+    "severity_number": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 24,
+      "description": "Optional OTel severity number (1-24) when a level's default mapping needs refinement."
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/MetricSample"
+      },
+      "description": "Metric samples emitted alongside this record, drawn from the canonical federation catalog."
+    }
+  },
+  "$defs": {
+    "MetricSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One OpenTelemetry metric sample; names are enum-pinned to the canonical federation catalog so dashboards cannot drift.",
+      "required": [
+        "metric",
+        "value",
+        "unit",
+        "instrument"
+      ],
+      "properties": {
+        "metric": {
+          "enum": [
+            "supremeai.request.latency",
+            "supremeai.tokens.consumed",
+            "supremeai.agent.task.completion_rate"
+          ],
+          "description": "Canonical metric names: request latency, token consumption, agent task completion rate. New metrics extend this enum via schema version bump."
+        },
+        "value": {
+          "type": "number",
+          "description": "Sample value (ms for latency, token count for consumption, 0..1 ratio for completion rate)."
+        },
+        "unit": {
+          "enum": [
+            "ms",
+            "count",
+            "ratio"
+          ],
+          "description": "Unit vocabulary pinned to the catalog."
+        },
+        "instrument": {
+          "enum": [
+            "histogram",
+            "counter",
+            "gauge"
+          ],
+          "description": "OTel instrument kind: latency=histogram, tokens=counter, completion_rate=gauge."
+        },
+        "attributes": {
+          "type": "object",
+          "description": "OTel metric attributes (provider, tier, component...)."
+        }
+      }
+    }
+  }
+}
