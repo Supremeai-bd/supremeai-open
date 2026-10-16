@@ -1,0 +1,76 @@
+# N3 wiring patch — bridge.work_order gateFeedback (authorized lane)
+#
+# WHAT: wires the gate-feedback surface (N3, docs/COMPLEXITY_REDUCTION_2026-10-16.md,
+# WO #370) into the existing bridge.work_order tool. The pure extraction core ships
+# as infrastructure/mcp-control-plane/src/tools/gate_feedback.ts IN THIS WO (landable
+# directly); this patch carries ONLY the bridge.tools.ts wiring because the whole-
+# file payload cannot pass the intake secret scan: the file legitimately quotes the
+# scanner's own family name (its own family name (quoted in SECRET_SCAN_PATTERNS)) in the pre-existing
+# SECRET_SCAN_PATTERNS table (landed via the private sync lane) — a scanner
+# self-trip false positive, filed as finding N10.
+#
+# APPLY (authorized lane): git apply docs/patches/n3-bridge-tools-wiring.patch
+# The suite (test_gate_feedback.ts, 34 asserts, wired into test:unit +
+# test:tower-ci) passes against main WITHOUT this patch (pure module is
+# self-contained); the gateFeedback response field activates on apply.
+#
+# ---
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 6f26385..38f6180 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -3,6 +3,7 @@ import { z } from "zod";
+ import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
+ import { httpRequest } from "../lib/http.js";
+ import { env } from "../lib/env.js";
++import { extractGateFeedback, type GateFeedbackField } from "./gate_feedback.js";
+ 
+ /**
+  * Bridge onboarding tools — the zero-credential front door for external agents.
+@@ -192,6 +193,7 @@ function clipBody(body: unknown): string {
+   return body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}\n... [truncated ${body.length - MAX_BODY_CHARS} chars]` : body;
+ }
+ 
++
+ export async function registerBridgeTools(server: McpServer): Promise<void> {
+   server.tool(
+     "bridge.guide",
+@@ -286,12 +288,38 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           };
+         }
+         const item = normalizeQueueItem(res.data);
++        // N3 (docs/COMPLEXITY_REDUCTION_2026-10-16.md): surface the newest
++        // public status comment so submitters can read gate verdicts directly
++        // (fail-open — additive-optional field; never fails the whole read).
++        let gateFeedback: GateFeedbackField = { commentCount: item.comments, latest: null };
++        if (item.comments > 0) {
++          try {
++            let cres = await httpRequest<unknown>(
++              `https://api.github.com/repos/${repo}/issues/${number}/comments?per_page=20&sort=created&direction=desc`,
++              { headers: await githubHeaders(true), timeoutMs: 15_000 }
++            );
++            if (!cres.ok && (cres.status === 401 || cres.status === 403)) {
++              cres = await httpRequest<unknown>(
++                `https://api.github.com/repos/${repo}/issues/${number}/comments?per_page=20&sort=created&direction=desc`,
++                { headers: await githubHeaders(false), timeoutMs: 15_000 }
++              );
++            }
++            if (cres.ok) {
++              gateFeedback = { commentCount: item.comments, latest: extractGateFeedback(cres.data) };
++            } else {
++              gateFeedback = { commentCount: item.comments, latest: null, fetchFailed: true };
++            }
++          } catch {
++            gateFeedback = { commentCount: item.comments, latest: null, fetchFailed: true };
++          }
++        }
+         return {
+           content: [{
+             type: "text",
+             text: JSON.stringify({
+               ...item,
+               body: clipBody(res.data.body),
++              gateFeedback,
+               contract: bridgeGuide().contract,
+             }, null, 2),
+           }],
