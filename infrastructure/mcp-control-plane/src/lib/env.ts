@@ -206,6 +206,22 @@ export const env = {
     get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
   },
 
+  // Arms the #199 federated CI failure reporter (workflow_run.completed →
+  // failure issue on the control-plane board). Fail-closed: disabled unless
+  // explicitly enabled. See docs/FEDERATED_CI_WATCHER.md for activation steps.
+  federatedCiWatcher: {
+    get enabled(): boolean { return process.env.FEDERATED_CI_WATCHER_ENABLED === "true"; },
+    get reportRepo(): string { return optional("FEDERATED_CI_WATCHER_REPORT_REPO", "Supremeai-bd/supremeai-open"); },
+    /** Comma-separated explicit allowlist; empty → same-org-as-reportRepo policy. */
+    get repos(): string[] {
+      return optional("FEDERATED_CI_WATCHER_REPOS", "").split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    },
+    get maxIssuesPerHour(): number { return parseInt(optional("FEDERATED_CI_WATCHER_MAX_PER_HOUR", "6"), 10) || 6; },
+    get dedupeTtlMs(): number { return parseInt(optional("FEDERATED_CI_WATCHER_DEDUPE_TTL_MS", "86400000"), 10) || 86400000; },
+    get maxAttempts(): number { return parseInt(optional("FEDERATED_CI_WATCHER_MAX_ATTEMPTS", "3"), 10) || 3; },
+    get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
+  },
+
   // ── Cloudflare (5-account federation pool)
   cloudflare: {
     get apiToken(): string | undefined { return process.env.CLOUDFLARE_API_TOKEN; },

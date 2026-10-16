@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "federated-ci-failure/v1",
+  "title": "Federated CI Failure Report",
+  "description": "Emission contract for the federated CI failure auto-issue reporter (#199, src/events/federated_ci_watcher.ts in infrastructure/mcp-control-plane). A report is derived deterministically from a GitHub workflow_run.completed webhook event with conclusion == \"failure\" originating from a federation repository, and is normalized into a standard agent-task issue on the control-plane board (cross-repo task normalizer, #199 part 2). The report is the single source of truth for the issue title format, the label set, and the body contract; the machine surface (watcher) and this schema must evolve together.",
+  "type": "object",
+  "required": [
+    "schema",
+    "repo",
+    "workflowName",
+    "runId",
+    "runAttempt",
+    "runUrl",
+    "headBranch",
+    "headSha",
+    "conclusion",
+    "failedJobs",
+    "eventKey",
+    "reportedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "federated-ci-failure/v1",
+      "description": "Report envelope version. Bump on any breaking field change."
+    },
+    "repo": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "description": "Full name of the repository whose workflow run failed (payload.repository.full_name)."
+    },
+    "workflowName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human workflow name (payload.workflow_run.name)."
+    },
+    "workflowPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Workflow definition path inside the failing repo (payload.workflow_run.path), when GitHub provides one."
+    },
+    "runId": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "GitHub Actions run id (payload.workflow_run.id)."
+    },
+    "runAttempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Run attempt number (payload.workflow_run.run_attempt). Part of the dedupe key: a re-run of the same run id with a new attempt is a NEW failure signal."
+    },
+    "runUrl": {
+      "type": "string",
+      "pattern": "^https://",
+      "description": "Run page URL (payload.workflow_run.html_url)."
+    },
+    "headBranch": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Branch the run was triggered on (payload.workflow_run.head_branch)."
+    },
+    "headSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Full 40-hex head SHA the run was triggered on (payload.workflow_run.head_sha). Immutable failure anchor."
+    },
+    "conclusion": {
+      "const": "failure",
+      "description": "Strict v1 policy: only conclusion == \"failure\" is reported. startup_failure/timed_out/cancelled are out of scope until a contract bump."
+    },
+    "failedJobs": {
+      "type": "array",
+      "description": "Best-effort enrichment from GET /repos/{repo}/actions/runs/{runId}/jobs?filter=latest. Empty array means enrichment was unavailable — the report itself must still be emitted (emission before enrichment, #199).",
+      "items": {
+        "type": "object",
+        "required": ["name", "steps"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Failed job name."
+          },
+          "steps": {
+            "type": "array",
+            "description": "Failed step names within the job (empty when the job failed before any step reported).",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://",
+            "description": "Job page URL."
+          }
+        }
+      }
+    },
+    "eventKey": {
+      "type": "string",
+      "pattern": "^ci-failure:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+:.+:[0-9]+:[0-9]+$",
+      "description": "Dedupe key ci-failure:<repo>:<workflowName>:<runId>:<runAttempt> — the idempotency anchor of the reporter (24h default TTL)."
+    },
+    "reportedAt": {
+      "type": "string",
+      "description": "ISO-8601 UTC instant at which the watcher accepted the event."
+    }
+  },
+  "$defs": {
+    "derivedIssue": {
+      "title": "Derived board issue (cross-repo task normalizer output)",
+      "type": "object",
+      "required": ["title", "labels"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "pattern": "^fix\\(ci\\): workflow failure in [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+ \\(.+ #[0-9]+\\)$",
+          "description": "Exact format: fix(ci): workflow failure in <repo-name> (<workflow-name> #<run_id>) — per issue #199."
+        },
+        "labels": {
+          "type": "array",
+          "minItems": 3,
+          "description": "P1-high + handoff:coder + area:ci are always present (implicit claimable lifecycle per #222 — no status:unclaimed). repo:<slug> is best-effort and may be dropped by the 422 fallback.",
+          "prefixItems": [
+            { "const": "P1-high" },
+            { "const": "handoff:coder" },
+            { "const": "area:ci" }
+          ]
+        }
+      }
+    }
+  }
+}
