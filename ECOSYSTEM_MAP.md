@@ -16,6 +16,19 @@ You do not need credentials or access to private repositories. You can inspect p
 
 ## 2. Federation Repository Directory
 
+> **Single Pane of Glass — the unified work hub (#374).** `supremeai-open` is
+> the canonical Single Work Hub for the entire ecosystem: all active tasks —
+> feature requests, bug reports, agent tasks, and Bridge Work Orders targeting
+> *any* federation repository — are created **exclusively here** and routed to
+> their target via the issue templates' `target_repo` selector. Satellite
+> repositories stay issue-free, with strict exceptions only (foundational
+> repository epics/blueprints, and automated CI-failure alerts which are
+> synchronized to this hub by the `.github/actions/sync-ci-failure` action and
+> claimed by the continuous agent loop at top priority — tier `-1`, before
+> P0). Rationale: scattered issues fragment context, complicate agent task
+> discovery (`continuous_agent_loop.py`), and leak operator attention across
+> a dozen notification streams.
+
 The SupremeAI platform consists of specialized repositories under the **`Supremeai-bd`** organization:
 
 | Repository | Scope & Responsibility | What Can Be Changed From Here |
