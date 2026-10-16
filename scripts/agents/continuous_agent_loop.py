@@ -283,6 +283,7 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
 Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
 
 ## Linked Issue / Claim
+Closes #{issue_ref}
 Refs #{issue_ref}
 
 ## Type of Change
@@ -386,10 +387,9 @@ def pick_next_issue() -> str | None:
     """Fetch the highest priority claimable open issue from GitHub.
 
     Selection policy (#88):
-      - Claim-gated: only issues carrying ``status:unclaimed`` are eligible;
-        claimed/in-progress, sequence-held, blocked and private-mirror
-        boards are never
-        (re)dispatched.
+      - Claim-gated: any open issue is claimable by default unless it carries
+        an active claim (status:claimed, status:in-progress), hold, blocked, or
+        private-mirror exclusion marker.
       - Whole-board scope: pagination limit high enough that truncation cannot
         starve old issues (verified: board regularly holds 35+ open issues).
       - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose in
@@ -408,11 +408,15 @@ def pick_next_issue() -> str | None:
     try:
         issues = json.loads(out)
 
-        CLAIMABLE_LABEL = "status:unclaimed"
-        # mirror:private (#122) — issues mirrored from the private monorepo
-        # declare a non-public target repository; no public lane can act on
-        # private-only paths, so mirrors are born non-claimable.
-        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream", "mirror:private"}
+        # Claim-gated (#88): open issues are available unless claimed or held.
+        # Removing explicit status:unclaimed eliminates label desynchronization.
+        EXCLUDED_LABELS = {
+            "status:claimed",
+            "status:in-progress",
+            "state:seq-hold",
+            "blocked-by-upstream",
+            "mirror:private",
+        }
 
         def label_names(item: dict[str, Any]) -> list[str]:
             labels = item.get("labels")
@@ -422,8 +426,6 @@ def pick_next_issue() -> str | None:
 
         def is_claimable(item: dict[str, Any]) -> bool:
             names = label_names(item)
-            if CLAIMABLE_LABEL not in names:
-                return False
             return not (EXCLUDED_LABELS & set(names))
 
         # Explicit priority map — LABELS ONLY (title prose must not influence).
@@ -585,6 +587,9 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
         return None
 
     log("✅", f"Active on verified branch '{target_branch}'")
+    # Mark issue as claimed on upstream board (honest degradation if guest/offline)
+    if issue_num != "adhoc":
+        run_cmd(["gh", "issue", "edit", str(issue_num), "--repo", UPSTREAM_REPO, "--add-label", "status:claimed"])
     return target_branch
 
 
@@ -794,6 +799,7 @@ task_contract:
 Autonomous contribution for issue #{issue_num}: {task.get('title')}.
 
 ## Linked Issue / Claim
+Closes #{issue_num}
 Refs #{issue_num}
 
 ## Type of Change

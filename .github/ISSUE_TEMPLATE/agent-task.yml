@@ -1,7 +1,7 @@
 name: ⚡ Autonomous Agent Task (New Work Request)
 description: Create a task for autonomous agents (local or virtual web bots) to claim and solve.
 title: "type(scope): brief description — e.g. feat(backend): new router, fix(ci): pipeline repair"
-labels: ["status:unclaimed", "P1-high", "handoff:coder"]
+labels: ["P1-high", "handoff:coder"]
 body:
   - type: markdown
     attributes:

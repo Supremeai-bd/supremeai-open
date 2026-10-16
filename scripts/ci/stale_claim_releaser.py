@@ -9,13 +9,13 @@ Mission & Architecture:
     When an issue is claimed by an agent, the work branch must be created/pushed
     within 10 minutes. If no remote branch matching the issue appears in 10 minutes,
     the claiming agent is considered disconnected/failed-to-start.
-    -> The claim marker is released immediately back to `status:unclaimed`.
+    -> The claim marker is released immediately back to the pool.
 
   Stage 2 (Branch -> Pull Request): 30 Minutes Max
     Once a branch exists, the agent has 30 minutes to complete the 3-tier
     verification and open an active Pull Request. If 30 minutes elapse with a branch
     active but zero open PR submitted, the agent is considered stuck/abandoned.
-    -> The claim marker is released back to `status:unclaimed`.
+    -> The claim marker is released back to the pool.
 
 Principles:
   - Stdlib-only: zero external dependencies, runs in public GitHub Actions and offline.
@@ -43,7 +43,6 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 UPSTREAM_REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
-CLAIMABLE_LABEL = "status:unclaimed"
 CLAIMED_LABELS = {"status:claimed", "status:in-progress"}
 EXCLUDED_LABELS = {"state:seq-hold", "blocked-by-upstream", "mirror:private"}
 
@@ -193,11 +192,10 @@ def evaluate_graduated_claims(
         if title_lower.startswith("audit(") or "admin_decision" in title_lower or "bridge work order" in title_lower:
             continue
 
-        has_unclaimed = CLAIMABLE_LABEL in labels
         has_claimed_label = any(cl in labels for cl in CLAIMED_LABELS)
         claim_dt = extract_claim_timestamp(issue)
 
-        is_claimed = has_claimed_label or (claim_dt is not None and not has_unclaimed)
+        is_claimed = has_claimed_label or (claim_dt is not None)
         if not is_claimed:
             continue
 
@@ -240,19 +238,19 @@ def evaluate_graduated_claims(
 
 
 def release_issue_claim(repo: str, issue_number: int, stage: int, reason: str, elapsed_min: float) -> bool:
-    """Post release comment and restore status:unclaimed."""
+    """Post release comment and remove status:claimed."""
     comment = (
         f"⏰ **Graduated Lease Auto-Release (Stage {stage})**\n\n"
         f"- **Trigger:** {reason} (elapsed: {elapsed_min}m)\n"
         f"- **Heartbeat Policy:** Claim-to-branch TTL is 10 min; branch-to-PR TTL is 30 min.\n"
-        f"- **Action:** Releasing claim marker back to the public pool with `{CLAIMABLE_LABEL}`.\n\n"
+        f"- **Action:** Releasing claim marker back to the public pool.\n\n"
         f"Task is immediately available for `--pick-next` dispatch."
     )
     # Post audit comment
     run_cmd(["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", comment])
 
-    # Re-apply unclaimed label and remove in-progress markers
-    cmd = ["gh", "issue", "edit", str(issue_number), "--repo", repo, "--add-label", CLAIMABLE_LABEL]
+    # Remove claimed / in-progress markers
+    cmd = ["gh", "issue", "edit", str(issue_number), "--repo", repo]
     for cl in CLAIMED_LABELS:
         cmd.extend(["--remove-label", cl])
 
