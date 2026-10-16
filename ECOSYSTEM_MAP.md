@@ -16,6 +16,19 @@ You do not need credentials or access to private repositories. You can inspect p
 
 ## 2. Federation Repository Directory
 
+> **Single Pane of Glass — the unified work hub (#374).** `supremeai-open` is
+> the canonical Single Work Hub for the entire ecosystem: all active tasks —
+> feature requests, bug reports, agent tasks, and Bridge Work Orders targeting
+> *any* federation repository — are created **exclusively here** and routed to
+> their target via the issue templates' `target_repo` selector. Satellite
+> repositories stay issue-free, with strict exceptions only (foundational
+> repository epics/blueprints, and automated CI-failure alerts which are
+> synchronized to this hub by the `.github/actions/sync-ci-failure` action and
+> claimed by the continuous agent loop at top priority — tier `-1`, before
+> P0). Rationale: scattered issues fragment context, complicate agent task
+> discovery (`continuous_agent_loop.py`), and leak operator attention across
+> a dozen notification streams.
+
 The SupremeAI platform consists of specialized repositories under the **`Supremeai-bd`** organization:
 
 | Repository | Scope & Responsibility | What Can Be Changed From Here |
@@ -53,25 +66,10 @@ Agent Forks/Clones supremeai-open
         • Test Evidence & Rollback Plan
 ```
 
-### 3.1 Definitive Federation File & Domain Routing Matrix:
-
-When a PR or bridge patch is merged in `supremeai-open`, `landing.yml` evaluates touched file patterns and PR labels to dispatch code to the appropriate federation repository:
-
-| Target Repository | Functional Domain | File Path Patterns in `supremeai-open` | PR Label | Automated Dispatch |
-|---|---|---|---|---|
-| **`Supremeai-bd/supremeai-studio`** | Web Dashboard & UI | `studio/**`, `examples/dashboard-preview/**`, `api-schemas/dashboard.*` | `repo:studio` | `landing.yml` |
-| **`Supremeai-bd/supremeai-api`** | Provider Gateway & OpenAPI | `api/**`, `gateway/**`, `api-schemas/gateway.*` | `repo:api` | `landing.yml` |
-| **`Supremeai-bd/supremeai-core`** | Intelligence Models & Planners | `core/**`, `api-schemas/task-router.*` | `repo:core` | `landing.yml` |
-| **`Supremeai-bd/supremeai-command`** | Telegram & Remote Dispatch | `command/**`, `handlers/telegram*`, `api-schemas/command.*` | `repo:command` | `landing.yml` |
-| **`Supremeai-bd/supremeai-skills`** | Tools & Capabilities Registry | `skills/**`, `examples/langchain-*`, `examples/vercel-*` | `repo:skills` | `landing.yml` |
-| **`Supremeai-bd/supremeai-vscode`** | VS Code Agent Extension | `vscode/**` | `repo:vscode` | `landing.yml` |
-| **`Supremeai-bd/supremeai-agents`** | Stateless Agent Runner & Loops | `agents/**`, `runner/**`, `api-schemas/agent-runner.*` | `repo:agents` | `landing.yml` |
-| **`Supremeai-bd/supremeai-browser`** | Anti-Detect Stealth Browser | `browser/**`, `sandbox/**` | `repo:browser` | `landing.yml` |
-| **`Supremeai-bd/supremeai-sdk`** | Schema Contracts & Client SDK | `sdk/**`, `examples/sdk-*`, `api-schemas/telemetry-log.*` | `repo:sdk` | `landing.yml` |
-| **`Supremeai-bd/supremeai-mcp-control-plane`** | MCP Control Tower & Policy | `infrastructure/mcp-control-plane/**`, `api-schemas/heartbeat.*` | `repo:mcp` | `landing.yml` |
-| **`Supremeai-bd/supremeai-infrastructure`** | Cloud Ops, Docker & Terraform | `deployments/**`, `infra/**` | `repo:infra` | `landing.yml` |
-| **`Supremeai-bd/supremeai-archive`** | Append-Only Worklogs & Memory | `docs/archive/**`, `docs/ledger/**` | `repo:archive` | `landing.yml` |
-| **`Supremeai-bd/supremeai`** | Central Monorepo Anchor | `scripts/agents/**`, `docs/**`, `patches/**`, `AGENTS.md`, `AGENT_RULES.md` | `repo:monorepo` | `landing.yml` (Always synced) |
+### Routing Rules (Where Your Patch Lands):
+- **Gateway & APIs:** Changes to `api-schemas/` or `examples/` are mirrored directly into `supremeai-api`.
+- **Frontend / Studio:** Changes targeting frontend components are routed into `supremeai-studio`.
+- **Core / Tools:** Changes targeting MCP tools and agent definitions land in `supremeai`.
 
 ---
 
