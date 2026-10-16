@@ -1,0 +1,56 @@
+{
+  "name": "@supremeai/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for the SupremeAI MCP Tower: SSE streaming, tool calling, task dispatch, honest error taxonomy. Zero runtime dependencies.",
+  "license": "MIT",
+  "author": "SupremeAI Federation",
+  "keywords": [
+    "supremeai",
+    "mcp",
+    "sdk",
+    "sse",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Supremeai-bd/supremeai-open",
+    "directory": "sdk/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/Supremeai-bd/supremeai-open/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/cjs/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "type": "module",
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json && node scripts/mark-outputs.mjs",
+    "pretest": "npm run build",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "smoke": "SUPREMEAI_SDK_SMOKE=1 node dist/esm/index.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
