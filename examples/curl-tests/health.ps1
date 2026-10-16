@@ -21,7 +21,7 @@
 # ============================================================================
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('health', 'sse', 'tools-list', 'tool-call', 'all')]
+    [ValidateSet('health', 'sse', 'tools-list', 'tool-call', 'gateway', 'all')]
     [string]$Command = 'health',
 
     [Parameter(Position = 1)]
@@ -31,6 +31,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $BaseUrl = if ($env:BASE_URL) { $env:BASE_URL.TrimEnd('/') } else { 'https://supremeai-mcp-tower.onrender.com' }
+$GwBaseUrl = if ($env:GW_BASE_URL) { $env:GW_BASE_URL.TrimEnd('/') } else { 'http://127.0.0.1:8080' }
+$GwKey = if ($env:GW_KEY) { $env:GW_KEY } else { 'supremeai-key-local-dev' }
 $ProtocolVersion = if ($env:MCP_PROTOCOL_VERSION) { $env:MCP_PROTOCOL_VERSION } else { '2025-03-26' }
 $TimeoutSec = if ($env:CURL_TIMEOUT) { [int]$env:CURL_TIMEOUT } else { 20 }
 
@@ -131,11 +133,90 @@ function Invoke-ToolCall([string]$Tool) {
     }
 }
 
+# --- gateway (issue #336 AC3): unified provider gateway smoke ---------------
+function Invoke-GwHealth {
+    Write-Output "== GET $GwBaseUrl/healthz =="
+    try {
+        $resp = Invoke-WebRequest -Uri "$GwBaseUrl/healthz" -Method GET -TimeoutSec $TimeoutSec -UseBasicParsing
+        Write-Pass "gw-health: HTTP $([int]$resp.StatusCode) - $($resp.Content)"
+    } catch {
+        $code = try { [int]$_.Exception.Response.StatusCode } catch { '?' }
+        Write-Fail "gw-health: HTTP $code - $($_.Exception.Message)"
+    }
+}
+
+function Invoke-GwModelsAuthGate {
+    Write-Output "== GET $GwBaseUrl/v1/models (no key -> 401 default-deny) =="
+    try {
+        $resp = Invoke-WebRequest -Uri "$GwBaseUrl/v1/models" -Method GET -TimeoutSec $TimeoutSec -UseBasicParsing
+        Write-Fail "gw-models-auth: expected 401, got $([int]$resp.StatusCode)"
+    } catch {
+        $code = try { [int]$_.Exception.Response.StatusCode } catch { '?' }
+        if ($code -eq 401) { Write-Pass "gw-models-auth: HTTP 401 (default-deny)" }
+        else { Write-Fail "gw-models-auth: expected 401, got $code" }
+    }
+}
+
+function Invoke-GwModels {
+    Write-Output "== GET $GwBaseUrl/v1/models (keyed) =="
+    try {
+        $headers = @{ 'X-SupremeAI-Key' = $GwKey }
+        $resp = Invoke-WebRequest -Uri "$GwBaseUrl/v1/models" -Headers $headers -Method GET -TimeoutSec $TimeoutSec -UseBasicParsing
+        if ($resp.Content -match '"data"') { Write-Pass "gw-models: HTTP $([int]$resp.StatusCode) - model list present" }
+        else { Write-Fail "gw-models: model list missing - $($resp.Content)" }
+    } catch {
+        $code = try { [int]$_.Exception.Response.StatusCode } catch { '?' }
+        Write-Fail "gw-models: HTTP $code - $($_.Exception.Message)"
+    }
+}
+
+function Invoke-GwChatJson {
+    Write-Output "== POST $GwBaseUrl/v1/chat/completions (stream:false) =="
+    try {
+        $headers = @{ 'X-SupremeAI-Key' = $GwKey; 'Content-Type' = 'application/json' }
+        $body = '{"model":"auto","messages":[{"role":"user","content":"smoke"}]}'
+        $resp = Invoke-WebRequest -Uri "$GwBaseUrl/v1/chat/completions" -Headers $headers -Method POST -Body $body -TimeoutSec $TimeoutSec -UseBasicParsing
+        if ($resp.Content -match '"chat.completion"') { Write-Pass "gw-chat: HTTP $([int]$resp.StatusCode) - OpenAI-compatible completion" }
+        else { Write-Fail "gw-chat: unexpected payload - $($resp.Content)" }
+    } catch {
+        $code = try { [int]$_.Exception.Response.StatusCode } catch { '?' }
+        Write-Fail "gw-chat: HTTP $code - $($_.Exception.Message)"
+    }
+}
+
+function Invoke-GwChatSse {
+    Write-Output "== POST $GwBaseUrl/v1/chat/completions (stream:true, bounded read) =="
+    $frames = ''
+    try {
+        $headers = @{ 'X-SupremeAI-Key' = $GwKey; 'Content-Type' = 'application/json' }
+        $body = '{"stream":true,"messages":[{"role":"user","content":"smoke"}]}'
+        $resp = Invoke-WebRequest -Uri "$GwBaseUrl/v1/chat/completions" -Headers $headers -Method POST -Body $body -TimeoutSec $TimeoutSec -UseBasicParsing
+        $frames = $resp.Content
+    } catch {
+        Write-Fail "gw-chat-sse: transport error - $($_.Exception.Message)"
+        return
+    }
+    if ($frames -match '(?m)^event:' -and $frames -match '(?m)^data:') {
+        Write-Pass "gw-chat-sse: event:/data: framing present"
+    } else {
+        Write-Fail "gw-chat-sse: no SSE frames within $TimeoutSec s"
+    }
+}
+
+function Invoke-Gateway {
+    Invoke-GwHealth
+    Invoke-GwModelsAuthGate
+    Invoke-GwModels
+    Invoke-GwChatJson
+    Invoke-GwChatSse
+}
+
 switch ($Command) {
     'health'      { Invoke-Health }
     'sse'         { Invoke-Sse }
     'tools-list'  { Invoke-ToolsList }
     'tool-call'   { Invoke-ToolCall $ToolName }
+    'gateway'     { Invoke-Gateway }
     'all' {
         Invoke-Health
         Invoke-Sse
