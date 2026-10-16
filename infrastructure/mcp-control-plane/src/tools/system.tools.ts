@@ -5,6 +5,7 @@ import { listResources, getResourceStatus } from "../registry/resource.registry.
 import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { RequestContextStore } from "../policy/auth.context.js";
+import { activeAccountChain } from "../lib/redis_chain.js";
 
 /**
  * System-level MCP tools: summary, health, dependencies, and resource discovery.
@@ -55,11 +56,17 @@ async function probeHttp(url: string, headers: Record<string, string> = {}, time
   }
 }
 
-/** Upstash REST ping: rediss://default:TOKEN@host:6379 → https://host/ping */
-function upstashRestUrl(rawUrl: string): { url: string; token?: string } | null {
+/**
+ * Upstash REST ping helper:
+ * Converts rediss://default:TOKEN@host:6379 or https://host to https://host/ping
+ * Extracts auth token from password (or username) if present in URL.
+ */
+export function upstashRestUrl(rawUrl: string): { url: string; token?: string } | null {
   try {
     const parsed = new URL(rawUrl.replace(/^rediss:\/\//, "https://").replace(/^redis:\/\//, "https://"));
-    const token = decodeURIComponent(parsed.username || "");
+    // The password field holds the auth token in rediss://default:TOKEN@host:6379
+    // Fall back to username if password is empty (e.g. legacy token@host formats)
+    const token = decodeURIComponent(parsed.password || parsed.username || "");
     // Upstash REST API lives on 443 — raw redis ports (6379/6380) are TCP-only
     // and would make every REST probe fail with "fetch failed".
     const host = parsed.host.replace(/:(6379|6380)$/, "");
@@ -67,6 +74,36 @@ function upstashRestUrl(rawUrl: string): { url: string; token?: string } | null 
   } catch {
     return null;
   }
+}
+
+/**
+ * Concurrency-bounded mapSettled helper: runs up to `concurrency` asynchronous
+ * tasks in parallel to avoid socket/TLS contention and CPU throttling on shared containers.
+ */
+export async function mapConcurrentSettled<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let index = 0;
+
+  async function worker(): Promise<void> {
+    while (index < items.length) {
+      const i = index++;
+      try {
+        const val = await fn(items[i]!);
+        results[i] = { status: "fulfilled", value: val };
+      } catch (err) {
+        results[i] = { status: "rejected", reason: err };
+      }
+    }
+  }
+
+  const workerCount = Math.min(concurrency, items.length);
+  const workers = Array.from({ length: workerCount }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
@@ -108,51 +145,63 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
     return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
   }
 
-  // ── Redis (Upstash): REST ping with the URL-embedded bearer token (chain failover supported) ──
+  // ── Redis (Upstash): REST ping with URL/apiKeyRef bearer token (chain failover supported) ──
   if (svc.provider === "redis") {
     const rest = upstashRestUrl(svc.url!);
     if (!rest) return { ...base, url: svc.url!, status: "unreachable", httpStatus: null, latencyMs: null, error: "unparseable redis URL" };
+    // Prefer token extracted from URL password/username, or fall back to apiKeyRef from env (crucial for auto-rotated accounts like tertiary/quaternary)
+    const token = rest.token || bearerFor(svc.apiKeyRef);
     try {
       const res = await httpRequest<{ result?: string }>(rest.url, {
-        timeoutMs: 6000,
+        timeoutMs: 5000,
         retries: 0,
-        headers: rest.token ? { Authorization: `Bearer ${rest.token}` } : {},
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       // Upstash REST replies {"result":"PONG"} — compare case-insensitively
       const pong = res.ok && String(res.data?.result ?? "").toLowerCase() === "pong";
       if (!pong) {
-        // Fallback to secondary account if primary quota limit is exceeded (#26)
-        const secUrl = process.env.UPSTASH_REDIS_SECONDARY_REST_URL;
-        const secToken = process.env.UPSTASH_REDIS_SECONDARY_REST_TOKEN;
-        if (secUrl && secToken) {
-          const secRes = await httpRequest<{ result?: string }>(`${secUrl.replace(/\/+$/, "")}/ping`, {
-            timeoutMs: 6000,
-            retries: 0,
-            headers: { Authorization: `Bearer ${secToken}` },
-          });
-          const secPong = secRes.ok && String(secRes.data?.result ?? "").toLowerCase() === "pong";
-          if (secPong) {
-            return { ...base, url: secUrl, status: "healthy", httpStatus: secRes.status, latencyMs: secRes.latencyMs };
+        // Fallback: iterate active account chain if primary or rotated account fails/exhausted
+        const chain = activeAccountChain();
+        for (const candidate of chain) {
+          if (!candidate.restUrl) continue;
+          const candRest = upstashRestUrl(candidate.restUrl);
+          const candToken = candidate.restToken || candRest?.token;
+          if (candRest && candRest.url !== rest.url && candToken) {
+            try {
+              const secRes = await httpRequest<{ result?: string }>(candRest.url, {
+                timeoutMs: 4000,
+                retries: 0,
+                headers: { Authorization: `Bearer ${candToken}` },
+              });
+              const secPong = secRes.ok && String(secRes.data?.result ?? "").toLowerCase() === "pong";
+              if (secPong) {
+                return { ...base, url: candRest.url, status: "healthy", httpStatus: secRes.status, latencyMs: secRes.latencyMs };
+              }
+            } catch {}
           }
         }
       }
       return { ...base, url: rest.url, status: pong ? "healthy" : "degraded", httpStatus: res.status, latencyMs: res.latencyMs, ...(pong ? {} : { error: "PING did not return pong" }) };
     } catch (err) {
-      // Also try failover on network/connection error
-      const secUrl = process.env.UPSTASH_REDIS_SECONDARY_REST_URL;
-      const secToken = process.env.UPSTASH_REDIS_SECONDARY_REST_TOKEN;
-      if (secUrl && secToken) {
-        try {
-          const secRes = await httpRequest<{ result?: string }>(`${secUrl.replace(/\/+$/, "")}/ping`, {
-            timeoutMs: 6000,
-            retries: 0,
-            headers: { Authorization: `Bearer ${secToken}` },
-          });
-          const secPong = secRes.ok && String(secRes.data?.result ?? "").toLowerCase() === "pong";
-          if (secPong) {
-            return { ...base, url: secUrl, status: "healthy", httpStatus: secRes.status, latencyMs: secRes.latencyMs };
-          }
-        } catch {}
+      // Also try failover on network/connection error across the active chain
+      const chain = activeAccountChain();
+      for (const candidate of chain) {
+        if (!candidate.restUrl) continue;
+        const candRest = upstashRestUrl(candidate.restUrl);
+        const candToken = candidate.restToken || candRest?.token;
+        if (candRest && candRest.url !== rest.url && candToken) {
+          try {
+            const secRes = await httpRequest<{ result?: string }>(candRest.url, {
+              timeoutMs: 4000,
+              retries: 0,
+              headers: { Authorization: `Bearer ${candToken}` },
+            });
+            const secPong = secRes.ok && String(secRes.data?.result ?? "").toLowerCase() === "pong";
+            if (secPong) {
+              return { ...base, url: candRest.url, status: "healthy", httpStatus: secRes.status, latencyMs: secRes.latencyMs };
+            }
+          } catch {}
+        }
       }
       return { ...base, url: rest.url, status: "unreachable", httpStatus: null, latencyMs: null, error: (err as Error).message };
     }
@@ -242,7 +291,7 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
     const openrouterKey = env.ai.openrouterKeys[0];
     const mistralKey = env.ai.mistralKey;
     const probes: Record<string, { url: string; headers: Record<string, string>; authOptional?: boolean }> = {
-      "ai-gemini": { url: "https://generativelanguage.googleapis.com/v1beta/models", headers: { "x-goog-api-key": env.ai.geminiKeys[0] ?? "" } },
+      "ai-gemini": { url: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", headers: { "x-goog-api-key": env.ai.geminiKeys[0] ?? "" } },
       "ai-groq": { url: "https://api.groq.com/openai/v1/models", headers: groqKey ? { Authorization: `Bearer ${groqKey}` } : {} },
       "ai-openrouter": { url: "https://openrouter.ai/api/v1/models", headers: openrouterKey ? { Authorization: `Bearer ${openrouterKey}` } : {}, authOptional: true },
       "ai-mistral": { url: "https://api.mistral.ai/v1/models", headers: mistralKey ? { Authorization: `Bearer ${mistralKey}` } : {} },
@@ -400,11 +449,12 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     async () => {
       const registry = buildAccountRegistry();
 
-      // Probe every registry row: available → live probe (each provider gets a
-      // purpose-built probe); missing API key reports "unconfigured" instead of
-      // silently disappearing or masquerading as "down".
-      const results = await Promise.allSettled(
-        registry.map(async (svc) => {
+      // Probe every registry row with bounded concurrency (8 workers) to avoid
+      // saturating container socket pools and inflating probe latencies.
+      const results = await mapConcurrentSettled(
+        registry,
+        8,
+        async (svc) => {
           if (!svc.available) {
             return {
               id: svc.id,
@@ -417,7 +467,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
             };
           }
           return probeServiceHealth(svc);
-        })
+        }
       );
 
       const health = results.map((r) => (r.status === "fulfilled" ? r.value : r.reason));
