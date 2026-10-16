@@ -25,7 +25,7 @@ The output of the selector is a **ContextAssembly payload** — not prose. Downs
 | 2 | `task-contract` | Task issue: mission, acceptance criteria, Touching Files | Defines "done" for this run. |
 | 3 | `file-scope` | Declared Touching Files + adjacent tests/guards | The code surface this task may mutate. |
 | 4 | `memory-sidecar` | Semantic memory hits (`memory-search.schema.json`, issue #36) | Prior episodes, resolved pitfalls, namespace-scoped facts. |
-| 5 | `adr-history` | `docs/adr/ADR-*.md` | Prior architectural decisions that constrain the design. |
+| 5 | `adr-history` | `docs/adrs/ADR-*.md` | Prior architectural decisions that constrain the design. |
 | 6 | `knowledge-items` | Specs, runbooks, governance docs (`docs/`) | Stable knowledge that shapes approach. |
 | 7 | `environment-state` | CI check-run snapshots, telemetry samples (issue #38), branch state | Fresh runtime facts; useful but re-derivable. |
 | 8 | `hygiene-noise` | Session transcripts, changelogs, chat excerpts | Lowest value per token; first to go. |
@@ -311,4 +311,4 @@ JSON Schema cannot compare numbers across subtrees, so these are declared here a
 - [instruction-envelope.schema.json](../api-schemas/instruction-envelope.schema.json) (issue #30) — the deterministic instruction envelope an assembled context feeds.
 - [memory-search.schema.json](../api-schemas/memory-search.schema.json) (issue #36) — Layer-4 source vocabulary (namespace, document_id).
 - [telemetry-log.schema.json](../api-schemas/telemetry-log.schema.json) (issue #38) — Layer-7 runtime-state provenance.
-- [docs/adr/](adr/) (issue #44) — Layer-5 ADR history.
+- [docs/adrs/](adrs/) (issue #44) — Layer-5 ADR history.
