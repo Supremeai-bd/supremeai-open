@@ -88,12 +88,13 @@ still completes and exits 0. The same applies to other missing optional tooling.
 ### Mirror issues are born non-claimable
 
 Issues mirrored from the private monorepo (their body declares a
-non-public target repository) carry the `mirror:private` label and never
-carry `status:unclaimed`: no public lane can act on private-only paths,
-so mirrors are not claimable work on this board. The claimable scan
-(`--pick-next` and the cron board pre-check) excludes `mirror:private`
-by construction (#122). Future mirroring pipelines must label mirrors at
-creation time.
+non-public target repository) carry the `mirror:private` label, which the
+claimable scan treats as an exclusion marker: no public lane can act on
+private-only paths, so mirrors are not claimable work on this board.
+Under the implicit claimable lifecycle (#222) an open issue is claimable
+unless it carries an exclusion marker — `--pick-next` and the cron board
+pre-check both exclude `mirror:private` by construction (#122). Future
+mirroring pipelines must label mirrors at creation time.
 
 ### Closing spec issues — the delivered-by convention
 
