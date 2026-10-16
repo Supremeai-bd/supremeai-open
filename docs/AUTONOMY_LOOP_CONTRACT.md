@@ -36,11 +36,13 @@ verbatim from the runner's step labels — external integrators may key logs, da
 or hooks on these strings.
 
 1. **Understand** — load the task contract. An explicit `--issue <n>` is resolved to a
-   live board issue; `--pick-next` scans the upstream board (claimable = `status:unclaimed`
-   only, excluded labels: `status:in-progress`, `state:seq-hold`, `blocked-by-upstream`,
-   `mirror:private`; priority from labels P0<P1<P2<P3<unlabeled, oldest issue number
-   breaks ties). Fail-closed: a closed issue, an unparseable contract, or a
-   duplicate-PR preflight hit aborts the cycle.
+   live board issue; `--pick-next` scans the upstream board (implicit claimable
+   lifecycle, #222: any open issue is claimable unless it carries an exclusion
+   label: `status:claimed`, `status:in-progress`, `state:seq-hold`,
+   `blocked-by-upstream`, `mirror:private`; priority from labels
+   P0<P1<P2<P3<unlabeled, oldest issue number breaks ties). Fail-closed: a
+   closed issue, an unparseable contract, or a duplicate-PR preflight hit
+   aborts the cycle.
 2. **Rules** — verify the constitution is present and readable (`AGENTS.md`,
    `AGENT_RULES.md`). Fail-closed on absence.
 3. **Inspect State** — git worktree hygiene gate. A dirty worktree stops the cycle
