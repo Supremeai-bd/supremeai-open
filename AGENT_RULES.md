@@ -7,6 +7,7 @@
 > Task templates, system gates and domain documents provide execution detail; they must not silently contradict these rules.
 >
 > Governance source: [Issue #3095](https://github.com/Supremeai-bd/supremeai/issues/3095)
+> Zero-Admin operator handbook: [`docs/ZERO_ADMIN_GUIDE.md`](./docs/ZERO_ADMIN_GUIDE.md) (#50) — autonomous landing criteria + submitter checklist.
 
 ---
 
