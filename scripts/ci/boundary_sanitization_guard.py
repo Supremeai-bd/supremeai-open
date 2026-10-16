@@ -69,6 +69,12 @@ APPROVED_TOP_LEVEL_DIRS = {
     ".github",
     ".githooks",  # issue #161: local ingress pre-push guard (poka-yoke, no runtime surface)
     "api-schemas",
+    "deployments",
+    # deployments/ — approved for issue #339 (unified deployment orchestration:
+    # render blueprint + secrets inventory + Dockerfile reference, all
+    # value-free per AC1); expansion per the process documented in this
+    # module's docstring (PR references the governing issue). Content-layer
+    # checks still apply to every file under this surface.
     "docs",
     "examples",
     "infrastructure",
@@ -102,9 +108,12 @@ APPROVED_SUBTREES = {
     # scripts/). Registry entries are second-level path segments; a file is
     # as valid a segment as a directory. Expansion per the process documented
     # in this module's docstring (PR references the governing issue #45).
-    "scripts": {"agents", "ops", "ci", "validate_schemas.py"},
+    "scripts": {"agents", "ops", "ci", "validate_schemas.py", "deploy.sh"},  # deploy.sh (issue #339: fail-closed deploy orchestrator)
     ".github": {"ISSUE_TEMPLATE", "workflows", "actions"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
+    # deployments/: FILE-pinned segments (issue #339 — the deploy surface is
+    # manifest + inventory + image spec + doc; nothing else may live here).
+    "deployments": {"render.yaml", "secrets-inventory.json", "Dockerfile", "README.md"},
 }
 
 # ---------------------------------------------------------------------------
