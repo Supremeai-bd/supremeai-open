@@ -14,3 +14,4 @@
 14. Role Contract Routing: Issues matching other domains load exact role rules (ARCHITECT, REVIEWER, CI_FIXER).
 15. Continuous Reset: Upon task or audit completion, loop resets immediately to re-poll board with zero sleep.
 16. Self-Healing Board: All pipeline failures, merge conflicts, warnings, and audit findings across all repositories auto-create issues on supremeai-open.
+17. Deployment Strategy: On target repo merge, agent triggers manual deploy if immediate; otherwise scheduled auto-deploy runs 4x/day on diffs. Monorepo only receives merge sync.
