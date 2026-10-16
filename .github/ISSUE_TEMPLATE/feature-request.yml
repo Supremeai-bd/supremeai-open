@@ -1,0 +1,129 @@
+name: 💡 Feature Request / Proposal
+description: Suggest an enhancement, new feature, or architectural evolution.
+title: "feat(scope): brief feature title"
+labels: ["kind:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 💡 Feature Request Proposal
+        Thank you for suggesting an improvement to the SupremeAI ecosystem!
+        Before submitting, please ensure you have searched existing issues and pull requests to prevent duplicates (AGENT_RULES U4).
+
+  - type: dropdown
+    id: target_repo
+    attributes:
+      label: Target Repository
+      description: Which repository in the SupremeAI Federation is this feature for?
+      options:
+        - Supremeai-bd/supremeai-open
+        - Supremeai-bd/supremeai
+        - Supremeai-bd/supremeai-command
+        - Supremeai-bd/supremeai-skills
+        - Supremeai-bd/supremeai-vscode
+        - Supremeai-bd/supremeai-agents
+        - Supremeai-bd/supremeai-browser
+        - Supremeai-bd/supremeai-api
+        - Supremeai-bd/supremeai-studio
+        - Supremeai-bd/supremeai-infrastructure
+        - Supremeai-bd/supremeai-core
+        - Supremeai-bd/supremeai-sdk
+        - Supremeai-bd/supremeai-mcp-control-plane
+        - Supremeai-bd/supremeai-archive
+    validations:
+      required: true
+
+  - type: dropdown
+    id: task_group
+    attributes:
+      label: Task Group (VALID_GROUPS registry)
+      description: Canonical taxonomy — aligned with VALID_GROUPS registry.
+      options:
+        - agent-orchestration
+        - mcp-tower
+        - core-engine
+        - schemas-contracts
+        - infra-ops
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sub_group
+    attributes:
+      label: Sub-Group / Functional Domain (Area)
+      description: Cross-cutting functional domain for ownership, labeling, and routing.
+      options:
+        - "security (Authentication, key-plane, boundaries, vulnerability)"
+        - "ci (Workflows, gates, lint, testing matrix)"
+        - "gateway (API endpoints, routing, provider failover)"
+        - "governance (Constitution, rules, templates, policies, ADRs)"
+        - "agent-orchestration (Lifecycle, loop, roles, worker dispatch)"
+        - "mcp-tower (MCP tools, JSON-RPC, SSE bridge, server endpoints)"
+        - "core-engine (Intelligence models, state machine, planning)"
+        - "frontend-ui (Studio, dashboard, visual UX, components)"
+        - "telemetry (Heartbeats, logging, watcher, metrics)"
+        - "memory (Archive, semantic memory, context history)"
+        - "llm-routing (Dynamic router, provider fallback, model selection)"
+        - "infra-ops (Docker, Terraform, actions runners, deployment configs)"
+        - "docs (Documentation, ecosystem maps, contributor guides)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Tier
+      description: Urgency and priority tier per SupremeAI constitution.
+      options:
+        - "P1-high (Important feature/blocker/architecture)"
+        - "P2-medium (Standard feature/enhancement)"
+        - "P3-low (Minor improvement/nice-to-have)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem_statement
+    attributes:
+      label: Problem Statement / Motivation
+      description: What problem does this feature solve? What is the user or agent pain point?
+      placeholder: "Clear description of the problem or limitation..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution & Specification
+      description: Detailed description of what should be implemented and how it should work.
+      placeholder: "Describe the proposed solution, API changes, contracts, or UX..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: touching_surfaces
+    attributes:
+      label: Touching Surfaces & Files (Scope Estimate)
+      description: Which files, packages, or schemas would be modified or created?
+      placeholder: |
+        - api-schemas/...
+        - src/...
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any other approaches or existing solutions considered and why they were rejected.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Contributor Checklist
+      options:
+        - label: I have searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: I have verified that this proposal follows the SupremeAI architecture guidelines (AGENTS.md).
+          required: true
