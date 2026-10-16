@@ -33,13 +33,15 @@ What it checks
 
 Integration note (acceptance criterion 2)
 =========================================
-The Touching-Files scope gate for issue #45 is
-``scripts/validate_schemas.py`` + ``tests/test_validate_schemas.py``, so the
-one-line integration into ``scripts/agents/continuous_agent_loop.py`` step 6
-(tier-2 boot smoke: ``python scripts/validate_schemas.py`` alongside the
-existing ``json schema parse`` check) is delivered as a follow-up work order
-by whoever owns the loop file — the CLI is intentionally a drop-in: zero
-dependencies, stdlib only, deterministic exit codes, no network.
+DELIVERED: ``scripts/agents/continuous_agent_loop.py`` step 6 tier-2
+("JSON Schema Parse") now fail-closed-delegates api-schemas/ deep
+validation to this CLI whenever both the script and the ``api-schemas/``
+directory are present, running alongside the existing JSON syntax parse.
+The CLI remains an intentional drop-in: zero dependencies, stdlib only,
+deterministic exit codes, no network. (The integration originally shipped
+as a follow-up because the Touching-Files scope gate for issue #45 listed
+only this file plus its test suite; the loop-file change landed under the
+same governing issue #45.)
 
 Usage
 =====
