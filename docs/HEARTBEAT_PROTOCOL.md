@@ -47,8 +47,10 @@ Schema: `api-schemas/heartbeat.schema.json`
 
 When a task is detected as orphaned (no heartbeat ≥ ttl_seconds):
 
-1. The claim marker for the orphaned task is cleared.
-2. The task re-enters the claimable pool with `status:unclaimed`.
+1. The claim markers for the orphaned task (`status:claimed`,
+   `status:in-progress`) are cleared.
+2. The task re-enters the claimable pool — under the implicit claimable
+   lifecycle (#222) no exclusion markers remain.
 3. The `--pick-next` scan and any waiting agents may re-claim it immediately.
 4. Any partial state written by the orphaned agent is logged for audit but not
    trusted — the task starts fresh from its declared contract.
