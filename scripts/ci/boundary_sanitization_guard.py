@@ -79,6 +79,11 @@ APPROVED_TOP_LEVEL_DIRS = {
     # Content-layer checks (PROPRIETARY-LOGIC scan) still apply to every
     # file under this surface — path approval never bypasses content rules.
     "tests",
+    # runner/ — approved for issue #334 (deterministic 8-step agent runner
+    # harness reference implementation; verification contract names
+    # runner/agent_runner.py). Expansion per this registry's documented
+    # process; content-layer checks still apply to every file underneath.
+    "runner",
 }
 
 APPROVED_ROOT_FILES = {
