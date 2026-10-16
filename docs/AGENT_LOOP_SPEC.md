@@ -144,7 +144,8 @@ parity contract:
 ## 5. Open Guards — shift-left on free public runtime
 
 The guard jobs in `.github/workflows/pipeline.yml` (branch-naming,
-issue-reference, anti-duplicate PR, boundary-sanitization, loop-contract-parity)
+issue-reference, anti-duplicate PR, boundary-sanitization, loop-contract-parity,
+ingress-hook, stale-base)
 run on every PR to `supremeai-open` — free, unlimited public Actions minutes — so invalid
 contributions fail at the public boundary instead of burning the private
 repo's limited quota (Free org ≈ 2,000 min/month). The first three guards
@@ -165,6 +166,14 @@ tree for content inspection (stdlib-only, still minutes-bounded):
    surface stays in sync: evidence tier count (code emission vs §4),
    this guard list vs the workflow job set, and no flag-table copies
    in CONTRIBUTING.
+6. **Ingress Hook Guard (#161)** — asserts the §5.2 ingress hook
+   surface (`docs/INGRESS_SECURITY_POLICY.md`): executable bit (git
+   silently skips a non-executable hook), `bash -n` syntax gate, and
+   the hook's own 5-scenario offline `--self-test`.
+7. **Stale-Base Guard (#161)** — rejects PR branches built behind
+   `main` (`rev-list` count base..head > 0 → rebase required;
+   Board-Freshness #4177 at CI time, mirroring the local pre-push
+   hook's freshness check).
 
 ## 6. Submission flow (Pathway 1 wiring)
 

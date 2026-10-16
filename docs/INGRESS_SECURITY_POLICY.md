@@ -134,6 +134,10 @@ the ancestry check is skipped (the server-side protection remains the
 barrier). It never blocks what it cannot verify — it also never claims
 verification it did not do (U2).
 
+The hook file is committed executable (git mode `100755`); git silently
+skips a non-executable hook, so the executable bit is part of the policy
+surface and is asserted in CI by the 🛡️ Ingress Hook Guard job (below).
+
 Install (one line, per clone):
 
 ```sh
@@ -147,19 +151,35 @@ the human hand and visible in shell history:
 git push --no-verify
 ```
 
-### 5.3 CI stale-base guard (ready-to-apply artifact — admin review)
+### 5.3 CI guards (APPLIED — `.github/workflows/pipeline.yml`)
 
-`.github/` is a protected path for the zero-credential bridge lane, so
-the guard below is delivered as a ready-to-apply artifact inside this
-document rather than as a workflow edit. It is designed to slot into
-`.github/workflows/open-guards.yml` as one more event-context job:
+The guard below was originally delivered as a ready-to-apply artifact
+inside this document because `.github/` was a protected path for the
+zero-credential bridge lane, and it targeted `open-guards.yml`, which
+has since been removed (guards consolidated into `pipeline.yml` — see
+#214/#242). It is now applied verbatim as the ⏳ **Stale-Base Guard**
+job in `.github/workflows/pipeline.yml` (event-context, PR-only), with
+two operational deltas: `actions/checkout` runs with `fetch-depth: 0`
+(full history, so fetching the base/head SHAs cannot fail on a shallow
+clone) and a 3-minute job timeout. A sibling 🛡️ **Ingress Hook Guard**
+job asserts the §5.2 hook surface in CI: executable bit (git silently
+skips a non-executable hook), `bash -n` syntax gate, and the hook's own
+5-scenario offline `--self-test` — the issue's 3-tier boot smoke and
+hook test suite, now continuously enforced.
 
 ```yaml
-  stale-base-guard:
+  stale_base_guard:
     name: "⏳ Stale-Base Guard (#161)"
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
-      - name: Reject PR branches built behind main
+      - name: Checkout repository (full history for merge-base arithmetic)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject PR branches built behind main (docs/INGRESS_SECURITY_POLICY.md §5.3)
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
@@ -171,26 +191,26 @@ document rather than as a workflow edit. It is designed to slot into
           fi
 ```
 
-### 5.4 Constitutional cross-reference (planned)
+### 5.4 Constitutional cross-reference (delivered)
 
-A one-line pointer from AGENT_RULES.md **U6** to this policy is part of
-the declared scope of issue #161, but is intentionally deferred in this
-submission: an open PR (#169) already touches the same constitutional
-files for issue #155, and the anti-duplicate doctrine (U4) forbids
-competing edits to the same files. The cross-ref lands as a follow-up
-after #169 merges. All other sections of this policy are self-contained
-here.
+The one-line pointer from AGENT_RULES.md **U6** to this policy was
+declared as part of issue #161 and initially deferred because PR #169
+(issue #155) was touching the same constitutional files (U4
+anti-duplicate doctrine). #169 has merged, and the pointer is now in
+place under U6 — Safety & Permissions. All sections of this policy are
+self-contained here.
 
 ## 6. U9 Similar-Problem Sweep
 
-`similar found: 3 | fixed in-task: 2 | filed follow-up: 1`
+`similar found: 4 | fixed in-task: 3 | filed follow-up: 0 (deferred cross-ref delivered in this update)`
 
 | Surface | Status |
 |---|---|
-| Local pushes (both repos) | fixed in-task — `.githooks/pre-push` (§5.2) |
-| PR head freshness at CI time | fixed in-task — ready-to-apply guard (§5.3) |
+| Local pushes (both repos) | fixed in-task — `.githooks/pre-push` (§5.2), executable bit enforced in CI |
+| PR head freshness at CI time | fixed in-task — ⏳ Stale-Base Guard applied in `.github/workflows/pipeline.yml` (§5.3) |
+| Hook regressions at CI time | fixed in-task — 🛡️ Ingress Hook Guard (exec bit + `bash -n` + `--self-test`) in `pipeline.yml` (§5.3) |
 | Merge-time strictness | already enforced upstream — Merge Gate polls mergeability and never passes UNKNOWN (PR #166); `strict: true` branch protection closes the same class server-side (§5.1) |
-| Constitutional cross-ref | follow-up, deferred deliberately (§5.4) |
+| Constitutional cross-ref | delivered — AGENT_RULES.md U6 pointer (§5.4) |
 
 ## 7. Verification Evidence
 

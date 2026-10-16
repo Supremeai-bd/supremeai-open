@@ -277,6 +277,45 @@ jobs:
       - name: Assert loop-contract SSOT parity (tiers, guards, flag table)
         run: python3 scripts/agents/check_loop_contract_parity.py
 
+  ingress_hook_guard:
+    name: "🛡️ Ingress Hook Guard (#161)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout repository (hook body required)
+        uses: actions/checkout@v4
+
+      - name: Verify pre-push guard (exec bit + syntax + offline self-test)
+        run: |
+          set -euo pipefail
+          test -x .githooks/pre-push || { echo "::error::.githooks/pre-push must be executable (git mode 100755) — git silently skips a non-executable hook."; exit 1; }
+          bash -n .githooks/pre-push
+          sh .githooks/pre-push --self-test
+          echo "✅ pre-push guard: exec-bit + bash -n + 5-scenario offline self-test PASS (docs/INGRESS_SECURITY_POLICY.md §5.2)"
+
+  stale_base_guard:
+    name: "⏳ Stale-Base Guard (#161)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout repository (full history for merge-base arithmetic)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject PR branches built behind main (docs/INGRESS_SECURITY_POLICY.md §5.3)
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          git fetch --no-tags origin "+$BASE:refs/tmp-base" "+$HEAD_SHA:refs/tmp-head"
+          BEHIND="$(git rev-list --count refs/tmp-head..refs/tmp-base)"
+          if [ "$BEHIND" -gt 0 ]; then
+            echo "::error::Branch is stale: main advanced $BEHIND commit(s) past the merge-base. Rebase onto latest origin/main before submission."
+            exit 1
+          fi
+
   # ---------------------------------------------------------------------------
   # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after
   # the shift-left diet because all four versions are proven here first.

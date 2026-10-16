@@ -41,7 +41,7 @@ Claim state before work. Verify current `main`/PR state before push. Do not work
 **Board-freshness at completion (#4177):** the snapshot taken at task-start is NOT the whole mission. Before declaring any task, batch or founder-directed mission complete, re-poll the board (open PRs, claim queue, new issues). A completion declaration is valid only against a board snapshot taken **at declaration time**. If new actionable items arrived during the work, handle them or explicitly report them as outstanding — never silently drop them from scope.
 
 ## U6 — Safety & Permissions
-Never bypass protected branches/paths, credential policy, security gates, scope gates, Admin gates or merge gates. Destructive/irreversible actions require the appropriate authority.
+Never bypass protected branches/paths, credential policy, security gates, scope gates, Admin gates or merge gates. Destructive/irreversible actions require the appropriate authority. The Zero-Force-Push / Stale-Base / Public-First ingress policy and its enforcement surfaces (local pre-push hook + CI guards) are specified in `docs/INGRESS_SECURITY_POLICY.md` (#161).
 
 ## U7 — Verification
 A task is complete only when required tests, gates, evidence and acceptance conditions pass **and the board has been re-checked for new arrivals since task start** (#4177).
