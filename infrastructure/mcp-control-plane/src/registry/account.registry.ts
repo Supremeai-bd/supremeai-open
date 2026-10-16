@@ -36,6 +36,77 @@ function isAvailable(envRef: string): boolean {
 }
 
 /**
+ * Canonical federation repositories under the Supremeai-bd organization
+ * (SSOT: ECOSYSTEM_MAP.md §2). Used as the guaranteed baseline for discovery.
+ */
+export const CANONICAL_FEDERATION_REPOS = [
+  "supremeai",
+  "supremeai-open",
+  "supremeai-command",
+  "supremeai-skills",
+  "supremeai-vscode",
+  "supremeai-agents",
+  "supremeai-browser",
+  "supremeai-api",
+  "supremeai-studio",
+  "supremeai-infrastructure",
+  "supremeai-core",
+  "supremeai-sdk",
+  "supremeai-mcp-control-plane",
+  "supremeai-archive",
+] as const;
+
+export const GITHUB_ORGANIZATION = "Supremeai-bd";
+
+// In-memory registry of discovered repositories under the organization.
+// Initialized with canonical federation repos to guarantee zero-network baseline.
+const discoveredOrgRepos = new Set<string>(CANONICAL_FEDERATION_REPOS);
+
+/**
+ * Register a newly discovered repository name under the organization.
+ */
+export function registerDiscoveredOrgRepo(repoName: string): void {
+  const normalized = repoName.trim().toLowerCase();
+  if (normalized && !discoveredOrgRepos.has(normalized)) {
+    discoveredOrgRepos.add(normalized);
+  }
+}
+
+/**
+ * Get all tracked repository names under the organization.
+ */
+export function getTrackedOrgRepos(): string[] {
+  return Array.from(discoveredOrgRepos);
+}
+
+/**
+ * Dynamically discover repositories under Supremeai-bd from GitHub API.
+ * Updates discoveredOrgRepos in memory without requiring server restart or code edits.
+ */
+export async function refreshDiscoveredOrgRepos(): Promise<string[]> {
+  const token =
+    process.env["GITHUB_PAT_PAYKARIBAZARONLINE"] ||
+    process.env["GITHUB_TOKEN"] ||
+    process.env["GH_TOKEN"];
+  try {
+    const res = await fetch(`https://api.github.com/orgs/${GITHUB_ORGANIZATION}/repos?per_page=100`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (res.ok) {
+      const repos = (await res.json()) as Array<{ name?: string }>;
+      for (const r of repos) {
+        if (r.name) registerDiscoveredOrgRepo(r.name);
+      }
+    }
+  } catch {}
+  return getTrackedOrgRepos();
+}
+
+/**
  * Registry is built dynamically from env at startup.
  * Adding a new account = add env vars + add entry here.
  */
@@ -107,115 +178,40 @@ export function buildAccountRegistry(): ProviderAccount[] {
     {
       id: "github-primary",
       provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai)",
+      displayName: `GitHub Repo (${GITHUB_ORGANIZATION}/supremeai)`,
       role: "source-control",
       environment: "production",
       capabilities: ["health", "logs", "metrics"],
       apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai",
+      url: `https://api.github.com/repos/${GITHUB_ORGANIZATION}/supremeai`,
       available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
     },
 
-    // ── GitHub — Supremeai-bd federation (সম্পূর্ণ-কভারেজ) ──
+    // ── GitHub — Supremeai-bd Organization Level Monitor ──
     {
-      id: "github-pay-supremeai",
+      id: "github-org-supremeai-bd",
       provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai)",
-      role: "source-control",
+      displayName: `GitHub Organization (${GITHUB_ORGANIZATION})`,
+      role: "organization",
       environment: "production",
-      capabilities: ["health", "logs", "metrics"],
+      capabilities: ["health", "metrics"],
       apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai",
+      url: `https://api.github.com/orgs/${GITHUB_ORGANIZATION}`,
       available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
     },
-    {
-      id: "github-pay-supremeai-api",
-      provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai-api)",
+
+    // ── GitHub — Supremeai-bd federation (Dynamic Org-Wide Auto-Discovery) ──
+    ...getTrackedOrgRepos().map((repoName) => ({
+      id: `github-pay-${repoName}`,
+      provider: "github" as const,
+      displayName: `GitHub Repo (${GITHUB_ORGANIZATION}/${repoName})`,
       role: "source-control",
-      environment: "production",
-      capabilities: ["health", "logs", "metrics"],
+      environment: "production" as const,
+      capabilities: ["health", "logs", "metrics"] as Capability[],
       apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-api",
+      url: `https://api.github.com/repos/${GITHUB_ORGANIZATION}/${repoName}`,
       available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
-    },
-    {
-      id: "github-pay-supremeai-archive",
-      provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai-archive)",
-      role: "source-control",
-      environment: "production",
-      capabilities: ["health", "logs", "metrics"],
-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-archive",
-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
-    },
-    {
-      id: "github-pay-supremeai-core",
-      provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai-core)",
-      role: "source-control",
-      environment: "production",
-      capabilities: ["health", "logs", "metrics"],
-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-core",
-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
-    },
-    {
-      id: "github-pay-supremeai-infrastructure",
-      provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai-infrastructure)",
-      role: "source-control",
-      environment: "production",
-      capabilities: ["health", "logs", "metrics"],
-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-infrastructure",
-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
-    },
-    {
-      id: "github-pay-supremeai-mcp-control-plane",
-      provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai-mcp-control-plane)",
-      role: "source-control",
-      environment: "production",
-      capabilities: ["health", "logs", "metrics"],
-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-mcp-control-plane",
-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
-    },
-    {
-      id: "github-pay-supremeai-open",
-      provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai-open)",
-      role: "source-control",
-      environment: "production",
-      capabilities: ["health", "logs", "metrics"],
-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-open",
-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
-    },
-    {
-      id: "github-pay-supremeai-sdk",
-      provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai-sdk)",
-      role: "source-control",
-      environment: "production",
-      capabilities: ["health", "logs", "metrics"],
-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-sdk",
-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
-    },
-    {
-      id: "github-pay-supremeai-studio",
-      provider: "github",
-      displayName: "GitHub Repo (Supremeai-bd/supremeai-studio)",
-      role: "source-control",
-      environment: "production",
-      capabilities: ["health", "logs", "metrics"],
-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-studio",
-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
-    },
+    })),
 
     // ── Supabase ──────────────────────────────────────────
     {

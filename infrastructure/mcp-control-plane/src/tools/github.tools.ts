@@ -13,7 +13,7 @@ import { buildAccountRegistry } from "../registry/account.registry.js";
  * (supremeai) কঠোরভাবে ব্লকড; repo_viewer সব রিপো রিড-অনলি পাবে; agent ও
  * উর্ধ্বতন স্তর আগের মতোই read/write (টাস্ক স্কোপের মধ্যে)।
  */
-const SATELLITE_REPOS: ReadonlySet<string> = new Set([
+export const SATELLITE_REPOS: ReadonlySet<string> = new Set([
   "supremeai-api",
   "supremeai-open",
   "supremeai-sdk",
@@ -22,7 +22,18 @@ const SATELLITE_REPOS: ReadonlySet<string> = new Set([
   "supremeai-studio",
   "supremeai-infrastructure",
   "supremeai-mcp-control-plane",
+  "supremeai-command",
+  "supremeai-skills",
+  "supremeai-vscode",
+  "supremeai-agents",
+  "supremeai-browser",
 ]);
+
+export function isSatelliteRepo(repoName: string): boolean {
+  const clean = repoName.replace(/^Supremeai-bd\//i, "").toLowerCase();
+  if (clean === "supremeai") return false;
+  return SATELLITE_REPOS.has(clean) || clean.startsWith("supremeai-");
+}
 
 export type RepoAccess = "none" | "satellite-readonly" | "all-readonly" | "read-write";
 
@@ -55,7 +66,7 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
   const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(accountRepoUrl);
   const fullName = match ? `${match[1]}/${match[2].replace(/\.git$/, "")}` : accountId;
   const shortName = fullName.split("/").pop() ?? fullName;
-  if (access === "satellite-readonly" && !SATELLITE_REPOS.has(shortName)) {
+  if (access === "satellite-readonly" && (shortName === "supremeai" || !isSatelliteRepo(shortName))) {
     return `Forbidden: restricted_viewer is limited to satellite repos; '${shortName}' is outside the allowlist (core repo is blocked).`;
   }
   const scopes = store.scopes ?? [];
@@ -71,31 +82,41 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
   return null;
 }
 
-/** Resolves the account's repo base URL exactly as the adapter does (no I/O). */
-function repoUrlFor(accountId: string): string {
-  try {
-    // বাংলা মন্তব্য: অ্যাকাউন্ট রেজিস্ট্রি থেকে baseUrl নেওয়া হয় — অ্যাডাপ্টারের সাথে একই উৎস, কোনো নেটওয়ার্ক I/O নেই।
-    const account = buildAccountRegistry().find((a) => a.id === accountId && a.provider === "github");
-    return account?.url || "https://api.github.com/repos/Supremeai-bd/supremeai";
-  } catch {
-    return "https://api.github.com/repos/Supremeai-bd/supremeai";
+/** Resolves the account or target repo base URL exactly as the adapter does (no I/O). */
+export function repoUrlFor(accountId?: string, repo?: string): string {
+  if (repo) {
+    const cleanRepo = repo.replace(/^Supremeai-bd\//i, "");
+    return `https://api.github.com/repos/Supremeai-bd/${cleanRepo}`;
   }
+  const id = accountId || "github-primary";
+  try {
+    const account = buildAccountRegistry().find(
+      (a) => (a.id === id || a.displayName.includes(`/${id})`)) && a.provider === "github"
+    );
+    if (account?.url) return account.url;
+  } catch {
+    // fallback
+  }
+  const clean = id.replace(/^github-pay-/, "").replace(/^Supremeai-bd\//i, "");
+  return `https://api.github.com/repos/Supremeai-bd/${clean}`;
 }
 
 export async function registerGitHubTools(server: McpServer): Promise<void> {
   server.tool(
     "github.workflow_runs",
-    "List recent GitHub Actions workflow runs for the repository.",
+    "List recent GitHub Actions workflow runs for any repository across Supremeai-bd.",
     {
-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
+      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
       limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
     },
-    async ({ accountId, limit }) => {
-      // #110: repo-isolation gate — read-only tiers respect the allowlist.
-      const deny = assertRepoReadAccess("github.workflow_runs", accountId, repoUrlFor(accountId));
+    async ({ accountId, repo, limit }) => {
+      const target = repo || accountId || "github-primary";
+      const targetUrl = repoUrlFor(accountId, repo);
+      const deny = assertRepoReadAccess("github.workflow_runs", target, targetUrl);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const runs = await getWorkflowRuns(accountId, limit || 5);
+        const runs = await getWorkflowRuns(target, limit || 5);
         return {
           content: [{ type: "text", text: JSON.stringify(runs, null, 2) }],
         };
@@ -110,17 +131,19 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
 
   server.tool(
     "github.get_failed_logs",
-    "Get the trailing logs for any failed jobs in a specific workflow run.",
+    "Get trailing logs for failed jobs in a workflow run for any repository across Supremeai-bd.",
     {
-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
+      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
       runId: z.string().describe("The GitHub Actions run ID"),
     },
-    async ({ accountId, runId }) => {
-      // #110: repo-isolation gate.
-      const deny = assertRepoReadAccess("github.get_failed_logs", accountId, repoUrlFor(accountId));
+    async ({ accountId, repo, runId }) => {
+      const target = repo || accountId || "github-primary";
+      const targetUrl = repoUrlFor(accountId, repo);
+      const deny = assertRepoReadAccess("github.get_failed_logs", target, targetUrl);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const logs = await getFailedLogs(accountId, runId);
+        const logs = await getFailedLogs(target, runId);
         return {
           content: [{ type: "text", text: JSON.stringify(logs, null, 2) }],
         };
@@ -135,13 +158,18 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
 
   server.tool(
     "github.list_secrets",
-    "List all GitHub Actions secrets configured for the repository (names only).",
+    "List GitHub Actions secret names for any repository across Supremeai-bd (names only).",
     {
-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
+      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
     },
-    async ({ accountId }) => {
+    async ({ accountId, repo }) => {
+      const target = repo || accountId || "github-primary";
+      const targetUrl = repoUrlFor(accountId, repo);
+      const deny = assertRepoReadAccess("github.list_secrets", target, targetUrl);
+      if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const secrets = await listSecrets(accountId);
+        const secrets = await listSecrets(target);
         return {
           content: [{ type: "text", text: JSON.stringify(secrets, null, 2) }],
         };
@@ -156,18 +184,20 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
 
   server.tool(
     "github.read_file",
-    "Read the content of any file from the GitHub repository (Read-Only).",
+    "Read the content of any file from any repository across the organization (Read-Only).",
     {
-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
-      path: z.string().describe("Relative path to the file (e.g. 'backend/main.py')"),
+      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'"),
+      path: z.string().describe("Relative path to the file (e.g. 'package.json', 'backend/main.py')"),
       ref: z.string().optional().describe("Branch, tag or commit SHA (default: 'main')"),
     },
-    async ({ accountId, path, ref }) => {
-      // #110: repo-isolation gate (github.read_file — the issue's named tool).
-      const deny = assertRepoReadAccess("github.read_file", accountId, repoUrlFor(accountId));
+    async ({ accountId, repo, path, ref }) => {
+      const target = repo || accountId || "github-primary";
+      const targetUrl = repoUrlFor(accountId, repo);
+      const deny = assertRepoReadAccess("github.read_file", target, targetUrl);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const fileData = await readFile(accountId, path, ref ?? "main");
+        const fileData = await readFile(target, path, ref ?? "main");
         return {
           content: [{ type: "text", text: JSON.stringify(fileData, null, 2) }],
         };
@@ -182,18 +212,20 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
 
   server.tool(
     "github.list_prs",
-    "List pull requests for the repository (Read-Only).",
+    "List pull requests for any repository across Supremeai-bd (Read-Only).",
     {
-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
+      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
       state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
       limit: z.number().optional().describe("Max number of PRs (default: 5)"),
     },
-    async ({ accountId, state, limit }) => {
-      // #110: repo-isolation gate.
-      const deny = assertRepoReadAccess("github.list_prs", accountId, repoUrlFor(accountId));
+    async ({ accountId, repo, state, limit }) => {
+      const target = repo || accountId || "github-primary";
+      const targetUrl = repoUrlFor(accountId, repo);
+      const deny = assertRepoReadAccess("github.list_prs", target, targetUrl);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const prs = await listPullRequests(accountId, state ?? "open", limit ?? 5);
+        const prs = await listPullRequests(target, state ?? "open", limit ?? 5);
         return {
           content: [{ type: "text", text: JSON.stringify(prs, null, 2) }],
         };
