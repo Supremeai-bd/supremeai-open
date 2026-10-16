@@ -326,7 +326,7 @@ Refs #{issue_ref}
                 "issue_reference_required": True,
                 "branch_convention": (
                     "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|"
-                    "hotfix|release|copilot|agent)/<slug> — enforced by .github/workflows/open-guards.yml"
+                    "hotfix|release|copilot|agent)/<slug> — enforced by pipeline.yml"
                 ),
                 "pr_body_template": pr_body_template,
             },
