@@ -68,6 +68,13 @@ if hasattr(sys.stdout, "reconfigure"):
 APPROVED_TOP_LEVEL_DIRS = {
     ".github",
     ".githooks",  # issue #161: local ingress pre-push guard (poka-yoke, no runtime surface)
+    # sandbox/ — approved for issue #335 (stealth browser sandbox reference:
+    # engine-agnostic runtime + MCP tool contract per the issue's Verification
+    # Contract); expansion per the process documented in this module's
+    # docstring: registry changes ride a PR that references the governing
+    # issue. Content-layer checks (PROPRIETARY-LOGIC scan) still apply to
+    # every file under this surface — path approval never bypasses rules.
+    "sandbox",
     "api-schemas",
     "docs",
     "examples",
