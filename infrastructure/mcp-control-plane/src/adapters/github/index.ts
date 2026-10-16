@@ -3,23 +3,28 @@ import { httpRequest, bearerAuth } from "../../lib/http.js";
 
 const DEFAULT_BASE_URL = "https://api.github.com/repos/Supremeai-bd/supremeai";
 
-export function getAccountConfig(accountId: string): { apiKey: string; baseUrl: string } {
+export function getAccountConfig(accountIdOrRepo?: string): { apiKey: string; baseUrl: string } {
+  const target = accountIdOrRepo || "github-primary";
   const accounts = buildAccountRegistry();
-  const account = accounts.find((a) => a.id === accountId && a.provider === "github");
-  if (!account) throw new Error(`GitHub account not found: ${accountId}`);
-  if (!account.available) throw new Error(`GitHub account is not configured/available: ${accountId}`);
+  const account = accounts.find((a) => (a.id === target || a.displayName.includes(`/${target})`)) && a.provider === "github");
 
   // বাংলা (Task 35): vault-থেকে-লোড-হওয়া PAT-ও ফলব্যাক-চেইনে রাখা হলো —
   // যাতে মূল personal account-এর (org-migration-এর আগের) প্রতিটি রিপো-অ্যাকাউন্ট GITHUB_PAT_PAYKARIBAZARONLINE
   // দিয়েই সক্রিয় হয় (Infisical pullSecretsIntoProcessEnv() রানটাইমে এটি ভরে)।
   const apiKey =
-    process.env[account.apiKeyRef] ||
+    (account ? process.env[account.apiKeyRef] : "") ||
     process.env.GITHUB_PAT_PAYKARIBAZARONLINE ||
     process.env.GITHUB_TOKEN ||
     process.env.GH_TOKEN ||
     "";
-  if (!apiKey) throw new Error(`Missing GitHub Token in env for: ${account.apiKeyRef}`);
-  return { apiKey, baseUrl: account.url || DEFAULT_BASE_URL };
+  if (!apiKey) throw new Error(`Missing GitHub Token in env for target: ${target}`);
+
+  let baseUrl = account?.url;
+  if (!baseUrl) {
+    const cleanRepo = target.replace(/^github-pay-/, "").replace(/^Supremeai-bd\//i, "");
+    baseUrl = `https://api.github.com/repos/Supremeai-bd/${cleanRepo}`;
+  }
+  return { apiKey, baseUrl };
 }
 
 export function githubHeaders(token: string) {
