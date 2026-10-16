@@ -70,6 +70,23 @@ ENVELOPE_VERSION = 1  # task-envelope-v1 (#63)
 # together (see docs/AGENT_LOOP_SPEC.md §4b).
 CONTRACT_VERSION = "agent-loop-contract/1"
 
+# --- #329: Smart Context Selector wiring (optional, env-gated, fail-open) ----
+# Disabled by default: when SUPREME_CONTEXT_SELECTOR is unset, every prompt
+# and envelope is byte-identical to pre-#329 output (parity contract,
+# AGENT_LOOP_SPEC.md §4b). When enabled ("1"/"true"/"on"/"yes"), the
+# specialist prompt gains a deterministic Layer 1-8 context digest assembled
+# by scripts/agents/smart_context_selector.py (SSOT:
+# docs/CONTEXT_SELECTOR_SPEC.md). Any assembly failure is logged loudly and
+# the prompt continues unchanged — the loop never blocks on context
+# decoration. SUPREME_CONTEXT_BUDGET overrides the token budget (min 1).
+CONTEXT_SELECTOR_ENV = "SUPREME_CONTEXT_SELECTOR"
+CONTEXT_SELECTOR_BUDGET_ENV = "SUPREME_CONTEXT_BUDGET"
+CONTEXT_SELECTOR_TRUTHY = frozenset({"1", "true", "on", "yes"})
+# R2 (spec §4): the budget must admit Layer 1 — this repo's constitution alone
+# estimates >6k tokens, so the default is sized to admit L1 plus working room
+# for L2/L3/L5/L6 (spec's 6000 is an illustrative example, not a default).
+CONTEXT_SELECTOR_DEFAULT_BUDGET = 32000
+
 # The 7 Specialist Agent Roles
 ROLES: dict[str, str] = {
     "coder": "Implementation specialist (features, bug fixes, refactoring)",
@@ -216,13 +233,135 @@ def classify_task_role(title: str, labels: list[str], body: str) -> str:
     return "coder"
 
 
+def context_selector_enabled() -> bool:
+    """#329: the context digest is strictly opt-in (byte-compat default)."""
+    return os.environ.get(CONTEXT_SELECTOR_ENV, "").strip().lower() in CONTEXT_SELECTOR_TRUTHY
+
+
+def assemble_task_context(task: dict[str, Any], contract: dict[str, Any]) -> str:
+    """#329: deterministic Layer 1-8 context digest for the specialist prompt.
+
+    Fail-open contract: returns '' when disabled, unavailable, or on any
+    internal error (logged loudly) — prompts/envelopes stay byte-identical
+    whenever the feature is off, and a task is never blocked on decoration.
+    Candidate sourcing is repo-local and offline-only (no network, no gh):
+      L1 constitution docs · L2 task contract · L3 touching files that exist
+      on disk · L5 ADR history · L6 stable knowledge docs. Layers without
+      offline candidates are omitted (schema minItems semantics).
+    """
+    if not context_selector_enabled():
+        return ""
+    try:
+        here = str(Path(__file__).resolve().parent)
+        if here not in sys.path:
+            sys.path.insert(0, here)  # script-mode sibling import
+        try:
+            from smart_context_selector import (  # type: ignore
+                Candidate,
+                assemble_context,
+                build_selection_policy,
+                estimate_tokens,
+                render_context_assembly,
+            )
+        except ImportError:  # namespace-package mode (e.g. import scripts.agents....)
+            from scripts.agents.smart_context_selector import (  # type: ignore
+                Candidate,
+                assemble_context,
+                build_selection_policy,
+                estimate_tokens,
+                render_context_assembly,
+            )
+
+        budget_raw = os.environ.get(CONTEXT_SELECTOR_BUDGET_ENV, "").strip()
+        budget = (
+            int(budget_raw)
+            if budget_raw.isdigit() and int(budget_raw) >= 1
+            else CONTEXT_SELECTOR_DEFAULT_BUDGET
+        )
+        tc = contract.get("task_contract", {})
+
+        def repo_text_candidates() -> tuple[list[Candidate], list[Candidate], list[Candidate]]:
+            """(L1 constitution, L6 knowledge) from repo files that exist."""
+            l1: list[Candidate] = []
+            for name in ("AGENTS.md", "AGENT_RULES.md"):
+                path = REPO_ROOT / name
+                if path.is_file():
+                    l1.append(Candidate(
+                        "constitution-doc",
+                        f"{name} — core constitution",
+                        estimate_tokens(path.read_text(encoding="utf-8", errors="ignore")),
+                    ))
+            l6: list[Candidate] = []
+            for rel in ("docs/AGENT_LOOP_SPEC.md", "docs/CONTEXT_SELECTOR_SPEC.md"):
+                path = REPO_ROOT / rel
+                if path.is_file():
+                    l6.append(Candidate(
+                        "knowledge-doc",
+                        rel,
+                        estimate_tokens(path.read_text(encoding="utf-8", errors="ignore")),
+                    ))
+            l5: list[Candidate] = []
+            adrs_dir = REPO_ROOT / "docs" / "adrs"
+            if adrs_dir.is_dir():
+                for adr in sorted(adrs_dir.glob("ADR-*.md")):
+                    match = re.match(r"^(ADR-\d{3,4})", adr.name)
+                    if match:
+                        l5.append(Candidate(
+                            "adr-ref",
+                            adr.name,
+                            estimate_tokens(adr.read_text(encoding="utf-8", errors="ignore")),
+                            {"adr_id": match.group(1)},
+                        ))
+            return l1, l5, l6
+
+        l1, l5, l6 = repo_text_candidates()
+        l2 = [Candidate(
+            "issue-contract",
+            f"Issue #{task.get('id', 'adhoc')} — {str(task.get('title', ''))[:200]}",
+            estimate_tokens(f"{task.get('title', '')}\n{task.get('body', '')}"),
+        )]
+        l3: list[Candidate] = []
+        for rel in tc.get("scope", {}).get("touching_files", []) or []:
+            rel = str(rel)
+            if (REPO_ROOT / rel).is_file():
+                l3.append(Candidate(
+                    "file-scope",
+                    rel,
+                    estimate_tokens((REPO_ROOT / rel).read_text(encoding="utf-8", errors="ignore")),
+                    {"path": rel},
+                ))
+
+        payload = assemble_context(
+            str(task.get("id", "adhoc")),
+            build_selection_policy(token_budget=budget, base_priority=1.0, decay_factor=0.8),
+            {1: l1, 2: l2, 3: l3, 5: l5, 6: l6},
+        )
+        digest = render_context_assembly(payload)
+        # stderr on purpose: envelope mode keeps stdout PURE JSON (#63) — the
+        # selector must never pollute the machine-parseable channel.
+        print(
+            f"🧠 [Smart Context Selector] injected: used "
+            f"{payload['assembly']['tokens_used']}/{budget} tok, "
+            f"clipped={payload['assembly']['budget_clipped']} "
+            f"(layers {payload['assembly']['clipped_layers'] or 'none'})",
+            file=sys.stderr,
+        )
+        return digest
+    except Exception as exc:  # noqa: BLE001 — fail-open by design (#329)
+        print(
+            f"⚠️ [Smart Context Selector] fail-open ({type(exc).__name__}: {exc}) — prompt unchanged",
+            file=sys.stderr,
+        )
+        return ""
+
+
 def build_agent_prompt(task: dict[str, Any], role: str, contract: dict[str, Any]) -> str:
     """Build a deterministic, contract-bound scoped prompt for the specialist agent."""
     tc = contract.get("task_contract", {})
     touching_files = tc.get("scope", {}).get("touching_files", [])
     forbidden_paths = tc.get("scope", {}).get("forbidden_paths", [])
 
-    return f"""### 🤖 SupremeAI Task Assignment: {role.upper()}
+    prompt = f"""### 🤖 SupremeAI Task Assignment: {role.upper()}
 You are assigned as the **{role.upper()}** specialist by the SupremeAI Continuous Loop Team Leader.
 
 **1. Mission Objective:**
@@ -245,6 +384,12 @@ Issue #{task.get('id')}: {task.get('title')}
 - Do NOT hallucinate private credentials or internal monorepo scripts.
 - Satisfy the 3-Tier Verification Contract before handoff.
 """
+    # #329: optional Layer 1-8 context digest (env-gated, fail-open — '' when
+    # disabled, so the prompt/envelope stay byte-identical to pre-#329 output).
+    context_block = assemble_task_context(task, contract)
+    if context_block:
+        return prompt + "\n" + context_block
+    return prompt
 
 
 def resolve_group(explicit: str | None, task: dict[str, Any] | None = None) -> str:
