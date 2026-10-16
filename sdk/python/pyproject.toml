@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "supremeai-sdk-py"
+version = "0.1.0"
+description = "Official async Python SDK for the SupremeAI MCP Tower: SSE streaming, tool calling, task dispatch, honest error taxonomy. Zero runtime dependencies."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "SupremeAI Federation" }]
+keywords = ["supremeai", "mcp", "sdk", "asyncio", "sse", "agent"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Framework :: AsyncIO",
+  "Operating System :: OS Independent",
+  "Typing :: Typed",
+]
+# Zero runtime dependencies by contract (house style: stdlib only, issue #338 AC1).
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+supremeai-sdk = "supremeai_sdk.client:main"
+
+[project.urls]
+Repository = "https://github.com/Supremeai-bd/supremeai-open"
+Source = "https://github.com/Supremeai-bd/supremeai-open/tree/main/sdk/python"
+ConnectionGuide = "https://github.com/Supremeai-bd/supremeai-open/blob/main/docs/MCP_CONNECT.md"
+ReferenceImpl = "https://github.com/Supremeai-bd/supremeai-open/tree/main/examples/sdk-client-py"
+
+[tool.setuptools.packages.find]
+include = ["supremeai_sdk*"]
+
+[tool.setuptools.package-data]
+supremeai_sdk = ["py.typed"]
