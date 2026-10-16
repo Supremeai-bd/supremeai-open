@@ -261,7 +261,13 @@ section("defaultCreateIssue: 422 fallback + token fail-closed (stubbed fetch)");
     );
     check("two HTTP calls (422 then fallback)", calls.length === 2, `calls=${calls.length}`);
     check("second call dropped the repo:<slug> label", Array.isArray(calls[1]?.labels) && !calls[1].labels.some((l: string) => l.startsWith("repo:")));
+    // Regression (scout 2026-10-16): the header contract says the dropped-label
+    // note rides IN the created issue body — pre-fix the retry sent the
+    // original body and the note only existed in the return metadata.
+    check("fallback body carries the dropped-label note", typeof calls[1]?.body === "string" && calls[1].body.includes("Reporter note") && calls[1].body.includes("does not exist on this board"), `body_has_note=${typeof calls[1]?.body === "string" && calls[1].body.includes("Reporter note")}`);
+    check("fallback body preserves the original report body", typeof calls[1]?.body === "string" && (calls[1].body as string).startsWith("b"));
     check("fallback result ok", res.ok && res.status === 201);
+    check("fallback returns issueUrl from the 201 response", typeof res.issueUrl === "string" && res.issueUrl === "https://github.com/Supremeai-bd/supremeai-open/issues/1", `issueUrl=${String(res.issueUrl)}`);
 
     const noToken = await defaultCreateIssue({ repo: "r/x", title: "t", body: "b", labels: ["a"] }, undefined);
     check("missing token → fail-closed (status 0, not ok)", !noToken.ok && noToken.status === 0);
