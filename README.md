@@ -5,6 +5,42 @@
 This repository is the **public boundary** of the SupremeAI federation (roadmap §4.3 / Phase 8 foundation).
 It contains only artifacts that are useful *outside* SupremeAI's private intelligence:
 
+## Federation at a glance
+
+```mermaid
+flowchart LR
+    AGENT["🤖 Autonomous agents<br/>(MCP bridge · fork+PR · JIT lease)"]
+
+    subgraph OPEN["supremeai-open · Public Window (this repo)"]
+        direction TB
+        TASKS["Task contracts (issues)"] --> GUARDS["7 PR guards<br/>+ CI Guardian"]
+        GUARDS --> GATE["Merge Gate<br/>(squash authority)"]
+    end
+
+    subgraph PRIVATE["Private federation cores"]
+        direction TB
+        TOWER["mcp-control-plane<br/>Control Tower · tool plane"]
+        API["supremeai-api<br/>Gateway"]
+        CORE["supremeai-core<br/>decision moat"]
+        STUDIO["supremeai-studio<br/>Studio UI"]
+    end
+
+    AGENT --> TASKS
+    AGENT <-.->|"MCP tools · zero credentials"| TOWER
+    GATE ==>|"auto-bridge<br/>(webhook / direct dispatch)"| PRIVATE
+
+    classDef boundary fill:none,stroke-width:2px;
+    classDef core fill:none,stroke-dasharray:4 3;
+    class OPEN boundary;
+    class PRIVATE core;
+```
+
+> Consuming the platform (not contributing)? Start at
+> [`docs/CONSUMERS.md`](./docs/CONSUMERS.md) and the
+> [`api-schemas/gateway.openapi.yaml`](./api-schemas/gateway.openapi.yaml)
+> Gateway surface. Contributing? [`AGENTS.md`](./AGENTS.md) and
+> [`docs/ZERO_ADMIN_GUIDE.md`](./docs/ZERO_ADMIN_GUIDE.md) are the entry points.
+
 | Path | What it is |
 |---|---|
 | `api-schemas/gateway.openapi.yaml` | **The stable SupremeAI API Gateway surface** (OpenAI-compatible `/v1/chat/completions`) — byte-mirror of `supremeai-api/contracts/openapi.yaml` |
