@@ -25,14 +25,53 @@ paths:
       responses:
         "200":
           description: Completion result (OpenAI-compatible shape)
+          headers:
+            X-RateLimit-Limit:
+              schema: { type: integer }
+              description: Per-key request allowance in the current window (key-plane রিপোর্ট করলে; absent = unknown, বানানো নয়)
+            X-RateLimit-Remaining:
+              schema: { type: integer }
+              description: Remaining allowance in the current window
+            X-RateLimit-Reset:
+              schema: { type: integer }
+              description: Unix seconds when the window resets
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatCompletionResponse"
-        "401": { description: Invalid or missing SupremeAI key }
-        "403": { description: Key lacks required scope }
-        "429": { description: Quota/rate limit exceeded (config-driven) }
-        "502": { description: All providers in fallback chain failed }
+        "401":
+          description: Invalid or missing SupremeAI key (retry নয় — key যাচাই)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Key lacks required scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Quota/rate limit exceeded (config-driven) — Retry-After সম্মান করুন
+          headers:
+            Retry-After:
+              schema: { type: integer, description: "Seconds until the per-key window resets (মেশিন-যাচাইযোগ্য Retry-After চুক্তি, CONSUMERS.md §৩)" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: All providers in fallback chain failed (কিছুক্ষণ পরে retry)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Keyplane/infrastructure unavailable (retry-যোগ্য)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/models:
     get:
       summary: Enabled models (from routing_policy config, not provider internals)
@@ -68,6 +107,27 @@ components:
       description: >
         SUPREMEAI_API_KEY — gateway access credential. NOT a provider credential copy.
   schemas:
+    Error:
+      type: object
+      required: [error]
+      description: >-
+        সমস্ত 4xx/5xx ত্রুটির একক আকার (OpenAI-style নেস্টেড error অবজেক্ট) —
+        CONSUMERS.md §৩-এর সৎ-চুক্তির মেশিন-পাঠযোগ্য রূপ।
+      properties:
+        error:
+          type: object
+          required: [message]
+          properties:
+            message:
+              type: string
+              description: Human-readable reason (কোনো key/provider ভ্যালু কখনো নয়)
+            type:
+              type: string
+              description: Machine class — invalid_api_key | insufficient_scope | rate_limit_exceeded | provider_chain_exhausted | keyplane_unavailable
+            code:
+              type: string
+              nullable: true
+              description: Optional detail code (অনুপস্থিত হলে null নয়, ফিল্ডই বাদ — সততা-মতবাদ)
     ChatCompletionRequest:
       type: object
       required: [messages]
@@ -87,7 +147,13 @@ components:
               content: { type: string }
         temperature: { type: number, default: 0.7 }
         max_tokens: { type: integer, nullable: true }
-        stream: { type: boolean, default: false }
+        stream:
+          type: boolean
+          default: false
+          description: >-
+            সততা-নোট: streaming ঘোষিত কিন্তু সব ডেপ্লয়মেন্টে বাস্তবায়িত নয় — stream:true দিলে
+            সার্ভার 400 (Error আকারে) দিতে পারে। SSE নিশ্চিত না হওয়া পর্যন্ত client stream:true
+            ধরে চলবে না (examples/gateway_client.py বর্তমানে non-streaming)।
     ChatCompletionResponse:
       type: object
       properties:
