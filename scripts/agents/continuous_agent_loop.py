@@ -30,6 +30,14 @@ import time
 from pathlib import Path
 from typing import Any
 
+# G1 (audit 2026-10-16): federation experience bridge — optional, fail-open.
+# Dual-mode import: direct script run (sys.path[0] = scripts/agents) and
+# package import (python -c "from scripts.agents.continuous_agent_loop import …", CI matrix).
+try:
+    from scripts.agents.memory_bridge import MemoryBridge
+except ImportError:  # pragma: no cover — direct-execution mode
+    from memory_bridge import MemoryBridge
+
 # Configure UTF-8 for cross-platform stability
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -350,7 +358,12 @@ Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
 """
 
 
-def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any]) -> dict[str, Any]:
+def build_task_envelope(
+    task: dict[str, Any],
+    role: str,
+    contract: dict[str, Any],
+    related_experience: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build the Single Deterministic Task Envelope (#63).
 
     One canonical JSON payload that replaces the four legacy output formats:
@@ -358,10 +371,15 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
       2. --emit-prompt markdown    -> specialist_prompt field
       3. --emit-contract raw JSON  -> embedded contract fields (group/scope/admin_gate)
       4. .pr_template_draft.md     -> submission.pr_body_template field
+
+    G1 (audit 2026-10-16): when a memory endpoint is configured and recall
+    succeeds, the optional ``related_experience`` block carries similar past
+    task records into the envelope. When disabled or on failure the key is
+    OMITTED entirely — byte-compatible with pre-G1 envelope consumers.
     """
     tc = contract["task_contract"]
     pr_body_template = build_pr_body(task, contract=contract)
-    return {
+    envelope: dict[str, Any] = {
         "task_envelope": {
             "envelope_version": ENVELOPE_VERSION,
             "output_format": "task-envelope-v1",
@@ -402,6 +420,42 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
             },
         }
     }
+    if related_experience is not None:
+        envelope["task_envelope"]["related_experience"] = related_experience
+    return envelope
+
+
+def _recall_related_experience(task: dict[str, Any]) -> dict[str, Any] | None:
+    """G1: fill related_experience via memory.get_similar_tasks when configured.
+
+    Fail-open: disabled bridge or any recall failure returns None and the
+    envelope is emitted exactly as before (U2 — failure is logged loudly by
+    the bridge, never silent, never fatal).
+    """
+    bridge = MemoryBridge.from_env(log_fn=lambda msg: log("🧠", msg))
+    if not bridge.enabled:
+        return None
+    log("🧠", "[Memory Bridge] Endpoint configured — recalling related experience (memory.get_similar_tasks)...")
+    return bridge.recall_related(task.get("title") or "")
+
+
+def _record_task_outcome(task: dict[str, Any], outcome: str, detail: str) -> None:
+    """G1: fire-and-forget episodic record of a completed task (memory.record_task).
+
+    Stateless loop doctrine kept: no local memory, no blocking, no raise —
+    the bridge captures and logs every failure honestly.
+    """
+    bridge = MemoryBridge.from_env(log_fn=lambda msg: log("🧠", msg))
+    if not bridge.enabled:
+        return
+    ok = bridge.record_outcome(
+        task_id=str(task.get("id") or "unknown"),
+        title=task.get("title") or "",
+        outcome=outcome,
+        detail=detail,
+    )
+    if ok:
+        log("🧠", f"[Memory Bridge] Task outcome recorded (memory.record_task): {outcome}")
 
 
 def emit_task_envelope(args: argparse.Namespace) -> int:
@@ -447,7 +501,9 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
     role = args.role or classify_task_role(
         task.get("title", ""), task.get("labels", []), task.get("body", "")
     )
-    envelope = build_task_envelope(task, role, contract)
+    envelope = build_task_envelope(
+        task, role, contract, related_experience=_recall_related_experience(task)
+    )
     print(json.dumps(envelope, indent=2))
     return 0
 
@@ -875,6 +931,9 @@ def step_7_record(
         code, out, err = run_cmd(cmd)
         if code == 0:
             log("🎉", f"PR Successfully Created: {out}")
+            # G1: hand the outcome signature to the federation's episodic
+            # memory (no-op unless SUPREME_MEMORY_MCP is configured).
+            _record_task_outcome(task, "submitted", f"auto PR opened on {UPSTREAM_REPO}: {out.strip()[:200]}")
             return True
         else:
             log("❌", f"PR creation via gh CLI failed ({code}): {err}")
