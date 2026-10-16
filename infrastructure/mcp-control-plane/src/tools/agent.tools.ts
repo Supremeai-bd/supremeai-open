@@ -9,6 +9,16 @@ import {
 } from "../registry/agent_heartbeat.js";
 import { listWorkforce } from "../registry/mcp_presence.js";
 
+// F2 (audit 2026-10-16): SSOT heartbeat.schema.json mirrors — the MCP tool
+// used to accept only slot+agentId, so an MCP-only agent could not satisfy
+// the protocol it documents (task_id/status/ttl_seconds were unfillable).
+// Registry-side validators re-check everything fail-closed; zod is UX.
+const TASK_ID_ZOD = z
+  .string()
+  .max(128, "taskId must be <= 128 chars (SSOT heartbeat.schema.json)")
+  .refine((v) => !/[\x00-\x1f\x7f]/.test(v), "taskId must not contain control characters")
+  .refine((v) => v === "" || /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(v), 'taskId must match ^$|^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$ ("" = idle)')
+
 /**
  * Agent slot heartbeat tools (issue #1402, #1787).
  *
@@ -29,7 +39,7 @@ import { listWorkforce } from "../registry/mcp_presence.js";
 export async function registerAgentTools(server: McpServer): Promise<void> {
   server.tool(
     "agent_heartbeat",
-    "Announce that an agent tool is alive for its assigned slot (agent-N). Ping every 45s while running; the dashboard shows the slot as 🟢 online within 90s of the last ping.",
+    "Announce that an agent tool is alive for its assigned slot (agent-N). Ping every 45s while running; the dashboard shows the slot as 🟢 online within 90s of the last ping. Optionally declare task ownership per docs/HEARTBEAT_PROTOCOL.md: taskId (\"\" = idle), status (alive|busy|idle), ttlSeconds (30–3600 lease).",
     {
       slot: z
         .string()
@@ -44,8 +54,22 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
         .max(64)
         .optional()
         .describe("Human-readable tool label, e.g. 'Cline' (defaults to slot id)"),
+      taskId: TASK_ID_ZOD.optional().describe(
+        'Identifier of the task this slot currently holds ("" = idle). SSOT: api-schemas/heartbeat.schema.json'
+      ),
+      status: z
+        .enum(["alive", "busy", "idle"])
+        .optional()
+        .describe("Lifecycle status: alive (on-task) | busy (executing) | idle (awaiting assignment). SSOT: heartbeat.schema.json"),
+      ttlSeconds: z
+        .number()
+        .int()
+        .min(30)
+        .max(3600)
+        .optional()
+        .describe("Lease duration in seconds (30–3600, default 300). SSOT: heartbeat.schema.json"),
     },
-    async ({ slot, agentId }) => {
+    async ({ slot, agentId, taskId, status, ttlSeconds }) => {
       try {
         const context = RequestContextStore.get();
         // AUDIT-FIX (#1787 Gap 2): আগে শুধু `if (!context?.authenticated)`
@@ -72,6 +96,10 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
           // AUDIT-FIX (#1787): public_viewer হলেও clientId থাকবে (#1767 auto-register
           // দেয়), fallback শুধু অতিরিক্ত সতর্কতা।
           clientId: context.clientId ?? `guest:${slot}`,
+          // F2: task-ownership telemetry — optional, backward compatible.
+          ...(taskId !== undefined ? { taskId } : {}),
+          ...(status !== undefined ? { status } : {}),
+          ...(ttlSeconds !== undefined ? { ttlSeconds } : {}),
         });
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
