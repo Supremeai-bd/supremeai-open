@@ -93,6 +93,35 @@ Work through this list **before opening the PR**; each unchecked item is a docum
 
 A PR that satisfies this checklist has historically landed **without any admin action** — the guards + CI Guardian + gate complete the loop: verify → hold-and-fix (autonomously healable) → merge → close issue → delete branch.
 
+## 6. Single Pane of Glass — the unified work hub (#374)
+
+`supremeai-open` is the federation's **canonical Single Work Hub**. All active
+tasks — feature requests, bug reports, agent tasks, and Bridge Work Orders
+targeting *any* federation repository — are created exclusively on this
+repository and routed by the issue templates' `target_repo` selector
+(`ECOSYSTEM_MAP.md` §2). Satellite repositories stay issue-free, with strict
+exceptions only: foundational repository epics/blueprints, and **automated
+CI-failure alerts**, which are synchronized here by the reusable
+[`.github/actions/sync-ci-failure`](../.github/actions/sync-ci-failure/action.yml)
+composite action.
+
+The sync contract (payload spec from the governing issue):
+
+- **Title**: `[CI Failure] <satellite-repo>: <workflow_name> failed on run #<run_id>`
+- **Labels**: `bridge:ci-failure`, `target:<satellite-repo>`, `P1-high`
+- **Body context**: run URL, commit SHA, failed step, short log excerpt, and
+  an actionable repro command
+- **Dedup**: an existing *open* issue with the exact title receives the new
+  run as a comment instead of a second issue
+
+The continuous agent loop consumes this stream with top precedence: a
+`bridge:ci-failure` label places the issue in claim tier `-1`, ahead of every
+P0..P3 human-priority label and ahead of unlabeled work, because a red main
+branch anywhere in the federation breaks the landing gates every queued work
+order depends on. The action itself is fail-closed on input validation (a
+misconfigured caller must be visible) and fail-open on hub transport (a red
+run must not get redder because a sync call timed out).
+
 ## Related Documents
 
 - [AGENTS.md](../AGENTS.md) — agent constitution; §2.1 Zero-Admin policy and the 3 submission pathways
