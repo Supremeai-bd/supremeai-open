@@ -104,15 +104,19 @@ def extract_claim_timestamp(issue: Dict[str, Any]) -> Optional[datetime.datetime
     return None
 
 
-def get_remote_branches(repo: str) -> List[str]:
-    """Fetch remote branch refnames from origin."""
+def get_remote_branches(repo: str) -> Optional[List[str]]:
+    """Fetch remote branch refnames from origin.
+
+    Returns None when BOTH probes fail (fail-closed: an empty list would be
+    indistinguishable from "no branches exist" and could drive a destructive
+    Stage-1 release of claims whose branches are alive upstream)."""
     code, out, _ = run_cmd(["git", "ls-remote", "--heads", "origin"])
     if code != 0 or not out.strip():
         # Fallback to gh api
         code, out, _ = run_cmd(["gh", "api", f"repos/{repo}/branches", "--jq", ".[].name"])
         if code == 0 and out.strip():
             return [b.strip() for b in out.strip().split("\n") if b.strip()]
-        return []
+        return None
 
     branches = []
     for line in out.strip().split("\n"):
@@ -134,8 +138,12 @@ def issue_has_remote_branch(issue_number: int, branch_names: List[str]) -> Tuple
     return False, None
 
 
-def get_open_pr_issue_references(repo: str) -> Set[int]:
-    """Fetch all issue numbers currently referenced by open PRs."""
+def get_open_pr_issue_references(repo: str) -> Optional[Set[int]]:
+    """Fetch all issue numbers currently referenced by open PRs.
+
+    Returns None when the query fails (fail-closed: an empty set would read
+    as "zero open PRs" and could drive a Stage-2 release of claims that are
+    actively progressing)."""
     code, out, _ = run_cmd([
         "gh", "pr", "list",
         "--repo", repo,
@@ -144,12 +152,12 @@ def get_open_pr_issue_references(repo: str) -> Set[int]:
         "--json", "number,title,body,headRefName"
     ])
     if code != 0 or not out.strip():
-        return set()
+        return None
 
     try:
         prs = json.loads(out)
     except Exception:
-        return set()
+        return None
 
     referenced_issues: Set[int] = set()
     for pr in prs:
@@ -382,6 +390,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     open_prs = get_open_pr_issue_references(args.repo)
     remote_branches = get_remote_branches(args.repo)
+    if open_prs is None or remote_branches is None:
+        # The file doctrine (module docstring): fail-closed — unreadable data
+        # produces non-zero exits, never silent skips. Evaluating leases with
+        # unknown PR/branch state could strip claims that are alive.
+        missing = []
+        if open_prs is None:
+            missing.append("open-PR references")
+        if remote_branches is None:
+            missing.append("remote branches")
+        print(f"❌ Fail-closed: could not read {' and '.join(missing)}; refusing to evaluate leases on unknown state.", file=sys.stderr)
+        return 1
     stale_issues = evaluate_graduated_claims(
         issues,
         open_prs,
@@ -395,6 +414,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     print(f"⚠️ Found {len(stale_issues)} orphaned claim(s):")
+    release_failures = 0
     for s in stale_issues:
         print(f"  - Issue #{s['number']} [Stage {s['stage']}]: '{s['title']}' ({s['reason']}, elapsed: {s['elapsed_minutes']}m)")
         if args.auto_release:
@@ -404,6 +424,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print(f"    ✅ Issue #{s['number']} successfully released back to the open pool.")
             else:
                 print(f"    ❌ Failed to release #{s['number']}.", file=sys.stderr)
+                release_failures += 1
+
+    if release_failures:
+        print(f"❌ {release_failures} release(s) failed — the stale list will re-evaluate on the next run (idempotent).", file=sys.stderr)
+        return 1
 
     return 0
 
