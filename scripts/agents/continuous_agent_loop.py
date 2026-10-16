@@ -500,10 +500,16 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
             return not (EXCLUDED_LABELS & set(names))
 
         # Explicit priority map — LABELS ONLY (title prose must not influence).
+        # CI-failure alerts (#374 Single Hub) outrank every human-priority
+        # tier: a red main branch anywhere in the federation is the board's
+        # top emergency regardless of its P-label, because every queued work
+        # order lands through the gates that failure just broke.
         PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
 
         def priority_key(item: dict[str, Any]) -> tuple[int, int]:
             names = label_names(item)
+            if "bridge:ci-failure" in names:
+                return (-1, int(item.get("number", 0)))  # tier -1: before P0
             tier = 4  # unlabeled sorts last
             for marker, rank in PRIORITY_MAP:
                 if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
