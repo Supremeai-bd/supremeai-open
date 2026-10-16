@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "federated-ci-failure/v1",
+  "$id": "https://supremeai.ai/schemas/federated-ci-failure.schema.json",
   "title": "Federated CI Failure Report",
   "description": "Emission contract for the federated CI failure auto-issue reporter (#199, src/events/federated_ci_watcher.ts in infrastructure/mcp-control-plane). A report is derived deterministically from a GitHub workflow_run.completed webhook event with conclusion == \"failure\" originating from a federation repository, and is normalized into a standard agent-task issue on the control-plane board (cross-repo task normalizer, #199 part 2). The report is the single source of truth for the issue title format, the label set, and the body contract; the machine surface (watcher) and this schema must evolve together.",
   "type": "object",
