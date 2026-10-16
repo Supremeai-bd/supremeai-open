@@ -1,0 +1,16 @@
+{
+  "schema_version": "gateway-routing/1",
+  "chains": {
+    "auto": [
+      { "provider": "groq", "model": "llama-3.1-8b-instant" },
+      { "provider": "openai", "model": "gpt-4o-mini" },
+      { "provider": "anthropic", "model": "claude-sonnet-4-5" }
+    ]
+  },
+  "default_chain": "auto",
+  "rate_limit": { "window_seconds": 60, "max_requests": 4 },
+  "api_keys": {
+    "supremeai-key-test-0000000001": { "owner": "pytest", "scopes": ["chat", "models"] },
+    "supremeai-key-test-0000000002": { "owner": "readonly", "scopes": ["models"] }
+  }
+}
