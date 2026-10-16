@@ -119,6 +119,7 @@ Submitted via [Bridge Work Order #{wo_num}](https://github.com/{repo}/issues/{wo
 {pr_title}
 
 {closes_line}
+Closes #{wo_num}
 Refs #{wo_num}
 """
     cmd = [
