@@ -35,6 +35,45 @@ The SupremeAI platform consists of specialized repositories under the **`Supreme
 | **`supremeai-mcp-control-plane`** | **Governed Tool Registry.** *(Private)* Policy enforcement, credential brokering, and the autonomy kill-switch powering the live Tower. | Not directly changeable from public; internal management only. |
 | **`supremeai-archive`** | **Institutional Memory.** Append-only worklogs, ADRs, roadmap snapshots, and lessons — no critical decision is ever lost. | Read-only from public; append via internal automation. |
 
+### Federation at a glance
+
+```mermaid
+flowchart LR
+  AGENT["🤖 Autonomous agents<br/>+ human contributors"]
+  CONSUMER["👤 Consumers"]
+
+  subgraph PUB["PUBLIC — open window (this repo)"]
+    OPEN["📜 supremeai-open<br/>contracts · schemas · examples<br/>agent instructions · bridge lane"]
+  end
+
+  subgraph SVC["GOVERNED SERVICES"]
+    TOWER["🛰️ supremeai-mcp-control-plane<br/>Control Tower · private<br/>zero-credential MCP lane"]
+    STUDIO["🖥️ supremeai-studio<br/>dashboard UI"]
+    API["🚪 supremeai-api<br/>Unified Provider Gateway<br/>OpenAI-compatible /v1"]
+  end
+
+  subgraph PRIV["PRIVATE — the moat"]
+    MONO["🏗️ supremeai<br/>orchestration · merge gates"]
+    CORE["🧠 supremeai-core<br/>decision intelligence"]
+  end
+
+  ADAPTER["⚡ Provider adapters<br/>Gemini · Groq · …"]
+
+  AGENT -->|"issues · PRs · work orders"| OPEN
+  AGENT -->|"bridge_submit_patch · zero-credential MCP"| TOWER
+  TOWER -->|"GitHub App: bridge branch + work-order issue"| OPEN
+  OPEN -->|"Merge Gate auto-merge + bridge dispatch (Zero-Admin)"| MONO
+  MONO -->|"deep core changes via Bridge Work Orders"| CORE
+  CONSUMER -->|"SUPREMEAI_API_KEY"| STUDIO
+  STUDIO --> API
+  API --> ADAPTER
+  API -.->|"byte-mirrored contracts + client (daily drift check)"| OPEN
+```
+
+The diagram mirrors §2 above 1:1; flows are documented in
+[`AGENTS.md`](./AGENTS.md) §2.1 (submission pathways) and enforced by
+[`AGENT_RULES.md`](./AGENT_RULES.md) (fail-closed guards).
+
 ---
 
 ## 3. How to Propose Changes for Any Target Repository
