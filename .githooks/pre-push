@@ -209,6 +209,23 @@ for line in $updates; do
         # No origin/main ref and fetch failed: freshness cannot be verified
         # offline — honest degradation; the CI stale-base guard is authoritative.
     fi
+
+    # 5. NO CLAIM -> NO PUSH (AGENTS.md Step 4 / #430).
+    # Task/issue branches must carry an active claim before pushing to remote.
+    # Invariant: No claim -> no branch; no branch -> no push.
+    # Deliberate admin bypass: git push --no-verify or non-issue branch.
+    if ! ZERO_TEST "$local_sha"; then
+        issue_token=$(printf '%s' "$local_ref" | grep -oE '(issue-?|#)[0-9]+' | grep -oE '[0-9]+' | head -n1 || true)
+        if [ -n "$issue_token" ] && command -v gh >/dev/null 2>&1; then
+            claim_json=$(gh issue view "$issue_token" --repo Supremeai-bd/supremeai-open --json labels,comments 2>/dev/null || echo "")
+            if [ -n "$claim_json" ]; then
+                has_claim=$(printf '%s' "$claim_json" | grep -Eq '"status:claimed"|"status:in-progress"|<!-- atomic-claim -->' && echo "true" || echo "false")
+                if [ "$has_claim" != "true" ]; then
+                    reject "NO CLAIM -> NO PUSH (AGENTS.md Step 4 / #430)"                         "Branch '$local_ref' targets Issue #$issue_token, but Issue #$issue_token has NO active claim."                         "Per the Two-Tier Ingress Invariant: No claim -> no branch; no branch -> no push."                         "Claim the issue on GitHub before pushing: gh issue edit $issue_token --add-label status:claimed"                         "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
     IFS="$nl"
 done
 IFS="$OIFS"

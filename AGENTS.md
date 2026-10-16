@@ -63,7 +63,9 @@ Never invent a parallel workflow. The task contract is the common envelope for e
 
 **Board-freshness rule (#4177):** the snapshot taken at task-start is not the whole mission. Work often takes long enough for new PRs/issues to arrive mid-flight — a completion declaration made against the start-time snapshot silently drops them. Before declaring any task, batch or founder-directed mission "done", re-poll the board and report the fresh snapshot; handle new arrivals or explicitly list them as outstanding (per [`AGENT_RULES.md`](./AGENT_RULES.md) U5/U7/U8).
 
-**Critical ordering:** `atomic_claim.sh` must run **BEFORE** `gh pr create`. A PR opened without a prior claim will be auto-closed by the Claim Gate (#2644, #2892). The claim comment on the issue is the evidence the gate checks — it must exist before CI runs.
+**Critical ordering (Two-Tier Ingress Invariant, #430):**
+1. **No Claim -> No Branch:** `atomic_claim.sh` must run and post both claim signals (`status:claimed` label + `<!-- atomic-claim -->` comment) **BEFORE** checking out or creating any task branch. Branch creation without a prior claim is fail-closed rejected by `continuous_agent_loop.py`.
+2. **No Branch -> No Push:** Any git push targeting an issue is rejected by `.githooks/pre-push` if the issue has no active claim marker on GitHub. Furthermore, PRs opened without a prior claim are strictly blocked by the Claim Gate (`claim-guard`). The claim comment on the issue is the evidence the gate checks — it must exist before CI runs.
 
 ## 2.1 Autonomous Work Submission (Zero-Admin Policy)
 
