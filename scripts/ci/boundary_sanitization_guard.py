@@ -79,6 +79,16 @@ APPROVED_TOP_LEVEL_DIRS = {
     # Content-layer checks (PROPRIETARY-LOGIC scan) still apply to every
     # file under this surface — path approval never bypasses content rules.
     "tests",
+    # runner/ — approved for issue #334 (deterministic 8-step agent runner
+    # harness reference implementation; verification contract names
+    # runner/agent_runner.py). Expansion per this registry's documented
+    # process; content-layer checks still apply to every file underneath.
+    "runner",
+    # core/ — approved for issue #330 (dynamic task routing engine reference
+    # implementation; verification contract names core/routing/). Expansion
+    # per this registry's documented process; content-layer checks still
+    # apply to every file underneath.
+    "core",
 }
 
 APPROVED_ROOT_FILES = {
@@ -105,6 +115,9 @@ APPROVED_SUBTREES = {
     "scripts": {"agents", "ops", "ci", "validate_schemas.py"},
     ".github": {"ISSUE_TEMPLATE", "workflows", "actions"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
+    # core/ — issue #330: the routing engine hosts executable material, so it
+    # registers its subtree at depth-2 like scripts/ and infrastructure/.
+    "core": {"routing"},
 }
 
 # ---------------------------------------------------------------------------
