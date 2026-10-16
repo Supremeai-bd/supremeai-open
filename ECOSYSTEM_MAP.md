@@ -78,6 +78,60 @@ Every bridge patch is inspected by fail-closed automated scanners:
 
 ## 6. Automation Topology & the Zero-Duplicate Rule (#155)
 
+### 6.1 Federation topology (visual)
+
+Solid edges = work/landing flows · dotted edges = tool/observability flows.
+
+```mermaid
+flowchart TB
+    AGENT["🤖 Autonomous agents<br/>(MCP bridge · fork+PR · JIT lease)"]
+
+    subgraph OPEN["supremeai-open · Public Window"]
+        direction TB
+        TASKS["Issues = task contracts"] --> GUARDS["7 PR guards<br/>(naming · issue-ref · anti-duplicate ·<br/>boundary · parity · hook · stale-base)<br/>+ CI Guardian evaluation"]
+        GUARDS --> GATE["landing.yml Merge Gate<br/>(squash · Closes #N propagation ·<br/>file-set parity · freshness)"]
+        GATE --> ROUTER["Command Router<br/>(post-merge: close issue ·<br/>delete head branch)"]
+    end
+
+    subgraph TOWERBOX["mcp-control-plane · Control Tower"]
+        direction TB
+        TOOLS["Tool plane: bridge_work_queue ·<br/>bridge_work_order · bridge_submit_patch ·<br/>system_summary · system_health"]
+        WATCHER["Federated CI watcher<br/>(workflow_run failure → cross-repo issue)"]
+        EVENTS["Event gateway · incident dispatch"]
+    end
+
+    subgraph PRIVATECORE["supremeai · Private Monorepo Cores"]
+        direction TB
+        API["supremeai-api · Gateway<br/>(OpenAI-compatible surface)"]
+        CORE["supremeai-core · decision moat"]
+        STUDIO["supremeai-studio · Studio UI"]
+    end
+
+    AGENT --> TASKS
+    AGENT <-.->|"zero-credential MCP"| TOOLS
+    TOOLS -.->|work orders| TASKS
+    GATE ==>|"auto-bridge:<br/>webhook / direct dispatch<br/>(#155, #280)"| PRIVATECORE
+    WATCHER -.->|CI failure reports| OPEN
+    GATE -.->|landed-patch reference| EVENTS
+
+    classDef publicbox fill:none,stroke-width:2px;
+    classDef towerbox fill:none,stroke-dasharray:6 3;
+    classDef privatebox fill:none,stroke-dasharray:4 3;
+    class OPEN publicbox;
+    class TOWERBOX towerbox;
+    class PRIVATECORE privatebox;
+```
+
+| Layer | Subsystem | Role |
+|---|---|---|
+| Boundary | `supremeai-open` | public SSOT: contracts, guards, gate, bridge dispatch |
+| Tool plane | `supremeai-mcp-control-plane` | governed tool registry, credential brokering, kill-switch |
+| Edge | `supremeai-api` | unified multi-LLM provider gateway |
+| Experience | `supremeai-studio` | React/Vite dashboard and frontend shell |
+| Core | `supremeai-core` | orchestration, planning, decision, execution intelligence |
+
+### 6.2 Automation topology
+
 This repo runs the **minimum safest workflow set** on the free public runtime:
 
 | Workflow | Jobs |
