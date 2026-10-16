@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://supremeai.ai/schemas/telemetry-log.schema.json",
+  "title": "Telemetry Log Record",
+  "description": "Structured JSON log-record standard for every SupremeAI service (#38). One record = one line of newline-delimited JSON (JSONL). The seven top-level fields are frozen: additionalProperties:false — anything service-specific belongs inside context, never beside it. Level vocabulary is lowercase; Python emitters map DEBUG→debug, WARNING→warn, CRITICAL→fatal. trace_id standardizes the correlation id the control plane already threads per action (AuditLogger.correlationId, infrastructure/mcp-control-plane/src/audit/audit.ts). agent_id reuses the exact api-schemas/heartbeat.schema.json pattern; non-agent infrastructure emits the empty string (the same empty-when-N/A convention heartbeat.task_id already uses). Metric emission paired with this standard is declared in $defs/MetricConventions — the OpenTelemetry metric registry (three families: request duration, tokens consumed, agent task completion) whose concrete entries ride as examples. Reference parser: examples/telemetry-logger/logger.py (zero-dependency, mirrors the examples/gateway_client.py house style).",
+  "type": "object",
+  "required": ["timestamp", "level", "trace_id", "agent_id", "component", "message", "context"],
+  "additionalProperties": false,
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 / ISO 8601 UTC emission time (e.g. 2026-10-16T10:18:15Z). Identical convention to heartbeat.schema.json timestamp and the new Date().toISOString() already shipped in audit.ts."
+    },
+    "level": {
+      "type": "string",
+      "enum": ["debug", "info", "warn", "error", "fatal"],
+      "description": "Severity of the record. fatal = the process cannot continue (fail-honest terminal state); error = the operation failed but the process continues; warn = degraded-but-operational (e.g. a visibility-scoped dependency quietly skipped); info = normal operational milestone; debug = development detail that production emitters MUST drop by default."
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{7,127}$",
+      "description": "Correlation identifier propagated across every service one logical operation touches; all records of that operation share exactly one trace_id. Accepts UUIDs, W3C 32-hex trace ids, and prefixed ids (minimum length 8). This is the existing correlationId concept from audit.ts, given one standard name across the federation."
+    },
+    "agent_id": {
+      "type": "string",
+      "pattern": "^$|^agent-[a-zA-Z0-9_-]{1,64}$",
+      "description": "Identifier of the agent whose lifecycle produced the record — byte-identical pattern to api-schemas/heartbeat.schema.json agent_id. Empty string when the emitter is non-agent infrastructure (gateway, control plane, studio) — the same empty-when-N/A convention heartbeat.schema.json task_id uses."
+    },
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+      "description": "Emitting service/process, lowercase. Known values today: gateway, mcp-tower, orchestrator, memory, agent, command, skills, browser, studio, sdk, infrastructure (ECOSYSTEM_MAP.md §2). Deliberately an open pattern rather than an enum: new services join without a schema bump, while the x-metric-conventions cardinality rule still bounds attribute values."
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "description": "Human-readable summary. One-record-one-line semantics: emitters MUST NOT embed raw newlines; payloads belong in context, never concatenated into message."
+    },
+    "context": {
+      "type": "object",
+      "maxProperties": 64,
+      "additionalProperties": true,
+      "description": "Structured key/value payload. Values MUST be JSON scalars, arrays, or objects nested at most 4 levels deep. Reserved conventional keys (aligning with shipped surfaces): provider, action, status, error — the AuditLogEntry fields already shipped in audit.ts; latency_ms — carried on the terminal record of a request chain, the measurement source for supremeai.request.duration; model and usage{prompt_tokens, completion_tokens, total_tokens} — field names identical to the gateway.openapi.yaml chat-completion usage block; event — 'task.completed' | 'task.failed' for agent task terminal outcomes. HARD PROHIBITIONS: no credentials, api keys, provider keys, prompts, payloads, tenant ids, or personal data — context carries shape, never content (SECRETS_MODEL.md / Zero-Admin posture)."
+    }
+  },
+  "$defs": {
+    "MetricConventions": {
+      "type": "object",
+      "description": "Contract shape for ONE OpenTelemetry metric declaration paired with this log standard (#38). The registry's concrete entries ride in examples below. Emission is OPTIONAL per service; when a service emits these metrics, name, unit, and required_attributes MUST match exactly — metric identity is a contract, not a suggestion. Naming rule: dot-separated lowercase names starting with 'supremeai.' (domain.entity[.qualifier]); units from the fixed set {ms, tokens, task}; attribute keys snake_case; attribute values MUST be low-cardinality enums or fixed identifiers — never tenant ids, api keys, prompts, payloads, or free-form labels (cardinality guard).",
+      "required": ["name", "instrument", "unit", "description", "required_attributes", "log_source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^supremeai\\.[a-z0-9]+(\\.[a-z0-9]+)*$",
+          "description": "Dot-separated lowercase metric name with the mandatory 'supremeai.' prefix."
+        },
+        "instrument": {
+          "enum": ["counter", "histogram", "gauge"],
+          "description": "OpenTelemetry instrument kind."
+        },
+        "unit": {
+          "enum": ["ms", "tokens", "task"],
+          "description": "UCUM-friendly unit from the fixed set this standard declares."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the metric measures, including the driving contract it is the measurement plane for."
+        },
+        "required_attributes": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z_]+$" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Attribute keys that MUST accompany every data point; values low-cardinality only."
+        },
+        "attribute_enums": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "description": "Optional closed value-sets per attribute key (e.g. outcome, token_type)."
+        },
+        "log_source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where in a telemetry-log record the measurement originates, per the reserved context keys."
+        }
+      },
+      "examples": [
+        {
+          "name": "supremeai.request.duration",
+          "instrument": "histogram",
+          "unit": "ms",
+          "description": "End-to-end request latency per emitting component. Measurement plane for the task-router budget rule latency_sla_missed→queue_and_retry (api-schemas/task-router.schema.json CostBudgetRules, ordered when→then, first match wins) and for the latencyMs the live health plane already exposes per service.",
+          "required_attributes": ["component", "outcome"],
+          "attribute_enums": { "outcome": ["success", "failure"] },
+          "log_source": "context.latency_ms on the terminal record of a request chain (records sharing one trace_id)."
+        },
+        {
+          "name": "supremeai.tokens.consumed",
+          "instrument": "counter",
+          "unit": "tokens",
+          "description": "LLM token consumption, one increment per completion, split by token_type. Measurement plane for the task-router CostBudgetRules ceilings per_task_max_input_tokens / per_task_max_output_tokens and max_cost_per_task_usd.",
+          "required_attributes": ["model", "token_type"],
+          "attribute_enums": { "token_type": ["prompt", "completion"] },
+          "log_source": "context.usage.prompt_tokens and context.usage.completion_tokens — field names identical to the usage block of api-schemas/gateway.openapi.yaml /v1/chat/completions."
+        },
+        {
+          "name": "supremeai.agent.task.completion",
+          "instrument": "counter",
+          "unit": "task",
+          "description": "Agent task terminal outcomes; completion_rate = success ÷ (success + failure) over any fixed window. Lifecycle vocabulary from api-schemas/heartbeat.schema.json (agents hold task_ids; empty agent_id records never count here).",
+          "required_attributes": ["agent_id", "outcome"],
+          "attribute_enums": { "outcome": ["success", "failure"] },
+          "log_source": "context.event = 'task.completed' | 'task.failed' on records whose agent_id is non-empty."
+        }
+      ]
+    }
+  }
+}
