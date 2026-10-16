@@ -1,5 +1,5 @@
 /*
-  SupremeAI Studio — Dashboard Preview logic (issue #24).
+  SupremeAI Studio — Dashboard Preview logic (issue #337).
   Zero-dependency vanilla JS reference renderer for api-schemas/dashboard.schema.json.
 
   Boot contract (fail-closed):
@@ -8,8 +8,8 @@
        required fields, additionalProperties rejection).
     2. On any violation the dashboard refuses to render and shows the error
        banner — untrustworthy data never reaches the surface.
-    3. On success it renders federation + telemetry cards and starts the live
-       simulation loop (progress ticks, token spend, event clock).
+    3. On success it renders federation + telemetry cards, wires the live
+       SSE/Simulation engine, and manages dark/light theme switching.
 
   DOM writes are textContent-only by construction (no innerHTML), so card
   content cannot inject markup.
@@ -22,11 +22,11 @@
  * ----------------------------------------------------------------------- */
 const SNAPSHOT = {
   schema_version: "1.0",
-  generated_at: "2026-10-16T05:30:00Z",
+  generated_at: "2026-10-16T08:00:00Z",
   tokens: {
     color: {
       bg_base: "#0a0f0d",
-      surface_glass: "rgba(22, 32, 27, 0.55)",
+      surface_glass: "rgba(22, 32, 27, 0.58)",
       surface_border: "rgba(148, 233, 194, 0.14)",
       text_primary: "#eef7f2",
       text_secondary: "#9db8ab",
@@ -51,16 +51,27 @@ const SNAPSHOT = {
   },
   federation: {
     repos: [
-      { name: "supremeai-open", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 4, last_sync: "2026-10-16T05:29:41Z" },
-      { name: "supremeai-mcp-tower", health: "healthy", ci_status: "running", open_prs: 3, open_issues: 11, last_sync: "2026-10-16T05:28:57Z" },
-      { name: "supremeai-studio", health: "degraded", ci_status: "failing", open_prs: 1, open_issues: 7, last_sync: "2026-10-16T05:12:03Z" },
+      { name: "supremeai-open", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 14, last_sync: "2026-10-16T07:58:00Z" },
+      { name: "supremeai", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 16, last_sync: "2026-10-16T07:13:16Z" },
+      { name: "supremeai-core", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 5, last_sync: "2026-10-16T07:00:00Z" },
+      { name: "supremeai-mcp-control-plane", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 4, last_sync: "2026-10-16T07:10:00Z" },
+      { name: "supremeai-command", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 2, last_sync: "2026-10-16T06:45:00Z" },
+      { name: "supremeai-skills", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 3, last_sync: "2026-10-16T06:50:00Z" },
+      { name: "supremeai-vscode", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 2, last_sync: "2026-10-16T06:55:00Z" },
+      { name: "supremeai-agents", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 3, last_sync: "2026-10-16T07:05:00Z" },
+      { name: "supremeai-browser", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 2, last_sync: "2026-10-16T07:02:00Z" },
+      { name: "supremeai-api", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 6, last_sync: "2026-10-16T07:12:00Z" },
+      { name: "supremeai-studio", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 2, last_sync: "2026-10-16T07:55:00Z" },
+      { name: "supremeai-sdk", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 3, last_sync: "2026-10-16T07:15:00Z" },
     ],
   },
   agents: [
-    { agent_id: "agent-zai-core", state: "working", task_id: "24", current_issue: "studio dashboard spec + preview", progress: 72, tokens_used: 184320, events_per_min: 41.5, last_event: "2026-10-16T05:29:52Z" },
-    { agent_id: "agent-bridge-tower", state: "waiting", task_id: "311", current_issue: "bridge work order — in gates", progress: 45, tokens_used: 96110, events_per_min: 6.2, last_event: "2026-10-16T05:28:20Z" },
-    { agent_id: "agent-guard-fleet", state: "working", task_id: "316", current_issue: "bridge telemetry schema gates", progress: 88, tokens_used: 42875, events_per_min: 12.8, last_event: "2026-10-16T05:29:48Z" },
-    { agent_id: "agent-studio-legacy", state: "blocked", task_id: "248", current_issue: "waiting on admin decision", progress: 15, tokens_used: 8902, events_per_min: 0.4, last_event: "2026-10-16T04:47:12Z" },
+    { agent_id: "agent-antigravity", state: "working", task_id: "337", current_issue: "studio glassmorphism dashboard + SSE", progress: 85, tokens_used: 124350, events_per_min: 44.2, last_event: "2026-10-16T07:59:45Z" },
+    { agent_id: "agent-monorepo-core", state: "working", task_id: "329", current_issue: "smart context selector L1-8 assembly", progress: 40, tokens_used: 82100, events_per_min: 28.5, last_event: "2026-10-16T07:58:30Z" },
+    { agent_id: "agent-router-engine", state: "working", task_id: "330", current_issue: "dynamic task router fallback cascade", progress: 30, tokens_used: 61400, events_per_min: 22.0, last_event: "2026-10-16T07:57:12Z" },
+    { agent_id: "agent-mcp-guard", state: "waiting", task_id: "340", current_issue: "persistent emergency kill switch r3", progress: 95, tokens_used: 48900, events_per_min: 8.4, last_event: "2026-10-16T07:56:50Z" },
+    { agent_id: "agent-gateway-stream", state: "waiting", task_id: "336", current_issue: "live SSE and HTTP streaming handlers", progress: 20, tokens_used: 31200, events_per_min: 15.6, last_event: "2026-10-16T07:55:20Z" },
+    { agent_id: "agent-vscode-dev", state: "done", task_id: "303", current_issue: "federation topology documentation", progress: 100, tokens_used: 18450, events_per_min: 0.0, last_event: "2026-10-16T07:24:19Z" },
   ],
 };
 
@@ -146,7 +157,7 @@ function validateSnapshot(s) {
 }
 
 /* -------------------------------------------------------------------------
- * Rendering (textContent-only DOM writes)
+ * DOM Utilities (textContent-only DOM writes)
  * ----------------------------------------------------------------------- */
 const $ = (id) => document.getElementById(id);
 
@@ -159,43 +170,6 @@ function el(tag, className, text) {
 
 function badge(value) {
   return el("span", `badge ${value}`, value);
-}
-
-function renderRepo(repo) {
-  const card = el("article", "card");
-  const head = el("div", "card-head");
-  head.append(el("h3", "card-title", repo.name), badge(repo.ci_status));
-  card.append(head);
-  card.append(line("health", repo.health), line("open PRs", String(repo.open_prs)), line("open issues", String(repo.open_issues)));
-  card.append(line("last sync", timeAgo(repo.last_sync)));
-  return card;
-}
-
-function renderAgent(agent) {
-  const card = el("article", "card");
-  card.dataset.state = agent.state;
-  const head = el("div", "card-head");
-  head.append(el("h3", "card-title", agent.agent_id), badge(agent.state));
-  card.append(head);
-  if (agent.current_issue) card.append(line("objective", agent.current_issue));
-  if (agent.task_id) card.append(line("task", `#${agent.task_id}`));
-  card.append(line("tokens", formatTokens(agent.tokens_used)));
-  if (typeof agent.events_per_min === "number") {
-    card.append(line("events/min", agent.events_per_min.toFixed(1)));
-  }
-  card.append(line("last event", timeAgo(agent.last_event)));
-
-  const track = el("div", "progress");
-  track.setAttribute("role", "progressbar");
-  track.setAttribute("aria-label", `${agent.agent_id} progress`);
-  track.setAttribute("aria-valuemin", "0");
-  track.setAttribute("aria-valuemax", "100");
-  track.setAttribute("aria-valuenow", String(agent.progress));
-  const bar = el("div", "progress-bar");
-  bar.style.width = `${agent.progress}%`;
-  track.append(bar);
-  card.append(track);
-  return card;
 }
 
 function line(label, value) {
@@ -221,17 +195,142 @@ function timeAgo(rfc3339) {
   return `${Math.round(s / 3600)}h ago`;
 }
 
+/* -------------------------------------------------------------------------
+ * Renderers
+ * ----------------------------------------------------------------------- */
+function renderRepo(repo) {
+  const card = el("article", "card repo-card");
+  const head = el("div", "card-head");
+  head.append(el("h3", "card-title", repo.name), badge(repo.ci_status));
+  card.append(head);
+  card.append(line("health", repo.health), line("open PRs", String(repo.open_prs)), line("open issues", String(repo.open_issues)));
+  card.append(line("last sync", timeAgo(repo.last_sync)));
+  return card;
+}
+
+function renderAgent(agent) {
+  const card = el("article", "card agent-card");
+  card.dataset.state = agent.state;
+  const head = el("div", "card-head");
+  head.append(el("h3", "card-title", agent.agent_id), badge(agent.state));
+  card.append(head);
+  if (agent.current_issue) card.append(line("objective", agent.current_issue));
+  if (agent.task_id) card.append(line("task", `#${agent.task_id}`));
+  card.append(line("tokens", formatTokens(agent.tokens_used)));
+  if (typeof agent.events_per_min === "number") {
+    card.append(line("events/min", agent.events_per_min.toFixed(1)));
+  }
+  card.append(line("last event", timeAgo(agent.last_event)));
+
+  const track = el("div", "progress");
+  track.setAttribute("role", "progressbar");
+  track.setAttribute("aria-label", `${agent.agent_id} progress`);
+  track.setAttribute("aria-valuemin", "0");
+  track.setAttribute("aria-valuemax", "100");
+  track.setAttribute("aria-valuenow", String(agent.progress));
+  const bar = el("div", "progress-bar");
+  bar.style.width = `${agent.progress}%`;
+  track.append(bar);
+  card.append(track);
+  return card;
+}
+
+function updateMeters(s) {
+  const activeCount = s.agents.filter((a) => a.state === "working").length;
+  const totalTokens = s.agents.reduce((sum, a) => sum + (a.tokens_used || 0), 0);
+  const totalEvents = s.agents.reduce((sum, a) => sum + (a.events_per_min || 0), 0);
+
+  const activeEl = $("metric-active-agents");
+  if (activeEl) activeEl.textContent = String(activeCount);
+
+  const tokensEl = $("metric-total-tokens");
+  if (tokensEl) tokensEl.textContent = formatTokens(totalTokens);
+
+  const eventsEl = $("metric-events-min");
+  if (eventsEl) eventsEl.textContent = totalEvents.toFixed(1);
+}
+
 function renderAll(s) {
   const repos = $("repos");
-  repos.replaceChildren(...s.federation.repos.map(renderRepo));
-  $("repo-count").textContent = `(${s.federation.repos.length})`;
+  if (repos) {
+    repos.replaceChildren(...s.federation.repos.map(renderRepo));
+    $("repo-count").textContent = `(${s.federation.repos.length})`;
+  }
 
   const agents = $("agents");
-  agents.replaceChildren(...s.agents.map(renderAgent));
-  $("agent-count").textContent = `(${s.agents.length})`;
+  if (agents) {
+    agents.replaceChildren(...s.agents.map(renderAgent));
+    $("agent-count").textContent = `(${s.agents.length})`;
+  }
 
-  $("snapshot-id").textContent = `${s.schema_version} @ ${s.generated_at}`;
-  $("generated-at").textContent = new Date(s.generated_at).toLocaleString();
+  updateMeters(s);
+
+  const snapEl = $("snapshot-id");
+  if (snapEl) snapEl.textContent = `${s.schema_version} @ ${s.generated_at}`;
+
+  const genEl = $("generated-at");
+  if (genEl) genEl.textContent = new Date(s.generated_at).toLocaleTimeString();
+}
+
+/* -------------------------------------------------------------------------
+ * Event Terminal Feed
+ * ----------------------------------------------------------------------- */
+const MAX_FEED_EVENTS = 50;
+let eventCounter = 0;
+
+function appendFeedEvent(tag, message) {
+  const feed = $("event-feed");
+  if (!feed) return;
+
+  eventCounter++;
+  const time = new Date().toISOString().slice(11, 19);
+
+  const row = el("div", "event-line");
+  row.append(
+    el("span", "event-time", `[${time}]`),
+    el("span", "event-tag", `[${tag}]`),
+    el("span", "event-msg", message)
+  );
+
+  feed.prepend(row);
+
+  while (feed.children.length > MAX_FEED_EVENTS) {
+    feed.lastElementChild.remove();
+  }
+
+  const countEl = $("event-count");
+  if (countEl) countEl.textContent = `(${eventCounter} events)`;
+}
+
+/* -------------------------------------------------------------------------
+ * Theme Management (Dark / Light Mode)
+ * ----------------------------------------------------------------------- */
+const THEME_KEY = "supremeai-studio-theme";
+
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const initialTheme = saved || (prefersDark ? "dark" : "light");
+  setTheme(initialTheme);
+
+  const toggleBtn = $("theme-toggle-btn");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      const current = document.documentElement.dataset.theme;
+      const next = current === "dark" ? "light" : "dark";
+      setTheme(next);
+      appendFeedEvent("THEME", `Theme toggled to ${next.toUpperCase()}`);
+    });
+  }
+}
+
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_KEY, theme);
+  const icon = $("theme-icon");
+  if (icon) {
+    icon.textContent = theme === "dark" ? "☀️" : "🌙";
+  }
 }
 
 /* -------------------------------------------------------------------------
@@ -240,7 +339,9 @@ function renderAll(s) {
 let activeFilter = "all";
 
 function applyFilter() {
-  for (const card of $("agents").children) {
+  const agentsContainer = $("agents");
+  if (!agentsContainer) return;
+  for (const card of agentsContainer.children) {
     const show = activeFilter === "all" || card.dataset.state === activeFilter;
     card.hidden = !show;
   }
@@ -257,32 +358,151 @@ function wireFilters() {
         b.setAttribute("aria-pressed", String(on));
       }
       applyFilter();
+      appendFeedEvent("FILTER", `Agent filter set to: ${activeFilter.toUpperCase()}`);
     });
   }
 }
 
 /* -------------------------------------------------------------------------
- * Live simulation loop (progress ticks, token spend, event clock)
+ * Live SSE & Simulation Engine
  * ----------------------------------------------------------------------- */
+const TOWER_SSE_URL = "https://supremeai-mcp-tower.onrender.com/sse";
+let isLiveSSE = false;
+let sseConnection = null;
+let simInterval = null;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const TICK_MS = 1500;
+const TICK_MS = 1600;
 
-function tick() {
+function tickSimulation() {
   for (const a of SNAPSHOT.agents) {
     if (a.state === "working") {
-      a.progress = Math.min(100, a.progress + 2 + Math.floor(Math.random() * 4));
-      if (a.progress === 100) a.state = "done";
+      a.progress = Math.min(100, a.progress + 1 + Math.floor(Math.random() * 3));
+      if (a.progress === 100) {
+        a.state = "done";
+        appendFeedEvent("TASK_DONE", `${a.agent_id} completed task #${a.task_id}`);
+      }
+    } else if (a.state === "done" && Math.random() < 0.15) {
+      a.state = "working";
+      a.progress = 5;
+      appendFeedEvent("TASK_ASSIGN", `${a.agent_id} assigned new execution unit`);
     }
-    a.tokens_used += 180 + Math.floor(Math.random() * 900);
-    a.events_per_min = Math.max(0, +(a.events_per_min + (Math.random() - 0.5) * 3).toFixed(1));
+    a.tokens_used += 120 + Math.floor(Math.random() * 450);
+    a.events_per_min = Math.max(0, +(a.events_per_min + (Math.random() - 0.5) * 2.5).toFixed(1));
     a.last_event = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   }
+
+  SNAPSHOT.generated_at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   renderAll(SNAPSHOT);
   applyFilter();
 }
 
+function startSimulation() {
+  if (simInterval) clearInterval(simInterval);
+  simInterval = setInterval(tickSimulation, reducedMotion ? 6000 : TICK_MS);
+  const pill = $("status-pill");
+  if (pill) {
+    pill.textContent = "SIMULATION";
+    pill.className = "pill";
+  }
+  const sourceLabel = $("stream-source-label");
+  if (sourceLabel) sourceLabel.textContent = "Source: Local High-Fidelity Simulation";
+  appendFeedEvent("ENGINE", "Simulation loop running (1.6s cycle)");
+}
+
+function stopSimulation() {
+  if (simInterval) {
+    clearInterval(simInterval);
+    simInterval = null;
+  }
+}
+
+function connectLiveSSE() {
+  stopSimulation();
+  const pill = $("status-pill");
+  const sourceLabel = $("stream-source-label");
+
+  if (pill) {
+    pill.textContent = "CONNECTING";
+    pill.className = "pill warning";
+  }
+  if (sourceLabel) sourceLabel.textContent = `Connecting to ${TOWER_SSE_URL}...`;
+  appendFeedEvent("SSE_CONN", `Opening stream to ${TOWER_SSE_URL}`);
+
+  try {
+    sseConnection = new EventSource(TOWER_SSE_URL);
+
+    sseConnection.onopen = () => {
+      isLiveSSE = true;
+      if (pill) {
+        pill.textContent = "LIVE SSE";
+        pill.className = "pill healthy";
+      }
+      if (sourceLabel) sourceLabel.textContent = "Source: Live Remote MCP Tower SSE Stream";
+      appendFeedEvent("SSE_OPEN", "Connected to SupremeAI MCP Tower event stream");
+    };
+
+    sseConnection.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        appendFeedEvent("SSE_DATA", `Telemetry frame: ${JSON.stringify(data).slice(0, 60)}...`);
+        // If snapshot payload is received, re-validate and render
+        if (data && data.agents && data.federation) {
+          validateSnapshot(data);
+          renderAll(data);
+        }
+      } catch {
+        appendFeedEvent("SSE_FRAME", `Stream ping: ${event.data.slice(0, 40)}`);
+      }
+    };
+
+    sseConnection.onerror = () => {
+      appendFeedEvent("SSE_WARN", "Remote SSE unavailable (CORS/offline); failing over to simulation");
+      disconnectSSE();
+      startSimulation();
+    };
+  } catch (err) {
+    appendFeedEvent("SSE_ERR", `EventSource failed: ${err.message}`);
+    disconnectSSE();
+    startSimulation();
+  }
+}
+
+function disconnectSSE() {
+  if (sseConnection) {
+    sseConnection.close();
+    sseConnection = null;
+  }
+  isLiveSSE = false;
+}
+
+function wireSSEControls() {
+  const toggleBtn = $("sse-toggle-btn");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      if (isLiveSSE) {
+        disconnectSSE();
+        startSimulation();
+      } else {
+        connectLiveSSE();
+      }
+    });
+  }
+
+  const clearBtn = $("clear-events-btn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      const feed = $("event-feed");
+      if (feed) feed.replaceChildren();
+      eventCounter = 0;
+      const countEl = $("event-count");
+      if (countEl) countEl.textContent = "(0 events)";
+    });
+  }
+}
+
 function startClock() {
   const clock = $("clock");
+  if (!clock) return;
   const show = () => {
     clock.textContent = new Date().toISOString().slice(11, 19) + " UTC";
   };
@@ -291,28 +511,35 @@ function startClock() {
 }
 
 /* -------------------------------------------------------------------------
- * Boot (fail-closed)
+ * Boot Lifecycle (Fail-closed)
  * ----------------------------------------------------------------------- */
 function boot() {
   try {
     validateSnapshot(SNAPSHOT);
   } catch (err) {
     const banner = $("error-banner");
-    banner.hidden = false;
-    banner.textContent = `Fail-closed: embedded snapshot violates dashboard.schema.json — ${err.message}`;
-    $("status-pill").textContent = "INVALID";
-    return; // refuse to render untrustworthy data
+    if (banner) {
+      banner.hidden = false;
+      banner.textContent = `Fail-closed: embedded snapshot violates dashboard.schema.json — ${err.message}`;
+    }
+    const pill = $("status-pill");
+    if (pill) pill.textContent = "INVALID";
+    return; // Refuse to render untrustworthy data
   }
-  $("status-pill").textContent = "LIVE";
+
+  initTheme();
   renderAll(SNAPSHOT);
   wireFilters();
+  wireSSEControls();
   startClock();
-  setInterval(tick, reducedMotion ? 6000 : TICK_MS); // slower ticks when motion is reduced
+  startSimulation();
 
-  // Console self-check (visible in devtools): core invariants hold post-render.
-  console.assert($("repos").children.length === SNAPSHOT.federation.repos.length, "repo cards rendered");
-  console.assert($("agents").children.length === SNAPSHOT.agents.length, "agent cards rendered");
-  console.assert(document.querySelector(".filter[aria-pressed='true']") !== null, "one active filter");
+  appendFeedEvent("BOOT", "Dashboard initialized successfully (100% schema conformant)");
+
+  // Assertions for verification
+  console.assert($("repos").children.length === SNAPSHOT.federation.repos.length, "All repos rendered");
+  console.assert($("agents").children.length === SNAPSHOT.agents.length, "All agents rendered");
+  console.assert(document.querySelector(".filter[aria-pressed='true']") !== null, "Filter active");
 }
 
 if (document.readyState === "loading") {
