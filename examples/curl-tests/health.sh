@@ -12,11 +12,14 @@
 #   sh health.sh tool-call system_summary
 #   sh health.sh tool-call bridge_guide
 #   sh health.sh all             # everything, non-interactive
+#   sh health.sh gateway         # supremeai-api gateway smoke (issue #336, GW_BASE_URL)
 #
 # Environment overrides:
 #   BASE_URL              default: https://supremeai-mcp-tower.onrender.com
 #   MCP_PROTOCOL_VERSION  default: 2025-03-26
 #   CURL_TIMEOUT          default: 20 (seconds per request)
+#   GW_BASE_URL           default: http://127.0.0.1:8080  (gateway subcommand)
+#   GW_KEY                default: supremeai-key-local-dev           (#336)
 #
 # Exit codes: 0 = all requested checks passed; 1 = at least one failed
 # (fail-closed, matching repo doctrine — a skipped check does not exist).
@@ -27,6 +30,9 @@ BASE_URL="${BASE_URL:-https://supremeai-mcp-tower.onrender.com}"
 MCP_PROTOCOL_VERSION="${MCP_PROTOCOL_VERSION:-2025-03-26}"
 CURL_TIMEOUT="${CURL_TIMEOUT:-20}"
 BASE_URL="${BASE_URL%/}"
+GW_BASE_URL="${GW_BASE_URL:-http://127.0.0.1:8080}"
+GW_BASE_URL="${GW_BASE_URL%/}"
+GW_KEY="${GW_KEY:-supremeai-key-local-dev}"
 
 failures=0
 STATE_DIR=$(mktemp -d)
@@ -140,11 +146,65 @@ cmd_all() {
   cmd_tool_call bridge_guide
 }
 
+# --- gateway (issue #336 AC3): unified provider gateway smoke ---------------
+# Runs against GW_BASE_URL (a supremeai-api gateway, not the MCP tower).
+gw_health() {
+  note "== GET $GW_BASE_URL/healthz =="
+  body=$(curl -sS --max-time "$CURL_TIMEOUT" -w '\n%{http_code}' "$GW_BASE_URL/healthz" 2>&1) || { fail "gw-health: curl transport error"; return 0; }
+  code=$(printf '%s' "$body" | tail -n 1)
+  payload=$(printf '%s' "$body" | sed '$d')
+  [ "$code" = "200" ] && pass "gw-health: HTTP $code — $payload" || fail "gw-health: HTTP $code — $payload"
+}
+gw_models_auth_gate() {
+  note "== GET $GW_BASE_URL/v1/models (no key -> 401 default-deny) =="
+  code=$(curl -sS --max-time "$CURL_TIMEOUT" -o /dev/null -w '%{http_code}' "$GW_BASE_URL/v1/models" 2>&1) || { fail "gw-models-auth: curl transport error"; return 0; }
+  [ "$code" = "401" ] && pass "gw-models-auth: HTTP 401 (default-deny)" || fail "gw-models-auth: expected 401, got $code"
+}
+gw_models() {
+  note "== GET $GW_BASE_URL/v1/models (keyed) =="
+  body=$(curl -sS --max-time "$CURL_TIMEOUT" -w '\n%{http_code}' -H "X-SupremeAI-Key: $GW_KEY" "$GW_BASE_URL/v1/models" 2>&1) || { fail "gw-models: curl transport error"; return 0; }
+  code=$(printf '%s' "$body" | tail -n 1)
+  payload=$(printf '%s' "$body" | sed '$d')
+  if [ "$code" = "200" ] && printf '%s' "$payload" | grep -q '"data"'; then
+    pass "gw-models: HTTP 200 — model list present"
+  else
+    fail "gw-models: HTTP $code — $payload"
+  fi
+}
+gw_chat_json() {
+  note "== POST $GW_BASE_URL/v1/chat/completions (stream:false) =="
+  body=$(curl -sS --max-time "$CURL_TIMEOUT" -w '\n%{http_code}' -H "X-SupremeAI-Key: $GW_KEY" -H 'Content-Type: application/json' -X POST -d '{"model":"auto","messages":[{"role":"user","content":"smoke"}]}' "$GW_BASE_URL/v1/chat/completions" 2>&1) || { fail "gw-chat: curl transport error"; return 0; }
+  code=$(printf '%s' "$body" | tail -n 1)
+  payload=$(printf '%s' "$body" | sed '$d')
+  if [ "$code" = "200" ] && printf '%s' "$payload" | grep -q '"chat.completion"'; then
+    pass "gw-chat: HTTP 200 — OpenAI-compatible completion"
+  else
+    fail "gw-chat: HTTP $code — $payload"
+  fi
+}
+gw_chat_sse() {
+  note "== POST $GW_BASE_URL/v1/chat/completions (stream:true, bounded read) =="
+  frames=$(curl -sS -N --max-time "$CURL_TIMEOUT" -H "X-SupremeAI-Key: $GW_KEY" -H 'Content-Type: application/json' -X POST -d '{"stream":true,"messages":[{"role":"user","content":"smoke"}]}' "$GW_BASE_URL/v1/chat/completions" 2>&1)
+  if printf '%s' "$frames" | grep -q '^event:' && printf '%s' "$frames" | grep -q '^data:'; then
+    pass "gw-chat-sse: event:/data: framing present"
+  else
+    fail "gw-chat-sse: no SSE frames within ${CURL_TIMEOUT}s"
+  fi
+}
+cmd_gateway() {
+  gw_health
+  gw_models_auth_gate
+  gw_models
+  gw_chat_json
+  gw_chat_sse
+}
+
 case "${1:-health}" in
   health)      cmd_health ;;
   sse)         cmd_sse ;;
   tools-list)  cmd_tools_list ;;
   tool-call)   shift; cmd_tool_call "${1:-system_summary}" ;;
+  gateway)     cmd_gateway ;;
   all)         cmd_all ;;
   *) printf 'unknown subcommand: %s\n' "$1" >&2; printf 'usage: sh health.sh [health|sse|tools-list|tool-call <name>|all]\n' >&2; exit 2 ;;
 esac
