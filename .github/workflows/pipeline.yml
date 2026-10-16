@@ -40,8 +40,8 @@ on:
   pull_request:
     branches: [ main ]
     types: [opened, edited, reopened, synchronize, ready_for_review]
-  schedule:
-    - cron: "*/30 * * * *" # every 30 minutes (reconciliation fallback, #69)
+  # schedule:
+  #   - cron: "*/30 * * * *" # disabled per admin directive — Pipeline Cron does not run autonomous cycles unattended
   workflow_dispatch:
     inputs:
       auto_pr:
