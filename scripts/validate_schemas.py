@@ -312,10 +312,12 @@ class SchemaValidator:
                     self.errors.append((pointer, "array items are not unique (uniqueItems: true)"))
             if "contains" in schema:
                 sub = schema["contains"]
-                hits = sum(1 for i, x in enumerate(value) if not self._probe(x, sub, depth))
+                matched = sum(1 for x in value if self._probe(x, sub, depth))
                 want = schema.get("minContains", 1)
-                if hits < want:
-                    self.errors.append((pointer, f"contains matched {hits} items, needs >= {want}"))
+                if matched < want:
+                    self.errors.append((pointer, f"contains matched {matched} items, needs >= {want}"))
+                if "maxContains" in schema and matched > schema["maxContains"]:
+                    self.errors.append((pointer, f"contains matched {matched} items, needs <= {schema['maxContains']}"))
 
         # combinators
         for key in ("allOf", "anyOf", "oneOf"):
@@ -590,7 +592,26 @@ def _self_test() -> int:
     code, out = run_files(cond)
     checks.append(("if/then/else missing healing rejected", code == 1 and any("missing required property 'healing'" in o for o in out)))
 
-    # 9. real repo schemas pass (integration smoke; skipped when run outside repo)
+    # 9. contains/minContains/maxContains verdict (regression guard: the
+    #    verdict used to count non-matching items, so a fixture with zero
+    #    matching items passed and an all-matching fixture errored)
+    contains_base = {
+        "k.schema.json": json.dumps({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.test/k.schema.json", "title": "K", "description": "d",
+            "type": "array", "contains": {"const": "x"}, "minContains": 1,
+        }),
+    }
+    code, out = run_files({**contains_base, "k.fixture.json": json.dumps([1, 2, 3])})
+    checks.append(("contains zero-match rejected", code == 1 and any("contains matched 0 items" in o for o in out)))
+    code, out = run_files({**contains_base, "k.fixture.json": json.dumps(["x", "x", "x"])})
+    checks.append(("contains all-match accepted", code == 0))
+    maxc_schema = json.loads(contains_base["k.schema.json"])
+    maxc_schema["maxContains"] = 1
+    code, out = run_files({"k.schema.json": json.dumps(maxc_schema), "k.fixture.json": json.dumps(["x", "x"])})
+    checks.append(("maxContains breach rejected", code == 1 and any("needs <= 1" in o for o in out)))
+
+    # 10. real repo schemas pass (integration smoke; skipped when run outside repo)
     repo_dir = Path(__file__).resolve().parent.parent / "api-schemas"
     if repo_dir.is_dir():
         code, out = _validate_dir(repo_dir)
