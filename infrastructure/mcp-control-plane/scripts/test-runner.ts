@@ -79,8 +79,36 @@ function guard(): number {
     console.error(`Wire each via scripts/test-runner.ts (direct or env-gated) per #116.`);
     return 1;
   }
+  // Reverse direction (completes the #116 poka-yoke): every test file an npm
+  // script references must EXIST. A dangling script reference silently
+  // truncates the chained test:unit battery mid-run — reproduced on main with
+  // test_account_chain_callers.ts (wired by PR #212, file lives only on the
+  // in-flight issue-110 lane), where the 13 suites after it never ran.
+  const referenced = new Set<string>();
+  for (const cmd of Object.values(pkg.scripts ?? {})) {
+    for (const m of cmd.matchAll(/[\w\-./]+\.ts/g)) {
+      const token = m[0];
+      const base = path.basename(token);
+      const isTestTarget =
+        base.startsWith("test_") || base.endsWith(".test.ts") || token.startsWith("test/");
+      if (isTestTarget) referenced.add(token);
+    }
+  }
+  const dangling = [...referenced].filter((file) => !existsSync(path.join(PKG_ROOT, file)));
+  if (dangling.length > 0) {
+    console.error(
+      `❌ wiring guard: ${dangling.length} npm-script test target(s) do NOT exist ` +
+        `(dangling reference — test:unit chain would abort at the first one):`
+    );
+    for (const file of dangling) console.error(`   - ${file}`);
+    console.error(`Remove the script entry or land the missing file, then re-run.`);
+    return 1;
+  }
   const total = collectTestFiles().length;
-  console.log(`✅ wiring guard: all ${total} test file(s) referenced by npm scripts (#116 poka-yoke)`);
+  console.log(
+    `✅ wiring guard: all ${total} test file(s) referenced by npm scripts and all ` +
+      `${referenced.size} npm-script test target(s) exist (#116 poka-yoke, both directions)`
+  );
   return 0;
 }
 
