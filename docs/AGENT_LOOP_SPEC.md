@@ -51,11 +51,29 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
       "pr_title_prefix": "feat(open):",
       "issue_reference_required": true,
       "branch_convention": "^(feat|fix|docs|…|agent)/<slug> — enforced by pipeline.yml",
-      "pr_body_template": "…markdown PR body (legacy draft file content)…"
+      "pr_body_template": "…markdown PR body (legacy draft file content)…",
+      "related_experience": {            // OPTIONAL — G1 (audit 2026-10-16)
+        "source": "memory.get_similar_tasks",
+        "endpoint_configured": true,
+        "query": "…task title…",
+        "tasks": [ { "task_id", "title", "outcome", … } ]  // capped, size-guarded
+      }
     }
   }
 }
 ```
+
+**`related_experience` honesty contract (additive, v1-compatible):** the key is
+present ONLY when (a) a memory endpoint is configured via `SUPREME_MEMORY_MCP`
+(timeout override: `SUPREME_MEMORY_TIMEOUT_S`, default 6s) **and** (b) the
+`memory.get_similar_tasks` recall succeeded. Disabled bridge or any recall
+failure → the key is **omitted entirely** (byte-compatible with pre-G1
+consumers) and the failure is logged loudly, never silent, never fatal
+(fail-open; the loop stays stateless per AGENTS.md §2 — the *system* is the
+learner). Transport + parser live in `scripts/agents/memory_bridge.py`
+(self-test: `python3 scripts/agents/memory_bridge.py --self-test`); completed
+tasks optionally `memory.record_task` their outcome signature at submission
+(fire-and-forget). Consumers MUST treat unknown envelope keys as opaque.
 
 ## 3. Group taxonomy — `VALID_GROUPS` (fail-closed)
 
