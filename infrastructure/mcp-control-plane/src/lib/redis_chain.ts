@@ -181,6 +181,13 @@ export type ChainWalkResult<T> = {
 
 export type RunWithAccountChainOptions = {
   /**
+   * Explicit chain override (injectable tests / callers that own their account
+   * list). When omitted the ACTIVE (cooldown-free) chain is used. A provided
+   * chain is trusted as pre-filtered — quota cooldown marking still applies
+   * to quota-shaped failures inside the walk.
+   */
+  chain?: RedisAccountConfig[];
+  /**
    * Skip an account without attempting it and without recording an attempt
    * (e.g. REST-only callers skipping TCP-only accounts).
    */
@@ -212,12 +219,12 @@ export async function runWithAccountChain<T>(
   op: (account: RedisAccountConfig) => Promise<T>,
   opts: RunWithAccountChainOptions = {},
 ): Promise<ChainWalkResult<T>> {
-  const chain = activeAccountChain();
+  const chain = opts.chain ?? activeAccountChain();
   if (chain.length === 0) {
     throw new Error("No Redis configuration found (missing REST or TCP credentials)");
   }
   const attempts: ChainWalkAttempt[] = [];
-  for (const account of activeAccountChain()) {
+  for (const account of chain) {
     if (opts.skip?.(account)) continue;
     try {
       const value = await op(account);
