@@ -80,7 +80,7 @@ The only merge authority on `main`: squash-only, PR-title/body preservation, `Cl
 
 ### 3.3 Board hygiene (autonomous)
 
-- `scripts/ci/stale_claim_releaser.py` — 2-stage graduated lease (10 min claim→branch, 30 min branch→PR) with documented env-skip semantics and offline self-test.
+- `scripts/ci/stale_claim_releaser.py` — 2-stage graduated lease (10 min claim→branch, 30 min branch→PR) with documented env-skip semantics and offline self-test. Since [#375](https://github.com/Supremeai-bd/supremeai-open/issues/375) Phase 2a the claim state machine is labels + native assignees SSOT: the lease clock comes from the issue event timeline (`labeled`/`assigned` events; `updatedAt` fallback is tagged `updatedAt-fallback`), releases remove claimed labels, add `status:unclaimed`, and clear agent assignees; legacy comment-regex detection survives only behind the deprecated `--legacy-comments` flag (removal trigger: Phase 2b loop-side label writes).
 - Command Router — post-merge head-branch auto-deletion + task-issue close verification.
 - `scripts/agents/continuous_agent_loop.py` — the single dispatcher (AGENTS.md §0): claim → implement → verify (8 tiers) → submit, with `--verify-only` as the 3-tier contract entry.
 
