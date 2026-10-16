@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "policy_id": "federation-rbac-default",
+  "role_tiers": [
+    {
+      "tier": 1,
+      "name": "viewer",
+      "description": "Read-only observer of public and delegated surfaces; cannot execute tools or mutate state.",
+      "maps_to_operational_roles": ["viewer", "restricted_viewer", "repo_viewer"],
+      "requires_mfa": false
+    },
+    {
+      "tier": 2,
+      "name": "agent",
+      "description": "Registered autonomous worker executing assigned tasks through least-privilege specialist sub-roles.",
+      "maps_to_operational_roles": ["agent"],
+      "requires_mfa": false
+    },
+    {
+      "tier": 3,
+      "name": "admin",
+      "description": "Operational administrator managing clients, tenants and approvals; no secret rotation or policy override.",
+      "maps_to_operational_roles": ["admin"],
+      "requires_mfa": false
+    },
+    {
+      "tier": 4,
+      "name": "super_admin",
+      "description": "Omni-role root administrator (deploys, secret rotation, policy overrides) — every sensitive action sits behind the zero-trust MFA barrier.",
+      "maps_to_operational_roles": ["supremeadmin"],
+      "requires_mfa": true
+    }
+  ],
+  "agent_sub_roles": [
+    {
+      "sub_role": "coder",
+      "description": "Implementation specialist (features, bug fixes, refactoring)",
+      "allowed_permission_scope_ids": ["mcp-tools-read", "mcp-tools-execute"]
+    },
+    {
+      "sub_role": "auditor",
+      "description": "Review & validation specialist (code audit, security review)",
+      "allowed_permission_scope_ids": ["mcp-tools-read", "repo-read"]
+    },
+    {
+      "sub_role": "ci-fixer",
+      "description": "Pipeline & test repair specialist (GitHub Actions, build smoke)",
+      "allowed_permission_scope_ids": ["mcp-tools-read", "mcp-tools-execute", "repo-read"]
+    },
+    {
+      "sub_role": "security-breaker",
+      "description": "Security boundary & fail-closed validation specialist",
+      "allowed_permission_scope_ids": ["mcp-tools-read", "repo-read"]
+    },
+    {
+      "sub_role": "browser-qa",
+      "description": "End-to-end integration & UI flow specialist",
+      "allowed_permission_scope_ids": ["mcp-tools-read", "mcp-tools-execute"]
+    },
+    {
+      "sub_role": "planner",
+      "description": "Architecture, contracts, and ADR specification specialist",
+      "allowed_permission_scope_ids": ["mcp-tools-read", "repo-read"]
+    },
+    {
+      "sub_role": "watcher",
+      "description": "Telemetry, heartbeat health, and ecosystem drift specialist",
+      "allowed_permission_scope_ids": ["mcp-tools-read"]
+    }
+  ],
+  "permission_scopes": [
+    {
+      "scope_id": "mcp-tools-read",
+      "resource": "mcp-tools",
+      "actions": ["read"],
+      "min_role_tier": 1,
+      "requires_mfa": false
+    },
+    {
+      "scope_id": "mcp-tools-execute",
+      "resource": "mcp-tools",
+      "actions": ["execute"],
+      "min_role_tier": 2,
+      "requires_mfa": false
+    },
+    {
+      "scope_id": "repo-read",
+      "resource": "repos/*",
+      "actions": ["read"],
+      "min_role_tier": 2,
+      "requires_mfa": false
+    },
+    {
+      "scope_id": "tower-clients-manage",
+      "resource": "clients/*",
+      "actions": ["read", "write"],
+      "min_role_tier": 3,
+      "requires_mfa": false
+    },
+    {
+      "scope_id": "action-approval",
+      "resource": "approvals/*",
+      "actions": ["approve"],
+      "min_role_tier": 3,
+      "requires_mfa": false
+    },
+    {
+      "scope_id": "deploy-rollout",
+      "resource": "deployments/*",
+      "actions": ["deploy"],
+      "min_role_tier": 3,
+      "requires_mfa": false
+    },
+    {
+      "scope_id": "secret-rotation",
+      "resource": "secrets/*",
+      "actions": ["rotate_secrets"],
+      "min_role_tier": 4,
+      "requires_mfa": true
+    },
+    {
+      "scope_id": "policy-override",
+      "resource": "policy/*",
+      "actions": ["override"],
+      "min_role_tier": 4,
+      "requires_mfa": true
+    }
+  ],
+  "mfa_challenge": {
+    "algorithm": "TOTP-SHA1",
+    "step_seconds": 30,
+    "digits": 6,
+    "drift_windows": 1,
+    "challenge_ttl_seconds": 120,
+    "max_attempts": 3,
+    "required_for_role_tiers": [4],
+    "fail_closed": true
+  },
+  "human_memorable_key": {
+    "format": "diceware-slug-v1",
+    "word_count": 4,
+    "separator": "-",
+    "checksum_digits": 2,
+    "min_entropy_bits": 50,
+    "storage": "salted_hash_only",
+    "pairing": "The memorable key alone never authenticates: every Super Admin authentication must pair the key with a verified live TOTP challenge issued within challenge_ttl_seconds."
+  },
+  "defaults": {
+    "unknown_action": "deny",
+    "unverified_mfa": "deny"
+  },
+  "audit_log": {
+    "transport": "append_only",
+    "retention_days": 365,
+    "emit_on": ["allow", "deny"],
+    "example_entry": {
+      "event_id": "9f1c2a34-77b2-4e8f-9a01-5c6d8e9f0a12",
+      "timestamp": "2026-02-14T09:30:00Z",
+      "actor": {
+        "client_id": "supreme-root",
+        "role_tier": 4
+      },
+      "action": "rotate_secrets",
+      "resource": "secrets/mcp-admin-key",
+      "decision": "allow",
+      "mfa_challenge_id": "mfa-ch-7f3a91b2c4",
+      "trace_id": "trace-1a142cdf2d6f0619"
+    }
+  }
+}
