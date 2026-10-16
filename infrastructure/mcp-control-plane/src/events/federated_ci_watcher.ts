@@ -444,7 +444,7 @@ ${jobLines}
 /** POST /repos/{repo}/issues — with one 422 fallback that drops the repo:<slug> label. */
 export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
   if (!token) return { ok: false, status: 0 }; // fail-closed: no creds → caller retries → dead-letters visibly
-  const attempt = async (labels: string[]) =>
+  const attempt = async (labels: string[], body = req.body) =>
     fetch(`https://api.github.com/repos/${req.repo}/issues`, {
       method: "POST",
       headers: {
@@ -453,18 +453,30 @@ export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "SupremeAI-MCP-Control-Tower",
       },
-      body: JSON.stringify({ title: req.title, body: req.body, labels }),
+      body: JSON.stringify({ title: req.title, body, labels }),
     });
 
   let res = await attempt(req.labels);
+  let issueUrl: string | undefined;
   if (res.status === 422 && req.labels.length > 1) {
     // A label (most likely repo:<slug>) does not exist on the board — retry
     // with the always-present core labels and note the drop in the body.
     const note = `\n\n> ℹ️ Reporter note: the \`repo:<slug>\` label does not exist on this board yet — triage may want to add/relabel it (e.g. \`repo:open\` for \`Supremeai-bd/supremeai-open\`).`;
-    res = await attempt([...req.labels.filter((l) => !l.startsWith("repo:"))]);
-    return { ok: res.status === 201, status: res.status, issueUrl: undefined, body: { labelDropped: true, note } };
+    // Header contract (module header + the comment above): the dropped-label
+    // note must ride IN the created issue body so triage sees it on the board,
+    // not only in this function's return metadata (which attemptReport never
+    // reads beyond res.ok/issueUrl).
+    res = await attempt(
+      [...req.labels.filter((l) => !l.startsWith("repo:"))],
+      `${req.body}${note}`,
+    );
+    try {
+      issueUrl = res.ok ? ((await res.json() as any)?.html_url ?? undefined) : undefined;
+    } catch {
+      issueUrl = undefined;
+    }
+    return { ok: res.status === 201, status: res.status, issueUrl, body: { labelDropped: true, note } };
   }
-  let issueUrl: string | undefined;
   try {
     issueUrl = res.ok ? ((await res.json() as any)?.html_url ?? undefined) : undefined;
   } catch {
