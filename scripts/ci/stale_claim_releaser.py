@@ -33,7 +33,7 @@ import os
 import re
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
