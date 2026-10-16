@@ -134,6 +134,113 @@ jobs:
           echo "(Admin escape hatch: add the 'guard-exempt' label.)"
           exit 1
 
+  claim-guard:
+    name: "🔒 Claim Gate Guard (#392)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      issues: read
+    steps:
+      - name: Verify the referenced issue carries an active claim (event-context only, no checkout)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # অ্যাডমিন escape hatch — বিরল অপারেশনাল পরিবর্তনের জন্য (house style, #63)
+          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
+            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
+          fi
+          # বট-জেনারেটেড PR কখনো issue claim করে না — নিজেদের automation ভাঙবে না
+          if [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot|all-contributors|gh-readonly)/ ]] \
+             || [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot)\[?[a-z_]* ]]; then
+            echo "✅ Automated/bot branch — allowed."; exit 0
+          fi
+          # Target-issue extraction ladder — duplicate-pr-guard এর সাথে একই SSOT অর্ডার:
+          #   (1) explicit closing keywords (Closes/Fixes/Resolves #N)
+          #   (2) branch tokens (issue-N / issueN)
+          #   (3) fallback: generic #N references in title/body
+          TARGET_ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -ioE '(closes|fixes|resolves) #[0-9]+' | grep -oE '#[0-9]+' || true)
+          BRANCH_ISSUES=$(echo "$HEAD_REF" | grep -oE 'issue-?[0-9]+' | grep -oE '[0-9]+' | sed 's/^/#/' || true)
+          ISSUES=$(printf "%s\n%s" "$TARGET_ISSUES" "$BRANCH_ISSUES" | grep -E '^#[0-9]+' | sort -u || true)
+          if [ -z "$ISSUES" ]; then
+            ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
+          fi
+          if [ -z "$ISSUES" ]; then
+            echo "::error::PR opened without a prior claim on Issue #<num>. Per AGENTS.md Step 4 (No claim, no work), claim the issue before creating a branch or PR."
+            echo "(No issue reference found in title/body/branch — issue-reference-guard flags this separately; the claim plane cannot be verified, fail-closed.)"
+            exit 1
+          fi
+          for iss in $ISSUES; do
+            iss_num="${iss#"#"}"
+            CLAIM_JSON=$(gh issue view "$iss_num" --repo "${{ github.repository }}" --json labels,comments 2>/dev/null || echo "")
+            if [ -z "$CLAIM_JSON" ]; then
+              echo "::error::PR opened without a prior claim on Issue #$iss_num. Per AGENTS.md Step 4 (No claim, no work), claim the issue before creating a branch or PR."
+              echo "(Issue lookup failed via gh — fail-closed.)"
+              exit 1
+            fi
+            # Label plane — stale_claim_releaser.py CLAIMED_LABELS registry-এর সাথে অপরিবর্তিত
+            if echo "$CLAIM_JSON" | jq -e 'any(.labels[]?; .name == "status:claimed" or .name == "status:in-progress")' >/dev/null 2>&1; then
+              echo "✅ Issue #$iss_num carries an active claim label."
+              exit 0
+            fi
+            # Comment plane — <!-- atomic-claim --> structured comment (loop Step 4 পোস্ট করে)
+            if echo "$CLAIM_JSON" | jq -e 'any(.comments[]?; (.body // "") | contains("<!-- atomic-claim -->"))' >/dev/null 2>&1; then
+              echo "✅ Issue #$iss_num carries an <!-- atomic-claim --> comment."
+              exit 0
+            fi
+            echo "::error::PR opened without a prior claim on Issue #$iss_num. Per AGENTS.md Step 4 (No claim, no work), claim the issue before creating a branch or PR."
+            exit 1
+          done
+
+  knowledge-sharing-guard:
+    name: "🧠 Knowledge Sharing Guard (#392)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify PR body carries Reflection Evidence (event-context only, no checkout)
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # অ্যাডমিন escape hatch
+          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
+            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
+          fi
+          # বট-জেনারেটেড PR body-তে reflection থাকে না — সেগুলো পাস করানো যুক্তিসঙ্গত নয়
+          if [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot|all-contributors|gh-readonly)/ ]] \
+             || [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot)\[?[a-z_]* ]]; then
+            echo "✅ Automated/bot branch — allowed."; exit 0
+          fi
+          # হেডার: canonical টেমপ্লেট সেকশন (PULL_REQUEST_TEMPLATE.md-এর সাথে হুবহু)
+          if ! printf '%s\n' "$PR_BODY" | grep -qE '^## Reflection Evidence'; then
+            echo "::error::PR body missing required '## Reflection Evidence (why + alternatives_rejected)'. AGENTS.md mandates knowledge capture on every contribution."
+            echo "(Expected: a '## Reflection Evidence (why + alternatives_rejected)' section containing filled '- **why:**' and '- **alternatives_rejected:**' entries.)"
+            exit 1
+          fi
+          # why: অবশ্যই non-empty এবং raw placeholder নয়
+          WHY=$(printf '%s\n' "$PR_BODY" | grep -m1 -E '^[[:space:]]*-[[:space:]]+\*\*why:\*\*' | sed -E 's/.*\*\*why:\*\*[[:space:]]*//' | xargs || true)
+          if [ -z "$WHY" ] || printf '%s' "$WHY" | grep -qE '^<.*>$'; then
+            echo "::error::PR body missing required '## Reflection Evidence (why + alternatives_rejected)'. AGENTS.md mandates knowledge capture on every contribution."
+            echo "('- **why:**' is empty or an unfilled placeholder — document the actual rationale.)"
+            exit 1
+          fi
+          # alternatives_rejected: same-line content অথবা nested bullets — placeholder নয়
+          ALT_INLINE=$(printf '%s\n' "$PR_BODY" | grep -m1 -E '^[[:space:]]*-[[:space:]]+\*\*alternatives_rejected:\*\*.*[^[:space:]*]' | sed -E 's/.*\*\*alternatives_rejected:\*\*[[:space:]]*//' | xargs || true)
+          ALT_NESTED=$(printf '%s\n' "$PR_BODY" | sed -n '/\*\*alternatives_rejected:\*\*/,$p' | sed -n '2,$p' | grep -m1 -E '^[[:space:]]+-[[:space:]]+[^[:space:]]' | sed -E 's/^[[:space:]]+-[[:space:]]+//' | xargs || true)
+          if { [ -z "$ALT_INLINE" ] || printf '%s' "$ALT_INLINE" | grep -qE '^<.*>$'; } \
+             && { [ -z "$ALT_NESTED" ] || printf '%s' "$ALT_NESTED" | grep -qE '^<.*>$'; }; then
+            echo "::error::PR body missing required '## Reflection Evidence (why + alternatives_rejected)'. AGENTS.md mandates knowledge capture on every contribution."
+            echo "('- **alternatives_rejected:**' is empty or an unfilled placeholder — record at least one discarded alternative with its reason.)"
+            exit 1
+          fi
+          echo "✅ Reflection Evidence present (why + alternatives_rejected documented)."
+
   duplicate-pr-guard:
     name: "👥 Anti-Duplicate PR Guard"
     if: github.event_name == 'pull_request'

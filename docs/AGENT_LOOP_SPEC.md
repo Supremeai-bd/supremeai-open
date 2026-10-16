@@ -174,6 +174,11 @@ tree for content inspection (stdlib-only, still minutes-bounded):
    `main` (`rev-list` count base..head > 0 → rebase required;
    Board-Freshness #4177 at CI time, mirroring the local pre-push
    hook's freshness check).
+8. **Claim Gate Guard (#392)** — verifies referenced issue carries an active claim
+   (`status:claimed` or `status:in-progress` label, or `<!-- atomic-claim -->` comment)
+   before PR creation (AGENTS.md Step 4: no claim, no work).
+9. **Knowledge Sharing Guard (#392)** — verifies PR body carries filled Reflection Evidence
+   (`why` + `alternatives_rejected`).
 
 ## 6. Submission flow (Pathway 1 wiring)
 

@@ -37,6 +37,10 @@ if hasattr(sys.stderr, "reconfigure"):
 
 UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
 
+# Claim Gate planes (#392) — same label registry as scripts/ci/stale_claim_releaser.py.
+CLAIMED_LABELS = ("status:claimed", "status:in-progress")
+CLAIM_MARKER = "<!-- atomic-claim -->"
+
 
 def extract_patch_branch(body: str) -> str | None:
     """Extract patch branch from Bridge Work Order body."""
@@ -135,6 +139,36 @@ Refs #{wo_num}
         return False, str(exc)
 
 
+def has_active_claim(issue_number: str, repo: str = UPSTREAM_REPO) -> bool:
+    """Claim Gate (#392): does the referenced issue carry an ACTIVE claim?
+
+    Active = a claimed/in-progress label (label plane) OR an atomic-claim
+    marker comment (comment plane, posted by continuous_agent_loop.py Step 4).
+    Fail-closed: any query or parse failure reports NO active claim.
+    """
+    cmd = ["gh", "issue", "view", str(issue_number), "--repo", repo, "--json", "labels,comments"]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if res.returncode != 0:
+            return False
+        data = json.loads(res.stdout)
+    except Exception:
+        return False
+    labels = [str(l.get("name", "")).lower() for l in data.get("labels", []) if isinstance(l, dict)]
+    if any(l in CLAIMED_LABELS for l in labels):
+        return True
+    return any(CLAIM_MARKER in str(c.get("body", "")) for c in data.get("comments", []))
+
+
+def wo_carries_reflection(wo_body: str) -> bool:
+    """Knowledge Sharing Guard (#392): does the work order carry reflection evidence?
+
+    Bridge Work Orders follow the 3-tier evidence contract whose tier 1 is the
+    Reflection line ("Reflection: ..."). Fail-closed: an empty body -> False.
+    """
+    return bool(re.search(r"Reflection\s*:\s*\S", wo_body or "", re.IGNORECASE))
+
+
 def run_auto_bridge_pr_opener(auto_open: bool = False, repo: str = UPSTREAM_REPO) -> list[dict[str, Any]]:
     """Scan open bridge:queued issues and autonomously open PRs."""
     cmd = ["gh", "issue", "list", "--repo", repo, "--state", "open", "--label", "bridge:queued", "--json", "number,title,body"]
@@ -171,6 +205,23 @@ def run_auto_bridge_pr_opener(auto_open: bool = False, repo: str = UPSTREAM_REPO
         existing_pr = get_existing_pr_for_branch(branch, repo)
         if existing_pr:
             print(f"  [WO #{wo_num}] Branch '{branch}' already has PR #{existing_pr}. Skipping.")
+            continue
+
+        # Claim Gate (#392): the TASK issue (not the WO) must carry an active
+        # claim BEFORE this opener autonomously opens a PR for the branch.
+        task_ref = extract_task_issue_reference(title, iss.get("body", ""))
+        if not task_ref:
+            print(f"  [WO #{wo_num}] No task issue reference in WO. Skipping (no claim plane to verify).")
+            actions.append({"wo": wo_num, "branch": branch, "status": "skipped-no-issue-ref"})
+            continue
+        if not has_active_claim(task_ref.lstrip("#"), repo):
+            print(f"  [WO #{wo_num}] Task issue {task_ref} has NO active claim (label or atomic-claim comment). Skipping.")
+            actions.append({"wo": wo_num, "branch": branch, "status": "skipped-no-claim"})
+            continue
+        # Knowledge Sharing Guard (#392): the WO body must carry reflection evidence.
+        if not wo_carries_reflection(iss.get("body", "")):
+            print(f"  [WO #{wo_num}] WO body missing Reflection evidence. Skipping.")
+            actions.append({"wo": wo_num, "branch": branch, "status": "skipped-no-reflection"})
             continue
 
         print(f"  [WO #{wo_num}] Eligible for autonomous PR creation: branch='{branch}'")

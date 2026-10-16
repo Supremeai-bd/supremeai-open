@@ -104,7 +104,7 @@ APPROVED_SUBTREES = {
     # as valid a segment as a directory. Expansion per the process documented
     # in this module's docstring (PR references the governing issue #45).
     "scripts": {"agents", "ops", "ci", "validate_schemas.py"},
-    ".github": {"ISSUE_TEMPLATE", "workflows", "actions"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
+    ".github": {"ISSUE_TEMPLATE", "workflows", "actions", "PULL_REQUEST_TEMPLATE.md"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
 }
 

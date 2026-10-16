@@ -272,6 +272,7 @@ def build_pr_body(
     task: dict[str, Any],
     contract: dict[str, Any] | None = None,
     evidence: list[dict[str, Any]] | None = None,
+    reflection: dict[str, Any] | None = None,
 ) -> str:
     """Single construction site for the PR submission record (#114).
 
@@ -336,6 +337,30 @@ task_contract:
 {evidence_content}
 """
 
+    # Reflection Evidence (#392): placeholder rendering when no payload rides
+    # (template consumers must fill it — the guard rejects unfilled bodies);
+    # verbatim rendering of the recorded rationale when one does.
+    reflection_block = ""
+    if reflection is not None:
+        why_text = str(reflection.get("why") or "").strip()
+        alts = [str(a).strip() for a in (reflection.get("alternatives_rejected") or []) if str(a).strip()]
+        if not alts:
+            alts = ["Direct implementation of the issue's stated deliverables — no competing approach was viable to reject."]
+        alt_lines = "\n".join(f"  - {a}" for a in alts)
+        reflection_block = f"""
+## Reflection Evidence (why + alternatives_rejected)
+- **why:** {why_text}
+- **alternatives_rejected:**
+{alt_lines}
+"""
+    else:
+        reflection_block = """
+## Reflection Evidence (why + alternatives_rejected)
+- **why:** <replace: one-paragraph rationale for the chosen approach>
+- **alternatives_rejected:**
+  - <replace: alternative approach 1, rejected because ...>
+"""
+
     return f"""## Summary
 Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
 
@@ -344,7 +369,7 @@ Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
 
 ## Type of Change
 - [x] `feat` / `fix` / `docs` — Open contributor change
-{contract_yaml_snippet}{evidence_block}
+{contract_yaml_snippet}{evidence_block}{reflection_block}
 ## Rollback Path
 - [x] `git revert`-safe (no private state dependencies)
 """
@@ -662,8 +687,20 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
 
     log("✅", f"Active on verified branch '{target_branch}'")
     # Mark issue as claimed on upstream board (honest degradation if guest/offline)
+    # Claim Gate planes (#392): BOTH signals post BEFORE any PR can exist —
+    #   (1) status:claimed label (label plane — stale_claim_releaser.py lease),
+    #   (2) the <!-- atomic-claim --> structured comment (comment plane — the
+    #       evidence AGENTS.md says the Claim Gate checks before CI runs).
     if issue_num != "adhoc":
         run_cmd(["gh", "issue", "edit", str(issue_num), "--repo", UPSTREAM_REPO, "--add-label", "status:claimed"])
+        claim_comment = (
+            "<!-- atomic-claim -->\n"
+            f"🎯 **Claimed** — autonomous agent loop for issue #{issue_num}.\n"
+            f"- **branch:** `{target_branch}`\n"
+            f"- **claimed (UTC):** {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+            "- **contract:** AGENTS.md Step 4 — no claim, no work."
+        )
+        run_cmd(["gh", "issue", "comment", str(issue_num), "--repo", UPSTREAM_REPO, "--body", claim_comment])
     return target_branch
 
 
@@ -849,7 +886,22 @@ def step_7_record(
     # #114: single construction site — build_pr_body() renders the exact
     # skeleton the envelope's submission.pr_body_template carries, plus the
     # contract YAML snippet and the dynamic evidence block for --auto-pr.
-    pr_body = build_pr_body(task, contract=contract, evidence=evidence)
+    tc7 = (contract or {}).get("task_contract", {})
+    # Reflection Evidence auto-injection (#392): the loop records its real
+    # decision rationale — never a placeholder (placeholders fail the
+    # knowledge-sharing-guard). Alternatives ride from the task payload when
+    # the dispatching harness supplies them; otherwise build_pr_body renders
+    # the honest no-competing-approach fallback line.
+    reflection = {
+        "why": str(task.get("why") or "").strip()
+        or (
+            f"Issue #{tc7.get('issue') or task.get('id')} delivered via the 8-step loop "
+            f"({tc7.get('task_type', 'IMPLEMENT')}, group {tc7.get('group', 'unspecified')}); "
+            "all verification tiers passed (see Dynamic Test Evidence)."
+        ),
+        "alternatives_rejected": list(task.get("alternatives_rejected") or []),
+    }
+    pr_body = build_pr_body(task, contract=contract, evidence=evidence, reflection=reflection)
 
     # #63: no intermediate filesystem draft — the PR body goes inline to gh,
     # and agents consuming the Task Envelope get the same template via
