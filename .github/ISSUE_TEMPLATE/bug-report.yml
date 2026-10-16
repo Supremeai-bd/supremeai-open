@@ -1,0 +1,140 @@
+name: 🐛 Bug Report / Defect
+description: Report a bug, unexpected error, or reproducible defect.
+title: "fix(scope): brief description of bug"
+labels: ["kind:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 🐛 Bug Report
+        Thank you for reporting an issue! Please provide as much context and reproducible detail as possible.
+
+  - type: dropdown
+    id: target_repo
+    attributes:
+      label: Target Repository
+      description: Which repository in the SupremeAI Federation is affected?
+      options:
+        - Supremeai-bd/supremeai-open
+        - Supremeai-bd/supremeai
+        - Supremeai-bd/supremeai-command
+        - Supremeai-bd/supremeai-skills
+        - Supremeai-bd/supremeai-vscode
+        - Supremeai-bd/supremeai-agents
+        - Supremeai-bd/supremeai-browser
+        - Supremeai-bd/supremeai-api
+        - Supremeai-bd/supremeai-studio
+        - Supremeai-bd/supremeai-infrastructure
+        - Supremeai-bd/supremeai-core
+        - Supremeai-bd/supremeai-sdk
+        - Supremeai-bd/supremeai-mcp-control-plane
+        - Supremeai-bd/supremeai-archive
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sub_group
+    attributes:
+      label: Sub-Group / Functional Domain (Area)
+      description: Affected functional area.
+      options:
+        - "security (Authentication, key-plane, boundaries, vulnerability)"
+        - "ci (Workflows, gates, lint, testing matrix)"
+        - "gateway (API endpoints, routing, provider failover)"
+        - "governance (Constitution, rules, templates, policies, ADRs)"
+        - "agent-orchestration (Lifecycle, loop, roles, worker dispatch)"
+        - "mcp-tower (MCP tools, JSON-RPC, SSE bridge, server endpoints)"
+        - "core-engine (Intelligence models, state machine, planning)"
+        - "frontend-ui (Studio, dashboard, visual UX, components)"
+        - "telemetry (Heartbeats, logging, watcher, metrics)"
+        - "memory (Archive, semantic memory, context history)"
+        - "llm-routing (Dynamic router, provider fallback, model selection)"
+        - "infra-ops (Docker, Terraform, actions runners, deployment configs)"
+        - "docs (Documentation, ecosystem maps, contributor guides)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity / Priority Tier
+      description: How critical is this defect?
+      options:
+        - "P0-critical (Production outage, data loss, security vulnerability)"
+        - "P1-high (Blocker, broken CI gate, core flow failure)"
+        - "P2-medium (Standard bug, degraded experience, edge case failure)"
+        - "P3-low (Minor UI flaw, typo, cosmetic defect)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug_description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "When running command X, module Y crashes with..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction_steps
+    attributes:
+      label: Reproduction Steps
+      description: Exact steps to reproduce the issue.
+      placeholder: |
+        1. Run `python scripts/agents/...`
+        2. Execute `...`
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen instead?
+      placeholder: "Expected command to return 0 and emit valid output..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual Behavior & Error Logs
+      description: Include full terminal output, traceback, error messages, or logs.
+      placeholder: "Paste traceback or logs here..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment & System Context
+      description: OS, Python/Node version, commit hash, or relevant environment details.
+      value: |
+        - OS: [e.g. Windows 11 / Ubuntu 22.04 / macOS]
+        - Python version: [e.g. 3.11 / 3.12 / 3.13]
+        - Node version: [e.g. 20.x / 22.x]
+        - Commit / Branch: [e.g. main @ commit-hash]
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_fix
+    attributes:
+      label: Proposed Fix or Touching Files (Optional)
+      description: If you know how to fix it or which files are responsible, please note them here.
+      placeholder: |
+        - path/to/affected_file.py
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have verified this is not a duplicate of an existing issue.
+          required: true
+        - label: No private credentials or sensitive secrets are included in this report.
+          required: true

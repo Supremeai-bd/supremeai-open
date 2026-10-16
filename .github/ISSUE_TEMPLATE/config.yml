@@ -6,3 +6,9 @@ contact_links:
   - name: 📜 AGENTS.md Constitution
     url: https://github.com/Supremeai-bd/supremeai-open/blob/main/AGENTS.md
     about: 8-step autonomous task cycle, 3 work submission pathways, and bridge rules.
+  - name: 💬 SupremeAI Community & Discussions
+    url: https://github.com/Supremeai-bd/supremeai-open/discussions
+    about: Ask questions, share ideas, or discuss architecture with the team and community.
+  - name: 🛡️ Security Vulnerability Reporting
+    url: https://github.com/Supremeai-bd/supremeai-open/security/advisories/new
+    about: Privately report potential security vulnerabilities or leaks.
