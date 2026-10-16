@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0",
+  "envelope_format": "instruction-envelope-v1",
+  "target": {
+    "task_id": "task-30",
+    "issue": "30",
+    "repository": "Supremeai-bd/supremeai-open",
+    "task_type": "IMPLEMENT",
+    "group": "schemas-contracts",
+    "priority": "P1"
+  },
+  "section_1_role_contract": {
+    "role": "coder",
+    "role_description": "Implementation specialist (features, bug fixes, refactoring)",
+    "operating_constraints": [
+      "Work strictly within the declared Touching Files; any out-of-bound edit fails the pipeline boundary guard.",
+      "Continuous-loop authorization: proceed task after task without confirmation prompts; escalate only on hard blockers.",
+      "Report progress in the contributor channel's assigned language; keep technical identifiers in English.",
+      "Never push to main directly; land work exclusively through the declared submission pathway."
+    ],
+    "stop_conditions": [
+      "A freshly synced main no longer contains the declared Touching Files' parent directories.",
+      "Another lane's open pull request already modifies the same files with the same objective."
+    ]
+  },
+  "section_2_task_scope": {
+    "objective": "Standardize the 5-section deterministic instruction envelope for AI coding agents as a JSON Schema with a full valid fixture.",
+    "problem_statement": "Instruction handoffs to autonomous agents were ad-hoc prose: role, scope, policies, verification and submission contracts were re-authored per task, allowing drift between what dispatchers promise and what the pipeline guards enforce. A single deterministic envelope schema removes that drift by construction.",
+    "touching_files": [
+      "api-schemas/instruction-envelope.schema.json",
+      "api-schemas/fixtures/instruction-envelope.fixture.json"
+    ],
+    "forbidden_paths": [
+      ".env*",
+      "secrets/**",
+      "credentials/**",
+      "vault/**"
+    ],
+    "acceptance_criteria": [
+      "Specification and schema created in api-schemas/instruction-envelope.schema.json.",
+      "Verification test suite passing with fixtures.",
+      "scripts/validate_schemas.py reports errors=0 warnings=0 across api-schemas/.",
+      "Schema cross-validates the fixture and rejects mutated negatives."
+    ]
+  },
+  "section_3_governing_rules": {
+    "policies": [
+      {
+        "id": "scope-gate",
+        "statement": "The Touching Files list is a hard boundary; out-of-bound edits fail CI.",
+        "source": "docs/AGENT_LOOP_SPEC.md section 2 (scope.touching_files)"
+      },
+      {
+        "id": "verification-contract",
+        "statement": "Every task must satisfy the 3-tier verification contract before submission.",
+        "source": "docs/AGENT_LOOP_SPEC.md section 7 (Verification quick-start)"
+      },
+      {
+        "id": "pr-issue-reference",
+        "statement": "Every PR must reference its task issue in title or body, and the body must carry the exact Closes #N line for auto-close.",
+        "source": ".github/workflows/pipeline.yml (Issue Reference Guard + merge gate)"
+      },
+      {
+        "id": "branch-naming",
+        "statement": "Head branches must follow the <type>/<slug> constitutional convention.",
+        "source": ".github/workflows/pipeline.yml (Branch-Naming Guard)"
+      }
+    ],
+    "admin_gate": {
+      "required": false,
+      "status": "NOT_REQUIRED"
+    }
+  },
+  "section_4_verification": {
+    "contract_version": "agent-loop-contract/1",
+    "tiers": [
+      {
+        "tier": 1,
+        "name": "reflection_check",
+        "command": "git status --porcelain",
+        "expectation": "Changed paths are exactly the declared Touching Files."
+      },
+      {
+        "tier": 2,
+        "name": "boot_smoke_test",
+        "command": "python -c \"import json; json.load(open('api-schemas/instruction-envelope.schema.json')); json.load(open('api-schemas/fixtures/instruction-envelope.fixture.json'))\"",
+        "expectation": "Both schema and fixture parse as valid JSON."
+      },
+      {
+        "tier": 3,
+        "name": "test_suite",
+        "command": "python scripts/validate_schemas.py --file api-schemas/instruction-envelope.schema.json api-schemas/fixtures/instruction-envelope.fixture.json",
+        "expectation": "Fixture validates against the schema and mutated negatives are rejected."
+      }
+    ],
+    "required_evidence": [
+      "porcelain diff listing limited to the two declared files",
+      "validate_schemas.py exit code 0 with errors=0 warnings=0",
+      "negative-mutation table showing each mutation rejected"
+    ]
+  },
+  "section_5_submission": {
+    "pathway": "pull_request",
+    "base_branch": "main",
+    "branch_convention": "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/.+",
+    "pr_title_prefix": "feat(schemas):",
+    "issue_reference_required": true,
+    "closes_reference": "Closes #30",
+    "pr_body_template": "## Summary\n- Add api-schemas/instruction-envelope.schema.json: 5-section deterministic instruction envelope (role contract, task scope, governing rules, 3-tier verification, universal PR submission template) with closed vocabularies mirroring the dispatch registry.\n- Add api-schemas/fixtures/instruction-envelope.fixture.json: full valid envelope fixture for this task, cross-validated by scripts/validate_schemas.py.\n\nCloses #30"
+  }
+}

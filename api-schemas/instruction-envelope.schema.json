@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://supremeai.ai/schemas/instruction-envelope.schema.json",
+  "title": "SupremeAI 5-Section Deterministic Instruction Envelope",
+  "description": "Canonical instruction envelope handed to an AI coding agent for a single task. Deterministic: two renders of the same task must produce byte-identical envelopes. The five sections map 1:1 onto the task-delivery pipeline: (1) role contract and operating constraints, (2) task objective and scope boundary, (3) governing rules and policies, (4) the 3-tier verification contract (reflection check, boot smoke test, test suite; evidence tiers SSOT'd in docs/AGENT_LOOP_SPEC.md section 4), and (5) the universal PR submission template. Closed vocabularies (roles, task types, groups, priorities) mirror scripts/agents/continuous_agent_loop.py and docs/AGENT_LOOP_SPEC.md sections 2-3 so an envelope can never drift from the dispatch registry. See issue #30.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "envelope_format",
+    "target",
+    "section_1_role_contract",
+    "section_2_task_scope",
+    "section_3_governing_rules",
+    "section_4_verification",
+    "section_5_submission"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Semantic version of this envelope document itself (e.g. \"1.0\"). Bump when the envelope shape changes."
+    },
+    "envelope_format": {
+      "const": "instruction-envelope-v1",
+      "description": "Format discriminator. A renderer emitting a different major layout MUST change this tag."
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "section_1_role_contract": {
+      "$ref": "#/$defs/roleContract"
+    },
+    "section_2_task_scope": {
+      "$ref": "#/$defs/taskScope"
+    },
+    "section_3_governing_rules": {
+      "$ref": "#/$defs/governingRules"
+    },
+    "section_4_verification": {
+      "$ref": "#/$defs/verificationContract"
+    },
+    "section_5_submission": {
+      "$ref": "#/$defs/submissionTemplate"
+    }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Coordinates of the task this envelope instructs the agent to execute.",
+      "required": [
+        "task_id",
+        "issue",
+        "repository",
+        "task_type",
+        "group",
+        "priority"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "pattern": "^task-[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$",
+          "description": "Deterministic task identifier, conventionally 'task-<issue number>'."
+        },
+        "issue": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,7}$",
+          "description": "Tracking issue number in the target repository, as a string (mirrors task-envelope-v1)."
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+          "description": "Full name of the target repository (owner/repo)."
+        },
+        "task_type": {
+          "enum": ["AUDIT", "PLAN", "IMPLEMENT", "FIX_CI", "REVIEW", "SECURITY_AUDIT", "DISCOVERY", "MERGE", "ADMIN_DECISION"],
+          "description": "VALID_TASK_TYPES from scripts/agents/continuous_agent_loop.py — agents cannot invent task types."
+        },
+        "group": {
+          "enum": ["agent-orchestration", "mcp-tower", "core-engine", "schemas-contracts", "infra-ops"],
+          "description": "VALID_GROUPS execution registry (docs/AGENT_LOOP_SPEC.md section 3, fail-closed)."
+        },
+        "priority": {
+          "enum": ["P0", "P1", "P2", "P3"],
+          "description": "Priority tier, matching the issue label taxonomy (P0-critical..P3-low)."
+        }
+      }
+    },
+    "roleContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Section 1 — who the agent is for this task and the constraints it operates under.",
+      "required": ["role", "role_description", "operating_constraints", "stop_conditions"],
+      "properties": {
+        "role": {
+          "enum": ["coder", "auditor", "ci-fixer", "security-breaker", "browser-qa", "planner", "watcher"],
+          "description": "One of the 7 specialist roles from the dispatch registry."
+        },
+        "role_description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable mandate of the assigned role (verbatim from the registry where applicable)."
+        },
+        "operating_constraints": {
+          "$ref": "#/$defs/nonEmptyStringList",
+          "description": "Hard behavioral constraints: continuous-loop authorization, confirmation policy, reporting language, escalation rules."
+        },
+        "stop_conditions": {
+          "$ref": "#/$defs/nonEmptyStringList",
+          "description": "Enumerated conditions under which the agent must abort the task instead of improvising (hard blockers only)."
+        }
+      }
+    },
+    "taskScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Section 2 — what to build and the exact boundary the work must stay inside.",
+      "required": ["objective", "touching_files", "forbidden_paths", "acceptance_criteria"],
+      "properties": {
+        "objective": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Single-sentence mission statement; must be specific enough that two agents would produce equivalent scopes."
+        },
+        "problem_statement": {
+          "type": "string",
+          "description": "Optional verbatim problem context from the source issue."
+        },
+        "touching_files": {
+          "$ref": "#/$defs/nonEmptyStringList",
+          "description": "Scope Gate boundary: repository paths the change may touch. Enforced by the pipeline boundary guard; any out-of-bound edit fails CI."
+        },
+        "forbidden_paths": {
+          "$ref": "#/$defs/nonEmptyStringList",
+          "description": "Paths never touchable by contributors (constitutional defaults: .env*, secrets/**, credentials/**, vault/**)."
+        },
+        "acceptance_criteria": {
+          "$ref": "#/$defs/nonEmptyStringList",
+          "description": "Checklist the final state must satisfy, verbatim from the issue where applicable."
+        }
+      }
+    },
+    "governingRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Section 3 — the policies this task is governed by and whether an admin gate applies.",
+      "required": ["policies", "admin_gate"],
+      "properties": {
+        "policies": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Citable policy bindings; every constraint in section 1 should trace to at least one policy here.",
+          "items": {
+            "$ref": "#/$defs/policyItem"
+          }
+        },
+        "admin_gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Whether an ADMIN_DECISION must precede or approve this task (mirrors task-envelope-v1 admin_gate).",
+          "required": ["required", "status"],
+          "properties": {
+            "required": {
+              "type": "boolean",
+              "description": "True only for constitution-changing or taxonomy-changing work."
+            },
+            "status": {
+              "enum": ["NOT_REQUIRED", "REQUIRED", "APPROVED", "REJECTED"],
+              "description": "Gate lifecycle status as seen by the dispatching system."
+            }
+          }
+        }
+      }
+    },
+    "verificationContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Section 4 — the 3-tier verification contract every task must satisfy before submission.",
+      "required": ["contract_version", "tiers", "required_evidence"],
+      "properties": {
+        "contract_version": {
+          "const": "agent-loop-contract/1",
+          "description": "CONTRACT_VERSION parity tag shared with scripts/agents/continuous_agent_loop.py (docs/AGENT_LOOP_SPEC.md section 4b)."
+        },
+        "tiers": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "description": "Exactly the 3 tiers, each present exactly once: contains-clauses below pin tiers 1, 2 and 3.",
+          "items": {
+            "$ref": "#/$defs/verificationTier"
+          },
+          "allOf": [
+            {
+              "description": "Tier 1 (reflection_check) must be present.",
+              "contains": {
+                "type": "object",
+                "required": ["tier"],
+                "properties": { "tier": { "const": 1 } }
+              }
+            },
+            {
+              "description": "Tier 2 (boot_smoke_test) must be present.",
+              "contains": {
+                "type": "object",
+                "required": ["tier"],
+                "properties": { "tier": { "const": 2 } }
+              }
+            },
+            {
+              "description": "Tier 3 (test_suite) must be present.",
+              "contains": {
+                "type": "object",
+                "required": ["tier"],
+                "properties": { "tier": { "const": 3 } }
+              }
+            }
+          ]
+        },
+        "required_evidence": {
+          "$ref": "#/$defs/nonEmptyStringList",
+          "description": "Artifacts that must be pasted into the PR description as completion proof."
+        }
+      }
+    },
+    "submissionTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Section 5 — the universal PR submission template; encoded so the pipeline's issue-reference and branch-naming guards can never be failed by a compliant envelope.",
+      "required": [
+        "pathway",
+        "base_branch",
+        "branch_convention",
+        "issue_reference_required",
+        "closes_reference",
+        "pr_body_template"
+      ],
+      "properties": {
+        "pathway": {
+          "enum": ["pull_request", "bridge_submit_patch"],
+          "description": "Pathway 1 (pull_request) or Pathway 2 (bridge_submit_patch) per AGENTS.md section 2.1 and section 8."
+        },
+        "base_branch": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,64}$",
+          "description": "Branch the change must land on; 'main' for the public repository."
+        },
+        "branch_convention": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Branch-naming regex enforced by .github/workflows/pipeline.yml (Branch-Naming Guard); quoted verbatim so the envelope is self-contained."
+        },
+        "pr_title_prefix": {
+          "type": "string",
+          "description": "Conventional-commit prefix to open the PR title (e.g. \"feat(schemas):\")."
+        },
+        "issue_reference_required": {
+          "const": true,
+          "description": "Immutable: the pipeline issue-reference guard rejects any PR whose title/body lacks an issue reference."
+        },
+        "closes_reference": {
+          "type": "string",
+          "pattern": "^Closes #[1-9][0-9]{0,7}$",
+          "description": "Exact close-keyword line that must appear in the PR body so the merge gate auto-closes the task issue."
+        },
+        "pr_body_template": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "Closes #[1-9][0-9]{0,7}",
+          "description": "Markdown skeleton of the PR body; MUST embed the same Closes #N line as closes_reference."
+        }
+      }
+    },
+    "nonEmptyStringList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "policyItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One citable policy: stable id, enforceable statement, and where it is written down.",
+      "required": ["id", "statement", "source"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,63}$",
+          "description": "Stable kebab-case policy identifier."
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Enforceable one-sentence statement of the policy."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical location (file/section) the policy is written down at."
+        }
+      }
+    },
+    "verificationTier": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One tier of the 3-tier verification contract.",
+      "required": ["tier", "name", "command", "expectation"],
+      "properties": {
+        "tier": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Tier ordinal: 1 = reflection check, 2 = boot smoke test, 3 = test suite."
+        },
+        "name": {
+          "enum": ["reflection_check", "boot_smoke_test", "test_suite"],
+          "description": "Canonical tier name; name and ordinal are pinned together by the envelope renderer."
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Offline-safe shell command that executes the tier check from the repository root."
+        },
+        "expectation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pass criterion of the command, in one sentence."
+        }
+      }
+    }
+  }
+}
