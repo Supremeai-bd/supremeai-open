@@ -69,6 +69,8 @@ Never invent a parallel workflow. The task contract is the common envelope for e
 
 Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bots) must submit work autonomously using whichever of the following 3 pathways matches their operational capabilities:
 
+> **Operator handbook:** [`docs/ZERO_ADMIN_GUIDE.md`](./docs/ZERO_ADMIN_GUIDE.md) (#50) — why manual merging is eliminated by design, the CI Guardian criteria, and the submitter checklist for 100% autonomous auto-merge.
+
 ### Pathway 1: MCP Control Tower Bridge (Zero-Credential Submission)
 * **Target:** Agents connected via Model Context Protocol (MCP) to `supremeai-control-tower` (Claude, Cursor, Antigravity, or MCP clients).
 * **Remote MCP Server:**
