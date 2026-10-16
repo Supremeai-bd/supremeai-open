@@ -1,0 +1,450 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://supremeai.ai/schemas/context-assembly.schema.json",
+  "title": "SupremeAI Smart Context Selector — Layer 1-8 Priority-Ranked Context Assembly",
+  "description": "Layer-1 contract for the smart context selector: one deterministic, priority-ranked context assembly handed to a coding agent before it starts work. One contract document pairs the SelectionPolicy (token budget, base priority, decay factor) with the resulting ContextAssembly (8 priority layers, per-item inclusion verdicts, budget clipping state). Layer semantics: L1 core constitution (AGENTS.md, AGENT_RULES.md — never clipped), L2 task issue & acceptance criteria, L3 file scope & adjacent tests, L4 memory sidecars, L5 ADR history, L6 knowledge items, L7 environment/runtime state, L8 hygiene/noise transcripts. Priority decays per layer as priority = round(base_priority * decay_factor^(layer-1), 3). Budget clipping is a strict deterministic cutoff in priority order (priority desc, then layer asc, then label lexicographic): the first item that does not fit ends inclusion — no backfill, no cherry-picking. Fail-closed: layer-to-name pairs are if/then pinned in both failure directions, item kinds are a closed enum with kind-specific ref pinning (repo paths for file scope, memory namespace+document_id for sidecar refs per memory-search.schema.json, ADR ids for decision history), repo paths reject traversal ('..' anywhere), clipping state is bidirectionally consistent (budget_clipped true iff clipped_layers non-empty), and recorded instants carry an explicit RFC 3339 pattern (format is annotation-only in Draft 2020-12). Cross-object numeric invariants (tokens_used <= token_budget, layer.tokens = sum of included item tokens, priority == decay formula) are declared here and enforced semantically by the spec's verification suite. See issue #29 and docs/CONTEXT_SELECTOR_SPEC.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "selection", "assembly"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Semantic version of this contract document."
+    },
+    "selection": {
+      "$ref": "#/$defs/SelectionPolicy"
+    },
+    "assembly": {
+      "$ref": "#/$defs/ContextAssembly"
+    }
+  },
+  "$defs": {
+    "SelectionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Deterministic knobs used to assemble the context. v1 pins exactly one strategy; new strategies require a contract version bump.",
+      "required": ["token_budget", "base_priority", "decay_factor", "strategy"],
+      "properties": {
+        "token_budget": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "description": "Hard ceiling on tokens_used for the assembled context."
+        },
+        "base_priority": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Priority assigned to Layer 1; each deeper layer decays from here."
+        },
+        "decay_factor": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Per-layer decay multiplier d in (0,1]; priority(L) = round(base_priority * d^(L-1), 3). d=1 disables decay."
+        },
+        "strategy": {
+          "enum": ["priority_decay_strict_cutoff"],
+          "description": "Clipping strategy tag. v1 is strict cutoff in priority order: the first non-fitting item ends inclusion (no backfill)."
+        }
+      }
+    },
+    "ContextAssembly": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One assembled context payload: which layers contributed, which items were included, and where the budget clipped.",
+      "required": ["assembly_id", "task_id", "generated_at", "layers", "tokens_used", "budget_clipped", "clipped_layers"],
+      "properties": {
+        "assembly_id": {
+          "type": "string",
+          "pattern": "^asm-[0-9a-f]{12}$",
+          "description": "Unique assembly run id (asm- + 12 lowercase hex)."
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Task/issue the context was assembled for (e.g. '29' or 'task-33')."
+        },
+        "generated_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})$",
+          "description": "Assembly instant, explicit RFC 3339 pattern (format is annotation-only in Draft 2020-12)."
+        },
+        "layers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/ContextLayer"
+          },
+          "description": "Layers that had candidate items (at least one). Layers are pin-paired layer<->name; duplicates of the same layer number are structurally impossible via the if/then pins."
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Sum of included item tokens across all layers; semantic invariant: <= selection.token_budget."
+        },
+        "budget_clipped": {
+          "type": "boolean",
+          "description": "True iff at least one candidate item was excluded by the budget cutoff."
+        },
+        "clipped_layers": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "uniqueItems": true,
+          "description": "Layer numbers that lost at least one item to the cutoff. Bidirectionally consistent with budget_clipped (enforced by if/then below)."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "budget_clipped": {
+                "const": false
+              }
+            },
+            "required": ["budget_clipped"]
+          },
+          "then": {
+            "properties": {
+              "clipped_layers": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "budget_clipped": {
+                "const": true
+              }
+            },
+            "required": ["budget_clipped"]
+          },
+          "then": {
+            "properties": {
+              "clipped_layers": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ContextLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One priority layer of the assembly. Layer number and name are if/then pinned (fail-closed in both mismatch directions because layer is always required).",
+      "required": ["layer", "name", "priority", "tokens", "items"],
+      "properties": {
+        "layer": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Priority layer index: 1 = highest priority (constitution), 8 = lowest (hygiene/noise)."
+        },
+        "name": {
+          "enum": ["constitution", "task-contract", "file-scope", "memory-sidecar", "adr-history", "knowledge-items", "environment-state", "hygiene-noise"],
+          "description": "Closed layer vocabulary, pinned 1:1 to the layer index."
+        },
+        "priority": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Effective layer priority; semantic invariant: round(selection.base_priority * selection.decay_factor^(layer-1), 3)."
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Tokens contributed by this layer = sum of INCLUDED item tokens (excluded items count zero). Semantic invariant: sum over layers == assembly.tokens_used."
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ContextItem"
+          },
+          "description": "Candidate items considered for this layer, in deterministic order (priority desc, layer asc, label lexicographic)."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "layer": {
+                "const": 1
+              }
+            },
+            "required": ["layer"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "const": "constitution"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "layer": {
+                "const": 2
+              }
+            },
+            "required": ["layer"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "const": "task-contract"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "layer": {
+                "const": 3
+              }
+            },
+            "required": ["layer"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "const": "file-scope"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "layer": {
+                "const": 4
+              }
+            },
+            "required": ["layer"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "const": "memory-sidecar"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "layer": {
+                "const": 5
+              }
+            },
+            "required": ["layer"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "const": "adr-history"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "layer": {
+                "const": 6
+              }
+            },
+            "required": ["layer"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "const": "knowledge-items"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "layer": {
+                "const": 7
+              }
+            },
+            "required": ["layer"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "const": "environment-state"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "layer": {
+                "const": 8
+              }
+            },
+            "required": ["layer"]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "const": "hygiene-noise"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ContextItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One candidate context item with its inclusion verdict. Kind is a closed enum; ref-carrying kinds are if/then pinned to the ref shape they must provide.",
+      "required": ["kind", "label", "tokens", "included", "inclusion_reason"],
+      "properties": {
+        "kind": {
+          "enum": ["constitution-doc", "issue-contract", "file-scope", "adjacent-test", "memory-ref", "adr-ref", "knowledge-doc", "runtime-state", "transcript"],
+          "description": "Closed item vocabulary: constitution-doc/issue-contract (L1/L2), file-scope/adjacent-test (L3), memory-ref (L4), adr-ref (L5), knowledge-doc (L6), runtime-state (L7), transcript (L8)."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Human-readable item title; also the final lexicographic tie-breaker."
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Estimated token cost of the item."
+        },
+        "included": {
+          "type": "boolean",
+          "description": "Verdict: did this item make it into the assembled context?"
+        },
+        "inclusion_reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Honest verdict reason, e.g. 'priority_rank', 'constitution_never_clipped', 'budget_clipped'."
+        },
+        "ref": {
+          "$ref": "#/$defs/ItemRef"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": ["file-scope", "adjacent-test"]
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["ref"],
+            "properties": {
+              "ref": {
+                "required": ["path"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "memory-ref"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["ref"],
+            "properties": {
+              "ref": {
+                "required": ["memory"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "adr-ref"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["ref"],
+            "properties": {
+              "ref": {
+                "required": ["adr_id"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ItemRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Locator for an item. Exactly the shapes below are legal; the kind-specific if/then pins in ContextItem demand the right one. Path values reject traversal ('..' anywhere) and absolute paths (fail-closed).",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?!.*\\.\\.)[A-Za-z0-9_][A-Za-z0-9_./-]{0,255}$",
+          "description": "Repo-relative file path; must not contain '..' (traversal) and must not be absolute."
+        },
+        "memory": {
+          "$ref": "#/$defs/MemoryRef"
+        },
+        "adr_id": {
+          "type": "string",
+          "pattern": "^ADR-\\d{3,4}$",
+          "description": "Architecture Decision Record id (e.g. ADR-001)."
+        }
+      }
+    },
+    "MemoryRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pointer into the memory sidecar; namespace/document_id vocabulary mirrors memory-search.schema.json (issue #36).",
+      "required": ["namespace", "document_id"],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+          "description": "Memory namespace (e.g. agent-episodes, repo-docs)."
+        },
+        "document_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$",
+          "description": "Stable id of the stored memory document."
+        }
+      }
+    }
+  }
+}
