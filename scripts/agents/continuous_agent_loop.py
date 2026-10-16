@@ -27,6 +27,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,20 @@ VALID_GROUPS = frozenset({
 })
 DEFAULT_GROUP = "agent-orchestration"
 ENVELOPE_VERSION = 1  # task-envelope-v1 (#63)
+
+# Smart Context Selector (#329): optional Layer 1-8 context assembly injected
+# into task envelopes/instructions when SUPREME_CONTEXT_SELECTOR is enabled.
+# Dual-mode import (direct execution vs CI package import), then fail-open:
+# the selector is an OPTIONAL enrichment — unavailability disables nothing.
+try:  # direct execution: scripts/agents is on sys.path
+    from smart_context_selector import build_context_assembly as _build_context_assembly
+except ImportError:  # package import (pytest / CI harness)
+    try:
+        from scripts.agents.smart_context_selector import (
+            build_context_assembly as _build_context_assembly,
+        )
+    except ImportError:  # fail-open: enrichment stays optional by design
+        _build_context_assembly = None
 # #67 parity marker: BOTH copies of this program (public supremeai-open and
 # the private Supremeai-bd/supremeai mirror) MUST print this exact string as
 # the final stdout line of `--verify-only`. Copies that disagree on flag
@@ -84,6 +99,15 @@ ROLES: dict[str, str] = {
 
 def log(icon: str, msg: str) -> None:
     print(f"{icon} {msg}")
+
+
+def log_err(icon: str, msg: str) -> None:
+    """Log to stderr — for diagnostics around machine-JSON stdout channels.
+
+    (#329) The task envelope's stdout is a pure JSON channel (spec §4 shims
+    already warn on stderr); selector diagnostics must never pollute it.
+    """
+    print(f"{icon} {msg}", file=sys.stderr)
 
 
 def run_cmd(cmd: list[str], cwd: Path = REPO_ROOT, check: bool = False) -> tuple[int, str, str]:
@@ -216,13 +240,23 @@ def classify_task_role(title: str, labels: list[str], body: str) -> str:
     return "coder"
 
 
-def build_agent_prompt(task: dict[str, Any], role: str, contract: dict[str, Any]) -> str:
-    """Build a deterministic, contract-bound scoped prompt for the specialist agent."""
+def build_agent_prompt(
+    task: dict[str, Any],
+    role: str,
+    contract: dict[str, Any],
+    context_assembly: dict[str, Any] | None = None,
+) -> str:
+    """Build a deterministic, contract-bound scoped prompt for the specialist agent.
+
+    When a ContextAssembly payload (#329) is supplied, a deterministic
+    "**6. Assembled Context**" section is appended: included items only, in
+    payload order (itself deterministic), plus the clipped-layer summary.
+    """
     tc = contract.get("task_contract", {})
     touching_files = tc.get("scope", {}).get("touching_files", [])
     forbidden_paths = tc.get("scope", {}).get("forbidden_paths", [])
 
-    return f"""### 🤖 SupremeAI Task Assignment: {role.upper()}
+    prompt = f"""### 🤖 SupremeAI Task Assignment: {role.upper()}
 You are assigned as the **{role.upper()}** specialist by the SupremeAI Continuous Loop Team Leader.
 
 **1. Mission Objective:**
@@ -245,6 +279,90 @@ Issue #{task.get('id')}: {task.get('title')}
 - Do NOT hallucinate private credentials or internal monorepo scripts.
 - Satisfy the 3-Tier Verification Contract before handoff.
 """
+    if context_assembly:
+        prompt += _render_context_section(context_assembly)
+    return prompt
+
+
+def _render_context_section(assembly_payload: dict[str, Any]) -> str:
+    """(#329) Deterministic markdown rendering of an assembled context payload.
+
+    Included items only (excluded noise is summarized by layer), payload
+    order — itself deterministic per smart_context_selector.assemble().
+    """
+    asm = assembly_payload.get("assembly", {})
+    sel = assembly_payload.get("selection", {})
+    lines = [
+        f"**6. Assembled Context (L1-8, budget {sel.get('token_budget')}, used {asm.get('tokens_used')}):**"
+    ]
+    for layer in asm.get("layers", []):
+        for item in layer.get("items", []):
+            if item.get("included"):
+                lines.append(
+                    f"- [L{layer['layer']} {layer['name']}] {item['label']} ({item['tokens']} tk)"
+                )
+    clipped = asm.get("clipped_layers", [])
+    if clipped:
+        lines.append(
+            f"- Budget clipped layers (candidates excluded by strict cutoff): {clipped}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _context_selector_enabled() -> bool:
+    """(#329) Smart context gate — default OFF (byte-compat v1 envelopes)."""
+    raw = str(os.environ.get("SUPREME_CONTEXT_SELECTOR", "")).strip().lower()
+    return raw not in {"", "0", "false", "no", "off"}
+
+
+def _assemble_task_context(
+    task: dict[str, Any], contract: dict[str, Any]
+) -> dict[str, Any] | None:
+    """(#329) Assemble L1-8 context for this task — fail-open, honest.
+
+    Returns the ContextAssembly payload, or None when the selector is
+    unavailable or assembly failed. On failure the log is LOUD (stderr —
+    stdout stays the pure envelope JSON channel) and the envelope is emitted
+    WITHOUT the optional context_assembly key — byte-compat with pre-#329
+    consumers (same honesty contract as the optional envelope extensions
+    doctrine). Token budget: SUPREME_CONTEXT_BUDGET override (integer ≥ 1);
+    the default (12000) is R2-sized to admit this repo's constitution.
+    """
+    if _build_context_assembly is None:
+        return None
+    raw_budget = str(os.environ.get("SUPREME_CONTEXT_BUDGET", "")).strip()
+    token_budget: int | None = None
+    if raw_budget:
+        try:
+            token_budget = int(raw_budget)
+            if token_budget < 1:
+                raise ValueError
+        except ValueError:
+            log_err(
+                "⚠️",
+                f"[Smart Context] invalid SUPREME_CONTEXT_BUDGET={raw_budget!r} "
+                "(need integer ≥ 1) — using the module default",
+            )
+            token_budget = None
+    try:
+        payload = (
+            _build_context_assembly(task=task, contract=contract, repo_root=REPO_ROOT)
+            if token_budget is None
+            else _build_context_assembly(
+                task=task, contract=contract, repo_root=REPO_ROOT, token_budget=token_budget
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 — fail-open by contract
+        log_err("⚠️", f"[Smart Context] fail-open: {exc} — proceeding without assembled context")
+        return None
+    asm = payload.get("assembly", {})
+    budget = payload.get("selection", {}).get("token_budget", "?")
+    log_err(
+        "🧠",
+        f"[Smart Context] {asm.get('tokens_used', 0)}/{budget} tokens assembled, "
+        f"clipped layers: {asm.get('clipped_layers', [])}",
+    )
+    return payload
 
 
 def resolve_group(explicit: str | None, task: dict[str, Any] | None = None) -> str:
@@ -350,7 +468,12 @@ Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
 """
 
 
-def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any]) -> dict[str, Any]:
+def build_task_envelope(
+    task: dict[str, Any],
+    role: str,
+    contract: dict[str, Any],
+    context_assembly: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build the Single Deterministic Task Envelope (#63).
 
     One canonical JSON payload that replaces the four legacy output formats:
@@ -358,6 +481,11 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
       2. --emit-prompt markdown    -> specialist_prompt field
       3. --emit-contract raw JSON  -> embedded contract fields (group/scope/admin_gate)
       4. .pr_template_draft.md     -> submission.pr_body_template field
+
+    #329: when a ContextAssembly payload is supplied (gate-gated, see
+    _assemble_task_context), ONE optional field is added — context_assembly
+    — and the specialist prompt gains the deterministic Assembled Context
+    section. Key OMITTED otherwise (byte-compat with pre-#329 consumers).
     """
     tc = contract["task_contract"]
     pr_body_template = build_pr_body(task, contract=contract)
@@ -387,7 +515,15 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
             "required_evidence": tc.get("required_evidence", []),
             "stop_conditions": tc.get("stop_conditions", []),
             "admin_gate": tc.get("admin_gate", {}),
-            "specialist_prompt": build_agent_prompt(task, role, contract),
+            "memory_integration": describe_memory_integration(),
+            **(
+                {"context_assembly": context_assembly}
+                if context_assembly is not None
+                else {}
+            ),
+            "specialist_prompt": build_agent_prompt(
+                task, role, contract, context_assembly=context_assembly
+            ),
             "submission": {
                 "pathway": "bridge_submit_patch | pull_request",
                 "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
@@ -447,7 +583,10 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
     role = args.role or classify_task_role(
         task.get("title", ""), task.get("labels", []), task.get("body", "")
     )
-    envelope = build_task_envelope(task, role, contract)
+    context_assembly = (
+        _assemble_task_context(task, contract) if _context_selector_enabled() else None
+    )
+    envelope = build_task_envelope(task, role, contract, context_assembly=context_assembly)
     print(json.dumps(envelope, indent=2))
     return 0
 
@@ -991,6 +1130,331 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
     return 0 if failures == 0 else 1
 
 
+# ============================================================================
+# Contributor additions: memory sidecar integration (audit #283, finding G1 — P1)
+# ============================================================================
+# The Tower bridges the Python memory server under the ``memory.*`` prefix
+# (episodic record_task / get_similar_tasks / build_context, long-term
+# remember_fact / search_learned_facts — src/tools/memory.tools.ts). Until
+# this block the loop never touched it: every task started from zero
+# experience even though the infrastructure sat one MCP hop away. This
+# wiring makes the SYSTEM the learner while the loop itself stays stateless
+# (AGENTS.md §2):
+#   - before work: recall similar past tasks, surface them to the specialist
+#   - after work:  record the outcome signature (success AND failure — the
+#     failure signal is the one that prevents repeated mistakes)
+# Degradation contract (fail-honest, mirrors the notify doctrine):
+#   - bounded timeout, process-lifetime circuit breaker, never raises;
+#   - tools are visibility-scoped: zero-credential runs simply see no
+#     memory.* tools and the integration degrades quietly for that call;
+#   - tool inventory + input schemas are discovered live from the Tower's
+#     tools/list, so no argument shape is hardcoded beyond a best-effort
+#     value map (the sidecar is 100% dynamic server-side);
+#   - known Tower quirk (WO #251 evidence): tools/list advertises dotted
+#     names while the call registry sanitizes '.' → '_'. Both forms tried.
+# Envelope safety: the envelope carries ONLY the static capability
+# descriptor (describe_memory_integration, constants-only) so SPEC §2
+# envelope determinism (tier 7) and §4b envelope parity stay untouched by
+# live memory data. Protocol details: docs/AGENT_LOOP_SPEC.md §2b.
+
+MEMORY_TOWER_URL = os.environ.get("MCP_TOWER_URL", "https://supremeai-mcp-tower.onrender.com/mcp")
+MEMORY_DISABLED = os.environ.get("SUPREMEAI_MEMORY", "") == "0"
+MEMORY_TIMEOUT_S = 8.0
+MEMORY_MAX_BREAKER_FAILURES = 2
+_MEMORY_FETCH_TOOL = "memory.get_similar_tasks"
+_MEMORY_RECORD_TOOL = "memory.record_task"
+
+
+class _MemoryCircuit:
+    """Process-lifetime circuit breaker for memory sidecar calls."""
+
+    def __init__(self) -> None:
+        self.consecutive_failures = 0
+        self.tripped = False
+        self.last_error: str | None = None
+
+    def record_success(self) -> None:
+        self.consecutive_failures = 0
+
+    def record_failure(self, err: str) -> None:
+        self.consecutive_failures += 1
+        self.last_error = err[:200]
+        if self.consecutive_failures >= MEMORY_MAX_BREAKER_FAILURES:
+            self.tripped = True
+            log("⚠", f"[m[memory] sidecar unavailable ({err[:120]}) — memory integration disabled for this process (fail-honest degradation)")
+
+
+_MEMORY = _MemoryCircuit()
+
+
+def _memory_enabled() -> bool:
+    return (not MEMORY_DISABLED) and (not _MEMORY.tripped)
+
+
+def _memory_post(
+    method: str,
+    params: dict[str, Any] | None = None,
+    notify: bool = False,
+    session_id: str | None = None,
+) -> tuple[Any, str | None, str | None]:
+    """One JSON-RPC POST against the MCP Tower (streamable HTTP).
+
+    Returns (parsed_payload_or_None, session_id_or_None, error_or_None).
+    Tolerates both direct-JSON and SSE-framed responses.
+    """
+    payload: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+    if params is not None:
+        payload["params"] = params
+    if not notify:
+        payload["id"] = 1
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if session_id:
+        headers["mcp-session-id"] = session_id
+    req = urllib.request.Request(
+        MEMORY_TOWER_URL, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=MEMORY_TIMEOUT_S) as resp:
+            sid = resp.headers.get("mcp-session-id")
+            ctype = resp.headers.get("Content-Type") or ""
+            body = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        return None, None, f"transport: {exc}"
+    if "text/event-stream" in ctype:
+        for line in body.splitlines():
+            if line.startswith("data:"):
+                try:
+                    return json.loads(line[5:].strip()), sid, None
+                except Exception:
+                    continue
+        return None, sid, "transport: SSE frame carried no JSON-RPC payload"
+    if not body.strip():
+        return {}, sid, None  # notifications / 202-style acks
+    try:
+        return json.loads(body), sid, None
+    except Exception as exc:
+        return None, sid, f"decode: {exc}"
+
+
+def _memory_open_session() -> tuple[str | None, str | None]:
+    """MCP handshake: initialize → notifications/initialized. Returns (sid, err)."""
+    _resp, sid, err = _memory_post("initialize", {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {"name": "supremeai-agent-loop", "version": "1"},
+    })
+    if err:
+        return None, err
+    if not sid:
+        return None, "session: tower returned no mcp-session-id"
+    _memory_post("notifications/initialized", {}, notify=True, session_id=sid)
+    return sid, None
+
+
+def _memory_discover(session_id: str, wanted: str) -> tuple[dict[str, Any] | None, str | None, bool]:
+    """Find `wanted` in the Tower's tools/list. Returns (descriptor, err, soft).
+
+    soft=True means "tool not advertised" (visibility-scoped environment,
+    e.g. zero-credential guest) — a quiet skip, not a breaker failure.
+    """
+    parsed, _sid, err = _memory_post("tools/list", {}, session_id=session_id)
+    if err:
+        return None, err, False
+    tools = ((parsed or {}).get("result") or {}).get("tools") or []
+    for tool in tools:
+        if tool.get("name") in (wanted, wanted.replace(".", "_")):
+            return tool, None, False
+    return None, f"tool not advertised: {wanted}", True
+
+
+def _memory_call_tool(session_id: str, tool_name: str, args: dict[str, Any]) -> tuple[Any, str | None]:
+    """tools/call one memory tool — dotted advertised name first, then the
+    sanitized underscore variant (Tower registry quirk, WO #251 evidence)."""
+    for candidate in (tool_name, tool_name.replace(".", "_")):
+        resp, _sid, err = _memory_post("tools/call", {"name": candidate, "arguments": args}, session_id=session_id)
+        if err:
+            return None, err
+        if resp and "error" in resp:
+            err_obj = resp["error"] or {}
+            msg = str(err_obj.get("message", err_obj))
+            code = err_obj.get("code")
+            if "Tool not found" in msg or "-32602" in msg or code == -32602:
+                continue  # try the other name form
+            return None, f"rpc: {msg}"
+        if resp and "result" in resp:
+            content = (resp["result"] or {}).get("content") or []
+            text = "".join(c.get("text", "") for c in content if isinstance(c, dict))
+            try:
+                return json.loads(text), None
+            except Exception:
+                return text, None
+        return None, "rpc: empty response"
+    return None, f"tool not found under any name form: {tool_name}"
+
+
+def _memory_build_args(schema: Any, values: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Schema-adaptive payload builder: fill declared properties from the
+    value map; report required props we could not fill (the call still
+    proceeds — the sidecar may default them; a rejection trips the breaker)."""
+    props = ((schema or {}) if isinstance(schema, dict) else {}).get("properties") or {}
+    required = list((((schema or {}) if isinstance(schema, dict) else {}).get("required")) or [])
+    args: dict[str, Any] = {}
+    for key in props:
+        if key in values and values[key] not in (None, ""):
+            args[key] = values[key]
+    unmapped = [key for key in required if key not in args]
+    return args, unmapped
+
+
+def _memory_normalize_records(data: Any) -> list[dict[str, Any]]:
+    """Best-effort normalization of sidecar responses into record dicts."""
+    if isinstance(data, str):
+        return [{"summary": data[:500]}] if data.strip() else []
+    if isinstance(data, dict):
+        for key in ("tasks", "episodes", "results", "records", "items", "similar_tasks"):
+            if isinstance(data.get(key), list):
+                return [r for r in data[key] if isinstance(r, dict)][:10]
+        return [data]
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)][:10]
+    return []
+
+
+def memory_recall_similar_tasks(objective: str, role: str = "", k: int = 3) -> list[dict[str, Any]]:
+    """Recall similar past task executions from the memory sidecar (G1).
+
+    Returns a list of experience records (possibly empty). Never raises:
+    any transport/contract problem trips the circuit breaker and returns [].
+    """
+    if not _memory_enabled() or not objective:
+        return []
+    try:
+        sid, err = _memory_open_session()
+        if err or not sid:
+            _MEMORY.record_failure(err or "no session")
+            return []
+        desc, err, soft = _memory_discover(sid, _MEMORY_FETCH_TOOL)
+        if err:
+            if soft:
+                return []  # visibility-scoped environment — quiet skip
+            _MEMORY.record_failure(err)
+            return []
+        bounded_k = max(1, min(int(k), 10))
+        args, unmapped = _memory_build_args((desc or {}).get("inputSchema"), {
+            "query": objective, "task": objective, "objective": objective,
+            "description": objective, "k": bounded_k, "limit": bounded_k,
+            "top_k": bounded_k, "max_results": bounded_k, "role": role,
+        })
+        if unmapped:
+            log("⚠", f"[m[memory] {_MEMORY_FETCH_TOOL} schema requires unmapped arg(s) {unmapped} — attempting best-effort payload")
+        data, err = _memory_call_tool(sid, _MEMORY_FETCH_TOOL, args)
+        if err:
+            _MEMORY.record_failure(err)
+            return []
+        _MEMORY.record_success()
+        return _memory_normalize_records(data)
+    except Exception as exc:  # absolute fail-honest boundary
+        _MEMORY.record_failure(str(exc))
+        return []
+
+
+def memory_experience_block(objective: str, role: str = "", k: int = 3) -> str | None:
+    """Markdown 'Past task experience' section for the specialist prompt.
+
+    Returns None when the sidecar is disabled/unreachable/empty — callers
+    simply skip the section (no prompt noise in degraded mode).
+    """
+    records = memory_recall_similar_tasks(objective, role=role, k=k)
+    if not records:
+        return None
+    lines = ["### Past task experience (memory sidecar, auto-recalled)", ""]
+    for i, rec in enumerate(records[:bounded_k_value(k)], start=1):
+        title = str(rec.get("task") or rec.get("title") or rec.get("objective") or rec.get("summary") or f"record {i}")[:160]
+        outcome = str(rec.get("outcome") or rec.get("result") or rec.get("status") or "").strip()
+        note = str(rec.get("summary") or rec.get("notes") or rec.get("evidence") or "").strip()[:300]
+        line = f"{i}. {title}"
+        if outcome:
+            line += f" — outcome: {outcome}"
+        lines.append(line)
+        if note and note != title:
+            lines.append(f"   {note}")
+    lines.append("")
+    lines.append("_Treat as context only: verify against current docs/contracts before reusing any past decision._")
+    block = "\n".join(lines)
+    return block if len(block) <= 2400 else block[:2380] + "\n…"
+
+
+def bounded_k_value(k: int) -> int:
+    """Shared clamp so fetch and formatting agree on the record window."""
+    try:
+        return max(1, min(int(k), 10))
+    except Exception:
+        return 3
+
+
+def memory_record_outcome(objective: str, role: str, outcome: str, summary: str) -> bool:
+    """Record a task outcome signature into the episodic memory sidecar (G1).
+
+    Fire-and-forget: returns False on ANY problem; never raises, never
+    blocks the cycle. Both success AND failure outcomes are recorded — the
+    failure signal is what stops the federation repeating mistakes.
+    """
+    if not _memory_enabled() or not objective:
+        return False
+    try:
+        sid, err = _memory_open_session()
+        if err or not sid:
+            _MEMORY.record_failure(err or "no session")
+            return False
+        desc, err, soft = _memory_discover(sid, _MEMORY_RECORD_TOOL)
+        if err:
+            if soft:
+                return False  # visibility-scoped environment — quiet skip
+            _MEMORY.record_failure(err)
+            return False
+        args, unmapped = _memory_build_args((desc or {}).get("inputSchema"), {
+            "task": objective, "query": objective, "objective": objective,
+            "description": objective, "outcome": outcome, "result": outcome,
+            "status": outcome, "role": role, "summary": summary,
+            "evidence": summary, "notes": summary,
+        })
+        if unmapped:
+            log("⚠", f"[m[memory] {_MEMORY_RECORD_TOOL} schema requires unmapped arg(s) {unmapped} — attempting best-effort payload")
+        _data, err = _memory_call_tool(sid, _MEMORY_RECORD_TOOL, args)
+        if err:
+            _MEMORY.record_failure(err)
+            return False
+        _MEMORY.record_success()
+        log("🧠", f"[m[memory] outcome recorded ({outcome})")
+        return True
+    except Exception as exc:  # absolute fail-honest boundary
+        _MEMORY.record_failure(str(exc))
+        return False
+
+
+def describe_memory_integration() -> dict[str, Any]:
+    """Static capability descriptor carried by the task envelope (G1).
+
+    Deliberately constants-only (NO live probe): two envelope builds with
+    identical inputs must stay byte-identical (SPEC §2 tier 7 determinism)
+    and §4b envelope parity must hold across public/private copies.
+    Envelope consumers can use this descriptor to fetch experience
+    themselves via the documented §2b protocol.
+    """
+    return {
+        "protocol": "mcp-memory-sidecar-v1",
+        "transport": "MCP streamable HTTP (initialize → tools/list → tools/call)",
+        "tools": [_MEMORY_FETCH_TOOL, _MEMORY_RECORD_TOOL],
+        "env_enable": "SUPREMEAI_MEMORY (value 0 disables)",
+        "env_endpoint": "MCP_TOWER_URL",
+        "degradation": "fail-honest: bounded timeout, circuit breaker, never blocks the cycle",
+        "spec": "docs/AGENT_LOOP_SPEC.md §2b",
+    }
+
+
 def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
     """Execute a single complete task dispatch cycle."""
     task = step_1_understand(issue_id, allow_adhoc=args.allow_adhoc)
@@ -1023,7 +1487,22 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
         role_policy=assigned_role,
     )
 
-    agent_prompt = build_agent_prompt(task, assigned_role, contract)
+    context_assembly = (
+        _assemble_task_context(task, contract) if _context_selector_enabled() else None
+    )
+    agent_prompt = build_agent_prompt(
+        task, assigned_role, contract, context_assembly=context_assembly
+    )
+
+    # G1 (audit #283): recall past experience from the memory sidecar and
+    # surface it to the executing specialist. Fail-honest: any problem
+    # degrades to "no experience block", never blocks the cycle. Live memory
+    # data stays OUT of the canonical envelope (SPEC §2b parity note).
+    _objective = str(task.get("title") or contract["task_contract"].get("objective") or "")
+    experience_block = memory_experience_block(_objective, role=assigned_role)
+    if experience_block:
+        agent_prompt = agent_prompt + "\n\n" + experience_block
+        log("🧠", "[m[memory] recalled similar past task(s) into the specialist prompt")
 
     branch = step_4_branch(task)
     if not branch:
@@ -1035,10 +1514,18 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
     passed, evidence = step_6_verify()
     if not passed:
         log("❌", "Verification failed. Please fix errors before proceeding.")
+        memory_record_outcome(_objective, assigned_role, "failure", "cycle halted at verification (tier gate)")
         return 1
 
     fork_owner = getattr(args, "fork_owner", None) or os.environ.get("SUPREMEAI_FORK_OWNER", "").strip() or None
-    if not step_7_record(task, branch, contract=contract, evidence=evidence, auto_pr=args.auto_pr, fork_owner=fork_owner):
+    recorded = step_7_record(task, branch, contract=contract, evidence=evidence, auto_pr=args.auto_pr, fork_owner=fork_owner)
+    memory_record_outcome(
+        _objective,
+        assigned_role,
+        "success" if recorded else "failure",
+        f"task-{task.get('id', 'adhoc')} on branch {branch}; verification={'pass' if passed else 'fail'}; record={'ok' if recorded else 'failed'}",
+    )
+    if not recorded:
         log("❌", "Step 7 (Record) failed! Halting before completion return.")
         return 1
 
