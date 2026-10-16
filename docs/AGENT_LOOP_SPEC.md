@@ -43,6 +43,16 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
     "required_evidence": ["…"],
     "stop_conditions": ["…"],
     "admin_gate": { "required": false, "status": "NOT_REQUIRED" },
+    "memory_integration": {                       // G1 (#283): STATIC capability descriptor — constants only
+      "protocol": "mcp-memory-sidecar-v1",
+      "transport": "MCP streamable HTTP (initialize → tools/list → tools/call)",
+      "tools": ["memory.get_similar_tasks", "memory.record_task"],
+      "env_enable": "SUPREMEAI_MEMORY (value 0 disables)",
+      "env_endpoint": "MCP_TOWER_URL",
+      "degradation": "fail-honest: bounded timeout, circuit breaker, never blocks the cycle",
+      "spec": "docs/AGENT_LOOP_SPEC.md §2b"
+    },
+    "context_assembly": { /* OPTIONAL (#329) — ContextAssembly payload, see note below */ },
     "specialist_prompt": "…markdown prompt (legacy --emit-prompt content)…",
     "submission": {
       "pathway": "bridge_submit_patch | pull_request",
@@ -56,6 +66,52 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
   }
 }
 ```
+
+**Optional `context_assembly` field (#329).** When `SUPREME_CONTEXT_SELECTOR`
+is enabled, `build_task_envelope()` adds exactly ONE field — `context_assembly`
+— the machine-checkable ContextAssembly payload of
+`api-schemas/context-assembly.schema.json` (SSOT:
+`docs/CONTEXT_SELECTOR_SPEC.md`), assembled by
+`scripts/agents/smart_context_selector.py` (Layer 1-8 priority-ranked,
+strict-cutoff clipping, constitution never clipped). Honesty contract: the
+key is OMITTED entirely when the gate is off, the selector is unavailable, or
+assembly fails (fail-open, loud log on stderr — stdout stays the pure JSON
+envelope channel) — byte-compat with pre-#329 consumers;
+additive optional fields are v1-compatible (no `envelope_version` bump).
+Under the same conditions `specialist_prompt` gains a deterministic
+"**6. Assembled Context**" section (included items in payload order).
+Envelope parity (§4b.3) is preserved because both copies gate identically.
+
+## 2b. Memory sidecar integration (G1, audit #283) — the loop that learns
+
+The Tower bridges the Python memory server under the `memory.*` prefix
+(episodic `record_task` / `get_similar_tasks`, long-term `remember_fact`).
+The loop consumes it in two places while staying stateless itself
+(AGENTS.md §2):
+
+| When | Tool | Effect |
+|------|------|--------|
+| after `build_agent_prompt()` | `memory.get_similar_tasks` | top-k similar past executions are appended to the specialist prompt as a bounded "Past task experience" section |
+| after step 7 (and on verify-fail) | `memory.record_task` | outcome signature (`success`/`failure` + one-line summary) is recorded — the failure signal is what stops the federation repeating mistakes |
+
+**Protocol:** MCP streamable HTTP against `MCP_TOWER_URL` (default public
+Tower) — `initialize` → `notifications/initialized` → `tools/list` (live
+schema discovery; argument payloads are adapted to the advertised
+`inputSchema` via a best-effort value map) → `tools/call`. Both dotted
+(`memory.get_similar_tasks`) and sanitized (`memory_get_similar_tasks`) call
+names are tried (Tower registry quirk, WO #251 evidence).
+
+**Degradation contract (fail-honest):** 8s bounded timeout; process-lifetime
+circuit breaker trips after 2 consecutive transport/contract failures;
+visibility-scoped environments (zero-credential guests see no `memory.*`
+tools) degrade quietly; the cycle NEVER blocks on memory.
+`SUPREMEAI_MEMORY=0` disables the integration entirely.
+
+**Envelope parity (§4b rule 3):** the envelope carries only the STATIC
+`memory_integration` capability descriptor (constants, byte-identical across
+builds and copies). Live experience data never enters the envelope — it
+flows to the executing specialist at dispatch time only. `--verify-only`
+tier count and the `CONTRACT_VERSION` parity marker are unchanged.
 
 ## 3. Group taxonomy — `VALID_GROUPS` (fail-closed)
 
