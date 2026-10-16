@@ -157,11 +157,43 @@ export function decideRoute(input: {
   };
 }
 
-/** Minimal Redis client over the account chain (GET/SET semantics). */
-type DispatchStore = {
+/**
+ * Minimal Redis client over the account chain (GET/SET semantics).
+ *
+ * F3 (audit 2026-10-16): optional `scan` enables the agent-side poll path
+ * (orchestrator_my_tasks). Absent scan = read-only-for-one-key store; the
+ * poll tool must fail honestly in that case instead of silently returning
+ * an empty list (unknown ≠ no tasks).
+ */
+export type DispatchStore = {
   get(key: string): Promise<string | null>;
   setEx(key: string, ttlSeconds: number, value: string): Promise<void>;
+  scan?(match: string): Promise<{ keys: string[]; partial: boolean }>;
 };
+
+/** SCAN page size + page-count bound (fail-honest: partial flag, never a silent hang). */
+const SCAN_PAGE_COUNT = 1000;
+const SCAN_MAX_PAGES = 20; // 20k keys bound per poll — orchestrate state is ≤ events/day
+
+/**
+ * Shared SCAN loop (cursor pagination) used by both REST and TCP store paths.
+ * Stops at cursor 0 or SCAN_MAX_PAGES — a bound-exceeded scan reports partial
+ * instead of pretending it saw everything (U2 fail-honest).
+ */
+async function scanAllKeys(
+  scanPage: (cursor: string) => Promise<[string, string[]]>,
+  match: string,
+): Promise<{ keys: string[]; partial: boolean }> {
+  const keys: string[] = [];
+  let cursor = "0";
+  for (let page = 0; page < SCAN_MAX_PAGES; page++) {
+    const [next, batch] = await scanPage(cursor);
+    keys.push(...batch);
+    cursor = next;
+    if (cursor === "0") return { keys, partial: false };
+  }
+  return { keys, partial: true };
+}
 
 export async function makeDispatchStore(): Promise<DispatchStore> {
   const chain = activeAccountChain();
@@ -238,6 +270,27 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
       setEx: async (key, ttl, value) => {
         await call(["SET", key, value, "EX", String(ttl)]);
       },
+      // F3: SCAN over Upstash REST — same pipeline channel, quota-aware via `call`.
+      // partial flag propagates (U2): a page-bound-exceeded scan must never
+      // masquerade as a full keyspace view.
+      scan: async (match) => {
+        const result = await scanAllKeys(async (cursor) => {
+          return (await call([
+            "SCAN",
+            cursor,
+            "MATCH",
+            match,
+            "COUNT",
+            String(SCAN_PAGE_COUNT),
+          ])) as [string, string[]];
+        }, match);
+        if (result.partial) {
+          console.log(
+            `[orchestrator-dispatch] scan partial: exceeded ${SCAN_MAX_PAGES} pages for ${match}`,
+          );
+        }
+        return result;
+      },
     };
   }
   const tcpAccount = chain.find((account) => account.tcpUrl);
@@ -248,12 +301,19 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
   const client = new (Redis as unknown as new (url: string, opts: object) => {
     get(key: string): Promise<string | null>;
     set(key: string, value: string, mode: "EX", ttl: number): Promise<"OK">;
+    scan(cursor: string, ...args: string[]): Promise<[string, string[]]>;
   })(tcpAccount.tcpUrl as string, { maxRetriesPerRequest: 2, lazyConnect: false });
   return {
     get: async (key) => client.get(key),
     setEx: async (key, ttl, value) => {
       await client.set(key, value, "EX", ttl);
     },
+    // F3: non-blocking SCAN (never KEYS) on the TCP path; partial flag propagates.
+    scan: async (match) =>
+      scanAllKeys(
+        (cursor) => client.scan(cursor, "MATCH", match, "COUNT", String(SCAN_PAGE_COUNT)),
+        match,
+      ),
   };
 }
 
@@ -329,4 +389,133 @@ export async function orchestratorDispatch(input: {
   // Audit trail: the routing decision is always logged server-side (#1803).
   console.log(`[orchestrator-dispatch] ${logLine}`);
   return { decision, state: nextState };
+}
+
+// ── F3 (audit 2026-10-16): agent-side poll — close the assignment loop ──────
+//
+// বাংলা: orchestratorDispatch() একটি সিদ্ধান্ত Redis-এ লেখে কিন্তু কোনো agent
+// সেটা পড়তে পারে না — assignment শুধু একটা ledger entry ছিল। এই সেকশনটি
+// agent-side poll যোগ করে: slot → আমার assigned tasks।
+//
+// Loop-closure doctrine: `decision: assigned` becomes truthful as *work
+// routed*, not merely a ledger entry. The Telegram dispatch notice variant of
+// the audit fix direction is a channel/credentials ADMIN_DECISION — deferred,
+// not presumed here (§6).
+
+export type MyTaskEntry = {
+  issueRef: string;
+  role: string | null;
+  assignedSlot: string;
+  attempts: number;
+  updatedAt: string;
+  /** Whole seconds since updatedAt; null when the timestamp is unparseable (honest unknown). */
+  ageSeconds: number | null;
+  lastAudit: string | null;
+};
+
+export type MyTasksResult = {
+  slot: string;
+  tasks: MyTaskEntry[];
+  /** Total orchestrate:* states seen during the scan (assigned + others). */
+  scannedStates: number;
+  /** Corrupt/unparseable state records skipped during the scan. */
+  corruptSkipped: number;
+  /** More matching tasks than the limit — result was capped (fail-honest). */
+  truncated: boolean;
+  /** SCAN page bound exceeded — the scan saw only part of the keyspace. */
+  partialScan: boolean;
+};
+
+export const MY_TASKS_DEFAULT_LIMIT = 50;
+
+/**
+ * Scan every `orchestrate:*` state and collect parsed records.
+ * Corrupt records are skipped and counted — never thrown (one bad state must
+ * not blind the agent to the rest of the queue).
+ */
+export async function collectOrchestrateStates(
+  store: DispatchStore,
+): Promise<{ states: DispatchState[]; keys: number; corrupt: number; partial: boolean }> {
+  if (typeof store.scan !== "function") {
+    throw new Error(
+      "dispatch store does not support scan — orchestrator_my_tasks unavailable (fail-closed: cannot claim an empty queue)",
+    );
+  }
+  const { keys, partial } = await store.scan(`${ORCHESTRATE_STATE_PREFIX}*`);
+  const states: DispatchState[] = [];
+  let corrupt = 0;
+  for (const key of keys) {
+    const issueRef = key.slice(ORCHESTRATE_STATE_PREFIX.length);
+    if (!issueRef) {
+      corrupt++;
+      continue;
+    }
+    const raw = await store.get(key);
+    if (!raw) {
+      // Key vanished between SCAN and GET (TTL expiry race) — count as skipped.
+      corrupt++;
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Partial<DispatchState>;
+      if (typeof parsed !== "object" || parsed === null) {
+        corrupt++;
+        continue;
+      }
+      states.push({ ...parsed, issueRef } as DispatchState);
+    } catch {
+      corrupt++;
+    }
+  }
+  return { states, keys: keys.length, corrupt, partial };
+}
+
+/**
+ * Agent-side poll (F3): heartbeat slot → my open assignments.
+ * States land in this slot via `assigned` or `fallback` decisions — both are
+ * real work routed to the slot. escalate/no-candidate carry assignedSlot=null
+ * and are excluded naturally.
+ *
+ * Deterministic order: newest assignment first (updatedAt desc, issueRef tiebreak).
+ */
+export async function orchestratorMyTasks(input: {
+  slot: string;
+  store: DispatchStore;
+  nowMs?: number;
+  limit?: number;
+}): Promise<MyTasksResult> {
+  const limit = input.limit ?? MY_TASKS_DEFAULT_LIMIT;
+  const now = input.nowMs ?? Date.now();
+  const { states, keys, corrupt, partial } = await collectOrchestrateStates(input.store);
+
+  const mine = states.filter((s) => s.assignedSlot === input.slot);
+  const entries: MyTaskEntry[] = mine.map((s) => {
+    const parsedAt = Date.parse(s.updatedAt);
+    return {
+      issueRef: s.issueRef,
+      role: s.role ?? null,
+      assignedSlot: s.assignedSlot as string,
+      attempts: s.attempts ?? 0,
+      updatedAt: s.updatedAt,
+      ageSeconds: Number.isFinite(parsedAt) ? Math.max(0, Math.round((now - parsedAt) / 1000)) : null,
+      lastAudit: s.log && s.log.length > 0 ? s.log[s.log.length - 1] : null,
+    };
+  });
+
+  entries.sort((a, b) => {
+    const ta = Date.parse(a.updatedAt) || 0;
+    const tb = Date.parse(b.updatedAt) || 0;
+    if (tb !== ta) return tb - ta;
+    return a.issueRef < b.issueRef ? -1 : a.issueRef > b.issueRef ? 1 : 0;
+  });
+
+  const truncated = entries.length > limit;
+  return {
+    slot: input.slot,
+    tasks: truncated ? entries.slice(0, limit) : entries,
+    scannedStates: keys,
+    corruptSkipped: corrupt,
+    truncated,
+    partialScan: partial,
+  };
 }
