@@ -326,7 +326,7 @@ Refs #{issue_ref}
                 "issue_reference_required": True,
                 "branch_convention": (
                     "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|"
-                    "hotfix|release|copilot|agent)/<slug> — enforced by pipeline.yml"
+                    "hotfix|release|copilot|agent)/<slug> — enforced by .github/workflows/open-guards.yml"
                 ),
                 "pr_body_template": pr_body_template,
             },
@@ -382,7 +382,7 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
     return 0
 
 
-def pick_next_issue() -> str | None:
+def pick_next_issue(exclude: set[str] | None = None) -> str | None:
     """Fetch the highest priority claimable open issue from GitHub.
 
     Selection policy (#88):
@@ -395,6 +395,14 @@ def pick_next_issue() -> str | None:
       - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose in
         titles can no longer outrank a real priority label; age (lowest issue
         number) breaks ties per AGENT_RULES.md §5.
+      - ``exclude``: issue numbers already dispatched in this session. The
+        runner never mutates board labels, so an issue it just completed
+        (PR opened) still reads ``status:unclaimed`` on the next poll;
+        without exclusion ``--loop`` re-picks it, trips the duplicate-PR
+        preflight and self-halts with a spurious rc=1 (breaks the
+        "N cycles back-to-back" contract, AUTONOMY_LOOP_CONTRACT.md §3).
+        Session-local and in-memory only — dies with the process, so the
+        stateless lifecycle contract (AGENTS.md §2) is preserved.
     """
     code, out, _ = run_cmd([
         "gh", "issue", "list",
@@ -439,6 +447,9 @@ def pick_next_issue() -> str | None:
             return (tier, int(item.get("number", 0)))  # number ASC = oldest first
 
         candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
+        if exclude:
+            excluded = {str(e) for e in exclude}
+            candidates = [i for i in candidates if str(i.get("number")) not in excluded]
         sorted_issues = sorted(candidates, key=priority_key)
         if sorted_issues:
             return str(sorted_issues[0].get("number"))
@@ -965,8 +976,9 @@ def main() -> int:
     if args.loop:
         log("🔄", f"[Continuous Loop Mode] Starting task runner (max tasks: {args.max_tasks})...")
         processed = 0
+        dispatched: set[str] = set()  # session-local; see pick_next_issue(exclude=...)
         while processed < args.max_tasks:
-            next_issue = pick_next_issue()
+            next_issue = pick_next_issue(exclude=dispatched)
             if not next_issue:
                 log("🏁", "No more eligible open issues in queue. Loop finished.")
                 break
@@ -975,6 +987,7 @@ def main() -> int:
             if rc != 0:
                 log("⚠️", f"Task #{next_issue} halted with code {rc}. Stopping continuous loop.")
                 return rc
+            dispatched.add(next_issue)
             processed += 1
             time.sleep(2)  # Short cooldown between dispatches
         log("🎉", f"Continuous loop completed {processed} task(s).")
