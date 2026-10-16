@@ -141,6 +141,38 @@ parity contract:
    registry, guards) land in this repo first, then port to the private mirror
    **via a bridge work order** (never hand-edit the private copy).
 
+## 4c. Optional Smart Context injection (#329)
+
+`scripts/agents/smart_context_selector.py` implements the Layer 1-8 context
+assembly SSOT ([`CONTEXT_SELECTOR_SPEC.md`](CONTEXT_SELECTOR_SPEC.md) +
+[`api-schemas/context-assembly.schema.json`](../api-schemas/context-assembly.schema.json)).
+The loop consumes it **optionally, env-gated, fail-open**:
+
+| Knob | Default | Behaviour |
+|------|---------|-----------|
+| `SUPREME_CONTEXT_SELECTOR` | unset | unset/empty ⇒ **OFF**: prompts and envelopes are byte-identical to pre-#329 output (§4b parity). `1/true/on/yes` ⇒ the specialist prompt gains a deterministic Layer 1-8 context digest. |
+| `SUPREME_CONTEXT_BUDGET` | `32000` | Assembly token budget. Must admit Layer 1 (constitution ≈ 6k+ estimated tokens in this repo) or the selector fails loud (spec R2) and the wiring degrades fail-open. |
+
+Wiring contract:
+
+1. **Byte-compat default.** OFF ⇒ no new envelope keys, no prompt suffix —
+   legacy consumers and the private mirror see unchanged bytes.
+2. **Fail-open wiring, fail-closed core.** Any selector/wiring failure logs
+   loudly to **stderr** and the prompt continues unchanged (a task is never
+   blocked on context decoration). The selector module itself is fail-closed:
+   invalid policies/candidates raise before any payload exists.
+3. **Stdout purity.** In `--task-envelope` mode stdout stays pure JSON (#63);
+   the selector writes only to stderr.
+4. **Determinism.** The digest is clock-free (assembly ids are content-hashed;
+   `generated_at` is never rendered), so enabled runs stay byte-reproducible
+   and the §4 tier-7 envelope-determinism guard is unaffected.
+5. **Assembly rules** (spec §4): priority decay `base·decay^(L−1)`; global
+   order `priority DESC → layer ASC → label ASC`; strict cutoff with **no
+   backfill**; Layer 1 constitution never clipped; every item carries an
+   honest verdict pair (`included` + `inclusion_reason`).
+6. **Parity.** Enabling on only one repo copy makes `specialist_prompt`
+   diverge — enable on both copies together (§4b rule 3).
+
 ## 5. Open Guards — shift-left on free public runtime
 
 The guard jobs in `.github/workflows/pipeline.yml` (branch-naming,
