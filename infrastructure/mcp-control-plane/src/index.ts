@@ -33,6 +33,7 @@ import { verifyApprovalLink } from "./policy/approvals/signing.js";
 import { hasWebhookSignature } from "./lib/webhook_signature.js";
 import { registerBridgeIntake } from "./events/bridge_intake.js";
 import { registerFederatedCiWatcher } from "./events/federated_ci_watcher.js";
+import { registerCommandRouter } from "./events/command_router.js";
 import { validateRuntimeKnobs } from "./lib/env.js";
 import { pullSecretsIntoProcessEnv } from "./adapters/infisical/index.js";
 import { MemorySubAdapter } from "./adapters/memory/index.js";
@@ -1870,6 +1871,12 @@ async function main(): Promise<void> {
     // (no-op unless FEDERATED_CI_WATCHER_ENABLED=true). Also armed BEFORE the
     // server accepts webhook traffic.
     await registerFederatedCiWatcher();
+
+    // #211 slice 1: post-merge lifecycle cleanup (auto-close issue +
+    // auto-delete head branch) + ChatOps slash-command parsing. Idempotent,
+    // fail-honest (tokenless boot degrades to notify-only), armed BEFORE the
+    // server accepts webhook traffic — same doctrine as registerBridgeIntake.
+    registerCommandRouter();
 
     const server = await createMcpServer(memoryAdapter);
 
