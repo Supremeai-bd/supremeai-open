@@ -55,6 +55,10 @@ export type HeartbeatRecord = {
   clientId?: string;
   updatedAtMs: number;
   updatedAt: string; // ISO-8601
+  /** F2 (audit 2026-10-16): task-ownership telemetry — SSOT heartbeat.schema.json. */
+  taskId?: string;
+  status?: "alive" | "busy" | "idle";
+  ttlSeconds?: number;
 };
 
 export type HeartbeatState = "online" | "stale" | "expired";
@@ -75,6 +79,71 @@ export function validateSlot(slot: string): string | null {
 
 export function heartbeatKey(slot: string): string {
   return `${HEARTBEAT_KEY_PREFIX}${slot}`;
+}
+
+// ── Task-ownership field validators (F2, audit 2026-10-16) ────────────────
+// Byte-exact mirrors of the SSOT contract api-schemas/heartbeat.schema.json
+// (declared by docs/HEARTBEAT_PROTOCOL.md §2). Fail-closed: every validator
+// runs BEFORE any registry write, so a violating ping can never land.
+
+export const HEARTBEAT_TASK_ID_MAX = 128;
+const HEARTBEAT_TASK_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
+const HEARTBEAT_STATUSES = ["alive", "busy", "idle"] as const;
+export const HEARTBEAT_TTL_MIN_SECONDS = 30;
+export const HEARTBEAT_TTL_MAX_SECONDS = 3600;
+
+export type HeartbeatStatus = (typeof HEARTBEAT_STATUSES)[number];
+
+/** Empty string = idle (holds no task) per the SSOT pattern. */
+export function validateHeartbeatTaskId(taskId: string): string | null {
+  if (typeof taskId !== "string") return "taskId must be a string";
+  if (taskId.length > HEARTBEAT_TASK_ID_MAX) {
+    return `taskId must be <= ${HEARTBEAT_TASK_ID_MAX} chars (SSOT heartbeat.schema.json); got ${taskId.length}`;
+  }
+  if (/[\x00-\x1f\x7f]/.test(taskId)) {
+    return "taskId must not contain control characters";
+  }
+  if (taskId !== "" && !HEARTBEAT_TASK_ID_PATTERN.test(taskId)) {
+    return `taskId must match ^$|^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$ (SSOT heartbeat.schema.json); got "${taskId}"`;
+  }
+  return null;
+}
+
+export function validateHeartbeatStatus(status: string): string | null {
+  if (typeof status !== "string" || !(HEARTBEAT_STATUSES as readonly string[]).includes(status)) {
+    return `status must be one of ${HEARTBEAT_STATUSES.join("|")} (SSOT heartbeat.schema.json); got "${status}"`;
+  }
+  return null;
+}
+
+export function validateHeartbeatTtlSeconds(ttlSeconds: number): string | null {
+  if (
+    typeof ttlSeconds !== "number" ||
+    !Number.isInteger(ttlSeconds) ||
+    ttlSeconds < HEARTBEAT_TTL_MIN_SECONDS ||
+    ttlSeconds > HEARTBEAT_TTL_MAX_SECONDS
+  ) {
+    return `ttlSeconds must be an integer between ${HEARTBEAT_TTL_MIN_SECONDS} and ${HEARTBEAT_TTL_MAX_SECONDS} (SSOT heartbeat.schema.json); got ${ttlSeconds}`;
+  }
+  return null;
+}
+
+/**
+ * Pure record builder (F2): old pings (no ownership fields) produce a record
+ * byte-compatible with the pre-F2 shape; provided fields ride along verbatim.
+ */
+export function buildHeartbeatRecord(input: RecordHeartbeatInput, nowMs: number): HeartbeatRecord {
+  return {
+    slot: input.slot,
+    agentId: input.agentId?.trim() || input.slot,
+    source: input.source,
+    ...(input.clientId ? { clientId: input.clientId } : {}),
+    ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
+    updatedAtMs: nowMs,
+    updatedAt: new Date(nowMs).toISOString(),
+  };
 }
 
 /** Derives the real-time state from a record's age (ms-precision). */
@@ -249,6 +318,12 @@ export type RecordHeartbeatInput = {
   agentId?: string;
   source: HeartbeatSource;
   clientId?: string;
+  /** F2: claimed task id ("" = idle). Validated against the SSOT schema. */
+  taskId?: string;
+  /** F2: lifecycle status — alive (on-task) | busy (executing) | idle (awaiting). */
+  status?: HeartbeatStatus;
+  /** F2: lease duration override (30–3600s); defaults to HEARTBEAT_TTL_SECONDS. */
+  ttlSeconds?: number;
 };
 
 export type RecordHeartbeatResult = {
@@ -259,6 +334,9 @@ export type RecordHeartbeatResult = {
   ttlSeconds: number;
   redisAccount: string;
   onlineThreshold: string;
+  /** F2: echoed ownership telemetry (absent on legacy pings). */
+  taskId?: string;
+  status?: HeartbeatStatus;
 };
 
 /**
@@ -273,6 +351,21 @@ export async function recordHeartbeat(
   const slotError = validateSlot(input.slot);
   if (slotError) throw new Error(slotError);
 
+  // F2: ownership-field validation BEFORE the chain walk (fail-closed — same
+  // ordering contract as slot validation, mirrored by test_heartbeat.ts).
+  if (input.taskId !== undefined) {
+    const taskIdError = validateHeartbeatTaskId(input.taskId);
+    if (taskIdError) throw new Error(taskIdError);
+  }
+  if (input.status !== undefined) {
+    const statusError = validateHeartbeatStatus(input.status);
+    if (statusError) throw new Error(statusError);
+  }
+  if (input.ttlSeconds !== undefined) {
+    const ttlError = validateHeartbeatTtlSeconds(input.ttlSeconds);
+    if (ttlError) throw new Error(ttlError);
+  }
+
   const chain = activeAccountChain();
   if (chain.length === 0) {
     throw new Error(
@@ -281,15 +374,10 @@ export async function recordHeartbeat(
   }
 
   const nowMs = Date.now();
-  const record: HeartbeatRecord = {
-    slot: input.slot,
-    agentId: input.agentId?.trim() || input.slot,
-    source: input.source,
-    ...(input.clientId ? { clientId: input.clientId } : {}),
-    updatedAtMs: nowMs,
-    updatedAt: new Date(nowMs).toISOString(),
-  };
+  const record = buildHeartbeatRecord(input, nowMs);
   const value = JSON.stringify(record);
+  // F2: per-ping lease override; default keeps the 300s registry contract.
+  const effectiveTtlSeconds = input.ttlSeconds ?? HEARTBEAT_TTL_SECONDS;
 
   // বাংলা মন্তব্য (#2613 R2): কোটা cooldown-এ থাকা account-এ একটিও request
   // না পাঠিয়ে সরাসরি active chain (cooldown-মুক্ত) থেকে write শুরু করি।
@@ -304,7 +392,7 @@ export async function recordHeartbeat(
       // Dual-write: maintain individual key with TTL for legacy readers
       await client.setEx(
         heartbeatKey(input.slot),
-        HEARTBEAT_TTL_SECONDS,
+        effectiveTtlSeconds,
         value,
       ).catch(() => {});
       return acct.label;
@@ -323,9 +411,11 @@ export async function recordHeartbeat(
     slot: record.slot,
     agentId: record.agentId,
     heartbeatAt: record.updatedAt,
-    ttlSeconds: HEARTBEAT_TTL_SECONDS,
+    ttlSeconds: effectiveTtlSeconds,
     redisAccount: account.label,
     onlineThreshold: `ping again within ${HEARTBEAT_ONLINE_THRESHOLD_SECONDS}s to stay 'online'`,
+    ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
   };
 }
 
