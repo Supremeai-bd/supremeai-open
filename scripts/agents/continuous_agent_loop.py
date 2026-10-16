@@ -27,6 +27,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -387,6 +388,7 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
             "required_evidence": tc.get("required_evidence", []),
             "stop_conditions": tc.get("stop_conditions", []),
             "admin_gate": tc.get("admin_gate", {}),
+            "memory_integration": describe_memory_integration(),
             "specialist_prompt": build_agent_prompt(task, role, contract),
             "submission": {
                 "pathway": "bridge_submit_patch | pull_request",
@@ -991,6 +993,331 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
     return 0 if failures == 0 else 1
 
 
+# ============================================================================
+# Contributor additions: memory sidecar integration (audit #283, finding G1 — P1)
+# ============================================================================
+# The Tower bridges the Python memory server under the ``memory.*`` prefix
+# (episodic record_task / get_similar_tasks / build_context, long-term
+# remember_fact / search_learned_facts — src/tools/memory.tools.ts). Until
+# this block the loop never touched it: every task started from zero
+# experience even though the infrastructure sat one MCP hop away. This
+# wiring makes the SYSTEM the learner while the loop itself stays stateless
+# (AGENTS.md §2):
+#   - before work: recall similar past tasks, surface them to the specialist
+#   - after work:  record the outcome signature (success AND failure — the
+#     failure signal is the one that prevents repeated mistakes)
+# Degradation contract (fail-honest, mirrors the notify doctrine):
+#   - bounded timeout, process-lifetime circuit breaker, never raises;
+#   - tools are visibility-scoped: zero-credential runs simply see no
+#     memory.* tools and the integration degrades quietly for that call;
+#   - tool inventory + input schemas are discovered live from the Tower's
+#     tools/list, so no argument shape is hardcoded beyond a best-effort
+#     value map (the sidecar is 100% dynamic server-side);
+#   - known Tower quirk (WO #251 evidence): tools/list advertises dotted
+#     names while the call registry sanitizes '.' → '_'. Both forms tried.
+# Envelope safety: the envelope carries ONLY the static capability
+# descriptor (describe_memory_integration, constants-only) so SPEC §2
+# envelope determinism (tier 7) and §4b envelope parity stay untouched by
+# live memory data. Protocol details: docs/AGENT_LOOP_SPEC.md §2b.
+
+MEMORY_TOWER_URL = os.environ.get("MCP_TOWER_URL", "https://supremeai-mcp-tower.onrender.com/mcp")
+MEMORY_DISABLED = os.environ.get("SUPREMEAI_MEMORY", "") == "0"
+MEMORY_TIMEOUT_S = 8.0
+MEMORY_MAX_BREAKER_FAILURES = 2
+_MEMORY_FETCH_TOOL = "memory.get_similar_tasks"
+_MEMORY_RECORD_TOOL = "memory.record_task"
+
+
+class _MemoryCircuit:
+    """Process-lifetime circuit breaker for memory sidecar calls."""
+
+    def __init__(self) -> None:
+        self.consecutive_failures = 0
+        self.tripped = False
+        self.last_error: str | None = None
+
+    def record_success(self) -> None:
+        self.consecutive_failures = 0
+
+    def record_failure(self, err: str) -> None:
+        self.consecutive_failures += 1
+        self.last_error = err[:200]
+        if self.consecutive_failures >= MEMORY_MAX_BREAKER_FAILURES:
+            self.tripped = True
+            log("⚠", f"[memory] sidecar unavailable ({err[:120]}) — memory integration disabled for this process (fail-honest degradation)")
+
+
+_MEMORY = _MemoryCircuit()
+
+
+def _memory_enabled() -> bool:
+    return (not MEMORY_DISABLED) and (not _MEMORY.tripped)
+
+
+def _memory_post(
+    method: str,
+    params: dict[str, Any] | None = None,
+    notify: bool = False,
+    session_id: str | None = None,
+) -> tuple[Any, str | None, str | None]:
+    """One JSON-RPC POST against the MCP Tower (streamable HTTP).
+
+    Returns (parsed_payload_or_None, session_id_or_None, error_or_None).
+    Tolerates both direct-JSON and SSE-framed responses.
+    """
+    payload: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+    if params is not None:
+        payload["params"] = params
+    if not notify:
+        payload["id"] = 1
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if session_id:
+        headers["mcp-session-id"] = session_id
+    req = urllib.request.Request(
+        MEMORY_TOWER_URL, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=MEMORY_TIMEOUT_S) as resp:
+            sid = resp.headers.get("mcp-session-id")
+            ctype = resp.headers.get("Content-Type") or ""
+            body = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        return None, None, f"transport: {exc}"
+    if "text/event-stream" in ctype:
+        for line in body.splitlines():
+            if line.startswith("data:"):
+                try:
+                    return json.loads(line[5:].strip()), sid, None
+                except Exception:
+                    continue
+        return None, sid, "transport: SSE frame carried no JSON-RPC payload"
+    if not body.strip():
+        return {}, sid, None  # notifications / 202-style acks
+    try:
+        return json.loads(body), sid, None
+    except Exception as exc:
+        return None, sid, f"decode: {exc}"
+
+
+def _memory_open_session() -> tuple[str | None, str | None]:
+    """MCP handshake: initialize → notifications/initialized. Returns (sid, err)."""
+    _resp, sid, err = _memory_post("initialize", {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {"name": "supremeai-agent-loop", "version": "1"},
+    })
+    if err:
+        return None, err
+    if not sid:
+        return None, "session: tower returned no mcp-session-id"
+    _memory_post("notifications/initialized", {}, notify=True, session_id=sid)
+    return sid, None
+
+
+def _memory_discover(session_id: str, wanted: str) -> tuple[dict[str, Any] | None, str | None, bool]:
+    """Find `wanted` in the Tower's tools/list. Returns (descriptor, err, soft).
+
+    soft=True means "tool not advertised" (visibility-scoped environment,
+    e.g. zero-credential guest) — a quiet skip, not a breaker failure.
+    """
+    parsed, _sid, err = _memory_post("tools/list", {}, session_id=session_id)
+    if err:
+        return None, err, False
+    tools = ((parsed or {}).get("result") or {}).get("tools") or []
+    for tool in tools:
+        if tool.get("name") in (wanted, wanted.replace(".", "_")):
+            return tool, None, False
+    return None, f"tool not advertised: {wanted}", True
+
+
+def _memory_call_tool(session_id: str, tool_name: str, args: dict[str, Any]) -> tuple[Any, str | None]:
+    """tools/call one memory tool — dotted advertised name first, then the
+    sanitized underscore variant (Tower registry quirk, WO #251 evidence)."""
+    for candidate in (tool_name, tool_name.replace(".", "_")):
+        resp, _sid, err = _memory_post("tools/call", {"name": candidate, "arguments": args}, session_id=session_id)
+        if err:
+            return None, err
+        if resp and "error" in resp:
+            err_obj = resp["error"] or {}
+            msg = str(err_obj.get("message", err_obj))
+            code = err_obj.get("code")
+            if "Tool not found" in msg or "-32602" in msg or code == -32602:
+                continue  # try the other name form
+            return None, f"rpc: {msg}"
+        if resp and "result" in resp:
+            content = (resp["result"] or {}).get("content") or []
+            text = "".join(c.get("text", "") for c in content if isinstance(c, dict))
+            try:
+                return json.loads(text), None
+            except Exception:
+                return text, None
+        return None, "rpc: empty response"
+    return None, f"tool not found under any name form: {tool_name}"
+
+
+def _memory_build_args(schema: Any, values: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Schema-adaptive payload builder: fill declared properties from the
+    value map; report required props we could not fill (the call still
+    proceeds — the sidecar may default them; a rejection trips the breaker)."""
+    props = ((schema or {}) if isinstance(schema, dict) else {}).get("properties") or {}
+    required = list((((schema or {}) if isinstance(schema, dict) else {}).get("required")) or [])
+    args: dict[str, Any] = {}
+    for key in props:
+        if key in values and values[key] not in (None, ""):
+            args[key] = values[key]
+    unmapped = [key for key in required if key not in args]
+    return args, unmapped
+
+
+def _memory_normalize_records(data: Any) -> list[dict[str, Any]]:
+    """Best-effort normalization of sidecar responses into record dicts."""
+    if isinstance(data, str):
+        return [{"summary": data[:500]}] if data.strip() else []
+    if isinstance(data, dict):
+        for key in ("tasks", "episodes", "results", "records", "items", "similar_tasks"):
+            if isinstance(data.get(key), list):
+                return [r for r in data[key] if isinstance(r, dict)][:10]
+        return [data]
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)][:10]
+    return []
+
+
+def memory_recall_similar_tasks(objective: str, role: str = "", k: int = 3) -> list[dict[str, Any]]:
+    """Recall similar past task executions from the memory sidecar (G1).
+
+    Returns a list of experience records (possibly empty). Never raises:
+    any transport/contract problem trips the circuit breaker and returns [].
+    """
+    if not _memory_enabled() or not objective:
+        return []
+    try:
+        sid, err = _memory_open_session()
+        if err or not sid:
+            _MEMORY.record_failure(err or "no session")
+            return []
+        desc, err, soft = _memory_discover(sid, _MEMORY_FETCH_TOOL)
+        if err:
+            if soft:
+                return []  # visibility-scoped environment — quiet skip
+            _MEMORY.record_failure(err)
+            return []
+        bounded_k = max(1, min(int(k), 10))
+        args, unmapped = _memory_build_args((desc or {}).get("inputSchema"), {
+            "query": objective, "task": objective, "objective": objective,
+            "description": objective, "k": bounded_k, "limit": bounded_k,
+            "top_k": bounded_k, "max_results": bounded_k, "role": role,
+        })
+        if unmapped:
+            log("⚠", f"[memory] {_MEMORY_FETCH_TOOL} schema requires unmapped arg(s) {unmapped} — attempting best-effort payload")
+        data, err = _memory_call_tool(sid, _MEMORY_FETCH_TOOL, args)
+        if err:
+            _MEMORY.record_failure(err)
+            return []
+        _MEMORY.record_success()
+        return _memory_normalize_records(data)
+    except Exception as exc:  # absolute fail-honest boundary
+        _MEMORY.record_failure(str(exc))
+        return []
+
+
+def memory_experience_block(objective: str, role: str = "", k: int = 3) -> str | None:
+    """Markdown 'Past task experience' section for the specialist prompt.
+
+    Returns None when the sidecar is disabled/unreachable/empty — callers
+    simply skip the section (no prompt noise in degraded mode).
+    """
+    records = memory_recall_similar_tasks(objective, role=role, k=k)
+    if not records:
+        return None
+    lines = ["### Past task experience (memory sidecar, auto-recalled)", ""]
+    for i, rec in enumerate(records[:bounded_k_value(k)], start=1):
+        title = str(rec.get("task") or rec.get("title") or rec.get("objective") or rec.get("summary") or f"record {i}")[:160]
+        outcome = str(rec.get("outcome") or rec.get("result") or rec.get("status") or "").strip()
+        note = str(rec.get("summary") or rec.get("notes") or rec.get("evidence") or "").strip()[:300]
+        line = f"{i}. {title}"
+        if outcome:
+            line += f" — outcome: {outcome}"
+        lines.append(line)
+        if note and note != title:
+            lines.append(f"   {note}")
+    lines.append("")
+    lines.append("_Treat as context only: verify against current docs/contracts before reusing any past decision._")
+    block = "\n".join(lines)
+    return block if len(block) <= 2400 else block[:2380] + "\n…"
+
+
+def bounded_k_value(k: int) -> int:
+    """Shared clamp so fetch and formatting agree on the record window."""
+    try:
+        return max(1, min(int(k), 10))
+    except Exception:
+        return 3
+
+
+def memory_record_outcome(objective: str, role: str, outcome: str, summary: str) -> bool:
+    """Record a task outcome signature into the episodic memory sidecar (G1).
+
+    Fire-and-forget: returns False on ANY problem; never raises, never
+    blocks the cycle. Both success AND failure outcomes are recorded — the
+    failure signal is what stops the federation repeating mistakes.
+    """
+    if not _memory_enabled() or not objective:
+        return False
+    try:
+        sid, err = _memory_open_session()
+        if err or not sid:
+            _MEMORY.record_failure(err or "no session")
+            return False
+        desc, err, soft = _memory_discover(sid, _MEMORY_RECORD_TOOL)
+        if err:
+            if soft:
+                return False  # visibility-scoped environment — quiet skip
+            _MEMORY.record_failure(err)
+            return False
+        args, unmapped = _memory_build_args((desc or {}).get("inputSchema"), {
+            "task": objective, "query": objective, "objective": objective,
+            "description": objective, "outcome": outcome, "result": outcome,
+            "status": outcome, "role": role, "summary": summary,
+            "evidence": summary, "notes": summary,
+        })
+        if unmapped:
+            log("⚠", f"[memory] {_MEMORY_RECORD_TOOL} schema requires unmapped arg(s) {unmapped} — attempting best-effort payload")
+        _data, err = _memory_call_tool(sid, _MEMORY_RECORD_TOOL, args)
+        if err:
+            _MEMORY.record_failure(err)
+            return False
+        _MEMORY.record_success()
+        log("🧠", f"[memory] outcome recorded ({outcome})")
+        return True
+    except Exception as exc:  # absolute fail-honest boundary
+        _MEMORY.record_failure(str(exc))
+        return False
+
+
+def describe_memory_integration() -> dict[str, Any]:
+    """Static capability descriptor carried by the task envelope (G1).
+
+    Deliberately constants-only (NO live probe): two envelope builds with
+    identical inputs must stay byte-identical (SPEC §2 tier 7 determinism)
+    and §4b envelope parity must hold across public/private copies.
+    Envelope consumers can use this descriptor to fetch experience
+    themselves via the documented §2b protocol.
+    """
+    return {
+        "protocol": "mcp-memory-sidecar-v1",
+        "transport": "MCP streamable HTTP (initialize → tools/list → tools/call)",
+        "tools": [_MEMORY_FETCH_TOOL, _MEMORY_RECORD_TOOL],
+        "env_enable": "SUPREMEAI_MEMORY (value 0 disables)",
+        "env_endpoint": "MCP_TOWER_URL",
+        "degradation": "fail-honest: bounded timeout, circuit breaker, never blocks the cycle",
+        "spec": "docs/AGENT_LOOP_SPEC.md §2b",
+    }
+
+
 def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
     """Execute a single complete task dispatch cycle."""
     task = step_1_understand(issue_id, allow_adhoc=args.allow_adhoc)
@@ -1025,6 +1352,16 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
 
     agent_prompt = build_agent_prompt(task, assigned_role, contract)
 
+    # G1 (audit #283): recall past experience from the memory sidecar and
+    # surface it to the executing specialist. Fail-honest: any problem
+    # degrades to "no experience block", never blocks the cycle. Live memory
+    # data stays OUT of the canonical envelope (SPEC §2b parity note).
+    _objective = str(task.get("title") or contract["task_contract"].get("objective") or "")
+    experience_block = memory_experience_block(_objective, role=assigned_role)
+    if experience_block:
+        agent_prompt = agent_prompt + "\n\n" + experience_block
+        log("🧠", "[memory] recalled similar past task(s) into the specialist prompt")
+
     branch = step_4_branch(task)
     if not branch:
         return 1
@@ -1035,10 +1372,18 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
     passed, evidence = step_6_verify()
     if not passed:
         log("❌", "Verification failed. Please fix errors before proceeding.")
+        memory_record_outcome(_objective, assigned_role, "failure", "cycle halted at verification (tier gate)")
         return 1
 
     fork_owner = getattr(args, "fork_owner", None) or os.environ.get("SUPREMEAI_FORK_OWNER", "").strip() or None
-    if not step_7_record(task, branch, contract=contract, evidence=evidence, auto_pr=args.auto_pr, fork_owner=fork_owner):
+    recorded = step_7_record(task, branch, contract=contract, evidence=evidence, auto_pr=args.auto_pr, fork_owner=fork_owner)
+    memory_record_outcome(
+        _objective,
+        assigned_role,
+        "success" if recorded else "failure",
+        f"task-{task.get('id', 'adhoc')} on branch {branch}; verification={'pass' if passed else 'fail'}; record={'ok' if recorded else 'failed'}",
+    )
+    if not recorded:
         log("❌", "Step 7 (Record) failed! Halting before completion return.")
         return 1
 
