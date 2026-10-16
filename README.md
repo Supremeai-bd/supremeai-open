@@ -45,7 +45,7 @@ flowchart LR
 
 | Service | Live URL | Description |
 |---|---|---|
-| **SupremeAI Studio (Web UI)** | [https://supremeai-studio-live.vercel.app](https://supremeai-studio-live.vercel.app) | User-facing React/Vite console interface and agent workspace |
+| **SupremeAI Studio (Web UI)** | [`https://supremeai-studio-live.vercel.app`](https://supremeai-studio-live.vercel.app) | User-facing React/Vite console interface and agent workspace |
 | **MCP Control Tower** | [`https://supremeai-mcp-tower.onrender.com`](https://supremeai-mcp-tower.onrender.com) | Remote Streamable HTTP (`/mcp`) & SSE (`/sse`) tool plane |
 | **API Gateway** | [`https://supremeai-api.onrender.com`](https://supremeai-api.onrender.com) | Unified OpenAI-compatible multi-LLM provider gateway |
 
