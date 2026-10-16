@@ -7,6 +7,12 @@ cross the alert threshold (default: 80% of the Free-plan private budget).
 Zero-credential-safe: reads GH_TOKEN / GITHUB_TOKEN from env; prints a single
 JSON verdict (machine-parseable) plus a human line on stderr.
 
+Exit codes (verdict integrity): 0 = measured usage under threshold;
+1 = measured usage crossed threshold; 2 = operational error (missing token,
+HTTP failure, unexpected payload shape). Exit 2 keeps operational failures
+from being misread as a quota alert: an alert verdict is only ever emitted
+from a measured value, never from a crash or a guessed zero.
+
 Usage:
     GH_TOKEN=ghp_xxx python scripts/ops/actions_quota_check.py
     GH_TOKEN=... python scripts/ops/actions_quota_check.py --year 2026 --month 10 --threshold 0.8
@@ -18,6 +24,7 @@ import datetime as _dt
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 ORG_ID = os.environ.get("SUPREMEAI_ORG_ID", "342164125")
@@ -34,7 +41,7 @@ def main() -> int:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     if not token:
         print("❌ [quota-guard] GH_TOKEN/GITHUB_TOKEN missing in env — fail-closed.", file=sys.stderr)
-        return 1
+        return 2
 
     url = f"https://api.github.com/organizations/{ORG_ID}/settings/billing/usage?year={args.year}&month={args.month}"
     req = urllib.request.Request(url, headers={
@@ -42,8 +49,23 @@ def main() -> int:
         "Accept": "application/vnd.github+json",
         "User-Agent": "SupremeAI-quota-guard",
     })
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        payload = json.load(resp)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.load(resp)
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
+        # Operational failure must not wear the alert exit code: a machine
+        # parser would read exit 1 as "quota crossed" with zero evidence.
+        print(f"❌ [quota-guard] billing API unreachable/unreadable — no verdict issued: {exc}", file=sys.stderr)
+        print(json.dumps({"error": f"billing API unreachable/unreadable: {exc}", "month": f"{args.year}-{args.month:02d}"}, indent=2))
+        return 2
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("usageItems"), list):
+        # A 200 response without usageItems proves nothing about usage — a
+        # fabricated 0.0 would read as a clean "ok" verdict on shape drift.
+        shape = type(payload).__name__
+        print(f"❌ [quota-guard] unexpected billing payload shape ({shape}, no usageItems list) — no verdict issued.", file=sys.stderr)
+        print(json.dumps({"error": "unexpected billing payload shape (no usageItems list)", "month": f"{args.year}-{args.month:02d}"}, indent=2))
+        return 2
 
     minutes = sum(
         float(u.get("quantity", 0.0))
