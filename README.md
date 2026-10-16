@@ -18,6 +18,44 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
 | `.github/ISSUE_TEMPLATE/bridge-work-order.yml` | Work-order template for bridge submissions (task id, patch branch, test evidence) |
 | `LICENSE` | MIT |
 
+## Federation at a glance
+
+```mermaid
+flowchart LR
+  AGENT["🤖 Autonomous agents<br/>+ human contributors"]
+  CONSUMER["👤 Consumers"]
+
+  subgraph PUB["PUBLIC — open window (this repo)"]
+    OPEN["📜 supremeai-open<br/>contracts · schemas · examples<br/>agent instructions · bridge lane"]
+  end
+
+  subgraph SVC["GOVERNED SERVICES"]
+    TOWER["🛰️ supremeai-mcp-control-plane<br/>Control Tower · private<br/>zero-credential MCP lane"]
+    STUDIO["🖥️ supremeai-studio<br/>dashboard UI"]
+    API["🚪 supremeai-api<br/>Unified Provider Gateway<br/>OpenAI-compatible /v1"]
+  end
+
+  subgraph PRIV["PRIVATE — the moat"]
+    MONO["🏗️ supremeai<br/>orchestration · merge gates"]
+    CORE["🧠 supremeai-core<br/>decision intelligence"]
+  end
+
+  ADAPTER["⚡ Provider adapters<br/>Gemini · Groq · …"]
+
+  AGENT -->|"issues · PRs · work orders"| OPEN
+  AGENT -->|"bridge_submit_patch · zero-credential MCP"| TOWER
+  TOWER -->|"GitHub App: bridge branch + work-order issue"| OPEN
+  OPEN -->|"Merge Gate auto-merge + bridge dispatch (Zero-Admin)"| MONO
+  MONO -->|"deep core changes via Bridge Work Orders"| CORE
+  CONSUMER -->|"SUPREMEAI_API_KEY"| STUDIO
+  STUDIO --> API
+  API --> ADAPTER
+  API -.->|"byte-mirrored contracts + client (daily drift check)"| OPEN
+```
+
+Every flow above is documented in [`ECOSYSTEM_MAP.md`](./ECOSYSTEM_MAP.md) — the federation
+directory — and enforced by the gates in [`AGENT_RULES.md`](./AGENT_RULES.md).
+
 ## The one stable contract
 
 ```
