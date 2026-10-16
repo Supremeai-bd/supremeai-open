@@ -3,10 +3,12 @@ import { z } from "zod";
 
 import { RequestContextStore } from "../policy/auth.context.js";
 import {
+  listOpenAssignments,
   MAX_RETRIES,
   orchestratorDispatch,
   ROLE_EVENT_MAP,
 } from "../registry/orchestrator_dispatch.js";
+import { validateSlot } from "../registry/agent_heartbeat.js";
 
 /**
  * Orchestrator dispatch tool (issue #1803, #1439 Phase D).
@@ -83,6 +85,55 @@ export async function registerOrchestratorTools(server: McpServer): Promise<void
             {
               type: "text",
               text: `orchestrator_dispatch failed: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  // F3 (audit 2026-10-16): agent-side poll — closes the dispatch loop. Without
+  // this, 'assigned' decisions lived only in Redis state + logs and no agent
+  // ever learned it had work. Read-only; any authenticated caller may check its
+  // own slot (assignment payload is routing metadata, not secrets).
+  server.tool(
+    "orchestrator_my_tasks",
+    `Poll open routing assignments for a slot: dispatch decisions previously died in logs — an assigned agent can now fetch its pending tasks (open = assigned/fallback within the last ${"24h"} freshness window).`,
+    {
+      slot: z
+        .string()
+        .regex(/^(agent|z\.ai|claude|chatgpt|cursor|gemini|copilot|coder|planner|ci|pr-helper|browser|platform|super)-\d+$/, 'slot must match "<type>-N" (e.g. "coder-3")')
+        .describe("Your slot id (as registered via agent_heartbeat)"),
+    },
+    async ({ slot }) => {
+      const context = RequestContextStore.get();
+      if (!context?.authenticated) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "Authentication required for orchestrator_my_tasks" }],
+        };
+      }
+      const slotError = validateSlot(slot);
+      if (slotError) {
+        return { isError: true, content: [{ type: "text", text: slotError }] };
+      }
+      try {
+        const result = await listOpenAssignments();
+        const mine = result.assignments.filter((a) => a.assignedSlot === slot);
+        const lines = [
+          `open assignments for ${slot}: ${mine.length} (scanned ${result.stateKeysScanned} dispatch states)`,
+          ...mine.map((a) => `- ${a.issueRef} [${a.decision}] role=${a.role ?? "n/a"} attempts=${a.attempts} age=${a.ageSeconds}s updated=${a.updatedAt}`),
+        ];
+        return {
+          content: [{ type: "text", text: lines.join("\n") }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `orchestrator_my_tasks failed: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
         };
