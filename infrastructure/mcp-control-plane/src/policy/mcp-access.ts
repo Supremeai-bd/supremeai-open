@@ -194,6 +194,24 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
       approvalRequired: false,
     };
   }
+  // Audit 2026-10-16 U4: destructive autonomy primitives previously fell to the
+  // default class (restricted/internal ⇒ rank ≥ 3) so ANY agent-role client
+  // could emergency-stop the whole federation — while the REST route
+  // (/autonomy/kill, index.ts) already demanded admin. Align MCP with REST:
+  // kill_switch/enable are ADMIN-only (secret ⇒ rank ≥ 4). Founder-approved fix
+  // wave ("start fixing them" on the #283 roadmap); matching hardening, no
+  // new policy surface.
+  if (name === "autonomy_kill_switch" || name === "autonomy_enable") {
+    return {
+      name,
+      kind: "tool",
+      access: "restricted",
+      requiredScope: undefined,
+      riskLevel: "R5",
+      dataClassification: "secret",
+      approvalRequired: true,
+    };
+  }
   return {
     name,
     kind: "tool",
