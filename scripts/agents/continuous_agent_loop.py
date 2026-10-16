@@ -711,6 +711,22 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
         return False, evidence
     evidence.append({"tier": 2, "name": "JSON Schema Parse", "passed": True, "count": len(json_files)})
 
+    # 2b. api-schemas/ deep validation (#45): fail-closed delegation to the
+    # stdlib-only drop-in CLI (deterministic 0/1 exit contract). Guarded on
+    # both the script and the target dir so sparse trees without api-schemas/
+    # are honestly skipped instead of false-failing; reuses tier 2 on purpose
+    # (no new tier — tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4 stays 1..8).
+    schema_cli = REPO_ROOT / "scripts" / "validate_schemas.py"
+    schema_dir = REPO_ROOT / "api-schemas"
+    if schema_cli.is_file() and schema_dir.is_dir():
+        v_code, v_out, v_err = run_cmd([sys.executable, str(schema_cli)])
+        if v_code != 0:
+            first_line = ((v_err or v_out or "").strip().splitlines() or ["no output"])[0][:200]
+            log("❌", f"api-schemas deep validation failed (exit {v_code}): {first_line}")
+            evidence.append({"tier": 2, "name": "JSON Schema Parse", "passed": False, "api_schemas_exit": v_code, "detail": first_line})
+            return False, evidence
+        evidence.append({"tier": 2, "name": "api-schemas Deep Validation (#45)", "passed": True})
+
     # 3. YAML & OpenAPI Schema validation
     if yaml is not None:
         yaml_files = [y for y in list(REPO_ROOT.glob("**/*.yaml")) + list(REPO_ROOT.glob("**/*.yml")) if ".git" not in str(y) and "node_modules" not in str(y)]
