@@ -32,6 +32,7 @@ import { attachDiscoveryFilter, isValidToolProfile } from "./policy/tool-visibil
 import { verifyApprovalLink } from "./policy/approvals/signing.js";
 import { hasWebhookSignature } from "./lib/webhook_signature.js";
 import { registerBridgeIntake } from "./events/bridge_intake.js";
+import { registerFederatedCiWatcher } from "./events/federated_ci_watcher.js";
 import { validateRuntimeKnobs } from "./lib/env.js";
 import { pullSecretsIntoProcessEnv } from "./adapters/infisical/index.js";
 import { MemorySubAdapter } from "./adapters/memory/index.js";
@@ -1863,6 +1864,12 @@ async function main(): Promise<void> {
     // replays the durable outbox on boot. Must be armed BEFORE the server
     // accepts webhook traffic.
     registerBridgeIntake();
+
+    // #199: federated CI failure reporter — workflow_run.completed(failure)
+    // → actionable issue on the control-plane board. Idempotent, fail-closed
+    // (no-op unless FEDERATED_CI_WATCHER_ENABLED=true). Also armed BEFORE the
+    // server accepts webhook traffic.
+    await registerFederatedCiWatcher();
 
     const server = await createMcpServer(memoryAdapter);
 
