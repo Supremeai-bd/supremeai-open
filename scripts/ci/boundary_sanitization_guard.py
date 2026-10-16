@@ -79,6 +79,17 @@ APPROVED_TOP_LEVEL_DIRS = {
     # Content-layer checks (PROPRIETARY-LOGIC scan) still apply to every
     # file under this surface — path approval never bypasses content rules.
     "tests",
+    # runner/ — approved for issue #334 (deterministic 8-step agent runner
+    # harness; the issue's Verification Contract declares runner/ as the
+    # delivery surface: `git diff --stat runner/`, `import runner.agent_runner`).
+    # Same expansion process; content-layer checks still apply to every file.
+    "runner",
+    # core/ — approved for issue #330 (dynamic task routing engine;
+    # Verification Contract: `git diff --stat core/routing/`,
+    # `import core.routing.dynamic_router`). Bare core/ is a public federation
+    # surface — the Layer-1 proprietary-path rule (supremeai-core/packages/core/
+    # apps/core) is unaffected and keeps firing on the private module tree.
+    "core",
 }
 
 APPROVED_ROOT_FILES = {
@@ -409,6 +420,9 @@ def cmd_self_test() -> int:
              ["export const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY\n"], False),
             (".github/workflows/workflow_ref.yml", [secret_ref], False),
             ("docs/empty_ref.env.example", [empty_ref], False),
+            # newly approved surfaces (#334 runner/, #330 core/) carry benign code
+            ("runner/agent_runner.py", ["import os\n", "def main():\n    return 0\n"], False),
+            ("core/routing/dynamic_router.py", ["import json\n", "def route():\n    return {}\n"], False),
             # --- must FAIL (real leak classes; placed in APPROVED surfaces so
             # the CONTENT layer is what fires, not the surface layer) ---
             ("docs/leak_vault.py", [vault_leak], True),
