@@ -48,11 +48,18 @@ export const SLOT_PATTERN = /^(agent|z\.ai|claude|chatgpt|cursor|gemini|copilot|
 
 export type HeartbeatSource = "mcp-tower" | "backend" | "dashboard" | "cli";
 
+export type HeartbeatStatus = "alive" | "busy" | "idle";
+
 export type HeartbeatRecord = {
   slot: string;
   agentId: string;
   source: HeartbeatSource;
   clientId?: string;
+  /** Audit 2026-10-16 F2: task-ownership telemetry per heartbeat.schema.json SSOT. */
+  taskId?: string;
+  status?: HeartbeatStatus;
+  /** Agent-declared lease (30–3600s clamped); registry TTL stays 300s for liveness. */
+  declaredTtlSeconds?: number;
   updatedAtMs: number;
   updatedAt: string; // ISO-8601
 };
@@ -249,7 +256,46 @@ export type RecordHeartbeatInput = {
   agentId?: string;
   source: HeartbeatSource;
   clientId?: string;
+  taskId?: string;
+  status?: HeartbeatStatus;
+  ttlSeconds?: number;
 };
+
+/** Protocol bounds from heartbeat.schema.json / HEARTBEAT_PROTOCOL.md §2–§3. */
+export const HEARTBEAT_TTL_MIN_SECONDS = 30;
+export const HEARTBEAT_TTL_MAX_SECONDS = 3600;
+
+/** Validates + clamps the agent-declared task lease; returns error string or clamped value. */
+export function validateDeclaredTtl(ttl: unknown): { error?: string; value?: number } {
+  if (ttl === undefined || ttl === null) return { value: undefined };
+  if (typeof ttl !== "number" || !Number.isFinite(ttl) || !Number.isInteger(ttl)) {
+    return { error: `ttl_seconds must be an integer (30–3600 per heartbeat.schema.json); got ${JSON.stringify(ttl)}` };
+  }
+  if (ttl < HEARTBEAT_TTL_MIN_SECONDS || ttl > HEARTBEAT_TTL_MAX_SECONDS) {
+    return { error: `ttl_seconds must be within ${HEARTBEAT_TTL_MIN_SECONDS}–${HEARTBEAT_TTL_MAX_SECONDS} (HEARTBEAT_PROTOCOL.md §2); got ${ttl}` };
+  }
+  return { value: ttl };
+}
+
+/** Validates task_id (non-empty, ≤128 chars, no control chars) per schema string constraints. */
+export function validateTaskId(taskId: unknown): { error?: string; value?: string } {
+  if (taskId === undefined || taskId === null) return { value: undefined };
+  if (typeof taskId !== "string") return { error: "task_id must be a string" };
+  const trimmed = taskId.trim();
+  if (trimmed.length === 0) return { value: undefined }; // empty = idle, per protocol
+  if (trimmed.length > 128) return { error: `task_id must be ≤ 128 chars (heartbeat.schema.json); got ${trimmed.length}` };
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return { error: "task_id contains control characters" };
+  return { value: trimmed };
+}
+
+/** Validates status enum (alive|busy|idle) per heartbeat.schema.json. */
+export function validateHeartbeatStatus(status: unknown): { error?: string; value?: HeartbeatStatus } {
+  if (status === undefined || status === null) return { value: undefined };
+  if (status !== "alive" && status !== "busy" && status !== "idle") {
+    return { error: `status must be one of alive|busy|idle (heartbeat.schema.json); got ${JSON.stringify(status)}` };
+  }
+  return { value: status };
+}
 
 export type RecordHeartbeatResult = {
   ok: true;
@@ -281,11 +327,23 @@ export async function recordHeartbeat(
   }
 
   const nowMs = Date.now();
+  // F2 task-ownership fields: validated + clamped BEFORE any write so corrupt
+  // ownership telemetry can never enter the registry (fail-closed, honest).
+  const taskId = validateTaskId(input.taskId);
+  if (taskId.error) throw new Error(taskId.error);
+  const status = validateHeartbeatStatus(input.status);
+  if (status.error) throw new Error(status.error);
+  const declaredTtl = validateDeclaredTtl(input.ttlSeconds);
+  if (declaredTtl.error) throw new Error(declaredTtl.error);
+
   const record: HeartbeatRecord = {
     slot: input.slot,
     agentId: input.agentId?.trim() || input.slot,
     source: input.source,
     ...(input.clientId ? { clientId: input.clientId } : {}),
+    ...(taskId.value ? { taskId: taskId.value } : {}),
+    ...(status.value ? { status: status.value } : {}),
+    ...(declaredTtl.value !== undefined ? { declaredTtlSeconds: declaredTtl.value } : {}),
     updatedAtMs: nowMs,
     updatedAt: new Date(nowMs).toISOString(),
   };
