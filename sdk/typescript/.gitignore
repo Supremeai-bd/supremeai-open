@@ -1,0 +1,5 @@
+# Build artifacts (bridge diff caps keep landed trees source-only)
+dist/
+node_modules/
+package-lock.json
+*.tsbuildinfo
