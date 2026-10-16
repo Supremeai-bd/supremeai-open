@@ -70,6 +70,97 @@ def extract_task_issue_reference(title: str, body: str) -> str | None:
     return None
 
 
+# --- Knowledge Sharing / Claim Gate support (#392) ----------------------------
+# AGENTS.md §2/§5 mandate Reflection Evidence on every contribution; #392's
+# knowledge-sharing-guard enforces it on PR bodies. The opener therefore builds
+# the section from the work order's own content — why = the WO's Summary (what
+# + why) section, alternatives_rejected = an explicit alternatives_rejected
+# entry when the WO carries one, else an honest pointer to the agent's
+# decision ledger (never fabricated rationale).
+
+def extract_summary_section(body: str) -> str | None:
+    """Extract the '### Summary' section text from a Bridge Work Order body."""
+    match = re.search(r"###\s*Summary[^\n]*\n(.*?)(?=\n###\s|\Z)", body, re.DOTALL)
+    if not match:
+        return None
+    text = match.group(1).strip()
+    return text or None
+
+
+def extract_alternatives(body: str) -> str | None:
+    """Extract an alternatives_rejected entry from the WO body, if present.
+
+    Handles both inline text on the label line and a markdown sub-list on the
+    following lines. The label's own bold '**' suffix is skipped — capturing it
+    was a real defect the self-test caught (alt == '**').
+    """
+    match = re.search(r"alternatives_rejected:?[ \t]*\**[ \t]*(.*)", body, re.IGNORECASE)
+    if not match:
+        return None
+    inline = (match.group(1) or "").strip()
+    if inline:
+        return inline
+    for line in body[match.end():].splitlines():
+        text = line.strip().lstrip("-").strip()
+        if text:
+            return text
+    return None
+
+
+def build_reflection_section(body: str, wo_num: int) -> str:
+    """Build the guard-compliant Reflection Evidence section from WO content.
+
+    Honesty contract: quotes the work order; never invents rationale. When the
+    WO lacks an alternatives_rejected entry the fallback SAYS so and points at
+    the submitting agent's decision ledger instead of fabricating one.
+    """
+    why = extract_summary_section(body) or f"Work order #{wo_num} summary (what + why)."
+    why = why[:400]
+    alt = extract_alternatives(body)
+    if alt is None:
+        alt = (
+            f"Not recorded in work order #{wo_num} body — rejected alternatives "
+            "live in the submitting agent's decision ledger (AGENTS.md §2/§5)."
+        )
+    alt = alt[:400]
+    return (
+        "## Reflection Evidence (why + alternatives_rejected)\n"
+        f"- **why:** {why}\n"
+        f"- **alternatives_rejected:**\n"
+        f"  - {alt}\n"
+    )
+
+
+def issue_has_active_claim(issue_number: int, repo: str = UPSTREAM_REPO) -> bool:
+    """Claim Gate SSOT predicate (#392) — mirrors pipeline.yml claim-guard.
+
+    Active claim = status:claimed / status:in-progress label, an open bridge:*
+    label (a filed Bridge Work Order IS the zero-credential claim vehicle), or
+    an <!-- atomic-claim --> comment vetoed by the released marker
+    (status:unclaimed, per stale_claim_releaser vocabulary). Fail-closed: an
+    unreadable issue or any error counts as NO verifiable claim.
+    """
+    cmd = ["gh", "issue", "view", str(issue_number), "--repo", repo, "--json", "labels,comments"]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        if res.returncode != 0:
+            return False
+        data = json.loads(res.stdout)
+        labels = [str(lbl.get("name", "")) for lbl in data.get("labels", []) or []]
+        if "status:claimed" in labels or "status:in-progress" in labels:
+            return True
+        if any(lbl.startswith("bridge:") for lbl in labels):
+            return True
+        if "status:unclaimed" in labels:
+            return False
+        for comment in data.get("comments", []) or []:
+            if "<!-- atomic-claim -->" in str(comment.get("body", "")):
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def branch_exists_on_remote(branch: str, repo: str = UPSTREAM_REPO) -> bool:
     """Check if the branch exists on remote repository."""
     cmd = ["git", "ls-remote", "--heads", f"https://github.com/{repo}.git", branch]
@@ -94,8 +185,8 @@ def get_existing_pr_for_branch(branch: str, repo: str = UPSTREAM_REPO) -> int | 
     return None
 
 
-def create_pr_for_work_order(issue: dict[str, Any], branch: str, repo: str = UPSTREAM_REPO) -> tuple[bool, str]:
-    """Create a Pull Request for a Bridge Work Order."""
+def build_pr_body(issue: dict[str, Any], branch: str, repo: str = UPSTREAM_REPO) -> str:
+    """Build the PR body for a Bridge Work Order (pure; guard-compliant)."""
     wo_num = issue.get("number")
     title = issue.get("title", f"Bridge Work Order #{wo_num}")
     body = issue.get("body", "")
@@ -108,7 +199,9 @@ def create_pr_for_work_order(issue: dict[str, Any], branch: str, repo: str = UPS
     task_ref = extract_task_issue_reference(title, body)
     closes_line = f"Closes {task_ref}" if task_ref else ""
 
-    pr_body = f"""## Claim & Work Order
+    reflection = build_reflection_section(body, wo_num)
+
+    return f"""## Claim & Work Order
 Submitted via [Bridge Work Order #{wo_num}](https://github.com/{repo}/issues/{wo_num}) on branch `{branch}`.
 
 ## Summary & Purpose
@@ -116,7 +209,23 @@ Submitted via [Bridge Work Order #{wo_num}](https://github.com/{repo}/issues/{wo
 
 {closes_line}
 Refs #{wo_num}
-"""
+
+{reflection}"""
+
+
+def create_pr_for_work_order(issue: dict[str, Any], branch: str, repo: str = UPSTREAM_REPO) -> tuple[bool, str]:
+    """Create a Pull Request for a Bridge Work Order."""
+    wo_num = issue.get("number")
+    title = issue.get("title", f"Bridge Work Order #{wo_num}")
+    body = issue.get("body", "")
+
+    # Clean up title for PR: strip leading emojis/Bridge Work Order prefix if present
+    pr_title = re.sub(r"^🌉\s*Bridge Work Order\s*—\s*", "", title).strip()
+    if not pr_title:
+        pr_title = f"feat(bridge): deliver work order #{wo_num}"
+
+    pr_body = build_pr_body(issue, branch, repo)
+
     cmd = [
         "gh", "pr", "create",
         "--repo", repo,
@@ -173,6 +282,17 @@ def run_auto_bridge_pr_opener(auto_open: bool = False, repo: str = UPSTREAM_REPO
             print(f"  [WO #{wo_num}] Branch '{branch}' already has PR #{existing_pr}. Skipping.")
             continue
 
+        # Claim Gate precheck (#392 deliverable 4): verify an active claim on the
+        # referenced target issue (or the WO itself) BEFORE opening. Fail-honest
+        # skip — one unverifiable WO must not kill the whole scan.
+        task_ref = extract_task_issue_reference(title, iss.get("body", ""))
+        claim_check_num = int(task_ref.lstrip("#")) if task_ref else wo_num
+        if not issue_has_active_claim(claim_check_num, repo):
+            print(f"  [WO #{wo_num}] No active claim on issue {task_ref or f'#{wo_num}'} (fail-closed). "
+                  f"Per AGENTS.md Step 4 (no claim, no work) — skipping PR creation.")
+            actions.append({"wo": wo_num, "branch": branch, "status": "unclaimed-skip"})
+            continue
+
         print(f"  [WO #{wo_num}] Eligible for autonomous PR creation: branch='{branch}'")
         if auto_open:
             success, detail = create_pr_for_work_order(iss, branch, repo)
@@ -206,6 +326,25 @@ Supremeai-bd/supremeai
 
     t = extract_task_issue_reference("Bridge Work Order — feat(schemas): external Webhook (#51)", sample_body)
     assert t == "#51", f"Unexpected task ref: {t}"
+
+    # Reflection Evidence builders (#392)
+    summary = extract_summary_section(
+        sample_body + "\n### Summary (what + why)\nfixes the webhook dispatch contract.\n"
+    )
+    assert summary is not None and "webhook dispatch contract" in summary, f"Unexpected summary: {summary}"
+    assert extract_summary_section("no sections here") is None, "missing section must be None"
+    alt = extract_alternatives("- **alternatives_rejected:**\n  - dropped approach X because Y")
+    assert alt is not None and "approach X" in alt, f"Unexpected alternatives: {alt}"
+    assert extract_alternatives("nothing here") is None, "missing alternatives must be None"
+    refl = build_reflection_section(sample_body, 51)
+    assert "## Reflection Evidence" in refl, "reflection section header missing"
+    assert "- **why:**" in refl and "- **alternatives_rejected:**" in refl, "reflection fields missing"
+    assert "decision ledger" in refl, "honest fallback for missing alternatives missing"
+    refl2 = build_reflection_section(
+        sample_body + "\n### Summary (what + why)\nfixes X.\n- **alternatives_rejected:**\n  - Y because Z",
+        51,
+    )
+    assert "fixes X." in refl2 and "Y because Z" in refl2, "WO-provided why/alternatives not carried"
 
     print("✅ Auto-Bridge PR Opener self-test passed cleanly!")
 
