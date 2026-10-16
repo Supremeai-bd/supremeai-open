@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://supremeai.ai/schemas/dashboard.schema.json",
+  "title": "SupremeAI Studio Dashboard — Federation Status & Live Agent Telemetry Contracts",
+  "description": "Layer-5 (Frontend & Client UI) contract for SupremeAI Studio: one DashboardSnapshot document carrying (a) DesignTokens — the dark-mode glassmorphism palette (hex colors + rgba glass surfaces), typography scale, radii and micro-animation motion values, so every rendered surface is token-driven rather than ad-hoc; (b) FederationStatus — per-repo health for the multi-repo federation (closed health/ci_status enums, open PR/issue counters, RFC 3339 last_sync); and (c) AgentTelemetryCard — live agent telemetry (closed state enum, progress 0-100, token spend, last_event instant). Design guidelines (fast/accessible/responsive) are normative here: renderers MUST honor prefers-reduced-motion (disable non-essential animation), MUST keep body text contrast >= 4.5:1 against the glass surface, MUST keep all interactive targets >= 44px, MUST be keyboard-operable with visible focus indicators, and MUST use a mobile-first fluid grid (single column < 640px, two columns >= 640px, three+ >= 1024px). Performance budget: first paint with zero third-party network requests (vanilla JS/CSS only, fonts system-stack). Fail-closed: enums are closed, counters bounded, instants carry an explicit RFC 3339 pattern (format is annotation-only in Draft 2020-12), and unknown fields are rejected everywhere (additionalProperties false). The reference renderer lives in examples/dashboard-preview/ (vanilla HTML/CSS/JS, zero dependencies) and validates its embedded snapshot against these constraints at boot, rendering a fail-closed error banner on any violation. See issue #24.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "tokens", "federation", "agents"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Semantic version of this contract document."
+    },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})$",
+      "description": "Snapshot instant, explicit RFC 3339 pattern (format is annotation-only in Draft 2020-12)."
+    },
+    "tokens": {
+      "$ref": "#/$defs/DesignTokens"
+    },
+    "federation": {
+      "$ref": "#/$defs/FederationStatus"
+    },
+    "agents": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/AgentTelemetryCard"
+      },
+      "description": "Live agent telemetry cards; bounded to keep render cost O(1) per frame budget."
+    }
+  },
+  "$defs": {
+    "DesignTokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Token-driven design surface: renderers map these values 1:1 onto CSS custom properties. Colors are dark-mode-first; glass surfaces are rgba so the backdrop blur shows through.",
+      "required": ["color", "typography", "radius", "motion"],
+      "properties": {
+        "color": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bg_base", "surface_glass", "surface_border", "text_primary", "text_secondary", "accent", "accent_soft", "success", "warning", "danger"],
+          "properties": {
+            "bg_base": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "description": "Page background (near-black, dark mode first)."
+            },
+            "surface_glass": {
+              "type": "string",
+              "pattern": "^rgba\\((?:\\d{1,3}, ){2}\\d{1,3}, (?:0\\.\\d{1,3}|[01])\\)$",
+              "description": "Glass card surface: rgba(...) with alpha < 1 so backdrop-filter blur is visible."
+            },
+            "surface_border": {
+              "type": "string",
+              "pattern": "^rgba\\((?:\\d{1,3}, ){2}\\d{1,3}, (?:0\\.\\d{1,3}|[01])\\)$",
+              "description": "Hairline border of glass cards (rgba)."
+            },
+            "text_primary": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "description": "Primary text; normative contrast >= 4.5:1 on surface_glass-over-bg_base."
+            },
+            "text_secondary": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "description": "Secondary/muted text; normative contrast >= 4.5:1 for body, >= 3:1 for large text."
+            },
+            "accent": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "description": "Primary accent (live states, progress, focus rings)."
+            },
+            "accent_soft": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "description": "Soft accent for gradients and glows."
+            },
+            "success": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "description": "Healthy/passing status."
+            },
+            "warning": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "description": "Degraded/waiting status."
+            },
+            "danger": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "description": "Down/failing/error status."
+            }
+          }
+        },
+        "typography": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["font_sans", "font_mono", "scale"],
+          "properties": {
+            "font_sans": {
+              "type": "string",
+              "minLength": 1,
+              "description": "System sans stack (zero network font requests)."
+            },
+            "font_mono": {
+              "type": "string",
+              "minLength": 1,
+              "description": "System mono stack for ids, counters, code."
+            },
+            "scale": {
+              "type": "array",
+              "minItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["token", "size"],
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{1,31}$",
+                    "description": "Type-scale token name (e.g. display, title, body, caption)."
+                  },
+                  "size": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?(px|rem)$",
+                    "description": "Font size in px or rem."
+                  }
+                }
+              },
+              "description": "Ordered type scale tokens."
+            }
+          }
+        },
+        "radius": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sm", "md", "lg"],
+          "properties": {
+            "sm": {
+              "type": "string",
+              "pattern": "^\\d+(px|rem)$"
+            },
+            "md": {
+              "type": "string",
+              "pattern": "^\\d+(px|rem)$"
+            },
+            "lg": {
+              "type": "string",
+              "pattern": "^\\d+(px|rem)$"
+            }
+          }
+        },
+        "motion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["duration_fast", "duration_base", "easing"],
+          "properties": {
+            "duration_fast": {
+              "type": "string",
+              "pattern": "^\\d+ms$",
+              "description": "Hover/focus micro-animation duration."
+            },
+            "duration_base": {
+              "type": "string",
+              "pattern": "^\\d+ms$",
+              "description": "Card enter/state-change duration."
+            },
+            "easing": {
+              "type": "string",
+              "pattern": "^(ease|ease-in|ease-out|ease-in-out|linear|cubic-bezier\\([0-9.]+, [0-9.]+, [0-9.]+, [0-9.]+\\))$",
+              "description": "Standard easing curve; renderers MUST disable non-essential motion under prefers-reduced-motion."
+            }
+          }
+        }
+      }
+    },
+    "FederationStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Multi-repo federation health for the status board.",
+      "required": ["repos"],
+      "properties": {
+        "repos": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/FederationRepo"
+          }
+        }
+      }
+    },
+    "FederationRepo": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One federated repository's dashboard status.",
+      "required": ["name", "health", "ci_status", "open_prs", "open_issues", "last_sync"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$",
+          "description": "Repository name (owner/repo or bare name)."
+        },
+        "health": {
+          "enum": ["healthy", "degraded", "down", "unknown"],
+          "description": "Closed health vocabulary; unknown is a valid state (fail-honest), not an error."
+        },
+        "ci_status": {
+          "enum": ["passing", "failing", "running", "unknown"],
+          "description": "Closed CI vocabulary."
+        },
+        "open_prs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "open_issues": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "last_sync": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})$",
+          "description": "Last federation sync instant, explicit RFC 3339 pattern."
+        }
+      }
+    },
+    "AgentTelemetryCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One live agent telemetry card. Vocabulary aligns with the telemetry-log and websocket-events contracts.",
+      "required": ["agent_id", "state", "progress", "tokens_used", "last_event"],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "pattern": "^agent-[a-zA-Z0-9_-]{1,64}$",
+          "description": "Agent identity (same vocabulary as telemetry-log.schema.json)."
+        },
+        "state": {
+          "enum": ["working", "waiting", "blocked", "done", "error"],
+          "description": "Closed agent state; drives card accent and the live pulse."
+        },
+        "task_id": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Current task, if any."
+        },
+        "current_issue": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Human-readable current objective (e.g. issue title)."
+        },
+        "progress": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Task progress percentage; drives the progress bar."
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000,
+          "description": "Cumulative token spend for this agent."
+        },
+        "events_per_min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000,
+          "description": "Recent event throughput (live-ness indicator)."
+        },
+        "last_event": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})$",
+          "description": "Last event instant, explicit RFC 3339 pattern."
+        }
+      }
+    }
+  }
+}
