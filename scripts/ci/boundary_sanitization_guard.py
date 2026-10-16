@@ -71,6 +71,13 @@ APPROVED_TOP_LEVEL_DIRS = {
     "api-schemas",
     "docs",
     "examples",
+    "gateway",
+    # gateway/ — approved for issue #336 (unified provider gateway: FastAPI
+    # SSE/HTTP streaming + provider failover per the issue's Verification
+    # Contract); expansion per the process documented in this module's
+    # docstring: registry changes ride a PR that references the governing
+    # issue. Content-layer checks (PROPRIETARY-LOGIC scan) still apply to
+    # every file under this surface — path approval never bypasses rules.
     "infrastructure",
     "scripts",
     # tests/ — approved for issue #45 (validate_schemas CLI test suite);
@@ -105,6 +112,20 @@ APPROVED_SUBTREES = {
     "scripts": {"agents", "ops", "ci", "validate_schemas.py"},
     ".github": {"ISSUE_TEMPLATE", "workflows", "actions"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
+    # gateway/: FILE-pinned segments (issue #336 — every module is a
+    # second-level file; a file is as valid a segment as a directory per the
+    # validate_schemas.py precedent).
+    "gateway": {
+        "__init__.py",
+        "config.py",
+        "main.py",
+        "provider_chain.py",
+        "rate_limit.py",
+        "routing_policy.json",
+        "README.md",
+        "requirements.txt",
+        "serve.py",
+    },
 }
 
 # ---------------------------------------------------------------------------
