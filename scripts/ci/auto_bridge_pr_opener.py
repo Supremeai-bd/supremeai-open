@@ -70,14 +70,19 @@ def extract_task_issue_reference(title: str, body: str) -> str | None:
     return None
 
 
-def branch_exists_on_remote(branch: str, repo: str = UPSTREAM_REPO) -> bool:
-    """Check if the branch exists on remote repository."""
+def branch_exists_on_remote(branch: str, repo: str = UPSTREAM_REPO) -> bool | None:
+    """Check if the branch exists on remote.
+
+    Returns True/False on a definitive answer, or None when the check itself
+    could not run (fail-honest: the caller must not report a fake "branch is
+    missing" verdict for a network/tool failure)."""
     cmd = ["git", "ls-remote", "--heads", f"https://github.com/{repo}.git", branch]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         return res.returncode == 0 and bool(res.stdout.strip())
-    except Exception:
-        return False
+    except Exception as exc:
+        print(f"    [WARN] branch existence check failed for '{branch}': {exc}")
+        return None
 
 
 def get_existing_pr_for_branch(branch: str, repo: str = UPSTREAM_REPO) -> int | None:
@@ -89,8 +94,8 @@ def get_existing_pr_for_branch(branch: str, repo: str = UPSTREAM_REPO) -> int | 
             data = json.loads(res.stdout)
             if data and isinstance(data, list) and len(data) > 0:
                 return int(data[0]["number"])
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"    [WARN] existing-PR check failed for branch '{branch}': {exc}")
     return None
 
 
@@ -136,17 +141,21 @@ Refs #{wo_num}
 
 
 def run_auto_bridge_pr_opener(auto_open: bool = False, repo: str = UPSTREAM_REPO) -> list[dict[str, Any]]:
-    """Scan open bridge:queued issues and autonomously open PRs."""
+    """Scan open bridge:queued issues and autonomously open PRs.
+
+    Returns the per-WO action list, or None when the issue query itself failed
+    (fail-honest: the caller must exit nonzero instead of implying a clean scan).
+    """
     cmd = ["gh", "issue", "list", "--repo", repo, "--state", "open", "--label", "bridge:queued", "--json", "number,title,body"]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if res.returncode != 0:
             print(f"Failed to query issues: {res.stderr.strip()}")
-            return []
+            return None
         issues = json.loads(res.stdout)
     except Exception as exc:
         print(f"Error querying issues: {exc}")
-        return []
+        return None
 
     actions = []
     print(f"Auto-Bridge PR Opener: Found {len(issues)} open 'bridge:queued' issues.")
@@ -164,6 +173,9 @@ def run_auto_bridge_pr_opener(auto_open: bool = False, repo: str = UPSTREAM_REPO
             continue
 
         exists = branch_exists_on_remote(branch, repo)
+        if exists is None:
+            print(f"  [WO #{wo_num}] Branch '{branch}' existence could not be verified (fail-closed). Skipping.")
+            continue
         if not exists:
             print(f"  [WO #{wo_num}] Branch '{branch}' does NOT exist on remote. Skipping.")
             continue
@@ -221,7 +233,15 @@ def main() -> int:
         run_self_test()
         return 0
 
-    run_auto_bridge_pr_opener(auto_open=args.auto_open, repo=args.repo)
+    actions = run_auto_bridge_pr_opener(auto_open=args.auto_open, repo=args.repo)
+    if actions is None:
+        # The scan itself never ran — a green exit here would leave bridge WOs
+        # queued forever under a passing CI step (fail-honest doctrine).
+        return 1
+    if args.auto_open and any(a.get("status") == "failed" for a in actions):
+        # Partial success still reports failure so the cron surfaces it;
+        # retrying is idempotent (existing PRs are detected and skipped).
+        return 1
     return 0
 
 
