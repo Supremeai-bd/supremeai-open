@@ -73,6 +73,13 @@ APPROVED_TOP_LEVEL_DIRS = {
     "examples",
     "infrastructure",
     "scripts",
+    # sdk/ — approved for issue #338 (publishable SDK packaging:
+    # supremeai-sdk-py + @supremeai/sdk per the issue's Verification Contract);
+    # expansion per the process documented in this module's docstring:
+    # registry changes ride a PR that references the governing issue.
+    # Content-layer checks (PROPRIETARY-LOGIC scan) still apply to every
+    # file under this surface — path approval never bypasses content rules.
+    "sdk",
     # tests/ — approved for issue #45 (validate_schemas CLI test suite);
     # expansion per the process documented in this module's docstring:
     # registry changes ride a PR that references the governing issue.
@@ -105,6 +112,12 @@ APPROVED_SUBTREES = {
     "scripts": {"agents", "ops", "ci", "validate_schemas.py"},
     ".github": {"ISSUE_TEMPLATE", "workflows", "actions"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
+    # sdk/: python/ + typescript/ packages (issue #338 — publishable SDK
+    # clients supremeai-sdk-py and @supremeai/sdk; depth-2 granularity for
+    # executable/config material per the registry convention). "tests" hosts
+    # the contracted `pytest sdk/tests` harness; "README.md" is the umbrella
+    # doc (FILE entry — a file is as valid a segment as a directory).
+    "sdk": {"python", "typescript", "tests", "README.md"},
 }
 
 # ---------------------------------------------------------------------------
