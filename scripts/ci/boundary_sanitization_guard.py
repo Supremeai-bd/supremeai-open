@@ -88,6 +88,7 @@ APPROVED_ROOT_FILES = {
     ".gitleaksignore",
     "AGENTS.md",
     "AGENT_RULES.md",
+    "AUTONOMOUS_TRANSIT_PIPELINE.md",
     "ECOSYSTEM_MAP.md",
     "LICENSE",
     "README.md",
