@@ -7,6 +7,7 @@ import {
   recordHeartbeat,
   validateSlot,
 } from "../registry/agent_heartbeat.js";
+
 import { listWorkforce } from "../registry/mcp_presence.js";
 
 /**
@@ -44,8 +45,22 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
         .max(64)
         .optional()
         .describe("Human-readable tool label, e.g. 'Cline' (defaults to slot id)"),
+      task_id: z
+        .string()
+        .max(128)
+        .optional()
+        .describe("Task the slot currently owns (heartbeat.schema.json task_id; empty/absent = idle) — enables orphan-release keyed on task ownership"),
+      status: z
+        .enum(["alive", "busy", "idle"])
+        .optional()
+        .describe("Liveness+work status per heartbeat.schema.json (alive=responsive on-task, busy=executing, idle=awaiting assignment)"),
+      ttl_seconds: z
+        .number()
+        .int()
+        .optional()
+        .describe("Agent-declared lease seconds 30–3600 (heartbeat.schema.json ttl_seconds; informational — registry liveness TTL stays 300s)"),
     },
-    async ({ slot, agentId }) => {
+    async ({ slot, agentId, task_id, status, ttl_seconds }) => {
       try {
         const context = RequestContextStore.get();
         // AUDIT-FIX (#1787 Gap 2): আগে শুধু `if (!context?.authenticated)`
@@ -72,6 +87,11 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
           // AUDIT-FIX (#1787): public_viewer হলেও clientId থাকবে (#1767 auto-register
           // দেয়), fallback শুধু অতিরিক্ত সতর্কতা।
           clientId: context.clientId ?? `guest:${slot}`,
+          // F2 (audit 2026-10-16): SSOT task-ownership telemetry — validated in
+          // recordHeartbeat (fail-closed) before any registry write.
+          taskId: task_id,
+          status,
+          ttlSeconds: ttl_seconds,
         });
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
