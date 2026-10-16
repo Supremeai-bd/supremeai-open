@@ -654,18 +654,42 @@ def step_3_inspect_state(force: bool = False) -> dict[str, str]:
 
 
 def step_4_branch(task: dict[str, Any]) -> str | None:
-    """Step 4: Create atomic branch for task with strict error checking."""
+    """Step 4: Atomic Claim -> Branch Creation Contract (No claim -> no branch, #430)."""
     issue_num = task.get("id", "adhoc")
     target_branch = f"contributor/issue-{issue_num}" if issue_num != "adhoc" else f"contributor/work-{int(time.time())}"
+
+    # 🔒 GATE 1: NO CLAIM -> NO BRANCH (AGENTS.md Step 4 / #430)
+    # The agent must verify and acquire an atomic claim on GitHub BEFORE creating or checking out any branch.
+    if issue_num != "adhoc":
+        log("🔒", f"[Step 4/8: Claim Gate] Acquiring atomic claim on Issue #{issue_num} BEFORE branch creation...")
+        edit_code, _, edit_err = run_cmd(["gh", "issue", "edit", str(issue_num), "--repo", UPSTREAM_REPO, "--add-label", "status:claimed"])
+        if edit_code != 0:
+            log("❌", f"[Claim Gate Rejection] Failed to add status:claimed on Issue #{issue_num}: {edit_err}")
+            log("❌", "Contract violation: No claim -> no branch. Aborting branch creation.")
+            return None
+
+        claim_comment = (
+            "<!-- atomic-claim -->\n"
+            f"🎯 **Claimed** — autonomous agent loop for issue #{issue_num}.\n"
+            f"- **branch:** `{target_branch}`\n"
+            f"- **claimed (UTC):** {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+            "- **contract:** AGENTS.md Step 4 — no claim, no branch; no branch, no push (#430)."
+        )
+        comm_code, _, comm_err = run_cmd(["gh", "issue", "comment", str(issue_num), "--repo", UPSTREAM_REPO, "--body", claim_comment])
+        if comm_code != 0:
+            log("❌", f"[Claim Gate Rejection] Failed to post atomic-claim comment on Issue #{issue_num}: {comm_err}")
+            log("❌", "Contract violation: No claim -> no branch. Aborting branch creation.")
+            return None
+        log("✅", f"Atomic claim successfully secured on Issue #{issue_num} (No claim -> no branch verified)")
+
     log("🌿", f"[Step 4/8: Branch] Ensuring branch '{target_branch}'...")
-    
     code, _, _ = run_cmd(["git", "rev-parse", "--verify", target_branch])
     if code == 0:
         _, curr_branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
         if curr_branch == target_branch:
             log("✅", f"Already on active branch '{target_branch}'")
             return target_branch
-        
+
         checkout_code, _, checkout_err = run_cmd(["git", "checkout", target_branch])
         if checkout_code != 0:
             target_branch = f"contributor/issue-{issue_num}-{int(time.time())}"
@@ -686,21 +710,6 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
         return None
 
     log("✅", f"Active on verified branch '{target_branch}'")
-    # Mark issue as claimed on upstream board (honest degradation if guest/offline)
-    # Claim Gate planes (#392): BOTH signals post BEFORE any PR can exist —
-    #   (1) status:claimed label (label plane — stale_claim_releaser.py lease),
-    #   (2) the <!-- atomic-claim --> structured comment (comment plane — the
-    #       evidence AGENTS.md says the Claim Gate checks before CI runs).
-    if issue_num != "adhoc":
-        run_cmd(["gh", "issue", "edit", str(issue_num), "--repo", UPSTREAM_REPO, "--add-label", "status:claimed"])
-        claim_comment = (
-            "<!-- atomic-claim -->\n"
-            f"🎯 **Claimed** — autonomous agent loop for issue #{issue_num}.\n"
-            f"- **branch:** `{target_branch}`\n"
-            f"- **claimed (UTC):** {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
-            "- **contract:** AGENTS.md Step 4 — no claim, no work."
-        )
-        run_cmd(["gh", "issue", "comment", str(issue_num), "--repo", UPSTREAM_REPO, "--body", claim_comment])
     return target_branch
 
 

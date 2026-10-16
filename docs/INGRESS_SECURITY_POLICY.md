@@ -255,3 +255,13 @@ self-contained here.
 5. **Boundary sanitization:** no protected paths touched
    (`.githooks/`, `docs/`, `scripts/ci/` are outside the protected set); no
    value-shaped credential patterns in any submitted file.
+
+## 5. Two-Tier Ingress Invariant — No Claim No Branch, No Branch No Push (#430)
+
+To eliminate unvetted pushes, rogue branches, and cross-agent collision on unclaimed work:
+1. **No Claim -> No Branch:**
+   - Autonomous agent loops (`continuous_agent_loop.py`) and contributors must secure an atomic claim on GitHub (`status:claimed` label + `<!-- atomic-claim -->` structured comment) BEFORE creating or checking out any task branch (`contributor/issue-<N>`, `bridge/<task-id>`).
+   - If claiming fails or the issue is already claimed, branch creation aborts immediately.
+2. **No Branch -> No Push:**
+   - The local pre-push hook (`.githooks/pre-push`) extracts the issue reference from the branch being pushed and queries GitHub for an active claim marker. Pushes of unclaimed branches are strictly rejected at the terminal.
+   - On the server side, PRs opened against `main` are fail-closed blocked by `claim-guard` in `.github/workflows/pipeline.yml` if the referenced issue has no prior claim.
