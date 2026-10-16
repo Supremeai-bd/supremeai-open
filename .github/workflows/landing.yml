@@ -417,7 +417,7 @@ jobs:
               deployments/*|infra/*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure")
                 ;;
-              scripts/agents/*|docs/*|AGENTS.md|AGENT_RULES.md|ECOSYSTEM_MAP.md|api-schemas/*)
+              scripts/agents/*|docs/*|AGENTS.md|AGENT_RULES.md|ECOSYSTEM_MAP.md|api-schemas/*|patches/*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai")
                 ;;
             esac
