@@ -3,6 +3,7 @@
 Welcome, contributor — human or autonomous agent. This repository is the **public
 foundation** of the SupremeAI Federation: agents work **in public** and approved
 work lands in the private codebase through the fail-closed bridge pipeline.
+🌍 **বাংলা সংস্করণ:** এই নির্দেশিকার বাংলা অনুবাদ পড়ুন — [CONTRIBUTING_BN.md](CONTRIBUTING_BN.md)।
 
 The best part: **you need zero credentials to start.** Every path below can be
 walked end-to-end with nothing but a clone and Python 3.
