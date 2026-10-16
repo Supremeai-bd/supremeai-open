@@ -128,3 +128,60 @@ document — blocked from the patch lane by .github/ protection) | false-positiv
 | jq exclusion expression | 7-fixture offline board → `[1,2]` (plain + legacy-labeled claimable; claimed/held/blocked/mirror/mixed-case excluded) |
 | Docs link sweep | 5 broken pre-#240 → 0 after |
 | Board re-checked at declaration (#4177) | bridge queue re-polled post-submission; WOs #233/#239/#240 visible with patch branches; no competing coverage for any finding |
+
+## Addendum 2 — Scout round 2 (2026-10-16, main `8242d4e`)
+
+Ecosystem-Scout round re-swept the project after 5 more PRs landed (#242/#243/#244 = this
+audit's own follow-ups; #246, #247, #253). Status of this document's original findings:
+
+- **F4 (P1 releaser NameError): RESOLVED** — landed as PR #236 (`d9c7eb1`).
+- **F2 (P2 stale lifecycle docs): RESOLVED** — landed as PR #244 (`ebedba0`); zero
+  `status:unclaimed` references remain in live policy docs (re-verified on `8242d4e`).
+- **F1 (P1 pipeline.yml board pre-check starvation): RESOLVED** — PR #246 (`be9f45b`)
+  "align board pre-check" landed the whole-board fetch: the live gate at
+  `.github/workflows/pipeline.yml:508` now reads
+  `gh issue list --state open --limit 200 --json number,title,labels` with no
+  `status:unclaimed` label filter (re-verified on `8242d4e`) — the fix diff carried in
+  this document was adopted by the internal lane.
+- **F6 (P3 broken links): RESOLVED** — landed as PR #243 (`531078f`).
+
+**New verified findings this round (fixes built, regression-tested, and preserved on local
+branches; submission to the board is currently BLOCKED — see below):**
+
+1. `federated_ci_watcher.ts` `defaultCreateIssue` (PR #229 surface, unchanged on
+   `8242d4e`): the module header and inline comment promise the dropped-`repo:<slug>`-label
+   note rides IN the created issue body; the 422-fallback retry actually sends the
+   unchanged body — the note exists only in the return metadata, which `attemptReport`
+   never reads. Pre-fix defect reproduced with a stubbed fetch; fix sends `body + note` on
+   retry, extracts `issueUrl` from the fallback 201 response (was hardcoded undefined),
+   and adds 3 regression assertions to `test_federated_ci_watcher.ts` §6. Full repo
+   watcher suite under bun: ALL CHECKS PASSED (pre- and post-fix). Branch:
+   `bridge/bridge-20261016-watcher-422-note-emission` (2 files, +23/−5).
+2. `api-schemas/federated-ci-failure.schema.json` `$id` is a bare relative string while
+   all 4 other published schemas use absolute URLs; `validate_schemas.py` enforces
+   presence+uniqueness but not format, so the drift passes the SSOT gate silently. One-line
+   align to `https://supremeai.ai/schemas/federated-ci-failure.schema.json`; payload
+   discriminator `properties.schema.const` untouched (zero consumers reference the `$id`);
+   suite 15/15 before/after. ADMIN_DECISION observation: existing absolute ids split
+   across `supremeai.ai` ×2 and `supremeai.dev` ×2 — a canonical host would let the
+   validator enforce `$id` format later. Branch:
+   `bridge/bridge-20261016-schema-id-convention-align` (1 file, +1/−1).
+
+**BLOCKER (verified, unfixed from this lane): `bridge_submit_patch` issue-creation step
+returns `HTTP 422: Validation Failed`** for every new WO since ~01:15Z (bounded: a sibling
+WO #245 was created successfully at 01:00Z; three of my submissions — 2× watcher payload
+37KB TS, 1× schema payload 13KB ASCII — all committed to their `bridge/<task-id>` branches
+but failed at the exact same issue-creation step; tower `system_health` 29/30 healthy;
+payload sizes far under the documented 200KB/30-file caps; both payloads passed the
+10-family secret scan; summaries ≤1000 chars, `testsEvidence`/`agentIdentity` strings per
+schema). The blocker report itself needs the broken channel — recorded here and in the
+agent worklog instead (chicken-and-egg, honestly noted per U2).
+
+**Round-2 gates (all green on `8242d4e`):** py_compile 11/11; schema suite 15/15;
+`continuous_agent_loop.py --verify-only` → `CONTRACT_VERSION=agent-loop-contract/1`;
+`stale_claim_releaser.py --self-test` pass; watcher TS suite under bun: all checks pass;
+issue-template YAML ×3 parse clean; `ECOSYSTEM_MAP.md` contact link present on main;
+`FEDERATED_CI_WATCHER.md` relative links 0 broken.
+
+**U9 sweep report (round 2):** `similar found: 2 | fixed in-task: 0 | filed follow-up: 2
+(watcher 422-note emission; schema $id convention) | original findings resolved: 4/4`.
