@@ -358,18 +358,79 @@ jobs:
           echo "Touched files:"
           echo "$FILES"
 
-          # Check if any shared core/doc/script files are touched
-          SHOULD_BRIDGE="false"
+          # Map touched files and PR labels to the 12 target federation repositories
+          TARGET_REPOS=()
+
+          # 1. Resolve target repository from PR labels if present
+          PR_LABELS=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json labels -q '.labels[].name' 2>/dev/null || true)
+          for lbl in $PR_LABELS; do
+            case "$lbl" in
+              repo:studio) TARGET_REPOS+=("Supremeai-bd/supremeai-studio") ;;
+              repo:api) TARGET_REPOS+=("Supremeai-bd/supremeai-api") ;;
+              repo:core) TARGET_REPOS+=("Supremeai-bd/supremeai-core") ;;
+              repo:command) TARGET_REPOS+=("Supremeai-bd/supremeai-command") ;;
+              repo:skills) TARGET_REPOS+=("Supremeai-bd/supremeai-skills") ;;
+              repo:vscode) TARGET_REPOS+=("Supremeai-bd/supremeai-vscode") ;;
+              repo:agents) TARGET_REPOS+=("Supremeai-bd/supremeai-agents") ;;
+              repo:browser) TARGET_REPOS+=("Supremeai-bd/supremeai-browser") ;;
+              repo:sdk) TARGET_REPOS+=("Supremeai-bd/supremeai-sdk") ;;
+              repo:infra) TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure") ;;
+              repo:mcp) TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane") ;;
+              repo:archive) TARGET_REPOS+=("Supremeai-bd/supremeai-archive") ;;
+              repo:monorepo) TARGET_REPOS+=("Supremeai-bd/supremeai") ;;
+            esac
+          done
+
+          # 2. Resolve target repository from files touched (Domain Routing)
           for f in $FILES; do
             case "$f" in
-              scripts/agents/*|docs/*|AGENTS.md|AGENT_RULES.md|infrastructure/*)
-                SHOULD_BRIDGE="true"
-                break
+              studio/*|examples/dashboard-preview/*|api-schemas/dashboard.*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-studio")
+                ;;
+              api/*|gateway/*|api-schemas/gateway.*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                ;;
+              core/*|api-schemas/task-router.*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-core")
+                ;;
+              command/*|handlers/telegram*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-command")
+                ;;
+              skills/*|examples/langchain-*|examples/vercel-*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-skills")
+                ;;
+              vscode/*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-vscode")
+                ;;
+              agents/*|runner/*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-agents")
+                ;;
+              browser/*|sandbox/*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-browser")
+                ;;
+              sdk/*|examples/sdk-*|api-schemas/telemetry-log.*|api-schemas/websocket-events.*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-sdk")
+                ;;
+              infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane")
+                ;;
+              deployments/*|infra/*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure")
+                ;;
+              scripts/agents/*|docs/*|AGENTS.md|AGENT_RULES.md|ECOSYSTEM_MAP.md|api-schemas/*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai")
                 ;;
             esac
           done
 
-          echo "should_bridge=$SHOULD_BRIDGE" >> "$GITHUB_OUTPUT"
+          # Central monorepo Supremeai-bd/supremeai always receives synchronization
+          TARGET_REPOS+=("Supremeai-bd/supremeai")
+
+          # Deduplicate target repos
+          UNIQUE_TARGETS=$(printf "%s\n" "${TARGET_REPOS[@]}" | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+          echo "Resolved Target Repositories: $UNIQUE_TARGETS"
+          echo "target_repos=$UNIQUE_TARGETS" >> "$GITHUB_OUTPUT"
+          echo "should_bridge=true" >> "$GITHUB_OUTPUT"
 
       - name: Create Bridge Branch
         id: create_wo
@@ -421,6 +482,7 @@ jobs:
           BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
           TASK_ID: ${{ steps.create_wo.outputs.task_id }}
           BRANCH_NAME: ${{ steps.create_wo.outputs.branch_name }}
+          TARGET_REPOS: ${{ steps.check_scope.outputs.target_repos }}
         run: |
           export FILES_RAW="$(git diff --name-only "${BASE_SHA}" "${PR_SHA}")"
           PAYLOAD=$(python3 - <<'PYEOF'
@@ -458,20 +520,22 @@ jobs:
             echo "Bridge Webhook returned HTTP ${HTTP_WH}"
           fi
 
-          # 2. Repository Dispatch to Private Repository (if token configured)
+          # 2. Repository Dispatch to all resolved Federation Repositories
           if [ -n "${BRIDGE_DISPATCH_TOKEN}" ]; then
-            echo "Dispatching bridge_order_queued → Supremeai-bd/supremeai (private Bridge Intake)..."
-            HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \
-              https://api.github.com/repos/Supremeai-bd/supremeai/dispatches \
-              -d "${PAYLOAD}")
-            if [ "${HTTP}" = "204" ]; then
-              echo "✅ Private Bridge Intake dispatched (HTTP 204) — landed patch reference streamed."
-            else
-              echo "::warning::Private dispatch returned HTTP ${HTTP}."
-              cat /tmp/dispatch_resp.txt || true
-            fi
+            for TARGET in ${TARGET_REPOS}; do
+              echo "Dispatching bridge_order_queued → ${TARGET}..."
+              HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \
+                "https://api.github.com/repos/${TARGET}/dispatches" \
+                -d "${PAYLOAD}")
+              if [ "${HTTP}" = "204" ]; then
+                echo "✅ Dispatched to ${TARGET} (HTTP 204) — landed patch streamed."
+              else
+                echo "::warning::Dispatch to ${TARGET} returned HTTP ${HTTP}."
+                cat /tmp/dispatch_resp.txt || true
+              fi
+            done
           else
             echo "BRIDGE_DISPATCH_TOKEN not set; webhook delivery completed."
           fi
