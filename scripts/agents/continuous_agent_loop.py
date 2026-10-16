@@ -518,8 +518,8 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
         sorted_issues = sorted(candidates, key=priority_key)
         if sorted_issues:
             return str(sorted_issues[0].get("number"))
-    except Exception:
-        pass
+    except Exception as exc:
+        log("⚠️", f"Issue queue payload unparseable — treating queue as empty: {exc}")
     return None
 
 
@@ -558,8 +558,8 @@ def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) ->
                             log("⚠️", f"Existing open PR found for issue #{issue_id}: PR #{pr.get('number')} ({pr_head}).")
                             log("❌", "[Fail-Closed Gate] Duplicate PR work rejected. Coordinate or review existing PR first.")
                             return None
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log("⚠️", f"Open-PR payload unparseable during duplicate-work check: {exc}")
 
             labels_list = [l.get("name", "") for l in data.get("labels", [])] if isinstance(data.get("labels"), list) else []
             log("✅", f"Loaded Issue #{data.get('number')} ({state}): {data.get('title')}")
@@ -587,8 +587,8 @@ def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) ->
             log("📋", "Recent Open Issues:")
             for it in issues:
                 print(f"   #{it.get('number')}: {it.get('title')}")
-        except Exception:
-            pass
+        except Exception as exc:
+            log("⚠️", f"Issue list payload unparseable, continuing without board view: {exc}")
 
     return {
         "id": "adhoc",
@@ -678,13 +678,34 @@ def step_5_work_notice(role: str, prompt: str) -> None:
     print("----------------------------------------------------------------------")
 
 
+def _scan_candidates(*globs: str, excluded_parts: frozenset[str] = frozenset({".git", "node_modules", "venv", ".venv", "__pycache__"})) -> list[Path]:
+    """Repo-wide scan candidates with exact path-component exclusion.
+
+    Exact-part matching (instead of substring checks such as
+    `".git" not in str(p)`) so legitimate trees like `.github/` (CI workflows
+    and issue templates) can no longer be silently skipped by the
+    verification gates — a false-negative verify gate (NOT_VERIFIED reported
+    as PASS). Substring filters excluded 8/10 YAML files on this repo,
+    including every CI workflow definition.
+    """
+    files: list[Path] = []
+    seen: set[Path] = set()
+    for pattern in globs:
+        for p in REPO_ROOT.glob(pattern):
+            if p in seen or not p.is_file() or excluded_parts.intersection(p.parts):
+                continue
+            seen.add(p)
+            files.append(p)
+    return files
+
+
 def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
     """Step 6: Run the verification tiers and collect dynamic evidence."""
     log("🧪", "[Step 6/8: Verify] Running the verification contract (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4)...")
     evidence: list[dict[str, Any]] = []
 
     # 1. Python Syntax / Compile smoke
-    py_files = [p for p in REPO_ROOT.glob("**/*.py") if "venv" not in str(p) and ".git" not in str(p)]
+    py_files = _scan_candidates("**/*.py")
     py_errors = []
     for py in py_files:
         code, _, err = run_cmd([sys.executable, "-m", "py_compile", str(py)])
@@ -697,7 +718,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
     evidence.append({"tier": 1, "name": "Python Syntax Compile", "passed": True, "count": len(py_files)})
 
     # 2. JSON Schema validation
-    json_files = [j for j in REPO_ROOT.glob("**/*.json") if "node_modules" not in str(j) and ".git" not in str(j)]
+    json_files = _scan_candidates("**/*.json")
     json_errors = []
     for jf in json_files:
         try:
@@ -729,7 +750,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
 
     # 3. YAML & OpenAPI Schema validation
     if yaml is not None:
-        yaml_files = [y for y in list(REPO_ROOT.glob("**/*.yaml")) + list(REPO_ROOT.glob("**/*.yml")) if ".git" not in str(y) and "node_modules" not in str(y)]
+        yaml_files = _scan_candidates("**/*.yaml", "**/*.yml")
         yaml_errors = []
         for yf in yaml_files:
             try:
@@ -780,13 +801,11 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
         # Rejects absolute host drive paths (e.g. F:/, C:/, \Users\) hardcoded into operational source
         machine_path_pattern = re.compile(r'["\'](?:[A-Za-z]:[\\/]|\\\\Users\\\\)')
         path_violations = []
-        scan_targets = [
-            f for f in REPO_ROOT.glob("**/*")
-            if f.suffix in {".py", ".ts", ".js"}
-            and "node_modules" not in f.parts
-            and ".git" not in f.parts
-            and "dist" not in f.parts
-        ]
+        scan_targets = _scan_candidates(
+            "**/*.py", "**/*.ts", "**/*.js",
+            excluded_parts=frozenset({".git", "node_modules", "dist"}),
+        )
+        unreadable: list[str] = []
         for target in scan_targets:
             try:
                 content = target.read_text(encoding="utf-8", errors="ignore")
@@ -796,13 +815,21 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                         continue
                     if machine_path_pattern.search(line):
                         path_violations.append(f"{target.relative_to(REPO_ROOT)}:{line_idx}")
-            except Exception:
-                pass
+            except OSError as exc:
+                # Fail-honest: a file excluded from a SECURITY scan must never
+                # be silently swallowed (fake-pass ban, AGENT_RULES.md §13).
+                unreadable.append(f"{target.relative_to(REPO_ROOT)} ({exc.__class__.__name__})")
 
         if path_violations:
             log("❌", f"Hardcoded machine paths detected in source: {path_violations[:3]}")
             evidence.append({"tier": 8, "name": "Machine Path Isolation Guard", "passed": False, "violations": path_violations})
             return False, evidence
+
+        if unreadable:
+            log("❌", f"Machine-path scan could not read {len(unreadable)} source file(s) — failing closed: {unreadable[:3]}")
+            evidence.append({"tier": 8, "name": "Machine Path Isolation Guard", "passed": False, "unreadable": unreadable})
+            return False, evidence
+
         evidence.append({"tier": 8, "name": "Machine Path Isolation Guard", "passed": True, "files_scanned": len(scan_targets)})
     except Exception as e:
         log("❌", f"Self-test verification failed: {e}")
@@ -894,8 +921,14 @@ def step_8_return() -> None:
             log("📋", "Active Open PRs on upstream board:")
             for p in prs:
                 print(f"   #{p.get('number')} ({p.get('headRefName')}): {p.get('title')}")
-        except Exception:
-            pass
+        except Exception as exc:
+            log("⚠️", f"Open-PR payload unparseable during board re-check: {exc}")
+    elif code == 0:
+        log("📋", "Board re-check: 0 open PRs on upstream.")
+    else:
+        # Fail-honest #4177: never imply a fresh-board check happened when it
+        # could not run (e.g. gh CLI missing). UNKNOWN is never PASS.
+        log("⚠️", f"[Board Freshness] Re-check unavailable (gh exit {code}) — verify the upstream board manually before declaring this task done.")
     print("----------------------------------------------------------------------")
     print(f"Cycle completed successfully. Ready for next task in {UPSTREAM_REPO}.")
     print("----------------------------------------------------------------------")
