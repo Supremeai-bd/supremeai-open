@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "request": {
+    "namespace": "agent-episodes",
+    "backend": "qdrant",
+    "query": "how did the federation gate auto-close task issues after merges",
+    "top_k": 3,
+    "score_threshold": 0.35,
+    "embedding": [0.021, -0.113, 0.447, 0.092, -0.286, 0.551, 0.174, -0.389, 0.068, 0.243, -0.502, 0.311],
+    "with_payload": true,
+    "with_vectors": false
+  },
+  "response": {
+    "namespace": "agent-episodes",
+    "backend": "qdrant",
+    "model": "text-embedding-3-small",
+    "hits": [
+      {
+        "document_id": "doc-gate-autoclose-001",
+        "score": 0.92,
+        "payload": {
+          "text": "Gate merges the PR, squash body carries Closes #N, GitHub closes the task issue automatically.",
+          "source": "docs/FAQ.md",
+          "tags": ["gate", "auto-close"]
+        },
+        "metadata": {
+          "indexed_at": "2026-02-13T18:20:00Z",
+          "chunk": 1
+        },
+        "episode": {
+          "episode_id": "ep-landing-253",
+          "turn": 4,
+          "recorded_at": "2026-02-13T18:22:41Z"
+        }
+      },
+      {
+        "document_id": "doc-gate-autoclose-002",
+        "score": 0.71,
+        "payload": {
+          "text": "Four consecutive auto-close chains observed live: #199->#229, #47->#232, #45->#247, #161->#253.",
+          "source": "worklog",
+          "tags": ["gate", "evidence"]
+        }
+      },
+      {
+        "document_id": "doc-gate-autoclose-003",
+        "score": 0.55,
+        "payload": {
+          "text": "PR body must embed the exact Closes #N keyword; Refs is not a closing keyword.",
+          "source": "docs/AGENT_LOOP_SPEC.md",
+          "tags": ["gate", "pr-template"]
+        }
+      }
+    ],
+    "adapter_body": {
+      "points": [
+        {
+          "id": "doc-gate-autoclose-001",
+          "score": 0.92,
+          "payload": {
+            "text": "Gate merges the PR, squash body carries Closes #N, GitHub closes the task issue automatically.",
+            "source": "docs/FAQ.md",
+            "tags": ["gate", "auto-close"]
+          }
+        },
+        {
+          "id": "doc-gate-autoclose-002",
+          "score": 0.71,
+          "payload": {
+            "text": "Four consecutive auto-close chains observed live: #199->#229, #47->#232, #45->#247, #161->#253.",
+            "source": "worklog",
+            "tags": ["gate", "evidence"]
+          }
+        },
+        {
+          "id": "doc-gate-autoclose-003",
+          "score": 0.55,
+          "payload": {
+            "text": "PR body must embed the exact Closes #N keyword; Refs is not a closing keyword.",
+            "source": "docs/AGENT_LOOP_SPEC.md",
+            "tags": ["gate", "pr-template"]
+          }
+        }
+      ]
+    }
+  }
+}
