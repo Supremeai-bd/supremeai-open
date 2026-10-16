@@ -1,0 +1,51 @@
+# SupremeAI unified deployment blueprint — reference layout (issue #339).
+#
+# AC1: manifests validated WITHOUT hardcoded secrets. Every sensitive value
+# rides the Render dashboard (sync: false) or generateValue — the KEY names
+# here must exactly match the secret inventory (deployments/secrets-inventory.json);
+# the pytest integrity suite enforces that cross-reference fail-closed.
+#
+# Reference services: the API gateway (issue #336 reference) and its worker.
+services:
+  - type: web
+    name: supremeai-api-gateway
+    runtime: python
+    rootDir: gateway
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn gateway.serve:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: SUPREMEAI_ROUTING_POLICY
+        value: /opt/render/project/src/gateway/routing_policy.json
+      # ---- secret material: names only, values live in the dashboard ----
+      - key: SUPREMEAI_API_KEY_PYTEST
+        sync: false
+      - key: SUPREMEAI_API_KEY_READONLY
+        sync: false
+      - key: SUPREMEAI_PROVIDER_KEY_GROQ
+        sync: false
+      - key: SUPREMEAI_PROVIDER_KEY_OPENAI
+        sync: false
+      - key: SUPREMEAI_PROVIDER_KEY_ANTHROPIC
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+
+  - type: worker
+    name: supremeai-gateway-worker
+    runtime: python
+    rootDir: gateway
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -c "import gateway.main"   # worker keeps the contract import warm
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
