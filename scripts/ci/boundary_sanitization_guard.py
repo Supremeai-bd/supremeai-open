@@ -79,6 +79,7 @@ APPROVED_TOP_LEVEL_DIRS = {
     # Content-layer checks (PROPRIETARY-LOGIC scan) still apply to every
     # file under this surface — path approval never bypasses content rules.
     "tests",
+    "patches",  # Federation bridge unified diff patches for target repositories
 }
 
 APPROVED_ROOT_FILES = {
