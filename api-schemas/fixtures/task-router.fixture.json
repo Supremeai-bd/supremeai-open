@@ -1,0 +1,141 @@
+{
+  "schema_version": "1.0",
+  "router_id": "federation-task-router",
+  "complexity_tiers": [
+    {
+      "tier": 1,
+      "name": "fast_light",
+      "description": "High-volume low-complexity work: classification, extraction, formatting, short lookups, boilerplate edits.",
+      "example_signals": [
+        "estimated_input_tokens below 4000",
+        "single-file change with no architecture impact",
+        "output is short-form text or JSON extraction"
+      ]
+    },
+    {
+      "tier": 2,
+      "name": "coding_reasoning",
+      "description": "Standard engineering work: feature implementation, bug fixes, multi-file refactors, test authoring, code review.",
+      "example_signals": [
+        "estimated_input_tokens between 4000 and 60000",
+        "multi-file change touching declared Touching Files only",
+        "requires tool calling and multi-step reasoning"
+      ]
+    },
+    {
+      "tier": 3,
+      "name": "complex_architecture",
+      "description": "Deep architecture work: cross-cutting redesigns, security-critical changes, long-horizon planning, large-context audits.",
+      "example_signals": [
+        "estimated_input_tokens above 60000",
+        "change spans multiple subsystems or contract layers",
+        "task explicitly tagged P1-high or P0-critical"
+      ]
+    }
+  ],
+  "routing_table": [
+    {
+      "tier": 1,
+      "primary": {
+        "provider": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "max_context_tokens": 128000,
+        "cost_per_1k_tokens_usd": 0.0006
+      },
+      "fallback_cascade": [
+        {
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "max_context_tokens": 128000,
+          "cost_per_1k_tokens_usd": 0.0006
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-2.0-flash",
+          "max_context_tokens": 1000000,
+          "cost_per_1k_tokens_usd": 0.0004
+        }
+      ]
+    },
+    {
+      "tier": 2,
+      "primary": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "max_context_tokens": 200000,
+        "cost_per_1k_tokens_usd": 0.009
+      },
+      "fallback_cascade": [
+        {
+          "provider": "openai",
+          "model": "gpt-4.1",
+          "max_context_tokens": 1000000,
+          "cost_per_1k_tokens_usd": 0.008
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "max_context_tokens": 128000,
+          "cost_per_1k_tokens_usd": 0.0014
+        }
+      ]
+    },
+    {
+      "tier": 3,
+      "primary": {
+        "provider": "anthropic",
+        "model": "claude-opus-4-1",
+        "max_context_tokens": 200000,
+        "cost_per_1k_tokens_usd": 0.045
+      },
+      "fallback_cascade": [
+        {
+          "provider": "openai",
+          "model": "o4-mini",
+          "max_context_tokens": 200000,
+          "cost_per_1k_tokens_usd": 0.03
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-reasoner",
+          "max_context_tokens": 128000,
+          "cost_per_1k_tokens_usd": 0.0055
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-large-latest",
+          "max_context_tokens": 131000,
+          "cost_per_1k_tokens_usd": 0.008
+        }
+      ]
+    }
+  ],
+  "budget_rules": {
+    "per_task_max_input_tokens": 120000,
+    "per_task_max_output_tokens": 16384,
+    "max_cost_per_task_usd": 2.5,
+    "budget_floor_usd": 0.1,
+    "rules": [
+      {
+        "when": "context_exceeds_primary",
+        "then": "fallback_cascade"
+      },
+      {
+        "when": "estimated_cost_above_cap",
+        "then": "downgrade_tier"
+      },
+      {
+        "when": "budget_remaining_below_floor",
+        "then": "cap_output_tokens"
+      },
+      {
+        "when": "latency_sla_missed",
+        "then": "queue_and_retry"
+      }
+    ]
+  },
+  "defaults": {
+    "unclassifiable_task": "reject",
+    "unknown_provider": "reject"
+  }
+}
