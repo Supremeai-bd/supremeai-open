@@ -155,7 +155,7 @@ The diet is built from small, zero-bloat building blocks reused identically acro
 
 | Surface | Before | After |
 |---|---|---|
-| `supremeai-open` | 5 workflows | **2**: `pipeline.yml` (guards → Python 3.10–3.13 matrix + secrets-scan + mcp-tower + agent-loop cron), `landing.yml` (auto-merge → bridge dispatch) |
+| `supremeai-open` | 5 workflows | **2**: `pipeline.yml` (guards → Python 3.10–3.13 matrix + secrets-scan + mcp-tower + event-driven intake), `landing.yml` (auto-merge → bridge dispatch → auto-prune ephemeral patches, #416) |
 | `supremeai` (private) | 18 workflows | **4**: `pr-pipeline`, `deploy-train`, `bridge-intake`, `ops-maintenance` (private-side change) |
 
 Split/merge justification per AGENT_RULES P4: the public split existed for fork-security isolation; consolidation is safe because untrusted validation (guards/matrix) and trusted landing (merge/dispatch) remain in **separate workflows with separate permission sets** (`contents: read` vs `contents/pull-requests/issues: write`).
@@ -163,6 +163,16 @@ Split/merge justification per AGENT_RULES P4: the public split existed for fork-
 ### 2.3.5 Zero-Duplicate Mandate (U4, hard rule)
 
 Because landed changes on `supremeai-open` are automatically ingested into `Supremeai-bd/supremeai` via this consolidated pipeline, contributors and agents **must never create duplicate manual PRs on the private repository** for work handled at the public boundary. One issue = at most one open PR, anywhere in the federation.
+
+### 2.3.6 Ephemeral Transit Pipeline & Auto-Pruning Doctrine (#416)
+
+`supremeai-open` operates strictly as an **Ephemeral Transit Station (ক্ষণস্থায়ী ডাকবাক্স)** rather than a permanent storage depot:
+1. Contributors submit code/patches to `Supremeai-bd/supremeai-open`.
+2. Merge Gate evaluates fail-closed and auto-merges into `main`.
+3. `landing.yml` streams the patch to the designated federation satellite repository (1 of 11) and central monorepo via Webhook / Dispatch.
+4. `landing.yml` immediately auto-prunes the patch file (`git rm patches/*`) and commits `chore(bridge): auto-prune transit patch ... [skip ci]`.
+5. `supremeai-open` remains permanently lightweight, zero-residue, and pristine.
+
 
 ## 3. New Agent: Required Reading Path
 

@@ -6,3 +6,7 @@ __pycache__/
 .env.*
 *.log
 .kilo/
+bun.lock
+*.snapshot.txt
+*_dump.txt
+C?Users*

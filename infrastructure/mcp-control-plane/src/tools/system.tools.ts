@@ -35,12 +35,12 @@ function bearerFor(apiKeyRef: string): string | undefined {
   const primary = process.env[apiKeyRef];
   if (primary && primary.length > 0) return primary;
   // GitHub accounts allow generic fallback names (same rule as the registry)
-  const altPat = process.env["GITHUB_PAT_PAYKARIBAZARONLINE"];
-  if (altPat && altPat.length > 0) return altPat;
   const alt = process.env["GITHUB_TOKEN"];
   if (alt && alt.length > 0) return alt;
   const ghToken = process.env["GH_TOKEN"];
   if (ghToken && ghToken.length > 0) return ghToken;
+  const genericPat = process.env["GITHUB_PAT"];
+  if (genericPat && genericPat.length > 0) return genericPat;
   return undefined;
 }
 
