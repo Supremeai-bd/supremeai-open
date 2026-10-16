@@ -1860,6 +1860,17 @@ async function main(): Promise<void> {
     console.error(`[MCP] GitHub adapter resolved repo → ${env.github.repo} (override via GITHUB_REPO)`);
     void refreshFromGitHub();
 
+    // F1 (audit 2026-10-16): persistent kill switch — arm Redis-backed state
+    // restore + flip persistence BEFORE the server accepts traffic (same
+    // doctrine as registerBridgeIntake). Fail-closed: a failed restore boots
+    // with autonomy DISABLED — for an emergency primitive, unknown must mean
+    // "stopped". initPersistence never throws; every reason is introspectable
+    // via globalKillSwitch.describe().
+    {
+      const { globalKillSwitch } = await import("./remediation/killswitch.js");
+      await globalKillSwitch.initPersistence();
+    }
+
     // #69: event-driven bridge intake — webhook → workflow_dispatch wake-up.
     // Idempotent, fail-closed (no-op unless BRIDGE_INTAKE_ENABLED=true) and
     // replays the durable outbox on boot. Must be armed BEFORE the server
