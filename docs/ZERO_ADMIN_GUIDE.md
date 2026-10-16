@@ -13,6 +13,7 @@ related_docs:
   - docs/GUARDIAN_EVALUATION.md
   - docs/INGRESS_SECURITY_POLICY.md
   - docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
+  - docs/FEDERATED_CI_WATCHER.md
 ---
 
 # Zero-Admin Guide — 100% Autonomous Landing Handbook
@@ -92,6 +93,27 @@ Work through this list **before opening the PR**; each unchecked item is a docum
 - [ ] **Never force-push.** Fix forward with fast-forward pushes.
 
 A PR that satisfies this checklist has historically landed **without any admin action** — the guards + CI Guardian + gate complete the loop: verify → hold-and-fix (autonomously healable) → merge → close issue → delete branch.
+
+## 6. Single Pane of Glass — where federation tasks live (#374)
+
+**All federation tasks live on this repository.** Satellite repositories stay issue-free (strict exceptions: foundational epics such as `supremeai-skills#1`; automated local CI-failure alerts) — the policy statement lives in `ECOSYSTEM_MAP.md` §2.1. Operationally:
+
+- **Task discovery is one board.** `scripts/agents/continuous_agent_loop.py` `pick_next_issue()` lists open issues from this hub only and ranks them by **label priority only** (`P0 > P1 > P2 > P3 > unlabeled`; the `priority_key` prefix rule maps a `P1-high` label to tier 1; lowest issue number breaks ties). No cross-repository issue hunt exists by design.
+- **Cross-repo CI failures reach the hub automatically.** The tower-side Federated CI Watcher (docs/FEDERATED_CI_WATCHER.md, #199; schema `api-schemas/federated-ci-failure.schema.json`) turns any satellite `main` failure into a deduplicated, rate-capped `P1-high` issue here; agents claim and fix it through the normal bridge flow. The watcher's shipped title/label contract is the vocabulary in force.
+- **Satellite redirect notice (adopt in each satellite repository).** Create `.github/ISSUE_TEMPLATE/config.yml`:
+
+  ```yaml
+  blank_issues_enabled: false
+  contact_links:
+    - name: "SupremeAI Unified Work Hub"
+      url: https://github.com/Supremeai-bd/supremeai-open/issues/new/choose
+      about: >-
+        This repository hosts no standalone issue tracker. File feature
+        requests, bug reports, and agent tasks on the federation hub
+        (Supremeai-bd/supremeai-open).
+  ```
+
+- **Fallback Actions-native notifier:** #374 also specifies a reusable `.github/actions/sync-ci-failure` workflow action for satellites without webhook reach to the tower. Status: **specified, not yet implemented** — the watcher is the only live sync path today; do not assume the action exists.
 
 ## Related Documents
 
