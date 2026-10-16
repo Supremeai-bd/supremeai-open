@@ -20,7 +20,7 @@ The SupremeAI platform consists of specialized repositories under the **`Supreme
 
 | Repository | Scope & Responsibility | What Can Be Changed From Here |
 |---|---|---|
-| **`supremeai-open`** *(Current)* | **Public Boundary & Ambassador.** Holds public contracts, client SDKs, examples, and agent instructions. | Direct PRs / Issues on this repository. |
+| **`supremeai-open`** *(Current)* | **Public Boundary, Ambassador & Unified Work Hub (§2.1).** Holds public contracts, client SDKs, examples, and agent instructions. All federation tasks are filed here. | Direct PRs / Issues on this repository. |
 | **`supremeai`** | **Core Monolith & CI Safety Anchor.** Orchestration, MCP control plane, and constitutional merge gates. | Core logic, MCP tools, and integration tests via Bridge. |
 | **`supremeai-command`** | **Omnichannel Admin Remote Control.** Telegram, Dashboard, and Webhook task dispatcher, remote triggers. | Dispatch schemas, webhook contracts via Bridge. |
 | **`supremeai-skills`** | **Skills & Tools Marketplace.** Dynamic capability registry, installers, and reusable tools for agents. | Tool specs, skill manifests, and agent plugins. |
@@ -34,6 +34,17 @@ The SupremeAI platform consists of specialized repositories under the **`Supreme
 | **`supremeai-sdk`** | **Stable External Contracts.** *(Public)* API/event/task schemas and protos — the contract-first boundary layer for external integrators. | Contract PRs and schema proposals on the SDK repository. |
 | **`supremeai-mcp-control-plane`** | **Governed Tool Registry.** *(Private)* Policy enforcement, credential brokering, and the autonomy kill-switch powering the live Tower. | Not directly changeable from public; internal management only. |
 | **`supremeai-archive`** | **Institutional Memory.** Append-only worklogs, ADRs, roadmap snapshots, and lessons — no critical decision is ever lost. | Read-only from public; append via internal automation. |
+
+### 2.1 Single Pane of Glass — the Unified Work Hub Policy (#374)
+
+**`Supremeai-bd/supremeai-open` is the canonical Single Pane of Glass and Unified Work Hub for the entire federation.** All active tasks — feature requests, bug reports, agent tasks, and Bridge Work Orders targeting *any* federation repository — are created exclusively on this hub. The issue templates (`.github/ISSUE_TEMPLATE/agent-task.yml`, `bridge-work-order.yml`) route each task to its destination through the `target_repo` selector; the work itself flows to the target satellite via the Bridge Pipeline (§3).
+
+**Satellite repositories stay issue-free.** They must not host individual bug reports, feature requests, or scattered discussions — splitting tasks across 12+ repositories fragments context, complicates autonomous task discovery (`continuous_agent_loop.py` reads only this board), and forces manual monitoring across multiple notification streams. **Strict exceptions only:**
+
+1. **Foundational repository epics / blueprints** — e.g. [`supremeai-skills#1`](https://github.com/Supremeai-bd/supremeai-skills/issues/1) — defining that satellite's internal architecture and lifecycle.
+2. **Automated local CI/CD failure alerts** generated directly by GitHub Actions when a build or test run fails on `main`.
+
+**Cross-repo CI failure sync** is implemented by the tower-side **Federated CI Watcher** ([docs/FEDERATED_CI_WATCHER.md](docs/FEDERATED_CI_WATCHER.md), #199; schema `api-schemas/federated-ci-failure.schema.json`): a satellite `workflow_run` failure on `main` opens a standardized, deduplicated, rate-capped issue on this board — title `fix(ci): workflow failure in <repo> (<workflow> #<run_id>)`, labels `P1-high` / `handoff:coder` / `area:ci` plus best-effort `repo:<slug>`. That shipped contract is the vocabulary in force today; #374's proposed `bridge:ci-failure` / `target:<repo>` labels remain an admin-triage option and are **not** emitted by the watcher.
 
 ---
 
