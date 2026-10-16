@@ -1,0 +1,98 @@
+diff --git a/.github/workflows/pr-pipeline.yml b/.github/workflows/pr-pipeline.yml
+index a69f80c7c..80bd821e8 100644
+--- a/.github/workflows/pr-pipeline.yml
++++ b/.github/workflows/pr-pipeline.yml
+@@ -502,9 +502,7 @@ jobs:
+   land:
+     name: "🛬 Sequential Landing Decision"
+     needs: [context, contract]
+-    if: >-
+-      (github.event_name == 'workflow_dispatch' && inputs.execute == true) ||
+-      (needs.context.outputs.skip != 'true' && needs.contract.result == 'success')
++    if: github.event_name == 'workflow_dispatch' && inputs.execute == true
+     runs-on: ubuntu-latest
+     timeout-minutes: 12
+     concurrency:
+diff --git a/scripts/bridge/bridge_intake.py b/scripts/bridge/bridge_intake.py
+index fbce2982f..df7574c2e 100644
+--- a/scripts/bridge/bridge_intake.py
++++ b/scripts/bridge/bridge_intake.py
+@@ -667,31 +667,37 @@ def process_issue(issue: dict, token: str, work: Path, results: list[str]) -> No
+ 
+     # Audit-trail issue + gated PR — routed target repo-তে
+     ensure_label(target_repo, token, LABEL_PRIVATE_BRIDGE, "5319E7", "bridge-intake external work order")
+-    intake_body = build_intake_issue_body(wo, task_id, public_url, agent, files)
+-    intake = gh_ok(
+-        "POST", f"/repos/{target_repo}/issues", token,
+-        {"title": f"feat(bridge): {task_id}", "body": intake_body, "labels": [LABEL_PRIVATE_BRIDGE, "status:in-progress"]},
+-    )
+-    # Claim the intake issue for the landing bot so Claim Gate (#2644) and Scope Gate pass
+-    claim_files = "\n".join(f"  - `{f}`" for f in files) or "  - (none)"
+-    claim_comment = (
+-        "<!-- atomic-claim -->\n"
+-        "### 🔒 Atomic Claim\n\n"
+-        "- **Agent:** `supremeai-bot`\n"
+-        "- **Agent:** `paykaribazaronline`\n"
+-        f"- **Task:** `{task_id}`\n"
+-        f"- **Branch:** `{land_branch}`\n"
+-        "- **Status:** in-progress\n"
+-        f"- **Touching files:**\n{claim_files}\n"
+-    )
+-    gh_ok("POST", f"/repos/{target_repo}/issues/{intake['number']}/comments", token, {"body": claim_comment})
++    # Issue #389: Disable automated issue creation on PR merge to avoid cluttering boards
++    disable_issue_create = os.environ.get("BRIDGE_DISABLE_INTAKE_ISSUE", "true").lower() in ("true", "1", "yes")
++    intake_num = None
++    if not disable_issue_create:
++        intake_body = build_intake_issue_body(wo, task_id, public_url, agent, files)
++        intake = gh_ok(
++            "POST", f"/repos/{target_repo}/issues", token,
++            {"title": f"feat(bridge): {task_id}", "body": intake_body, "labels": [LABEL_PRIVATE_BRIDGE, "status:in-progress"]},
++        )
++        intake_num = intake["number"]
++        # Claim the intake issue for the landing bot so Claim Gate (#2644) and Scope Gate pass
++        claim_files = "\n".join(f"  - `{f}`" for f in files) or "  - (none)"
++        claim_comment = (
++            "<!-- atomic-claim -->\n"
++            "### 🔒 Atomic Claim\n\n"
++            "- **Agent:** `supremeai-bot`\n"
++            "- **Agent:** `paykaribazaronline`\n"
++            f"- **Task:** `{task_id}`\n"
++            f"- **Branch:** `{land_branch}`\n"
++            "- **Status:** in-progress\n"
++            f"- **Touching files:**\n{claim_files}\n"
++        )
++        gh_ok("POST", f"/repos/{target_repo}/issues/{intake_num}/comments", token, {"body": claim_comment})
++
+     pr = gh_ok(
+         "POST", f"/repos/{target_repo}/pulls", token,
+         {
+             "title": f"feat(bridge): {task_id} — external work order #{num}",
+             "head": land_branch,
+             "base": PRIVATE_MAIN,
+-            "body": build_pr_body(wo, task_id, intake["number"], public_url, agent, files),
++            "body": build_pr_body(wo, task_id, intake_num or num, public_url, agent, files),
+         },
+     )
+     report = sanitize_public_comment(
+diff --git a/scripts/pre_push_hook.py b/scripts/pre_push_hook.py
+index 0d9d670cd..165e0d83d 100755
+--- a/scripts/pre_push_hook.py
++++ b/scripts/pre_push_hook.py
+@@ -237,6 +237,17 @@ def main() -> int:
+         # Deleting a branch should never be blocked by pre-push hooks
+         return 0
+ 
++    if os.environ.get("ALLOW_DIRECT_PUSH") != "1":
++        print("\n" + "=" * 80)
++        print("❌ [FEDERATION HARD-BLOCK] DIRECT GIT PUSH TO THIS REPOSITORY IS FORBIDDEN")
++        print("=" * 80)
++        print("SupremeAI Federation Constitutional Doctrine (§2.3 / §8):")
++        print("Direct pushes to 'Supremeai-bd/supremeai' or satellite repos are blocked.")
++        print("ALL contributions, PRs, and patches MUST enter exclusively through:")
++        print("  👉 https://github.com/Supremeai-bd/supremeai-open")
++        print("=" * 80 + "\n")
++        return 1
++
+     branch = get_current_branch()
+     if not check_and_sync_remote(branch):
+         return 1

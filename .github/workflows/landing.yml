@@ -539,3 +539,30 @@ jobs:
           else
             echo "BRIDGE_DISPATCH_TOKEN not set; webhook delivery completed."
           fi
+
+      - name: Auto-Prune Ephemeral Transit Patches (#416)
+        if: steps.check_scope.outputs.should_bridge == 'true'
+        env:
+          BRIDGE_PUSH_TOKEN: ${{ secrets.BRIDGE_PUSH_TOKEN || secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+          PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
+          BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+          TASK_ID: ${{ steps.create_wo.outputs.task_id }}
+        run: |
+          echo "Checking for landed ephemeral transit patches under patches/..."
+          PATCH_FILES=$(git diff --name-only "${BASE_SHA}" "${PR_SHA}" | grep '^patches/' || true)
+          if [ -n "$PATCH_FILES" ]; then
+            echo "Found transit patch files to auto-prune:"
+            echo "$PATCH_FILES"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            if [ -n "$BRIDGE_PUSH_TOKEN" ]; then
+              git remote set-url origin "https://x-access-token:${BRIDGE_PUSH_TOKEN}@github.com/${{ github.repository }}.git"
+            fi
+            git rm -f $PATCH_FILES
+            git commit -m "chore(bridge): auto-prune transit patch for ${TASK_ID} after satellite dispatch (Closes #416) [skip ci]"
+            git push origin main
+            echo "✅ Ephemeral transit patches successfully auto-pruned from supremeai-open."
+          else
+            echo "No files in patches/ touched by this landing. Zero pruning required."
+          fi
+
