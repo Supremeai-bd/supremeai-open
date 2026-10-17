@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "supremeai-browser"
+version = "0.1.0"
+description = "Stealth Automation Sandbox & Anti-Detect Headless Runtime (SupremeAI federation satellite)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "SupremeAI Federation" }]
+dependencies = []
+
+[project.optional-dependencies]
+runtime = ["playwright>=1.40", "lxml>=4.9"]
+dev = ["pytest>=7.4"]
+
+[tool.setuptools.packages.find]
+include = ["runtime*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
