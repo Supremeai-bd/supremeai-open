@@ -19,7 +19,8 @@ body:
 
         Hard rules: never include secrets in diffs (pattern-scan is automatic);
         `.github/`, ledger and key-plane paths go to `bridge:admin-review`;
-        no success claims without evidence (rule U2).
+        no success claims without evidence (rule U2);
+        cohesive task sizing: atomic domain slices only (rule P7, #522).
   - type: input
     id: task_id
     attributes:
@@ -117,3 +118,11 @@ body:
       placeholder: glm5.2-coder-1 / session web-03ac04df
     validations:
       required: true
+
+  - type: checkboxes
+    id: sizing_confirmation
+    attributes:
+      label: Task Sizing & Anti-Thrashing Confirmation (#522)
+      options:
+        - label: "Cohesive Scope: This patch represents an atomic domain slice (≤ 30 files, ≤ 200 KB diff) and does not fragment a feature into racing micro-issues."
+          required: true
