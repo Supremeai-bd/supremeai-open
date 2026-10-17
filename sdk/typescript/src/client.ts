@@ -180,7 +180,9 @@ export class SupremeAIClient {
         try {
           raw = await response.json();
           if (raw && typeof raw === 'object') {
-            shape = raw as Partial<GatewayErrorShape>;
+            const obj = raw as Record<string, unknown>;
+            const inner = obj['error'];
+            shape = (inner && typeof inner === 'object' ? inner : obj) as Partial<GatewayErrorShape>;
           }
         } catch {
           raw = undefined;
