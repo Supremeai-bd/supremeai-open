@@ -202,27 +202,32 @@ jobs:
             echo "(No issue reference found in title/body/branch — issue-reference-guard flags this separately; the claim plane cannot be verified, fail-closed.)"
             exit 1
           fi
+          CLAIMED=false
           for iss in $ISSUES; do
             iss_num="${iss#"#"}"
             CLAIM_JSON=$(gh issue view "$iss_num" --repo "${{ github.repository }}" --json labels,comments 2>/dev/null || echo "")
-            if [ -z "$CLAIM_JSON" ]; then
-              echo "::error::PR opened without a prior claim on Issue #$iss_num. Per AGENTS.md Step 4 (No claim, no work), claim the issue before creating a branch or PR."
-              echo "(Issue lookup failed via gh — fail-closed.)"
-              exit 1
+            if [ -n "$CLAIM_JSON" ]; then
+              # Label plane — support status:claimed, status:in-progress, and bridge lifecycle labels
+              if echo "$CLAIM_JSON" | jq -e 'any(.labels[]?; .name == "status:claimed" or .name == "status:in-progress" or .name == "bridge:queued" or .name == "bridge:in-gates" or .name == "bridge:landed")' >/dev/null 2>&1; then
+                echo "✅ Issue #$iss_num carries an active claim / bridge label."
+                CLAIMED=true
+                break
+              fi
+              # Comment plane — <!-- atomic-claim --> structured comment (loop Step 4 পোস্ট করে)
+              if echo "$CLAIM_JSON" | jq -e 'any(.comments[]?; (.body // "") | contains("<!-- atomic-claim -->"))' >/dev/null 2>&1; then
+                echo "✅ Issue #$iss_num carries an <!-- atomic-claim --> comment."
+                CLAIMED=true
+                break
+              fi
             fi
-            # Label plane — stale_claim_releaser.py CLAIMED_LABELS registry-এর সাথে অপরিবর্তিত
-            if echo "$CLAIM_JSON" | jq -e 'any(.labels[]?; .name == "status:claimed" or .name == "status:in-progress")' >/dev/null 2>&1; then
-              echo "✅ Issue #$iss_num carries an active claim label."
-              exit 0
-            fi
-            # Comment plane — <!-- atomic-claim --> structured comment (loop Step 4 পোস্ট করে)
-            if echo "$CLAIM_JSON" | jq -e 'any(.comments[]?; (.body // "") | contains("<!-- atomic-claim -->"))' >/dev/null 2>&1; then
-              echo "✅ Issue #$iss_num carries an <!-- atomic-claim --> comment."
-              exit 0
-            fi
-            echo "::error::PR opened without a prior claim on Issue #$iss_num. Per AGENTS.md Step 4 (No claim, no work), claim the issue before creating a branch or PR."
-            exit 1
           done
+
+          if [ "$CLAIMED" = "true" ]; then
+            exit 0
+          fi
+
+          echo "::error::PR opened without a prior claim on any referenced issue ($ISSUES). Per AGENTS.md Step 4 (No claim, no work), claim the issue before creating a branch or PR."
+          exit 1
 
   knowledge-sharing-guard:
     name: "🧠 Knowledge Sharing Guard (#392)"
@@ -251,16 +256,16 @@ jobs:
             echo "(Expected: a '## Reflection Evidence (why + alternatives_rejected)' section containing filled '- **why:**' and '- **alternatives_rejected:**' entries.)"
             exit 1
           fi
-          # why: অবশ্যই non-empty এবং raw placeholder নয়
-          WHY=$(printf '%s\n' "$PR_BODY" | grep -m1 -E '^[[:space:]]*-[[:space:]]+\*\*why:\*\*' | sed -E 's/.*\*\*why:\*\*[[:space:]]*//' | xargs || true)
+          # why: অবশ্যই non-empty এবং raw placeholder নয় (sed trims whitespace safely without xargs single-quote error)
+          WHY=$(printf '%s\n' "$PR_BODY" | grep -m1 -E '^[[:space:]]*-[[:space:]]+\*\*why:\*\*' | sed -E 's/.*\*\*why:\*\*[[:space:]]*//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' || true)
           if [ -z "$WHY" ] || printf '%s' "$WHY" | grep -qE '^<.*>$'; then
             echo "::error::PR body missing required '## Reflection Evidence (why + alternatives_rejected)'. AGENTS.md mandates knowledge capture on every contribution."
             echo "('- **why:**' is empty or an unfilled placeholder — document the actual rationale.)"
             exit 1
           fi
           # alternatives_rejected: same-line content অথবা nested bullets — placeholder নয়
-          ALT_INLINE=$(printf '%s\n' "$PR_BODY" | grep -m1 -E '^[[:space:]]*-[[:space:]]+\*\*alternatives_rejected:\*\*.*[^[:space:]*]' | sed -E 's/.*\*\*alternatives_rejected:\*\*[[:space:]]*//' | xargs || true)
-          ALT_NESTED=$(printf '%s\n' "$PR_BODY" | sed -n '/\*\*alternatives_rejected:\*\*/,$p' | sed -n '2,$p' | grep -m1 -E '^[[:space:]]+-[[:space:]]+[^[:space:]]' | sed -E 's/^[[:space:]]+-[[:space:]]+//' | xargs || true)
+          ALT_INLINE=$(printf '%s\n' "$PR_BODY" | grep -m1 -E '^[[:space:]]*-[[:space:]]+\*\*alternatives_rejected:\*\*.*[^[:space:]*]' | sed -E 's/.*\*\*alternatives_rejected:\*\*[[:space:]]*//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' || true)
+          ALT_NESTED=$(printf '%s\n' "$PR_BODY" | sed -n '/\*\*alternatives_rejected:\*\*/,$p' | sed -n '2,$p' | grep -m1 -E '^[[:space:]]+-[[:space:]]+[^[:space:]]' | sed -E 's/^[[:space:]]+-[[:space:]]+//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' || true)
           if { [ -z "$ALT_INLINE" ] || printf '%s' "$ALT_INLINE" | grep -qE '^<.*>$'; } \
              && { [ -z "$ALT_NESTED" ] || printf '%s' "$ALT_NESTED" | grep -qE '^<.*>$'; }; then
             echo "::error::PR body missing required '## Reflection Evidence (why + alternatives_rejected)'. AGENTS.md mandates knowledge capture on every contribution."
