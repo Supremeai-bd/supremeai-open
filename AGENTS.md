@@ -20,10 +20,10 @@ flowchart TD
     subgraph LOOP ["2. The 8-Step Agent Lifecycle (§3)"]
         OPEN --> S1["1. Understand & 2. Load Rules"]
         S1 --> S2["3. Inspect State & Preflight (§2.4)"]
-        S2 --> S3["4. Atomic Claim (No Claim = No Branch/Work)"]
+        S2 --> S3["4. Atomic Claim & Start Sync (Rebase onto main)"]
         S3 --> S4["5. Smallest Safe Diff (≤ 30 files, ≤ 200 KB)"]
         S4 --> S5["6. 3-Tier Verification (Reflection → Smoke → Tests)"]
-        S5 --> S6["7. PR Record + 8. Board Freshness Re-Check (#4177)"]
+        S5 --> S6["7. Pre-Push Rebase & PR Record + 8. Board Freshness"]
     end
 
     subgraph TRANSIT ["3. Ephemeral Transit & Landing (§4)"]
@@ -56,6 +56,7 @@ flowchart TD
 ## 3. Role Preflight Invariants (৩-সেকেন্ড আত্ম-জিজ্ঞাসা)
 
 যেকোনো কোড বা অ্যাকশনের পূর্বে প্রতিটি রোলের ৩-সেকেন্ড প্রি-ফ্লাইট চেক:
+- **All Agents (Dual-Rebase Mandate):** কাজ শুরুর আগে `origin/main` থেকে রিবেস করে ব্রাঞ্চ খোলা হয়েছে তো? এবং পুশ করার ঠিক আগে রিবেস ও ৩-টিয়ার ভেরিফিকেশন ছাড়া পুশ করা সম্পূর্ণ নিষিদ্ধ।
 - **Planner:** বিদ্যমান কোডে ৮০% আছে কি? নতুন জটিলতা ছাড়া কি পুরনো কোড রিইউজ করা যায়? (রুল §6)
 - **Coder:** ইস্যু কি লাইভ `main`-এ সক্রিয়? ইস্যুতে সাজেস্ট করার চেয়ে সহজ ১-লাইনের সেরা কোনো বিকল্প আছে কি?
 - **Auditor:** নিয়মলঙ্ঘন কি বর্তমান `main`-এ প্রমাণযোগ্য? এটি চিরতরে বন্ধে স্বয়ংক্রিয় সিআই গেট কী দেওয়া হচ্ছে?
@@ -70,7 +71,7 @@ flowchart TD
 ### Agent Freedom vs Hard Boundaries
 - **Agent decides:** Implementation inside declared scope, testing, smallest safe approach, evidence-backed optimizations.
 - **Agent may NOT decide alone:** Major architecture changes, permission/boundary alterations, destructive ops, wide scope expansion (requires `ADMIN_DECISION` issue).
-- **Hard Ordering:** **No Claim → No Branch** (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane first; no `atomic_claim.sh` exists in-repo) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
+- **Hard Ordering:** **Start-of-Work Sync** (fetch/rebase `origin/main` before branch) · **No Claim → No Branch** (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane first) · **Pre-Push Rebase Guard** (0 behind `origin/main`) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
 
 ### Core Philosophy (The Law of Minimal Elegance — সব এজেন্টের মূলমন্ত্র)
 - **Zero Over-Engineering:** কোনো ওভার-ইঞ্জিনিয়ারিং নয় — যেকোনো সমাধানকে কতটুকু সহজ অথচ চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই প্রতিটি এজেন্টের প্রথম এবং প্রধান লক্ষ্য।
