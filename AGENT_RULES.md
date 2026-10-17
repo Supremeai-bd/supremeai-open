@@ -101,8 +101,9 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 
 ---
 
-## 4. Non-Negotiable Engineering Policies (P1 – P7)
+## 4. Non-Negotiable Engineering Policies (P0 – P7)
 
+- **P0 (Law of Minimal Elegance — Zero Over-Engineering):** সব এজেন্টের মূলমন্ত্র: কোনো ওভার-ইঞ্জিনিয়ারিং নয়। যেকোনো সমাধানকে কতটুকু সহজ, দৃষ্টিনন্দন ও চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই একমাত্র লক্ষ্য। ৭০-৮০% সাইজ কমিয়ে ১০০% কার্যকারিতা বজায় রাখা এবং কোটি কোটি টোকেন বাঁচানোই সুপ্রিমএআই-এর আর্কিটেকচারাল মাপকাঠি।
 - **P1 (Simple + Effective):** Prefer smallest solution that reliably solves the problem.
 - **P2 (Complexity Must Earn Existence):** Ban speculative abstractions, parallel helpers, and decorative modularity.
 - **P3 (Preserve Working Architecture):** Understand existing intent before modifying.

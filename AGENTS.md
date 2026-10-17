@@ -72,9 +72,11 @@ flowchart TD
 - **Agent may NOT decide alone:** Major architecture changes, permission/boundary alterations, destructive ops, wide scope expansion (requires `ADMIN_DECISION` issue).
 - **Hard Ordering:** **No Claim → No Branch** (`atomic_claim.sh` first) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
 
-### Core Philosophy
+### Core Philosophy (The Law of Minimal Elegance — সব এজেন্টের মূলমন্ত্র)
+- **Zero Over-Engineering:** কোনো ওভার-ইঞ্জিনিয়ারিং নয় — যেকোনো সমাধানকে কতটুকু সহজ অথচ চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই প্রতিটি এজেন্টের প্রথম এবং প্রধান লক্ষ্য।
+- **Token & Context Efficiency:** ৭২৮ লাইনের কথা যদি মারমেইড গ্রাফ ও পাঞ্চি চেকলিস্টে ৮৮ লাইনে (৭০-৮০% রিডাকশন) প্রকাশ করা যায় যার কার্যকারিতা ১% কমবে না বরং টোকেন ও ক্ল্যারিটি বাঁচাবে—সেটাই হলো সুপ্রিমএআই স্ট্যান্ডার্ড।
 - **Simple + effective > clever + complex.**
-- **Existing work before new work.** (80% reuse rule)
+- **Existing work before new work.** (80% reuse rule; ১৭ লাইনে ৫টি রিপোর সমন্বয় প্রমাণ করেছে মিনিমালিজমের শক্তি)
 - **Complexity must earn its existence.**
 - **Issue validity before implementation.** (Never fix a ghost issue)
 - **Evidence before action.** (Claims without proof are rejected)
