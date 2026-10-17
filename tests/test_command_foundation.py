@@ -17,20 +17,36 @@ from typing import Dict, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.config import CommandConfig, CommandConfigError  # noqa: E402
-from src.dispatcher import (  # noqa: E402
-    DispatcherError,
-    MiniRedis,
-    TowerDispatcher,
-    encode_resp,
-)
-from src.telegram_bot import CommandRouter, TelegramUpdate  # noqa: E402
-from src.webhook_ingress import (  # noqa: E402
-    WebhookIngress,
-    compute_signature,
-    make_http_server,
-    verify_hmac,
-)
+try:
+    from command.config import CommandConfig, CommandConfigError  # noqa: E402
+    from command.dispatcher import (  # noqa: E402
+        DispatcherError,
+        MiniRedis,
+        TowerDispatcher,
+        encode_resp,
+    )
+    from command.telegram_bot import CommandRouter, TelegramUpdate  # noqa: E402
+    from command.webhook_ingress import (  # noqa: E402
+        WebhookIngress,
+        compute_signature,
+        make_http_server,
+        verify_hmac,
+    )
+except ImportError:
+    from src.config import CommandConfig, CommandConfigError  # noqa: E402
+    from src.dispatcher import (  # noqa: E402
+        DispatcherError,
+        MiniRedis,
+        TowerDispatcher,
+        encode_resp,
+    )
+    from src.telegram_bot import CommandRouter, TelegramUpdate  # noqa: E402
+    from src.webhook_ingress import (  # noqa: E402
+        WebhookIngress,
+        compute_signature,
+        make_http_server,
+        verify_hmac,
+    )
 
 
 def make_config(**overrides) -> CommandConfig:
