@@ -15,6 +15,7 @@ body:
         3. Work strictly within the declared **Touching Files**.
         4. Run and satisfy the **3-Tier Verification Contract** via `python scripts/agents/continuous_agent_loop.py --verify-only` (the 3 tiers are the process phases; the automated evidence tiers are SSOT'd in `docs/AGENT_LOOP_SPEC.md` §4).
         5. Submit a Pull Request to `Supremeai-bd/supremeai-open:main` or open a **Bridge Work Order**. The internal Bridge automation ports and tests your change in the target repository.
+        6. **Cohesive Domain Sizing (Rule P7, #522):** Avoid fragmented micro-issues. Frame tasks as complete atomic slices (Code + Types + Tests) within ONE target repository (≤ 30 files, ≤ 200 KB diff).
 
   - type: dropdown
     id: target_repo
@@ -137,3 +138,11 @@ body:
         3. Test Suite: `pytest <test_file_path> -v`
     validations:
       required: true
+
+  - type: checkboxes
+    id: sizing_confirmation
+    attributes:
+      label: Task Sizing & Anti-Thrashing Confirmation (#522)
+      options:
+        - label: "Cohesive Scope: This task represents an atomic domain slice (≤ 30 files, ≤ 200 KB diff) and does not fragment a feature into racing micro-issues."
+          required: true
