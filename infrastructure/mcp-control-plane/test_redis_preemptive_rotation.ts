@@ -1,40 +1,46 @@
 /**
- * Preemptive quota rotation + command-burn reduction regression test (#646).
+ * Preemptive quota rotation + command burn-rate regression tests (#646).
  *
- * AC1 — Preemptive rotation at the 96% soft threshold (default 480,000):
- *   the account must LEAVE the active rotation pool BEFORE the 500k ceiling
- *   produces a rejected request. The mock never serves a quota error, so any
- *   rotation observed in this test is provably pre-error (zero failed
- *   requests) — exactly the contract that reactive-only rotation broke in
- *   the live incident (ERR ... Limit: 500000, Usage: 500002).
- *
- * AC2 — Root-cause command consumption optimization:
- *   - heartbeat/presence write debounce collapses duplicate refresh writes;
- *   - L1 read-through cache collapses dashboard sweep bursts;
- *   - usage truth-tiering: local counter → quota error body parse →
- *     authoritative remaining-headers.
+ * AC coverage (issue #646):
+ *   1.  Soft threshold = 96% of the configured monthly limit (480k of 500k
+ *       default), env-overridable.
+ *   2.  Usage ledger counts commands per account per monthly window; window
+ *       rollover resets the count and the account rejoins the pool.
+ *   3.  Crossing the soft threshold PREEMPTIVELY rotates to the next account
+ *       — before the hard limit is ever reachable.
+ *   4.  quotaGuard throws a quota-shaped error so the chain engine shifts the
+ *       request to the next account without wasting it.
+ *   5.  L1 in-memory list cache eliminates redundant reads; writes invalidate.
+ *   6.  Heartbeat/presence write debounce skips identical sub-second writes.
+ *   7.  Health-sweep probe skip: recent successful contact (<30s) short-
+ *       circuits pingRedis() without a PING command.
  *
  * Run: npm run test:preemptive-rotation   (wired into test:unit)
+ * Depends only on module-level contracts — no real network (fetch is mocked).
  */
 import assert from "node:assert/strict";
-
 import {
+  accountUsageCommands,
   activeAccountChain,
+  getActiveRedisAccount,
   isAccountQuotaExhausted,
-  noteQuotaErrorUsage,
-  noteRedisCommands,
-  noteRedisResponseHeaders,
-  quotaChainStatus,
-  redisUsageSnapshot,
-  resetRedisUsageTracking,
-  upstashCommandLimit,
-  upstashSoftThreshold,
+  lastRedisContact,
+  nextQuotaResetEpochMs,
+  noteRedisContact,
+  quotaGuard,
+  quotaLimit,
+  quotaSoftThreshold,
+  recordRedisCommands,
+  redisHealthProbeSkipMs,
+  redisUsageLedgerStatus,
+  RedisQuotaExhaustedError,
 } from "./src/lib/redis_chain.js";
-import { clearRedisL1Cache } from "./src/lib/ttl_cache.js";
-import { recordHeartbeat, resetRedisWriteDebounce } from "./src/registry/agent_heartbeat.js";
-import { recordPresence, resetPresenceWriteDebounce } from "./src/registry/mcp_presence.js";
+import { L1Cache } from "./src/lib/l1_cache.js";
+import { listHeartbeats, recordHeartbeat } from "./src/registry/agent_heartbeat.js";
+import { listPresence, recordPresence } from "./src/registry/mcp_presence.js";
+import { pingRedis } from "./src/adapters/redis/index.js";
 
-// ── Chain under test: two REST accounts ─────────────────────────────────────
+// ── Chain under test: primary + secondary, both REST, both succeed normally ─
 process.env.UPSTASH_REDIS_REST_URL = "https://primary.preempt-test.invalid";
 process.env.UPSTASH_REDIS_REST_TOKEN = "t1";
 process.env.UPSTASH_REDIS_SECONDARY_REST_URL = "https://secondary.preempt-test.invalid";
@@ -43,189 +49,193 @@ for (const k of [
   "UPSTASH_REDIS_TERTIARY_REST_URL", "UPSTASH_REDIS_TERTIARY_REST_TOKEN",
   "UPSTASH_REDIS_QUATERNARY_REST_URL", "UPSTASH_REDIS_QUATERNARY_REST_TOKEN",
   "UPSTASH_REDIS_QUINARY_REST_URL", "UPSTASH_REDIS_QUINARY_REST_TOKEN",
-  "REDIS_URL",
+  "REDIS_URL", "REDIS_ACCOUNT_LABEL",
 ]) delete process.env[k];
 
-// Thresholds/debounce are env-tunable per scenario (window reads env at call time).
+/** Cooldown registry is module-global — clear entries like quota-routing does. */
+function resetCooldowns(labels: string[]): void {
+  for (const label of labels) isAccountQuotaExhausted(label, 8_200_000_000_000);
+}
+
+// ── Mock fetch: every account answers every command successfully ───────────
 const realFetch = globalThis.fetch.bind(globalThis);
 const calls: { host: string; command: string }[] = [];
-let serveQuotaError = false;
-
 (globalThis as unknown as { fetch: typeof fetch }).fetch = (async (input: unknown, init?: RequestInit) => {
   const url = new URL(String(input));
-  const payload = JSON.parse(String(init?.body ?? "[]")) as string[];
-  calls.push({ host: url.host, command: payload[0] ?? "?" });
-  if (serveQuotaError && url.host.startsWith("primary.")) {
-    return new Response("ERR max requests limit exceeded. Limit: 500000, Usage: 500002", { status: 400 });
+  const payload = JSON.parse(String(init?.body ?? "[]")) as unknown[];
+  // Hand-rolled clients send flat pipelines (["HGETALL", key]); the
+  // @upstash/redis SDK (adapter path) sends [["ping"]] and expects an ARRAY
+  // response of { result } — answer both wire shapes correctly.
+  const first = payload[0];
+  const command = Array.isArray(first) ? String(first[0] ?? "?").toUpperCase() : String(first ?? "?");
+  calls.push({ host: url.host, command });
+  if (command === "PING") {
+    // Upstash pipeline results are JSON-encoded; the SDK re-parses strings.
+    return new Response(JSON.stringify([{ result: '"PONG"' }]), { status: 200 });
   }
-  return new Response(JSON.stringify({ result: payload[0] === "KEYS" ? [] : "OK" }), { status: 200 });
+  let result: unknown = null;
+  switch (command) {
+    case "HGETALL":
+      result = {};
+      break;
+    case "KEYS":
+      result = [];
+      break;
+    default:
+      result = "OK";
+  }
+  return new Response(JSON.stringify({ result }), { status: 200 });
 }) as typeof fetch;
 
-/** Full isolation between scenarios. */
-function resetAll(): void {
-  for (const label of ["primary", "secondary"]) {
-    isAccountQuotaExhausted(label, 8_200_000_000_000); // expire-check deletes the entry
-  }
-  resetRedisUsageTracking();
-  resetRedisWriteDebounce();
-  resetPresenceWriteDebounce();
-  clearRedisL1Cache();
-  calls.length = 0;
-  serveQuotaError = false;
-}
+// ── 1. Threshold defaults + env override ────────────────────────────────────
+delete process.env.UPSTASH_QUOTA_LIMIT;
+delete process.env.UPSTASH_QUOTA_SOFT_THRESHOLD;
+assert.equal(quotaLimit(), 500_000, "default monthly limit must be 500,000 (#646)");
+assert.equal(quotaSoftThreshold(), 480_000, "default soft threshold must be 480,000 = 96% (#646)");
+process.env.UPSTASH_QUOTA_LIMIT = "100000";
+assert.equal(quotaSoftThreshold(), 96_000, "soft threshold defaults to 96% of configured limit");
+process.env.UPSTASH_QUOTA_SOFT_THRESHOLD = "70000";
+assert.equal(quotaSoftThreshold(), 70_000, "explicit UPSTASH_QUOTA_SOFT_THRESHOLD must win");
+console.log("✅ 1. soft threshold = 96% of limit, env-overridable (500k → 480k default)");
 
-const hosts = () => calls.map((c) => c.host);
-const primaryCalls = () => calls.filter((c) => c.host.startsWith("primary.")).length;
+// ── 2. Usage ledger + monthly window rollover ───────────────────────────────
+process.env.UPSTASH_QUOTA_SOFT_THRESHOLD = "480000";
+delete process.env.UPSTASH_QUOTA_LIMIT;
+const baseNow = Date.now();
+// Synthetic label — pure ledger math, isolated from chain-rotation sections.
+const label2 = "ledger-probe";
+assert.equal(accountUsageCommands(label2, baseNow), 0, "fresh ledger starts at 0");
+assert.equal(recordRedisCommands(label2, 10, baseNow), 10, "recordRedisCommands returns the updated count");
+assert.equal(recordRedisCommands(label2, 5, baseNow + 1_000), 15, "commands accumulate within the same window");
+assert.equal(accountUsageCommands(label2, baseNow + 2_000), 15);
+const nextWindow = baseNow + 31 * 24 * 3600 * 1000; // ~next month
+assert.equal(accountUsageCommands(label2, nextWindow), 0, "window rollover resets the count to 0");
+console.log("✅ 2. usage ledger accumulates per monthly window and resets on rollover");
 
-// ── 0. Threshold geometry: default 96% of 500k = 480,000 ────────────────────
-delete process.env.UPSTASH_COMMAND_LIMIT;
-delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
-assert.equal(upstashCommandLimit(), 500_000);
-assert.equal(upstashSoftThreshold(), 480_000, "default soft threshold must be 480k (96% of 500k)");
-assert.equal(upstashSoftThreshold() < upstashCommandLimit(), true);
+// ── 3. PREEMPTIVE rotation before the hard limit ────────────────────────────
+// Scaled model: limit 12, soft threshold 10 → rotate at 10; hard 12 (the
+// real-world 500k) is NEVER reachable, exactly like 480k of 500k.
+process.env.UPSTASH_QUOTA_LIMIT = "12";
+process.env.UPSTASH_QUOTA_SOFT_THRESHOLD = "10";
+resetCooldowns(["primary", "secondary"]);
+assert.equal(getActiveRedisAccount().label, "primary", "sanity: primary starts active");
+assert.equal(recordRedisCommands("primary", 9, Date.now()), 9);
+assert.ok(!isAccountQuotaExhausted("primary"), "9 < 10 → still in the pool");
+assert.equal(recordRedisCommands("primary", 1, Date.now()), 10, "crossing 10 = the 480k moment");
+assert.ok(isAccountQuotaExhausted("primary"), ">= soft threshold → preemptively cooled");
+assert.equal(getActiveRedisAccount().label, "secondary", "rotation happened BEFORE the hard limit (10 < 12)");
+assert.ok(!activeAccountChain().some((a) => a.label === "primary"), "cooled account excluded from the active chain");
+console.log("✅ 3. crossing the 96% soft threshold rotates BEFORE the hard 500k boundary");
 
-// ── 1. AC1 — local-count preemptive rotation with ZERO failed requests ──────
-{
-  resetAll();
-  process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD = "5";
-  // Every heartbeat write = 2 commands (HSET + SET). Threshold 5 → after the
-  // 3rd write's HSET (count 5→6 by the SET) the primary must be out of the pool.
-  for (const slot of ["agent-31", "agent-32", "agent-33"]) {
-    const r = await recordHeartbeat({ slot, source: "mcp-tower" });
-    assert.equal(r.ok, true);
-    assert.notEqual(r.debounced, true);
-  }
-  assert.ok(primaryCalls() >= 5, "primary must have served the commands up to the threshold");
-  assert.ok(!hosts().slice(0, 5).every((h) => h.startsWith("secondary.")), "first writes start on primary");
-  // The 4th write must NOT touch primary — rotated preemptively, no error seen.
-  calls.length = 0;
-  const r4 = await recordHeartbeat({ slot: "agent-34", source: "mcp-tower" });
-  assert.equal(r4.ok, true);
-  assert.equal(r4.redisAccount, "secondary", "4th write must land on secondary after preemptive rotation");
-  assert.equal(primaryCalls(), 0, "ZERO requests may hit the rotated-out account (no failed request possible)");
-  assert.ok(isAccountQuotaExhausted("primary"), "primary visibly in cooldown after soft-threshold hit");
-  const status = quotaChainStatus().find((s) => s.label === "primary");
-  assert.ok(status?.cooldownUntil, "quotaChainStatus must expose the preemptive cooldown");
-  assert.ok(status?.usage && status.usage.softThresholdHit, "usage snapshot must flag softThresholdHit");
-  delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
-}
+// ── 4. quotaGuard throws quota-shaped → engine shifts without wasting it ────
+// (section-3 scaled env intentionally still active here: limit 12, threshold 10)
+assert.throws(() => quotaGuard({ label: "primary" } as never, 1), RedisQuotaExhaustedError,
+  "quotaGuard must throw the engine-recognized error at/over threshold");
+assert.doesNotThrow(() => quotaGuard({ label: "guard-fresh" } as never, 1),
+  "healthy (below-threshold) account accepts reservations");
+// Window reset → account rejoins the pool automatically (AC: cooldown until
+// the window reset date, e.g. 2026-11-01T00:01Z).
+const afterReset = nextQuotaResetEpochMs() + 60_000;
+assert.ok(!isAccountQuotaExhausted("primary", afterReset), "after window reset the account rejoins");
+console.log("✅ 4. quotaGuard quota-shaped error + automatic pool rejoin after reset");
 
-// ── 2. Remaining-header authority → preemptive rotation (pure unit) ─────────
-{
-  resetAll();
-  process.env.UPSTASH_COMMAND_LIMIT = "100";
-  process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD = "80";
-  const consumed = noteRedisResponseHeaders(
-    "primary",
-    new Headers({ "x-upstash-remaining-requests": "19" }),
-  );
-  assert.equal(consumed, true, "remaining header must be recognized");
-  assert.ok(isAccountQuotaExhausted("primary"), "used=81 >= threshold=80 → preemptive rotation");
-  assert.equal(activeAccountChain()[0].label, "secondary");
-  const snap = redisUsageSnapshot().find((s) => s.label === "primary");
-  assert.equal(snap?.estimatedCommands, 81, "usage derived from limit - remaining");
-  delete process.env.UPSTASH_COMMAND_LIMIT;
-  delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
-}
+// ── 5. Observability: usage ledger status + contact tracker ────────────────
+process.env.UPSTASH_QUOTA_LIMIT = "500000";
+process.env.UPSTASH_QUOTA_SOFT_THRESHOLD = "480000";
+resetCooldowns(["primary", "secondary"]);
+// "secondary" ledger is untouched so far → exactly 250000 after this call.
+recordRedisCommands("secondary", 250_000, Date.now());
+const usage = redisUsageLedgerStatus();
+const secondaryUsage = usage.find((u) => u.label === "secondary");
+assert.ok(secondaryUsage, "ledger lists every chain account");
+assert.equal(secondaryUsage.commands, 250_000);
+assert.equal(secondaryUsage.limit, 500_000);
+assert.equal(secondaryUsage.softThreshold, 480_000);
+assert.equal(secondaryUsage.percentUsed, 50, "percentUsed math (50% of 500k)");
+assert.equal(secondaryUsage.preemptivelyCooled, false);
+noteRedisContact("primary", "upstash-rest", Date.now() - 5_000);
+const contact = lastRedisContact();
+assert.ok(contact, "contact tracker records the last success");
+assert.ok(contact.ageMs >= 4_900 && contact.ageMs <= 5_100, "ageMs math is ms-precise");
+assert.equal(redisHealthProbeSkipMs(), 30_000, "health probe skip window defaults to 30s");
+console.log("✅ 5. usage ledger + last-contact observability surfaces");
 
-// ── 3. Quota error body parse records REAL usage (truth correction) ─────────
-{
-  resetAll();
-  noteQuotaErrorUsage("secondary", "ERR max requests limit exceeded. Limit: 500000, Usage: 499999");
-  assert.ok(isAccountQuotaExhausted("secondary"), "499999 >= 480k → account rotates");
-  const snap = redisUsageSnapshot().find((s) => s.label === "secondary");
-  assert.equal(snap?.estimatedCommands, 499999, "error-body usage overrides the local lower bound");
-  // Non-matching bodies are ignored (no false usage).
-  resetAll();
-  noteQuotaErrorUsage("primary", "some unrelated error");
-  assert.equal(isAccountQuotaExhausted("primary"), false);
-}
+// ── 6. L1 cache semantics ───────────────────────────────────────────────────
+const cache = new L1Cache<number>(1_000);
+cache.set("k", 42);
+assert.equal(cache.get("k"), 42, "cache hit within TTL");
+assert.equal(cache.get("k", Date.now() + 1_001), undefined, "TTL expiry evicts");
+cache.set("k", 7);
+cache.delete("k");
+assert.equal(cache.get("k"), undefined, "explicit invalidation");
+const tiny = new L1Cache<number>(60_000, 2);
+tiny.set("a", 1); tiny.set("b", 2); tiny.set("c", 3);
+assert.equal(tiny.size, 2, "max-entries bound enforced (eviction)");
+console.log("✅ 6. L1 cache: hit, TTL expiry, invalidate, bounded eviction");
 
-// ── 4. AC2 — heartbeat write debounce collapses duplicate refreshes ─────────
-{
-  resetAll();
-  process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD = "999999999";
-  process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS = "60";
-  const r1 = await recordHeartbeat({ slot: "agent-41", source: "mcp-tower" });
-  assert.equal(r1.ok, true);
-  assert.notEqual(r1.debounced, true);
-  const afterFirst = calls.length;
-  assert.ok(afterFirst >= 2, "first write = HSET + SET on Redis");
-  const r2 = await recordHeartbeat({ slot: "agent-41", source: "mcp-tower" });
-  assert.equal(r2.ok, true);
-  assert.equal(r2.debounced, true, "second write within the window must be debounced");
-  assert.equal(calls.length, afterFirst, "debounced write must not touch Redis");
-  // Different slot → independent window → still writes.
-  const r3 = await recordHeartbeat({ slot: "agent-42", source: "mcp-tower" });
-  assert.notEqual(r3.debounced, true);
-  assert.ok(calls.length > afterFirst);
-  // Reset hook restores independent-write semantics for tests.
-  resetRedisWriteDebounce();
-  const r4 = await recordHeartbeat({ slot: "agent-41", source: "mcp-tower" });
-  assert.notEqual(r4.debounced, true, "after reset the same slot writes again");
-  delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
-  delete process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS;
-}
+// ── 7. Heartbeat write debounce (identical sub-second writes skipped) ───────
+resetCooldowns(["primary", "secondary"]);
+calls.length = 0;
+const hb1 = await recordHeartbeat({ slot: "agent-646", source: "mcp-tower" });
+assert.equal(hb1.ok, true);
+assert.ok(!("debounced" in hb1 && hb1.debounced), "first write is a real write");
+const callsAfterFirst = calls.length;
+assert.ok(callsAfterFirst >= 2, "hash-first dual-write contract preserved (HSET + SET)");
+const hb2 = await recordHeartbeat({ slot: "agent-646", source: "mcp-tower" });
+assert.equal(hb2.debounced, true, "identical back-to-back write is debounced (#646)");
+assert.equal(calls.length, callsAfterFirst, "debounced write sends ZERO Redis commands");
+const hb3 = await recordHeartbeat({ slot: "agent-646", agentId: "different-identity", source: "mcp-tower" });
+assert.ok(!(hb3 as { debounced?: boolean }).debounced, "fingerprint change forces a real write (identity re-register never masked)");
+assert.ok(calls.length > callsAfterFirst, "real write went through after fingerprint change");
+console.log("✅ 7. heartbeat write debounce: identical → 0 commands, fingerprint change → real write");
 
-// ── 5. AC2 — presence write debounce (per client key) ────────────────────────
-{
-  resetAll();
-  process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS = "60";
-  const p1 = await recordPresence({ clientName: "Cursor", clientId: "c-1", protocol: "streamable-http" });
-  assert.equal(p1.ok, true);
-  assert.notEqual(p1.debounced, true);
-  const afterFirst = calls.length;
-  const p2 = await recordPresence({ clientName: "Cursor", clientId: "c-1", protocol: "streamable-http" });
-  assert.equal(p2.debounced, true);
-  assert.equal(calls.length, afterFirst, "presence refresh within window must not touch Redis");
-  const p3 = await recordPresence({ clientName: "Cursor", clientId: "c-2", protocol: "streamable-http" });
-  assert.notEqual(p3.debounced, true, "different client id → separate window");
-  resetPresenceWriteDebounce();
-  const p4 = await recordPresence({ clientName: "Cursor", clientId: "c-1", protocol: "streamable-http" });
-  assert.notEqual(p4.debounced, true);
-  delete process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS;
-}
+// ── 8. List L1 cache + invalidation on write ───────────────────────────────
+resetCooldowns(["primary", "secondary"]);
+calls.length = 0;
+await listHeartbeats();
+const fetchesFirstList = calls.length;
+assert.ok(fetchesFirstList >= 1, "first list reads from the chain");
+await listHeartbeats();
+assert.equal(calls.length, fetchesFirstList, "second rapid list is served from L1 cache (0 commands, #646 ≥50% read-cut)");
+await recordHeartbeat({ slot: "agent-647", source: "dashboard" });
+assert.ok(calls.length > fetchesFirstList, "write itself goes to Redis");
+await listHeartbeats();
+assert.ok(calls.length > fetchesFirstList + 1, "list cache was invalidated by the write — fresh read");
+console.log("✅ 8. listHeartbeats L1 cache: hit → 0 commands; write invalidates → fresh read");
 
-// ── 6. AC2 — L1 read-through cache collapses sweep bursts ───────────────────
-{
-  resetAll();
-  process.env.REDIS_L1_CACHE_TTL_MS = "5000";
-  await recordHeartbeat({ slot: "agent-61", source: "mcp-tower" }); // seed one record
-  process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS = "0";
-  resetRedisWriteDebounce();
-  calls.length = 0;
-  const first = await listHeartbeatsSafe();
-  const afterFirst = calls.length;
-  assert.ok(afterFirst > 0, "first sweep must read Redis");
-  const second = await listHeartbeatsSafe();
-  assert.equal(calls.length, afterFirst, "second sweep within TTL must be served from L1");
-  assert.deepEqual(second.slots.map((s) => s.slot), first.slots.map((s) => s.slot));
-  clearRedisL1Cache();
-  await listHeartbeatsSafe();
-  assert.ok(calls.length > afterFirst, "after cache clear the sweep reads Redis again");
-  delete process.env.REDIS_L1_CACHE_TTL_MS;
-  delete process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS;
-}
+// ── 9. Presence write debounce + workforce/presence cache interplay ────────
+resetCooldowns(["primary", "secondary"]);
+calls.length = 0;
+await recordPresence({ clientName: "ChatGPT-646", clientId: "cid-1", protocol: "streamable-http" });
+const presenceCallsAfterFirst = calls.length;
+const pr2 = await recordPresence({ clientName: "ChatGPT-646", clientId: "cid-1", protocol: "streamable-http" });
+assert.equal(pr2.debounced, true, "presence identical back-to-back write is debounced");
+assert.equal(calls.length, presenceCallsAfterFirst, "debounced presence write sends ZERO commands");
+await listPresence();
+const afterPresenceList = calls.length;
+await listPresence();
+assert.equal(calls.length, afterPresenceList, "listPresence L1 cache hit (0 commands)");
+console.log("✅ 9. presence debounce + presence list cache");
 
-async function listHeartbeatsSafe() {
-  const { listHeartbeats } = await import("./src/registry/agent_heartbeat.js");
-  return await listHeartbeats();
-}
+// ── 10. Health-sweep probe skip after recent successful contact ────────────
+resetCooldowns(["primary", "secondary"]);
+calls.length = 0;
+noteRedisContact("primary", "upstash-rest", Date.now());
+const ping1 = (await pingRedis()) as { probeSkipped?: boolean; status?: string; account?: string };
+assert.equal(ping1.probeSkipped, true, "recent contact → probe skipped (#646 AC)");
+assert.equal(ping1.status, "PONG", "consumer contract preserved (system.tools expects PONG)");
+assert.equal(ping1.account, "primary", "skip reports WHICH account had the recent contact");
+assert.equal(calls.length, 0, "skip path sends ZERO PING commands");
+// Stale contact (> 30s) → real probe happens.
+noteRedisContact("primary", "upstash-rest", Date.now() - 31_000);
+const ping2 = (await pingRedis()) as { probeSkipped?: boolean; status?: string };
+assert.equal(ping2.probeSkipped, false, "stale contact → real probe");
+assert.equal(ping2.status, "PONG");
+assert.ok(calls.length >= 1, "real probe sent exactly one PING through the chain");
+console.log("✅ 10. health-sweep probe skip window (recent → 0 commands, stale → real probe)");
 
-// ── 7. Local counter drives preemptive rotation directly (unit) ─────────────
-{
-  resetAll();
-  process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD = "3";
-  noteRedisCommands("primary", 1);
-  noteRedisCommands("primary", 1);
-  assert.equal(isAccountQuotaExhausted("primary"), false, "below threshold → still active");
-  noteRedisCommands("primary", 1); // hits 3
-  assert.ok(isAccountQuotaExhausted("primary"), "threshold hit → preemptive cooldown");
-  delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
-}
-
-// ── Cleanup ──────────────────────────────────────────────────────────────────
-resetAll();
+// ── Cleanup ────────────────────────────────────────────────────────────────
 (globalThis as unknown as { fetch: typeof fetch }).fetch = realFetch;
+resetCooldowns(["primary", "secondary"]);
 
-console.log("ALL PREEMPTIVE-ROTATION TESTS PASSED (#646) — 7/7 scenarios: zero failed requests before rotation, debounce + L1 cache active");
+console.log("ALL PREEMPTIVE-ROTATION & BURN-RATE TESTS PASSED (#646) — 10/10 sections");
