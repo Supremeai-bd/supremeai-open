@@ -118,3 +118,4 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 
 - **Task Validation:** `python scripts/ci/issue_template_guard.py --self-test`
 - **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
+- **Board SSOT Guard:** `python3 scripts/ci/satellite_board_guard.py --check` — 0/0 satellite mandate audit (#626; charter: `docs/FEDERATION_CHARTER.md`)
