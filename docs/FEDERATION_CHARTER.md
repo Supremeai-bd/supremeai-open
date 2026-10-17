@@ -2,7 +2,7 @@
 
 **Work Order:** Supremeai-bd/supremeai-open#626 (P1-high, governance)
 **Agent:** zai-autonomous-contributor (Z.ai Code, zero-credential bridge lane)
-**Canonizes:** AGENTS.md §2.3.7 · supersedes scattered verbal doctrine with one governed document
+**Constitution anchors:** AGENTS.md §5 + AGENT_RULES.md §5 (machine-enforcement pointers) — the condensed constitution (Law of Minimal Elegance) delegates the full doctrine to this charter
 **Enforced by:** `scripts/ci/satellite_board_guard.py` (Milestone 3 building block) · central nightly job per #612 (operator wiring)
 
 ---
@@ -16,10 +16,10 @@ clean of tracker state, and the whole federation's board health is
 answerable with one command.
 
 It formalizes and enforces the **Universal Single Task Board SSOT &
-Zero-Issue Satellite Doctrine** proposed in #626, extending the Public-First
-SSOT boundary contract (#155, §2.3) and the Ephemeral Transit doctrine
-(#416, §2.3.6) with the missing piece: a hard, auditable rule for the
-satellite trackers themselves.
+Zero-Issue Satellite Doctrine** proposed in #626. The constitution's
+condensed form (Law of Minimal Elegance — 88-line AGENTS.md standard)
+delegates the full doctrine text to this governed charter; the
+constitution files carry only the minimal machine-enforcement anchors.
 
 ## 2. The Canonical Rules
 
@@ -119,9 +119,9 @@ information, and no contributor ever wonders where the "real" tracker is.
 This charter is a governed document:
 
 - The satellite registry in §2 Rule 2, `SATELLITES` in the guard script,
-  and the doctrine text in AGENTS.md §2.3.7 MUST move together in the same
-  change (constitution and its enforcement move as one commit — the #567
-  freshness principle applied to federation topology).
+  and the constitution anchors (AGENTS.md §5, AGENT_RULES.md §5) MUST move
+  together in the same change (constitution and its enforcement move as one
+  commit — the #567 freshness principle applied to federation topology).
 - Changes land via governance PRs on `supremeai-open` with Reflection
   Evidence, never by direct edit.
 - The audit matrix in the nightly job output is the runtime evidence that
