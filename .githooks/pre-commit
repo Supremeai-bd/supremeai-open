@@ -1,0 +1,193 @@
+#!/bin/sh
+# SupremeAI — Pre-Commit Shift-Left Quality & Security Guard
+#
+# Poka-yoke for local defect prevention before commits enter git history.
+# Fast (< 2s) inspection applied strictly to staged files (git diff --cached).
+#
+# Enforced:
+#   1. No staged .env or secret configuration files.
+#   2. No raw credential / token assignments in staged code diffs.
+#   3. No stale base: if origin/main is ahead, rebase before committing.
+#   4. Python syntax compile check for staged .py files.
+#   5. JSON syntax validity check for staged .json files.
+#   6. TypeScript verification for staged infrastructure/mcp-control-plane code.
+#   7. Sizing ceiling: no individual file > 250 KB (Rule P7).
+#
+# Install:   git config core.hooksPath .githooks
+# Self-test: sh .githooks/pre-commit --self-test
+# Bypass:    git commit --no-verify
+
+set -u
+
+reject() {
+    echo >&2 ""
+    echo >&2 "┌──────────────────────────────────────────────────────────────"
+    echo >&2 "│ PRE-COMMIT GUARD (Shift-Left Security & Integrity Gate): $1"
+    echo >&2 "└──────────────────────────────────────────────────────────────"
+    shift
+    for line in "$@"; do echo >&2 "│ $line"; done
+    echo >&2 ""
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Self-test mode: offline fixtures, hermetic verification
+# ---------------------------------------------------------------------------
+if test "${1:-}" = "--self-test"; then
+    HOOK_ABS="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    sandbox="$(mktemp -d)" || exit 2
+    (
+        cd "$sandbox" || exit 2
+        git init -q
+        git config user.email "guard-selftest@example.invalid"
+        git config user.name "Pre-Commit Guard Self-Test"
+        HOOK="$HOOK_ABS"
+
+        # S1: Clean commit -> PASS
+        echo "clean content" > clean.txt
+        git add clean.txt
+        sh "$HOOK" >/dev/null 2>&1 && echo "PASS clean-commit-accepted" || echo "FAIL clean-commit-accepted"
+        git commit -qm "clean"
+
+        # S2: Staged .env -> REJECT
+        echo "SECRET=123" > .env
+        git add .env
+        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL env-file-rejected" || echo "PASS env-file-rejected"
+        git rm -f -q .env
+
+        # S3: Staged bad Python -> REJECT
+        echo "def broken(: pass" > bad.py
+        git add bad.py
+        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL bad-python-rejected" || echo "PASS bad-python-rejected"
+        git rm -f -q bad.py
+
+        # S4: Staged bad JSON -> REJECT
+        echo "{not a json}" > bad.json
+        git add bad.json
+        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL bad-json-rejected" || echo "PASS bad-json-rejected"
+        git rm -f -q bad.json
+
+        # S5: Staged oversized file -> REJECT
+        dd if=/dev/zero of=huge.bin bs=1024 count=300 >/dev/null 2>&1
+        git add huge.bin
+        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL huge-file-rejected" || echo "PASS huge-file-rejected"
+        git rm -f -q huge.bin
+    )
+    rm -rf "$sandbox"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Active Pre-Commit Inspection (Only inspecting staged changes)
+# ---------------------------------------------------------------------------
+
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -z "$staged_files" ]; then
+    exit 0
+fi
+
+# 1. Staged Secret / Env Files
+for file in $staged_files; do
+    case "$file" in
+        *.env|*.env.*|.env)
+            reject "Staged secret file detected: $file" \
+                "Never commit .env or secret configuration files to version control." \
+                "Remove it from the staging area: git reset HEAD $file" \
+                "Deliberate admin bypass: git commit --no-verify."
+            ;;
+    esac
+done
+
+# 2. Check for common raw credential patterns in staged diff
+# Matches unmasked assignments like API_KEY = "..." or TOKEN = "..." (ignoring test allow annotations)
+if git diff --cached -U0 | grep -E '^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*["\x27][A-Za-z0-9_\-\.]{20,}["\x27]' | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
+    reject "Potential raw secret literal detected in staged diff" \
+        "Secrets must be loaded from vault/environment, never hardcoded into source files." \
+        "If this is a false positive test fixture, annotate the line with '# gitleaks:allow'." \
+        "Deliberate admin bypass: git commit --no-verify."
+fi
+
+# 3. Freshness / Stale-Base Check (Dual-Rebase Mandate)
+if git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null 2>&1; then
+    main_ref=$(git rev-parse refs/remotes/origin/main 2>/dev/null || echo "")
+    if [ -n "$main_ref" ]; then
+        merge_base=$(git merge-base HEAD "$main_ref" 2>/dev/null || echo "")
+        if [ -n "$merge_base" ]; then
+            behind=$(git rev-list --count "$merge_base..$main_ref" 2>/dev/null || echo 0)
+            if [ "$behind" -gt 0 ]; then
+                reject "stale branch: main advanced $behind commit(s) past your merge-base (#161, #4177)" \
+                    "Rebase onto latest main before committing new work:" \
+                    "  git fetch origin main && git rebase origin/main" \
+                    "Working on a stale base leads to merge conflicts and CI failure." \
+                    "Deliberate admin bypass: git commit --no-verify."
+            fi
+        fi
+    fi
+fi
+
+# 4. Python syntax compile for staged .py files
+for file in $staged_files; do
+    case "$file" in
+        *.py)
+            if [ -f "$file" ]; then
+                if ! python -m py_compile "$file" 2>/dev/null; then
+                    reject "Python syntax error in staged file: $file" \
+                        "Fix syntax errors before committing." \
+                        "Test command: python -m py_compile $file" \
+                        "Deliberate admin bypass: git commit --no-verify."
+                fi
+            fi
+            ;;
+    esac
+done
+
+# 5. JSON parse check for staged .json files
+for file in $staged_files; do
+    case "$file" in
+        *.json)
+            if [ -f "$file" ]; then
+                if ! python -c "import json; json.load(open(r'$file', encoding='utf-8'))" 2>/dev/null; then
+                    reject "Invalid JSON syntax in staged file: $file" \
+                        "Check JSON formatting before committing." \
+                        "Deliberate admin bypass: git commit --no-verify."
+                fi
+            fi
+            ;;
+    esac
+done
+
+# 6. TypeScript check for infrastructure/mcp-control-plane
+mcp_staged=$(echo "$staged_files" | grep -E '^infrastructure/mcp-control-plane/.*\.(ts|tsx)$' || true)
+if [ -n "$mcp_staged" ]; then
+    if [ -d "infrastructure/mcp-control-plane" ]; then
+        if command -v bunx >/dev/null 2>&1; then
+            if ! (cd infrastructure/mcp-control-plane && bunx tsc --noEmit >/dev/null 2>&1); then
+                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
+                    "Run 'bunx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors." \
+                    "Ensure all imports, exports, and types are valid." \
+                    "Deliberate admin bypass: git commit --no-verify."
+            fi
+        elif command -v npx >/dev/null 2>&1; then
+            if ! (cd infrastructure/mcp-control-plane && npx tsc --noEmit >/dev/null 2>&1); then
+                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
+                    "Run 'npx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors." \
+                    "Ensure all imports, exports, and types are valid." \
+                    "Deliberate admin bypass: git commit --no-verify."
+            fi
+        fi
+    fi
+fi
+
+# 7. Sizing ceiling (Rule P7: <= 250 KB per file)
+for file in $staged_files; do
+    if [ -f "$file" ]; then
+        fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
+        if [ "$fsize" -gt 256000 ]; then
+            reject "Staged file exceeds size ceiling (Rule P7): $file ($fsize bytes > 250KB)" \
+                "Individual source files in PRs must not exceed the P7 sizing limit." \
+                "Deliberate admin bypass: git commit --no-verify."
+        fi
+    fi
+done
+
+exit 0
