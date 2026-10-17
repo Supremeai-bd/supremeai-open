@@ -490,6 +490,48 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           };
         }
 
+        // Step E: Atomic PR Pairing (Invariant #514 — Zero Stranded Branches)
+        const prBody = [
+          "## Summary",
+          `Autonomous bridge contribution for ${taskId}: ${summary}`,
+          "",
+          "## Linked Work Order",
+          `Closes #${issueRes.data?.number}`,
+          `Refs #${issueRes.data?.number}`,
+          "",
+          "## Scope Paths",
+          scopePaths.map((p) => `- \`${p}\``).join("\n"),
+          "",
+          "## Test Evidence (3-tier contract)",
+          testsEvidence,
+          "",
+          "## Rollback Path",
+          rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
+        ].join("\n");
+
+        let prNumber: number | undefined;
+        let prUrl: string | undefined;
+
+        const prRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
+          `https://api.github.com/repos/${repo}/pulls`,
+          {
+            method: "POST",
+            headers,
+            body: {
+              title: `feat(bridge): ${summary} (${taskId})`,
+              head: branchName,
+              base: "main",
+              body: prBody,
+            },
+            timeoutMs: 15_000,
+          }
+        );
+
+        if (prRes.ok && prRes.data) {
+          prNumber = prRes.data.number;
+          prUrl = prRes.data.html_url;
+        }
+
         return {
           content: [{
             type: "text",
@@ -500,8 +542,12 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               branchUrl: `https://github.com/${repo}/tree/${branchName}`,
               issueNumber: issueRes.data?.number,
               issueUrl: issueRes.data?.html_url,
-              status: "bridge:queued",
-              message: "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
+              prNumber,
+              prUrl,
+              status: prNumber ? "bridge:pr-opened" : "bridge:queued",
+              message: prNumber
+                ? `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
+                : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
             }, null, 2),
           }],
         };
