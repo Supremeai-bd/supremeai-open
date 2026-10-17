@@ -1,9 +1,178 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
 import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
+
+export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
+export const REQUIRED_REFLECTION_FIELDS = ["why", "alternatives_rejected"] as const;
+export const STALE_TEMPLATE_ERROR_PREFIX = "STALE_TEMPLATE_ERROR";
+
+export function extractRequiredReflectionFields(templateContent: string): string[] {
+  if (!templateContent.includes("## Reflection Evidence")) {
+    return [];
+  }
+  const fields: string[] = [];
+  if (/-\s+\*\*why:\*\*/.test(templateContent)) {
+    fields.push("why");
+  }
+  if (/-\s+\*\*alternatives_rejected:\*\*/.test(templateContent)) {
+    fields.push("alternatives_rejected");
+  }
+  return fields;
+}
+
+export function readPullRequestTemplate(reader?: (path: string) => string | null): {
+  source: "live" | "fallback";
+  templatePath: string | null;
+  requiredFields: readonly string[];
+  ruleP7Sizing: { maxFiles: number; maxDiffBytes: number };
+} {
+  const defaultPath = "../../.github/PULL_REQUEST_TEMPLATE.md";
+  let content: string | null = null;
+  if (reader) {
+    content = reader(defaultPath);
+  } else {
+    try {
+      const resolved = path.resolve(process.cwd(), defaultPath);
+      if (fs.existsSync(resolved)) {
+        content = fs.readFileSync(resolved, "utf-8");
+      }
+    } catch {
+      content = null;
+    }
+  }
+
+  const ruleP7Sizing = { maxFiles: 30, maxDiffBytes: 200 * 1024 };
+
+  if (content !== null) {
+    const extracted = extractRequiredReflectionFields(content);
+    return {
+      source: "live",
+      templatePath: defaultPath,
+      requiredFields: extracted.length > 0 ? extracted : ["why", "alternatives_rejected"],
+      ruleP7Sizing,
+    };
+  }
+
+  return {
+    source: "fallback",
+    templatePath: null,
+    requiredFields: ["why", "alternatives_rejected"],
+    ruleP7Sizing,
+  };
+}
+
+export function validateReflectionEvidence(body: string): string[] {
+  const missing: string[] = [];
+  const h2Regex = /^## Reflection Evidence/m;
+  if (!h2Regex.test(body)) {
+    return ["why", "alternatives_rejected"];
+  }
+
+  // Check why
+  const whyMatch = body.match(/^[ \t]*-[ \t]+\*\*why:\*\*[ \t]*(.*)$/m);
+  if (!whyMatch || !whyMatch[1] || whyMatch[1].trim() === "" || /^<.*>$/.test(whyMatch[1].trim())) {
+    missing.push("why");
+  }
+
+  // Check alternatives_rejected
+  const altIndex = body.search(h2Regex);
+  const altSection = body.slice(altIndex);
+  const altHeaderMatch = altSection.match(/^[ \t]*-[ \t]+\*\*alternatives_rejected:\*\*[ \t]*(.*)$/m);
+
+  let hasValidAlt = false;
+  if (altHeaderMatch && altHeaderMatch[1] && altHeaderMatch[1].trim() !== "" && !/^<.*>$/.test(altHeaderMatch[1].trim())) {
+    hasValidAlt = true;
+  } else if (altHeaderMatch) {
+    const afterAlt = altSection.slice(altSection.indexOf(altHeaderMatch[0]) + altHeaderMatch[0].length);
+    const lines = afterAlt.split("\n");
+    for (const line of lines) {
+      if (/^[ \t]*##/.test(line)) break;
+      if (/^[ \t]*-[ \t]+\*\*/.test(line)) break;
+      const bulletMatch = line.match(/^[ \t]+-[ \t]+(.+)$/);
+      if (bulletMatch && bulletMatch[1].trim() !== "" && !/^<.*>$/.test(bulletMatch[1].trim())) {
+        hasValidAlt = true;
+        break;
+      }
+    }
+  }
+
+  if (!hasValidAlt) {
+    missing.push("alternatives_rejected");
+  }
+
+  return missing;
+}
+
+export function reflectionFixSnippet(): string {
+  return [
+    REFLECTION_EVIDENCE_SECTION,
+    "- **why:** <rationale explaining why this change was made>",
+    "- **alternatives_rejected:**",
+    "  - <alternative 1 and why it was rejected>",
+  ].join("\n");
+}
+
+export interface BridgePrBodyOptions {
+  taskId: string;
+  summary: string;
+  issueNumber?: number;
+  scopePaths: string[];
+  testsEvidence: string;
+  reflectionWhy?: string;
+  alternativesRejected?: string;
+  rollbackPath?: string;
+}
+
+export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
+  const lines: string[] = [
+    "## Summary",
+    `Autonomous bridge contribution for ${opts.taskId}: ${opts.summary}`,
+    "",
+  ];
+
+  if (opts.issueNumber) {
+    lines.push(
+      "## Linked Work Order",
+      `Closes #${opts.issueNumber}`,
+      `Refs #${opts.issueNumber}`,
+      ""
+    );
+  }
+
+  lines.push(
+    REFLECTION_EVIDENCE_SECTION,
+    `- **why:** ${opts.reflectionWhy || ""}`,
+    "- **alternatives_rejected:**"
+  );
+
+  const rawAlts = (opts.alternativesRejected || "").trim();
+  if (rawAlts) {
+    const altLines = rawAlts.split("\n").map((l) => l.trim()).filter(Boolean);
+    for (const altLine of altLines) {
+      const clean = altLine.replace(/^-\s*/, "");
+      lines.push(`  - ${clean}`);
+    }
+  }
+
+  lines.push(
+    "",
+    "## Scope Paths",
+    ...opts.scopePaths.map((p) => `- \`${p}\``),
+    "",
+    "## Test Evidence (3-tier contract)",
+    opts.testsEvidence,
+    "",
+    "## Rollback Path",
+    opts.rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)"
+  );
+
+  return lines.join("\n");
+}
 
 /**
  * Bridge onboarding tools — the zero-credential front door for external agents.
@@ -115,6 +284,13 @@ export function bridgeGuide() {
       },
       externalAgentsNeverWriteToMain: true,
       landingAuthority: "constitutional gates only — the bridge never merges",
+    },
+    constitutionFreshness: {
+      prTemplateSource: readPullRequestTemplate().source,
+      mandatoryReflectionFields: [...REQUIRED_REFLECTION_FIELDS],
+      requiredReflectionSection: REFLECTION_EVIDENCE_SECTION,
+      ruleP7DomainSizing: "Cohesive task sizing ceiling: 30 files / 200 KB diff (AGENT_RULES.md P7)",
+      preValidation: "Submissions missing reflection evidence fail pre-push with STALE_TEMPLATE_ERROR",
     },
     escalation: {
       elevatedAccess:
@@ -335,9 +511,28 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
       rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
       agentIdentity: z.string().optional().describe("Agent name / session attribution"),
+      reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
+      alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
     },
-    async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity }) => {
-      // 0. Dual-mode ingress validation (#539) — fail-closed before any network.
+    async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity, reflectionWhy, alternativesRejected }) => {
+      // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
+      const candidateBody = [
+        REFLECTION_EVIDENCE_SECTION,
+        `- **why:** ${reflectionWhy || ""}`,
+        `- **alternatives_rejected:** ${alternativesRejected || ""}`,
+      ].join("\n");
+      const missingReflection = validateReflectionEvidence(candidateBody);
+      if (missingReflection.length > 0) {
+        return {
+          isError: true,
+          content: [{
+            type: "text",
+            text: `${STALE_TEMPLATE_ERROR_PREFIX}: PR reflection evidence incomplete. Missing: ${missingReflection.join(", ")}. Re-read bridge.guide and provide reflectionWhy (- **why:**) and alternativesRejected (alternatives_rejected) to satisfy AGENTS.md §2.\n\n${reflectionFixSnippet()}`,
+          }],
+        };
+      }
+
+      // 0.5. Dual-mode ingress validation (#539) — fail-closed before any network.
       for (const file of files) {
         const ingressMode = file.mode ?? "full_file";
         if (ingressMode === "unified_diff") {
@@ -554,23 +749,16 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         }
 
         // Step E: Atomic PR Pairing (Invariant #514 — Zero Stranded Branches)
-        const prBody = [
-          "## Summary",
-          `Autonomous bridge contribution for ${taskId}: ${summary}`,
-          "",
-          "## Linked Work Order",
-          `Closes #${issueRes.data?.number}`,
-          `Refs #${issueRes.data?.number}`,
-          "",
-          "## Scope Paths",
-          scopePaths.map((p) => `- \`${p}\``).join("\n"),
-          "",
-          "## Test Evidence (3-tier contract)",
+        const prBody = buildBridgePrBody({
+          taskId,
+          summary,
+          issueNumber: issueRes.data?.number,
+          scopePaths,
           testsEvidence,
-          "",
-          "## Rollback Path",
-          rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
-        ].join("\n");
+          reflectionWhy,
+          alternativesRejected,
+          rollbackPath,
+        });
 
         let prNumber: number | undefined;
         let prUrl: string | undefined;
