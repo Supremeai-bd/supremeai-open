@@ -20,3 +20,7 @@
 20. Internal Failover & Rotation: Dynamic failover chains, token rotation, model degradation, and quota management execute transparently behind `supremeai-api`.
 21. One Key SSOT: All downstream apps, agents, studio, and internal modules authenticate exclusively using `SUPREMEAI_API_KEY` (OpenAI-compatible schema).
 22. User Quota & Key Issuance: End-user API keys, tenant rate limiting, monetization tiers, and consumption billing are provisioned and governed solely through `supremeai-api`.
+23. Lean Tool Diet: MCP Tower purges redundant branch, ad-hoc patching, and duplicate provider tools, cutting tool surface by ~25% to maximize execution speed and eliminate hallucinations.
+24. Multi-Transport Protocol Autonomy: Agents autonomously select connection transport (`/mcp`, `/sse`, or `/json`) based on their environment and runtime capabilities.
+25. Scoped Dynamic Session URL: Connection endpoints follow `/{protocol}/{provider}/{user}/{datetime}`, ensuring zero collision across 100+ concurrent agents, instant DB traceability, and seamless role transitions.
+26. 3-Strike Quarantine: If an issue triggers 3 consecutive CI failures or unclaims, it auto-locks into `status:quarantine`, halting agent retries until admin triage.
