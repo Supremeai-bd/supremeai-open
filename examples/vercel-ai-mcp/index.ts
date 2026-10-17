@@ -474,7 +474,7 @@ async function main(argv: string[]): Promise<number> {
   if (selfTestFlag) return selfTest();
 
   if (liveFlag) {
-    const token = process.env.SUPREMAI_TOKEN; // header-only, never in URLs
+    const token = process.env.SUPREMEAI_API_KEY; // header-only, never in URLs
     const transport = await connect(baseUrl, "vercel-ai-mcp-agent", token);
     try {
       const outcomes = await runDemoLoop(transport);
