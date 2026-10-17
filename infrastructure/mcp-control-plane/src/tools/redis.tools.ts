@@ -64,14 +64,24 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
 
   server.tool(
     "redis.rotation_status",
-    "Inspect the Upstash Redis auto-rotation chain status, active primary, and quota cooldowns (#26).",
+    "Inspect the Upstash Redis auto-rotation chain status, active primary, quota cooldowns, preemptive 480k usage ledger and last successful contact (#26, #646).",
     {},
     async () => {
       try {
-        const { quotaChainStatus, getActiveRedisAccount, nextQuotaResetEpochMs } = await import("../lib/redis_chain.js");
+        const {
+          quotaChainStatus,
+          getActiveRedisAccount,
+          nextQuotaResetEpochMs,
+          redisUsageLedgerStatus,
+          quotaLimit,
+          quotaSoftThreshold,
+          lastRedisContact,
+          redisHealthProbeSkipMs,
+        } = await import("../lib/redis_chain.js");
         const active = getActiveRedisAccount();
         const chain = quotaChainStatus();
         const nextReset = new Date(nextQuotaResetEpochMs()).toISOString();
+        const lastContact = lastRedisContact();
         return {
           content: [
             {
@@ -82,6 +92,16 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
                   activePrimary: active.label,
                   quotaWindow: process.env.UPSTASH_QUOTA_WINDOW || "monthly",
                   nextGlobalResetAt: nextReset,
+                  preemptiveRotation: {
+                    // #646: hard সীমা স্পর্শের আগেই ৯৬% (ডিফল্ট 480k)-এ rotate।
+                    limit: quotaLimit(),
+                    softThreshold: quotaSoftThreshold(),
+                    usageLedger: redisUsageLedgerStatus(),
+                    healthProbeSkipMs: redisHealthProbeSkipMs(),
+                    lastSuccessfulContact: lastContact
+                      ? { ageMs: lastContact.ageMs, account: lastContact.account, mode: lastContact.mode }
+                      : null,
+                  },
                   chain,
                 },
                 null,

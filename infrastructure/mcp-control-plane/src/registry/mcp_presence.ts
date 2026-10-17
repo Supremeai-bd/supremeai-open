@@ -29,39 +29,29 @@ import {
   type HeartbeatState,
   type HeartbeatStatusEntry,
 } from "./agent_heartbeat.js";
-import {
-  activeAccountChain,
-  noteQuotaErrorUsage,
-  noteRedisCommands,
-  RedisQuotaExhaustedError,
-  responseIndicatesQuotaExhaustion,
-  runWithAccountChain,
-  type RedisAccountConfig,
-} from "../lib/redis_chain.js";
-import { WriteDebouncer, l1CacheTtlMs, withL1Cache } from "../lib/ttl_cache.js";
+import { activeAccountChain, noteRedisContact, quotaGuard, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
+import { L1Cache } from "../lib/l1_cache.js";
 
 export const PRESENCE_KEY_PREFIX = "supremeai:mcp-presence:";
 export const PRESENCE_TTL_SECONDS = 300;
 
-// ── #646 AC2: presence write debounce (Redis command-burn reduction) ────────
-// বাংলা: presence প্রতিটি MCP রিকোয়েস্টে sliding-TTL refresh লেখে — একজন
-// সক্রিয় client মিনিটে ডজনখানেক SET পাঠাতে পারে। TTL ৩০০s + state threshold
-// ৯০s, তাই ৬০s উইন্ডোর ডুপ্লিকেট লেখা বাদ দিলেও presence-সত্য অক্ষত থাকে।
-// env REDIS_PRESENCE_DEBOUNCE_SECONDS=0 দিলে বন্ধ।
-export const PRESENCE_WRITE_DEBOUNCE_SECONDS = (() => {
-  const raw = Number(process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS);
-  return Number.isFinite(raw) && raw >= 0 ? raw : 60;
+// ── #646 command burn-rate guards ────────────────────────────────────
+// PRESENCE_WRITE_DEBOUNCE_MS: প্রতিটি MCP রিকোয়েস্টে presence write হয় —
+// একই client-এর sub-second পরপর লেখা sliding TTL-এর জন্য অপ্রয়োজনীয়।
+// PRESENCE_LIST_CACHE_TTL_MS / WORKFORCE_LIST_CACHE_TTL_MS: dashboard দ্রুত
+// পরপর listPresence()/listWorkforce() কলের L1 in-memory cache।
+export const PRESENCE_WRITE_DEBOUNCE_MS = (() => {
+  const v = Number(process.env.PRESENCE_WRITE_DEBOUNCE_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 2_000;
 })();
-// Window reads env dynamically (per check/record) — see agent_heartbeat.ts.
-const presenceWriteDebouncer = new WriteDebouncer<{ account: string }>(() => {
-  const raw = Number(process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS);
-  return (Number.isFinite(raw) && raw >= 0 ? raw : 60) * 1000;
-});
-
-/** Test/reset hook — debounce state মুছে দেয়। */
-export function resetPresenceWriteDebounce(): void {
-  presenceWriteDebouncer.reset();
-}
+export const PRESENCE_LIST_CACHE_TTL_MS = (() => {
+  const v = Number(process.env.PRESENCE_LIST_CACHE_TTL_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 20_000;
+})();
+export const WORKFORCE_LIST_CACHE_TTL_MS = (() => {
+  const v = Number(process.env.WORKFORCE_LIST_CACHE_TTL_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 15_000;
+})();
 
 export type PresenceProtocol = "streamable-http" | "sse" | "stdio" | "custom";
 
@@ -148,6 +138,8 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
   const restUrl = account.restUrl as string;
   const auth = `Bearer ${account.restToken}`;
   const call = async (body: unknown[]): Promise<unknown> => {
+    // #646 preemptive quota guard (heartbeat REST client-এর একই চুক্তি)।
+    quotaGuard(account, body.length);
     const res = await fetch(restUrl, {
       method: "POST",
       headers: { Authorization: auth, "Content-Type": "application/json" },
@@ -160,8 +152,6 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
       // this account into cooldown and shift to the next one. Presence used
       // to be the one routed path with NO quota marking; now all are identical.
       const errText = await res.text().catch(() => "");
-      // #646: error body-তে প্রকৃত usage থাকলে সত্যে সংশোধন (reactive fallback)।
-      noteQuotaErrorUsage(account.label, errText);
       if (responseIndicatesQuotaExhaustion(res.status, errText)) {
         throw new RedisQuotaExhaustedError(
           account.label,
@@ -173,7 +163,6 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
     const payload = (await res.json()) as { result?: unknown; error?: string };
     if (payload.error) {
       if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
-        noteQuotaErrorUsage(account.label, String(payload.error));
         throw new RedisQuotaExhaustedError(
           account.label,
           `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
@@ -181,8 +170,7 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
       }
       throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
     }
-    // #646 AC1: সফল কমান্ড গণনা — preemptive rotation-এর প্রাথমিক সত্য-উৎস।
-    noteRedisCommands(account.label, 1);
+    noteRedisContact(account.label, "upstash-rest"); // #646: health-sweep skip সিগন্যাল
     return payload.result;
   };
   return {
@@ -268,9 +256,21 @@ export type RecordPresenceResult = {
   ok: true;
   key: string;
   ttlSeconds: number;
-  /** #646: true হলে এই কলটি debounce উইন্ডোর কারণে Redis-এ যায়নি। */
+  /** #646: true হলে debounced উত্তর — রিমোট লেখা হয়নি। */
   debounced?: boolean;
 };
+
+// ── #646 write debounce + list caches ───────────────────────────────────
+// presenceKey → { fingerprint, ms }: একই client identity-এর পরপর identical
+// লেখা PRESENCE_WRITE_DEBOUNCE_MS-এর মধ্যে হলে রিমোটে যায় না।
+type PresenceFingerprint = string;
+const lastPresenceWrite = new Map<string, { fingerprint: PresenceFingerprint; ms: number }>();
+const presenceListCache = new L1Cache<PresenceListResult>(PRESENCE_LIST_CACHE_TTL_MS);
+const workforceListCache = new L1Cache<WorkforceSummary>(WORKFORCE_LIST_CACHE_TTL_MS);
+
+function presenceFingerprint(input: RecordPresenceInput): string {
+  return [input.clientName, input.clientId, input.protocol, input.tenantId ?? ""].join("\u0000");
+}
 
 /**
  * একটি interactive client-এর presence লেখে/রিফ্রেশ করে (sliding TTL)।
@@ -297,15 +297,19 @@ export async function recordPresence(
     updatedAt: new Date(nowMs).toISOString(),
   };
   const key = presenceKey(record.clientName, record.clientId);
+  const value = JSON.stringify(record);
 
-  // #646 AC2: debounce চেক — chain-validation-এর পরে, তাই "No Redis
-  // configuration" error আগের মতোই throw হয় (CI contract অক্ষত)।
-  const debounceDecision = presenceWriteDebouncer.check(key, nowMs);
-  if (debounceDecision.skip) {
+  // #646 write debounce: identical fingerprint-এর সাম্প্রতিক লেখা থাকলে রিমোট
+  // command না পাঠিয়ে সত্য উত্তর (sliding TTL ইতিমধ্যে রিফ্রেশ হয়ে গেছে)।
+  const fingerprint = presenceFingerprint(input);
+  const last = lastPresenceWrite.get(key);
+  if (
+    last &&
+    last.fingerprint === fingerprint &&
+    nowMs - last.ms < PRESENCE_WRITE_DEBOUNCE_MS
+  ) {
     return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS, debounced: true };
   }
-
-  const value = JSON.stringify(record);
   // #110: chain-walk + quota-marking through the single engine; the failure
   // message stays byte-identical to the deleted hand-rolled loop.
   const chainLength = chain.length;
@@ -323,8 +327,15 @@ export async function recordPresence(
         ),
     },
   );
-  // #646: লেখা সফল হলেই debounce রেকর্ড — ব্যর্থ লেখা উইন্ডো পয়জন করবে না।
-  presenceWriteDebouncer.record(key, Date.now());
+  // #646: সফল লেখার পরে debounce ledger + list caches invalidation।
+  lastPresenceWrite.set(key, { fingerprint, ms: nowMs });
+  if (lastPresenceWrite.size > 512) {
+    for (const [k, entry] of lastPresenceWrite) {
+      if (nowMs - entry.ms >= PRESENCE_WRITE_DEBOUNCE_MS) lastPresenceWrite.delete(k);
+    }
+  }
+  presenceListCache.clear();
+  workforceListCache.clear();
   return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS };
 }
 
@@ -335,19 +346,17 @@ export type PresenceListResult = {
   clients: PresenceStatusEntry[];
 };
 
-/** সব সক্রিয় interactive-client presence (সব account-chain merge, freshest wins)।
- *  #646 AC2: L1 read-through cache (default 5s, env REDIS_L1_CACHE_TTL_MS, 0 = off)। */
+/** সব সক্রিয় interactive-client presence (সব account-chain merge, freshest wins)। */
 export async function listPresence(nowMs: number = Date.now()): Promise<PresenceListResult> {
-  return withL1Cache("l1:mcp-presence", l1CacheTtlMs(), () => listPresenceFresh(nowMs), nowMs);
-}
-
-async function listPresenceFresh(nowMs: number): Promise<PresenceListResult> {
   const chain = activeAccountChain();
   if (chain.length === 0) {
     throw new Error(
       "No Redis configuration found (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or REDIS_URL) — MCP presence cannot be read",
     );
   }
+  // #646 L1 cache: fail-loud চুক্তির পরে; `now` প্রতিবার টাটকা।
+  const cached = presenceListCache.get("list", nowMs);
+  if (cached) return { ...cached, now: new Date(nowMs).toISOString() };
   const freshest = new Map<string, PresenceRecord>();
   const pattern = `${PRESENCE_KEY_PREFIX}*`;
   for (const account of chain) {
@@ -380,12 +389,14 @@ async function listPresenceFresh(nowMs: number): Promise<PresenceListResult> {
       state: deriveState(record.updatedAtMs, nowMs),
     }))
     .sort((a, b) => a.clientName.localeCompare(b.clientName));
-  return {
+  const result: PresenceListResult = {
     ok: true,
     now: new Date(nowMs).toISOString(),
     ttlSeconds: PRESENCE_TTL_SECONDS,
     clients,
   };
+  presenceListCache.set("list", result, nowMs);
+  return result;
 }
 
 /**
@@ -394,6 +405,11 @@ async function listPresenceFresh(nowMs: number): Promise<PresenceListResult> {
  * `errors`-এ কারণ থাকবে, অন্যটি দিয়ে ফলাফল আসবে; দুটোই ব্যর্থ হলে throw।
  */
 export async function listWorkforce(nowMs: number = Date.now()): Promise<WorkforceSummary> {
+  // #646 L1 cache: dashboard refresh-এ দুই উৎসের merged পড়া একটিই command-এ
+  // দামি না — cache hit-এ কোনো Redis command যায় না। fail-loud ফাংশন হিসেবে
+  // শুধু সফল ফলাফলই cache হয়; উভয় উৎস ব্যর্থ হলে আগের মতোই throw।
+  const cached = workforceListCache.get("workforce", nowMs);
+  if (cached) return { ...cached, now: new Date(nowMs).toISOString() };
   const errors: { presence?: string; heartbeats?: string } = {};
   let heartbeatResult: Awaited<ReturnType<typeof listHeartbeats>> | null = null;
   let presenceResult: PresenceListResult | null = null;
@@ -426,7 +442,7 @@ export async function listWorkforce(nowMs: number = Date.now()): Promise<Workfor
     if (a.kind !== b.kind) return a.kind === "autonomous_builder" ? -1 : 1;
     return (a.updatedAtMs - b.updatedAtMs) * -1;
   });
-  return {
+  const summary: WorkforceSummary = {
     ok: true,
     now: new Date(nowMs).toISOString(),
     counts: {
@@ -439,4 +455,6 @@ export async function listWorkforce(nowMs: number = Date.now()): Promise<Workfor
     agents,
     ...(Object.keys(errors).length ? { errors } : {}),
   };
+  workforceListCache.set("workforce", summary, nowMs);
+  return summary;
 }

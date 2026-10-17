@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig, buildAccountChain } from "../lib/redis_chain.js";
+import { RedisQuotaExhaustedError, noteRedisContact, quotaGuard, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig, buildAccountChain } from "../lib/redis_chain.js";
 
 export interface PersistedClientRecord {
   id: string;
@@ -107,6 +107,8 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
   }
 
   private async restCall(account: RedisAccountConfig, command: unknown[]): Promise<unknown> {
+    // #646 preemptive quota guard: registry read/write command-ও লেজারে গোনা হয়।
+    quotaGuard(account, command.length);
     const res = await fetch(account.restUrl as string, {
       method: "POST",
       headers: { Authorization: `Bearer ${account.restToken}`, "Content-Type": "application/json" },
@@ -128,6 +130,7 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
     }
     const payload = (await res.json()) as { result?: unknown; error?: string };
     if (payload.error) throw new Error(`Upstash error: ${payload.error}`);
+    noteRedisContact(account.label, "upstash-rest"); // #646: health-sweep skip সিগন্যাল
     return payload.result;
   }
 
