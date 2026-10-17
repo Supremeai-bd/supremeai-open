@@ -69,7 +69,7 @@ import { yourModel } from "your-provider";        // e.g. @ai-sdk/openai
 import { mcpToolsToAiSdkTools, connect } from "./index.ts";
 
 const transport = await connect("https://supremeai-mcp-tower.onrender.com",
-                                "vercel-ai-mcp-agent", process.env.SUPREMAI_TOKEN);
+                                "vercel-ai-mcp-agent", process.env.SUPREMEAI_API_KEY);
 const tools = await mcpToolsToAiSdkTools(transport);
 
 const { text } = await generateText({
@@ -90,7 +90,7 @@ the model wiring are independent concerns, and the demo must run offline.
 | `description` | `tool.description` (agent-visible) |
 | `inputSchema` (JSON Schema) | `parameters: ai.jsonSchema(inputSchema)` |
 | `tools/call` result `{content, isError}` | `execute(args) → {ok, invocation_id, result, error}` |
-| transport/auth | `Authorization: Bearer $SUPREMAI_TOKEN` header — never in URLs |
+| transport/auth | `Authorization: Bearer $SUPREMEAI_API_KEY` header — never in URLs |
 
 ## Honest limitations
 
