@@ -70,7 +70,7 @@ class WebhookIngress:
         return 202, result
 
 
-def make_http_server(ingress: WebhookIngress) -> ThreadingHTTPServer:
+def make_http_server(ingress: WebhookIngress, bind_port: int = 0) -> ThreadingHTTPServer:
     """Build (not start) a ThreadingHTTPServer around the ingress logic."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -90,11 +90,10 @@ def make_http_server(ingress: WebhookIngress) -> ThreadingHTTPServer:
         def log_message(self, fmt: str, *args: object) -> None:  # silence access log
             return
 
-    return ThreadingHTTPServer(("0.0.0.0", 0), Handler)
+    return ThreadingHTTPServer(("0.0.0.0", bind_port), Handler)
 
 
 def serve(ingress: WebhookIngress, port: int) -> None:  # pragma: no cover - runtime
     """Blocking runtime entrypoint (used by the command runtime, not tests)."""
-    server = make_http_server(ingress)
-    server.server_port = port
+    server = make_http_server(ingress, bind_port=port)
     server.serve_forever()
