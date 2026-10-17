@@ -151,6 +151,29 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: issue_validity_check
+    attributes:
+      label: 🎯 Coder Preflight: Issue Live Validity (ইস্যুটি কি এখনও ভ্যালিড?)
+      description: >
+        Did you verify against current main? Confirm the issue is still reproducible and active,
+        and not already resolved/rendered obsolete by recent landed commits.
+      placeholder: "Verified against main@<commit>: reproduced error before applying patch."
+    validations:
+      required: true
+
+  - type: textarea
+    id: optimal_approach_evaluation
+    attributes:
+      label: 💡 Solution Optimality & Alternatives (সাজেশনের চেয়ে বেটার কোনো ওয়ে আছে কি?)
+      description: >
+        Is the approach suggested in the issue description truly the best way, or did you evaluate
+        a simpler, safer, or more cohesive alternative? Explain why this implementation is optimal
+        per SupremeAI core philosophy ("Simple + effective > clever + complex", AGENTS.md §6).
+      placeholder: "Evaluated issue suggestion vs simpler alternative; chose <X> because <reasons>."
+    validations:
+      required: true
+
   - type: checkboxes
     id: sizing_confirmation
     attributes:

@@ -90,6 +90,28 @@ body:
       required: true
 
   - type: textarea
+    id: audit_live_validity
+    attributes:
+      label: 🎯 Live State Verification: Is this rule breach actively verifiable right now? (ত্রুটিটি কি বর্তমানে সক্রিয়?)
+      description: >
+        Confirm this breach is not based on an outdated commit/PR snapshot. Can an autonomous
+        runner reproduce this exact violation on the tip of current main right now?
+      placeholder: "Verified against current main@<commit>: violation is active and reproducible."
+    validations:
+      required: true
+
+  - type: textarea
+    id: optimal_way_evaluation
+    attributes:
+      label: 💡 Optimal Remediation: Is this the best way or is there a simpler alternative? (বেস্ট ওয়ে নাকি উত্তম বিকল্প আছে?)
+      description: >
+        Does the proposed suggestion represent the simplest, most effective approach, or is there
+        a better way that eliminates the root cause with less complexity? Cite trade-offs per Rule §6.
+      placeholder: "Evaluated default patch vs structural simplification; selected <approach> because <reasons>."
+    validations:
+      required: true
+
+  - type: textarea
     id: remediation_contract
     attributes:
       label: 3-Tier Remediation Contract
