@@ -17,8 +17,8 @@
 
 import {
   activeAccountChain,
-  noteQuotaErrorUsage,
-  noteRedisCommands,
+  noteRedisContact,
+  quotaGuard,
   RedisQuotaExhaustedError,
   responseIndicatesQuotaExhaustion,
   runWithAccountChain,
@@ -187,6 +187,8 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
       try {
         const { value } = await runWithAccountChain(
           async (account) => {
+            // #646 preemptive quota guard: dispatch GET command-ও মাসিক লেজারে গোনা হয়।
+            quotaGuard(account, Array.isArray(body) ? body.length : 1);
             const res = await fetch(account.restUrl as string, {
               method: "POST",
               headers: {
@@ -209,7 +211,6 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
             const payload = (await res.json()) as { result?: unknown; error?: string };
             if (payload.error) {
               if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
-                noteQuotaErrorUsage(account.label, String(payload.error));
                 throw new RedisQuotaExhaustedError(
                   account.label,
                   `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
@@ -217,8 +218,7 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
               }
               throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
             }
-            // #646 AC1: সফল কমান্ড গণনা — preemptive rotation-এর প্রাথমিক সত্য-উৎস।
-            noteRedisCommands(account.label, 1);
+            noteRedisContact(account.label, "upstash-rest"); // #646: health-sweep skip সিগন্যাল
             return payload.result;
           },
           {
