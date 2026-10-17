@@ -76,7 +76,7 @@ def is_dependency_manifest(path: str) -> bool:
 
 def is_hard_protected(path: str) -> bool:
     name = path.rsplit("/", 1)[-1]
-    if path.startswith(".github/") or path == ".env" or name == ".env":
+    if path.startswith(".github/") or name == ".env" or name.startswith(".env"):
         return True
     for pat in HARD_PROTECTED:
         if pat.startswith("*") and name.endswith(pat[1:]):
@@ -121,32 +121,6 @@ def _strip_semantics(line: str) -> Optional[str]:
     if s in ("*/", "-->",):
         return None
     return s
-
-
-def _semantic_units(changed: Dict[str, List[str]]) -> Tuple[List[str], List[str]]:
-    """Classify one file's diff into semantic and churn unit pairs."""
-    semantic: List[str] = []
-    removed = [_strip_semantics(x) for x in changed.get("removed", [])]
-    added = [_strip_semantics(x) for x in changed.get("added", [])]
-    rem_alive = [x for x in removed if x is not None]
-    add_alive = [x for x in added if x is not None]
-    # pair pure whitespace-only and rename units
-    used = [False] * len(rem_alive)
-    for a in add_alive:
-        for i, r in enumerate(rem_alive):
-            if used[i]:
-                continue
-            if r == a or r.strip() == a.strip():
-                used[i] = True  # whitespace-only move
-                break
-            if _is_pure_rename(r, a):
-                used[i] = True  # rename unit
-                break
-    unmatched_removed = [r for i, r in enumerate(rem_alive) if not used[i]]
-    unmatched_added = [a for a in add_alive]
-    semantic.extend(unmatched_removed)
-    semantic.extend(unmatched_added)
-    return semantic, []
 
 
 def _assertions_added(path: str, added: List[str]) -> int:
@@ -309,6 +283,9 @@ def evaluate(request: dict) -> dict:
     migration_notes = request.get("migration_notes") or []
     if not isinstance(migration_notes, list):
         raise ValueError("migration_notes must be a list")
+    fixed_claim = request.get("fixed_failing_tests")
+    if fixed_claim is not None and not isinstance(fixed_claim, list):
+        raise ValueError("fixed_failing_tests must be a list of test ids")
     allow_new = request.get("allow_new_dependencies") is True
 
     violations: List[dict] = []
