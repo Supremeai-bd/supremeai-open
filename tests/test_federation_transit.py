@@ -464,6 +464,53 @@ class PrePushRebaseGuard(unittest.TestCase):
         self.assertIn("#514", doc)
         self.assertIn("Fail-closed", doc)
 
+    def test_39_pre_work_fresh_base_passes(self):
+        cal.run_cmd = self._script([
+            ("git rev-list", (0, "0\n", "")),
+        ])
+        synced, behind, detail = cal.pre_work_rebase_guard()
+        self.assertTrue(synced)
+        self.assertEqual(behind, 0)
+        self.assertIn("fresh", detail)
+
+    def test_40_pre_work_stale_base_rebases(self):
+        cal.run_cmd = self._script([
+            ("git rev-list", (0, "2\n", "")),
+            ("git rebase", (0, "", "")),
+        ])
+        synced, behind, detail = cal.pre_work_rebase_guard()
+        self.assertTrue(synced)
+        self.assertEqual(behind, 2)
+        self.assertIn("rebased", detail)
+
+    def test_41_pre_work_failed_rebase_aborts_fail_closed(self):
+        seen = []
+        script = [
+            ("git rev-list", (0, "2\n", "")),
+            ("git rebase", (1, "", "conflict")),
+        ]
+
+        def fake_run(cmd, cwd=None, check=False):
+            text = " ".join(cmd)
+            seen.append(text)
+            for prefix, outcome in script:
+                if text.startswith(prefix):
+                    return outcome
+            return (0, "", "")
+
+        cal.run_cmd = fake_run
+        synced, behind, detail = cal.pre_work_rebase_guard()
+        self.assertFalse(synced)
+        self.assertEqual(behind, 2)
+        self.assertIn("aborted", detail)
+        self.assertTrue(any("rebase --abort" in t for t in seen))
+
+    def test_42_step_4_branch_wired_with_pre_work_guard(self):
+        source = inspect.getsource(cal.step_4_branch)
+        self.assertIn("pre_work_rebase_guard()", source)
+        doc = cal.pre_work_rebase_guard.__doc__ or ""
+        self.assertIn("Start-of-Work Rebase Mandate", doc)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
