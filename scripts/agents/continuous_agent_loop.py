@@ -859,6 +859,45 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
     return True, evidence
 
 
+def pre_push_rebase_and_verify(branch: str, remote: str = "origin") -> tuple[bool, str, list[dict[str, Any]] | None]:
+    """Pre-Push Rebase Invariant (#514, docs/INGRESS_SECURITY_POLICY.md §2).
+
+    1. Measures divergence against remote/main (git rev-list --count HEAD..remote/main).
+    2. If behind > 0, fetches remote and rebases onto remote/main.
+    3. On rebase conflict, aborts cleanly and fails closed.
+    4. On successful rebase, re-runs Step 6 verification tiers to guarantee that
+       newly landed commits on main did not introduce logical regressions.
+    """
+    log("🔄", f"[Pre-Push Invariant] Checking branch freshness against {remote}/main...")
+    fetch_code, _, fetch_err = run_cmd(["git", "fetch", remote, "main"], check=False)
+    if fetch_code != 0:
+        log("⚠️", f"Warning: git fetch {remote} main exited {fetch_code}: {fetch_err}")
+
+    # Check how many commits HEAD is behind remote/main
+    behind_code, behind_out, _ = run_cmd(["git", "rev-list", "--count", f"HEAD..{remote}/main"], check=False)
+    behind = 0
+    if behind_code == 0 and behind_out.strip().isdigit():
+        behind = int(behind_out.strip())
+
+    if behind > 0:
+        log("⚠️", f"Branch '{branch}' is {behind} commit(s) behind {remote}/main! Auto-rebasing onto latest main...")
+        rebase_code, _, rebase_err = run_cmd(["git", "rebase", f"{remote}/main"], check=False)
+        if rebase_code != 0:
+            log("❌", f"Rebase failed with conflicts: {rebase_err}. Aborting rebase to preserve workspace...")
+            run_cmd(["git", "rebase", "--abort"], check=False)
+            return False, f"Rebase conflict against {remote}/main ({rebase_err})", None
+
+        log("🧪", "Rebase successful! Re-running Step 6 verification tiers on newly rebased tree...")
+        passed, re_evidence = step_6_verify()
+        if not passed:
+            return False, "Verification failed on rebased tree against latest main commits", None
+        log("✅", "Post-rebase verification tiers passed cleanly!")
+        return True, f"Rebased past {behind} commits and verified", re_evidence
+
+    log("✅", f"Branch '{branch}' is 100% fresh with {remote}/main (0 commits behind).")
+    return True, "Fresh base verified", None
+
+
 def push_branch_to_fork(fork_owner: str, branch: str) -> tuple[bool, str]:
     """Pathway 2 (AGENTS.md §2.1): ensure the fork exists and push the session branch.
 
@@ -880,6 +919,17 @@ def push_branch_to_fork(fork_owner: str, branch: str) -> tuple[bool, str]:
     if push_code != 0:
         return False, f"fork push failed ({push_code}): {push_err or push_out}"
     return True, f"pushed {branch} to {fork_owner}/{UPSTREAM_REPO.split('/')[-1]}"
+
+
+def push_branch_direct(remote: str, branch: str) -> tuple[bool, str]:
+    """Direct push for authorized contributors or internal runners."""
+    push_code, push_out, push_err = run_cmd(
+        ["git", "push", "--force-with-lease", remote, f"{branch}:{branch}"],
+        check=False,
+    )
+    if push_code != 0:
+        return False, f"direct push failed ({push_code}): {push_err or push_out}"
+    return True, f"pushed {branch} to {remote}"
 
 
 def pre_push_rebase_guard() -> tuple[bool, int, str]:
@@ -930,29 +980,8 @@ def step_7_record(
 ) -> bool:
     """Step 7: Prepare PR body with dynamic test evidence and submit PR."""
     log("📝", "[Step 7/8: Record] Generating Universal PR Template...")
-    # #114: single construction site — build_pr_body() renders the exact
-    # skeleton the envelope's submission.pr_body_template carries, plus the
-    # contract YAML snippet and the dynamic evidence block for --auto-pr.
     tc7 = (contract or {}).get("task_contract", {})
-    # Reflection Evidence auto-injection (#392): the loop records its real
-    # decision rationale — never a placeholder (placeholders fail the
-    # knowledge-sharing-guard). Alternatives ride from the task payload when
-    # the dispatching harness supplies them; otherwise build_pr_body renders
-    # the honest no-competing-approach fallback line.
-    reflection = {
-        "why": str(task.get("why") or "").strip()
-        or (
-            f"Issue #{tc7.get('issue') or task.get('id')} delivered via the 8-step loop "
-            f"({tc7.get('task_type', 'IMPLEMENT')}, group {tc7.get('group', 'unspecified')}); "
-            "all verification tiers passed (see Dynamic Test Evidence)."
-        ),
-        "alternatives_rejected": list(task.get("alternatives_rejected") or []),
-    }
-    pr_body = build_pr_body(task, contract=contract, evidence=evidence, reflection=reflection)
 
-    # #63: no intermediate filesystem draft — the PR body goes inline to gh,
-    # and agents consuming the Task Envelope get the same template via
-    # submission.pr_body_template (single source of truth).
     if auto_pr:
         # #514 Pre-Push Rebase Invariant: never push a stale base. Fetch,
         # measure BEHIND, rebase if needed — then re-run the verification
@@ -970,6 +999,19 @@ def step_7_record(
                 return False
             evidence = reverrified_evidence
             log("✅", f"[#514] Post-rebase re-verification passed ({guard_detail}).")
+
+    reflection = {
+        "why": str(task.get("why") or "").strip()
+        or (
+            f"Issue #{tc7.get('issue') or task.get('id')} delivered via the 8-step loop "
+            f"({tc7.get('task_type', 'IMPLEMENT')}, group {tc7.get('group', 'unspecified')}); "
+            "all verification tiers passed (see Dynamic Test Evidence)."
+        ),
+        "alternatives_rejected": list(task.get("alternatives_rejected") or []),
+    }
+    pr_body = build_pr_body(task, contract=contract, evidence=evidence, reflection=reflection)
+
+    if auto_pr:
         head_ref = branch
         if fork_owner:
             log("🍴", f"Pathway 2: ensuring fork + pushing branch to {fork_owner}...")
@@ -978,6 +1020,13 @@ def step_7_record(
                 log("❌", f"[Fail-Closed Gate] Fork push failed: {push_detail}")
                 return False
             head_ref = f"{fork_owner}:{branch}"
+        else:
+            log("🚀", f"Pushing branch '{branch}' to origin...")
+            pushed, push_detail = push_branch_direct("origin", branch)
+            if not pushed:
+                log("❌", f"[Fail-Closed Gate] Branch push failed: {push_detail}")
+                return False
+
         log("🚀", f"Opening Pull Request against {UPSTREAM_REPO}:main (head: {head_ref})...")
         cmd = [
             "gh", "pr", "create",

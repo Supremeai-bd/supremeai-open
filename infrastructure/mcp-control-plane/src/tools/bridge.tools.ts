@@ -204,21 +204,27 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
 
   server.tool(
     "bridge.work_queue",
-    "List OPEN Bridge Work Orders awaiting an external agent (issues labelled 'bridge:queued' in the public open-source repo). Read-only, public data only.",
+    "List OPEN work-order issues awaiting an agent in the public open-source repo (defaults to all open issues, or filter by optional label). Read-only, public data only.",
     {
       limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return (default 20)"),
+      label: z.string().optional().describe("Optional label filter; omit or empty = all open issues"),
     },
-    async ({ limit }) => {
+    async ({ limit, label }) => {
       const repo = bridgeOpenRepo();
+      const appliedLabel = typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
+      const queryParams = new URLSearchParams({ state: "open", per_page: "50", sort: "created", direction: "desc" });
+      if (appliedLabel) {
+        queryParams.set("labels", appliedLabel);
+      }
       try {
         let res = await httpRequest<RawIssue[]>(
-          `https://api.github.com/repos/${repo}/issues?state=open&labels=${encodeURIComponent(BRIDGE_QUEUE_LABEL)}&per_page=50&sort=created&direction=desc`,
+          `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
           { headers: await githubHeaders(true), timeoutMs: 15_000 }
         );
         // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
         if (!res.ok && (res.status === 401 || res.status === 403)) {
           res = await httpRequest<RawIssue[]>(
-            `https://api.github.com/repos/${repo}/issues?state=open&labels=${encodeURIComponent(BRIDGE_QUEUE_LABEL)}&per_page=50&sort=created&direction=desc`,
+            `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
             { headers: await githubHeaders(false), timeoutMs: 15_000 }
           );
         }
@@ -235,7 +241,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             type: "text",
             text: JSON.stringify({
               repo,
-              label: BRIDGE_QUEUE_LABEL,
+              label: appliedLabel,
               authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
               count: workOrders.length,
               workOrders,
@@ -490,6 +496,48 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           };
         }
 
+        // Step E: Atomic PR Pairing (Invariant #514 — Zero Stranded Branches)
+        const prBody = [
+          "## Summary",
+          `Autonomous bridge contribution for ${taskId}: ${summary}`,
+          "",
+          "## Linked Work Order",
+          `Closes #${issueRes.data?.number}`,
+          `Refs #${issueRes.data?.number}`,
+          "",
+          "## Scope Paths",
+          scopePaths.map((p) => `- \`${p}\``).join("\n"),
+          "",
+          "## Test Evidence (3-tier contract)",
+          testsEvidence,
+          "",
+          "## Rollback Path",
+          rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
+        ].join("\n");
+
+        let prNumber: number | undefined;
+        let prUrl: string | undefined;
+
+        const prRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
+          `https://api.github.com/repos/${repo}/pulls`,
+          {
+            method: "POST",
+            headers,
+            body: {
+              title: `feat(bridge): ${summary} (${taskId})`,
+              head: branchName,
+              base: "main",
+              body: prBody,
+            },
+            timeoutMs: 15_000,
+          }
+        );
+
+        if (prRes.ok && prRes.data) {
+          prNumber = prRes.data.number;
+          prUrl = prRes.data.html_url;
+        }
+
         return {
           content: [{
             type: "text",
@@ -500,8 +548,12 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               branchUrl: `https://github.com/${repo}/tree/${branchName}`,
               issueNumber: issueRes.data?.number,
               issueUrl: issueRes.data?.html_url,
-              status: "bridge:queued",
-              message: "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
+              prNumber,
+              prUrl,
+              status: prNumber ? "bridge:pr-opened" : "bridge:queued",
+              message: prNumber
+                ? `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
+                : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
             }, null, 2),
           }],
         };
