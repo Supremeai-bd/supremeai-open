@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "supremeai-sdk"
+version = "0.1.0"
+description = "Official Python client for the SupremeAI Unified Gateway: typed runs, SSE streaming, automatic failover retry."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []
+keywords = ["supremeai", "gateway", "sse", "streaming", "client"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.optional-dependencies]
+httpx = ["httpx>=0.24"]
+dev = ["build>=1.0"]
+
+[tool.setuptools.packages.find]
+include = ["supremeai*"]
