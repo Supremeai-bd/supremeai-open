@@ -24,3 +24,33 @@
 24. Multi-Transport Protocol Autonomy: Agents autonomously select connection transport (`/mcp`, `/sse`, or `/json`) based on their environment and runtime capabilities.
 25. Scoped Dynamic Session URL: Connection endpoints follow `/{protocol}/{provider}/{user}/{datetime}`, ensuring zero collision across 100+ concurrent agents, instant DB traceability, and seamless role transitions.
 26. 3-Strike Quarantine: If an issue triggers 3 consecutive CI failures or unclaims, it auto-locks into `status:quarantine`, halting agent retries until admin triage.
+27. Institutional Memory & Zero-Residue Retirement: When features, specs, or legacy modules are retired, they are archived permanently into `Supremeai-bd/supremeai-archive` and cleanly pruned from both the active satellite and core monorepo (Zero Residue / Historical SSOT).
+
+---
+
+## 3-Stage Lifecycle & Zero-Residue Data Flow (3-ধাপের ক্লিন ট্রানজিট ও রিটায়ারমেন্ট পাইপলাইন)
+
+```text
+       [ External Contributor / Autonomous Agent ]
+                           │
+                           ▼
+        ১. ইনগ্রেস (পাবলিক ট্রানজিট স্টেশন / Ephemeral Mailbox)
+           👉 Supremeai-bd/supremeai-open
+                           │
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+    ২. টার্গেট স্যাটেলাইট (Active)     ২. সেন্ট্রাল মনোরেপো (Sync)
+       যেমন: supremeai-browser           Supremeai-bd/supremeai
+             │                           │
+             └─────────────┬─────────────┘
+                           │
+          [ open থেকে অটো-প্রুন (মুছে সাফ: rm patches/*) ]
+                           │
+               (কাজ যখন রিটায়ার্ড / পুরনো হবে)
+                           │
+                           ▼
+           ৩. চূড়ান্ত আর্কাইভ (স্থায়ী প্রাতিষ্ঠানিক মেমোরি)
+              👉 Supremeai-bd/supremeai-archive
+                           │
+           [ স্যাটেলাইট ও মনোরেপো থেকে মুছে সাফ (Zero Waste) ]
+```
