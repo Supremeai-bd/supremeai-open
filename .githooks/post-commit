@@ -1,0 +1,14 @@
+#!/bin/sh
+# SupremeAI — Post-Commit Autonomous Agent Guide
+# Prints next action reminders after a successful local commit.
+
+commit_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "HEAD")
+
+echo ""
+echo "✅ [Commit $commit_hash] Successfully recorded."
+echo "🚀 [Agent Loop Reminder] Next steps before pushing:"
+echo "   1. Pre-push rebase: git fetch origin main && git rebase origin/main"
+echo "   2. 3-tier verify:   python scripts/agents/continuous_agent_loop.py --verify-only"
+echo ""
+
+exit 0

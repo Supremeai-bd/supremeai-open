@@ -46,7 +46,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 | **U2** | **Truth & Evidence** | No claims without proof. `UNKNOWN` / `NOT_VERIFIED` is never `PASS`. Evidence precedes action. |
 | **U3** | **Live Validity** | An issue is not valid just because it exists. Verify it is reproducible on live `main` before coding. |
 | **U4** | **Zero-Duplicate PRs** | Mandatory preflight `gh pr list`. Never open parallel/competing PRs for an issue with an active PR. One issue = at most one PR across the federation. |
-| **U5** | **Freshness & Ownership** | Atomic claim before branch (`atomic_claim.sh`). **Board-freshness re-check (#4177):** re-poll board before declaring done. |
+| **U5** | **Freshness & Dual-Rebase Mandate** | Rebase onto latest `origin/main` at work start (pre-branch) AND before push (pre-push). Atomic claim before branch (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane). **Board-freshness re-check (#4177):** re-poll board before declaring done. Never work or push with a stale base. |
 | **U6** | **Safety & Permissions** | Hard gates outrank agent preference. Master keys never leave vault; no direct push to protected branches. |
 | **U7** | **3-Tier Verification** | Task is complete only when Reflection → Boot Smoke → Tests pass with verifiable output. |
 | **U8** | **Handoff & Decision Ledger** | Finish with JSON decision ledger (`why`, `alternatives_rejected`, `evidence`). Squash commit must carry `Closes #N`. Rerun loop immediately (no sleep). |
@@ -67,7 +67,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 ### 3.2 💻 Coder / Contributor Agent
 - **Work Area:** Target repository implementations, unit tests, bug fixes, feature slices (≤ 30 files, ≤ 200 KB).
 - **Core Policy:**
-  1. **Live Preflight:** Reproduce issue on current `main` before modifying files. Never fix ghost issues.
+  1. **Live Preflight & Dual-Rebase:** Synchronize with latest `origin/main` (rebase before branch). Reproduce issue on current `main` before modifying files. Rebase and re-verify before push. Never fix ghost issues.
   2. **Solution Optimality:** Evaluate if the issue suggestion is truly the simplest/cleanest way, or if a better 1-line solution exists.
   3. **Defect-Class Elimination (P6):** Ban superficial symptom patches (no error masking/swallowing). Solve root cause.
   4. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.

@@ -54,7 +54,7 @@ Normative definitions live in [AGENTS.md §2.1](../AGENTS.md); this section maps
 |---|---|---|---|
 | **1. MCP Control Tower Bridge** | MCP-connected agents (Claude, Cursor, Antigravity, any MCP client) | `mcp.json` → Control Tower tools (`bridge_work_order`, `bridge_guide`, `github_read_file`, `bridge_submit_patch`) | Server-side GitHub App pushes `bridge/<task-id>` + files a Bridge Work Order; gate battery verifies and lands |
 | **2. Public Window Fork & PR** | External web agents / human contributors (zero credentials) | Fork → branch → Pull Request on this repo | 7 PR guards → CI Guardian → Merge Gate squash |
-| **3. Ephemeral JIT Lease** | Scripted workers with terminal access | 1-hour lease token via `credential_manager.py` | Branch push + PR via REST; same gate path |
+| **3. Ephemeral JIT Lease** | Scripted workers with terminal access | 1-hour lease token issued by the MCP Control Tower admin surface (no in-repo `credential_manager.py`) | Branch push + PR via REST; same gate path |
 
 All three converge on the **same verification battery** — the pathway only changes how the branch appears, never what "done" means.
 
