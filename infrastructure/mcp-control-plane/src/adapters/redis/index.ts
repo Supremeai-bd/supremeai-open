@@ -23,10 +23,13 @@ import Redis from "ioredis";
 import {
   buildAccountChain,
   activeAccountChain,
+  lastRedisContact,
   markAccountQuotaExhausted,
+  noteRedisContact,
   responseIndicatesQuotaExhaustion,
   getActiveRedisAccount,
   quotaChainStatus,
+  redisHealthProbeSkipMs,
   type RedisAccountConfig,
 } from "../../lib/redis_chain.js";
 
@@ -144,13 +147,35 @@ async function firstRespondingClient(
 }
 
 export async function pingRedis(): Promise<unknown> {
+  // #646 health-sweep quota guard: সাম্প্রতিক (< skip window, ডিফল্ট 30s) সফল
+  // Redis contact থাকলে background sweep আর একটি PING command পোড়ায় না —
+  // শেষ জানা-সৎ অবস্থাই ফেরত যায়, সৎ প্রমাণসহ (probeSkipped + lastContact)।
+  // এক্সপ্লিসিট ডিবাগ পিং-এ সরাসরি প্রোব চাইলে REDIS_HEALTH_PROBE_SKIP_MS=0 দিন।
+  const recent = lastRedisContact();
+  if (recent && recent.ageMs < redisHealthProbeSkipMs()) {
+    return {
+      mode: recent.mode,
+      account: recent.account,
+      activePrimary: getActiveRedisAccount().label,
+      status: "PONG",
+      probeSkipped: true,
+      probeSkipReason: `recent successful Redis contact ${recent.ageMs}ms ago (< ${redisHealthProbeSkipMs()}ms) — probe skipped (#646)`,
+      lastContact: recent,
+      latencyMs: 0,
+      chainSize: 0,
+      attemptedAccounts: [],
+      chainStatus: quotaChainStatus(),
+    };
+  }
   const start = Date.now();
   const { client, result, attempts } = await firstRespondingClient((c) => c.ping());
+  noteRedisContact(client.account, client.mode, Date.now()); // #646
   return {
     mode: client.mode,
     account: client.account,
     activePrimary: getActiveRedisAccount().label,
     status: result,
+    probeSkipped: false,
     latencyMs: Date.now() - start,
     chainSize: attempts.length,
     attemptedAccounts: attempts.map(({ account, mode, ok, error }) => ({ account, mode, ok, error })),
@@ -160,6 +185,7 @@ export async function pingRedis(): Promise<unknown> {
 
 export async function getRedisStats(): Promise<unknown> {
   const { client, result } = await firstRespondingClient((c) => c.info());
+  noteRedisContact(client.account, client.mode, Date.now()); // #646
   return {
     mode: client.mode,
     account: client.account,
@@ -171,6 +197,7 @@ export async function getRedisStats(): Promise<unknown> {
 
 export async function readRedisKey(key: string): Promise<unknown> {
   const { client, result } = await firstRespondingClient((c) => c.get(key));
+  noteRedisContact(client.account, client.mode, Date.now()); // #646
   return {
     mode: client.mode,
     account: client.account,
