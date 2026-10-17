@@ -87,6 +87,7 @@ APPROVED_TOP_LEVEL_DIRS = {
     "studio",  # Federation bridge surface for Supremeai-bd/supremeai-studio (issue #508)
     "skills",  # Federation bridge surface for Supremeai-bd/supremeai-skills (issue #503)
     "vscode",  # Federation bridge surface for Supremeai-bd/supremeai-vscode (issue #504)
+    "core",  # Federation bridge surface for Supremeai-bd/supremeai-core (issue #507)
 }
 
 APPROVED_ROOT_FILES = {
