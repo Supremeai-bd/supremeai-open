@@ -80,6 +80,7 @@ APPROVED_TOP_LEVEL_DIRS = {
     # file under this surface — path approval never bypasses content rules.
     "tests",
     "patches",  # Federation bridge unified diff patches for target repositories
+    "gateway",  # Federation bridge surface for Supremeai-bd/supremeai-api (issue #469)
 }
 
 APPROVED_ROOT_FILES = {

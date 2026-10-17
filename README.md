@@ -85,6 +85,38 @@ Mirrors above are byte-parity-checked daily by the federation integration CI
 (`supremeai-infrastructure` → `federation-integration.yml`, roadmap §21). If a mirror drifts from its
 source-of-truth, that check fails closed.
 
+## 🤖 Continuous Agent Loop & Federation Roles
+
+`supremeai-open` acts as the **Public Face / Embassy** (`scripts/agents/continuous_agent_loop.py`), providing an open zero-dependency CLI entrypoint for any agent or contributor. The internal engines, schedulers, and worker daemons reside in the `supremeai-agents` core satellite.
+
+> **Continuous Loop Core Doctrine:**
+> *"কার কী দায়িত্ব তা বুঝিয়ে দেওয়া, দায়িত্ব পালনের সময় কোন রুলস মানতে হবে আর কোনটা মানবে না তা বেঁধে দেওয়া, এবং কাজে লাঠি লাগবে নাকি ছুরি লাগবে (Weapon Provisioning) তা সুনির্দিষ্ট করে দেওয়াই Continuous Agent Loop-এর মূল কাজ।"*
+
+### 1. Two-Paradigm Dispatch Architecture
+- **Task-Driven Roles (Event & Runway Driven):**
+  - **Coder:** Feature/bug implementation within scope under atomic single-lock.
+  - **CI Fixer:** Preempts backlog to heal failing PR checks and unblock the runway.
+  - **Task Auditor:** Pre-landing verification for boundaries, secret leaks, and decision ledgers.
+- **Time-Driven / Platform-Driven Roles (Scheduled Cron & Periodic Probing):**
+  - **Ecosystem Scout:** Global tech radar scouring outside innovations (Meta, Anthropic, OpenAI) with full-spectrum evaluation (pros, cons, "এটা করা যাবে না", risks) producing min. 10 proposals.
+  - **Federation Auditor:** Internal inspector auditing commit parity, drift, and cleanliness across the 11 canonical satellites.
+  - **Human Eye (Visual QA):** SupremeAI's PR & Styling Team (*"বস, এই ড্রেসে ভালো লাগছে না, ওই ড্রেস পরেন"*), profiling visual polish, typography, and premium user experience (Issue create only).
+  - **Rules Breaker:** Dual-vector chaos hacker (breaks existing guards + exploits unprotected gaps to measure worst-case damage, filing failing tests and P0 issues).
+  - **3rd-Party Platform Guardian:** High-frequency prober for external model latency and quotas (auto-failovers if possible, else creates issues).
+
+### 2. Weapons & Scoped Permissions Matrix (লাঠি বনাম ছুরি — RBAC)
+
+| Role | Weapon Metaphor | Scoped Tools & Permissions | Forbidden Operations |
+|---|---|---|---|
+| **Coder** | Surgical Knife 🔪 | Code edit, Local test runner, Git branch, PR create | Claiming without atomic lock, breaking scope |
+| **CI Fixer** | Emergency Defibrillator ⚡ | Direct commit on PR branch, CI log parser | Grabbing backlog when PR runway is blocked |
+| **Task Auditor** | Policy Stamp 📋 | Boundary guards, Gitleaks scanner, PR approve/block | Direct source code modifications |
+| **Ecosystem Scout** | Long-Range Telescope 🔭 | Web search, URL readers, Issue creation | Local code edits, uncritical hype |
+| **Federation Auditor** | Ledger Microscope 🔬 | Multi-repo git reader (11 satellites), Issue create | Direct source code edits |
+| **Human Eye** | Stylist Camera & Mirror 📸 | Browser subagent, Screenshot capture, Issue create | Direct code or CSS edits |
+| **Rules Breaker** | Sledgehammer & Lockpick 🔨 | Adversarial fuzzers, `tests/adversarial/` commits | Production damage, writing self-patches |
+| **3rd-Party Guardian** | Routing Circuit Breaker 🔌 | Provider prober, Dynamic Failover Toggle, Issue create | Corrupting permanent configuration files |
+
 ---
 
 ## Bridge — external agent work submission (v1)
