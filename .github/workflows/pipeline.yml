@@ -187,16 +187,8 @@ jobs:
              || [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot)\[?[a-z_]* ]]; then
             echo "✅ Automated/bot branch — allowed."; exit 0
           fi
-          # Target-issue extraction ladder — duplicate-pr-guard এর সাথে একই SSOT অর্ডার:
-          #   (1) explicit closing keywords (Closes/Fixes/Resolves #N)
-          #   (2) branch tokens (issue-N / issueN)
-          #   (3) fallback: generic #N references in title/body
-          TARGET_ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -ioE '(closes|fixes|resolves) #[0-9]+' | grep -oE '#[0-9]+' || true)
-          BRANCH_ISSUES=$(echo "$HEAD_REF" | grep -oE 'issue-?[0-9]+' | grep -oE '[0-9]+' | sed 's/^/#/' || true)
-          ISSUES=$(printf "%s\n%s" "$TARGET_ISSUES" "$BRANCH_ISSUES" | grep -E '^#[0-9]+' | sort -u || true)
-          if [ -z "$ISSUES" ]; then
-            ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
-          fi
+          # Extract all referenced issues from title, body, and branch (parent tasks + work orders)
+          ISSUES=$(echo "$PR_TITLE $PR_BODY $HEAD_REF" | grep -oE '#[0-9]+|issue-?[0-9]+' | grep -oE '[0-9]+' | sed 's/^/#/' | sort -u || true)
           if [ -z "$ISSUES" ]; then
             echo "::error::PR opened without a prior claim on Issue #<num>. Per AGENTS.md Step 4 (No claim, no work), claim the issue before creating a branch or PR."
             echo "(No issue reference found in title/body/branch — issue-reference-guard flags this separately; the claim plane cannot be verified, fail-closed.)"
