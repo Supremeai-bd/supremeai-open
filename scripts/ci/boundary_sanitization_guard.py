@@ -93,6 +93,7 @@ APPROVED_TOP_LEVEL_DIRS = {
 }
 
 APPROVED_ROOT_FILES = {
+    ".gitattributes",
     ".gitignore",
     ".gitleaks.toml",
     ".gitleaksignore",
