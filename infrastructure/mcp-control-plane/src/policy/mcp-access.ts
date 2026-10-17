@@ -50,6 +50,12 @@ export const publicSafeCapabilities: readonly McpCapabilityMetadata[] = [
   { name: "bridge_work_order", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
   { name: "bridge_submit_patch", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
   { name: "work_claim", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
+  // #621: bridge hardening — feedback read-back + claim lease lifecycle.
+  // read_feedback stays R0 (pure public read); renew/release are R1 like
+  // work_claim (they write claim markers/labels on the public lane only).
+  { name: "bridge_read_feedback", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+  { name: "bridge_work_renew", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
+  { name: "bridge_work_release", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
 ];
 
 export function canAccessCapability(context: McpAccessContext, capability: McpCapabilityMetadata): boolean {
@@ -149,14 +155,23 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
     name === "bridge_work_queue" ||
     name === "bridge_work_order" ||
     name === "bridge_submit_patch" ||
-    name === "work_claim"
+    name === "work_claim" ||
+    name === "bridge_read_feedback" ||
+    name === "bridge_work_renew" ||
+    name === "bridge_work_release"
   ) {
     return {
       name,
       kind: "tool",
       access: "safe",
       requiredScope: undefined,
-      riskLevel: name === "bridge_submit_patch" || name === "work_claim" ? "R1" : "R0",
+      riskLevel:
+        name === "bridge_submit_patch" ||
+        name === "work_claim" ||
+        name === "bridge_work_renew" ||
+        name === "bridge_work_release"
+        ? "R1"
+        : "R0",
       dataClassification: "public",
       approvalRequired: false,
     };
