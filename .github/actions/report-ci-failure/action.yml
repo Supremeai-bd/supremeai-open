@@ -1,0 +1,157 @@
+name: 'Report CI Failure to SupremeAI Open'
+description: 'Mirrors a failed CI workflow run to Supremeai-bd/supremeai-open task queue'
+author: 'SupremeAI Core Engineering'
+
+inputs:
+  target_open_token:
+    description: 'GitHub token with issues:write permission on Supremeai-bd/supremeai-open'
+    required: true
+  repo:
+    description: 'Repository where failure occurred'
+    required: false
+    default: ${{ github.repository }}
+  workflow:
+    description: 'Workflow name'
+    required: false
+    default: ${{ github.workflow }}
+  run_id:
+    description: 'Workflow run ID'
+    required: false
+    default: ${{ github.run_id }}
+  run_url:
+    description: 'HTML URL of the run'
+    required: false
+    default: 'https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+  branch:
+    description: 'Branch name'
+    required: false
+    default: ${{ github.ref_name }}
+  commit:
+    description: 'Commit SHA'
+    required: false
+    default: ${{ github.sha }}
+  error_summary:
+    description: 'Optional error summary or failing test output'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Mirror Failure via REST API
+      shell: bash
+      env:
+        OPEN_TOKEN: ${{ inputs.target_open_token }}
+        SRC_REPO: ${{ inputs.repo }}
+        WF_NAME: ${{ inputs.workflow }}
+        RUN_ID: ${{ inputs.run_id }}
+        RUN_URL: ${{ inputs.run_url }}
+        BRANCH: ${{ inputs.branch }}
+        COMMIT_SHA: ${{ inputs.commit }}
+        ERR_SUMMARY: ${{ inputs.error_summary }}
+      run: |
+        python3 - <<'PYEOF'
+        import json, os, urllib.request, urllib.error
+
+        open_repo = "Supremeai-bd/supremeai-open"
+        token = os.environ.get("OPEN_TOKEN", "").strip()
+        src_repo = os.environ.get("SRC_REPO", "").strip()
+        wf_name = os.environ.get("WF_NAME", "CI Workflow").strip()
+        run_id = os.environ.get("RUN_ID", "").strip()
+        run_url = os.environ.get("RUN_URL", "").strip()
+        branch = os.environ.get("BRANCH", "main").strip()
+        commit_sha = os.environ.get("COMMIT_SHA", "").strip()
+        err_summary = os.environ.get("ERR_SUMMARY", "").strip()
+
+        if not token:
+            print("::warning::No target_open_token provided — skipping CI failure mirroring.")
+            exit(0)
+
+        # Check existing mirror marker
+        marker = f"<!-- MIRROR_RUN: {src_repo}/actions/runs/{run_id} -->"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "SupremeAI-CI-Reporter/1.0",
+        }
+
+        search_url = f"https://api.github.com/repos/{open_repo}/issues?state=open&per_page=50"
+        try:
+            req = urllib.request.Request(search_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                issues = json.loads(resp.read().decode("utf-8"))
+                for iss in issues:
+                    if marker in (iss.get("body") or ""):
+                        print(f"✅ Mirror issue already exists: {open_repo}#{iss.get('number')}. Skipping duplicate.")
+                        exit(0)
+        except Exception as e:
+            print(f"[reporter] Note: marker search returned {e}; proceeding to create.")
+
+        # Short repo name
+        short_name = src_repo.split("/")[-1].lower()
+        if short_name.startswith("supremeai-"):
+            short_name = short_name[len("supremeai-"):]
+        elif short_name == "supremeai":
+            short_name = "monorepo"
+
+        title = f"fix(ci): [{short_name}] {wf_name} failed on {branch} (Run #{run_id})"
+        short_commit = commit_sha[:8] if commit_sha else "unknown"
+
+        err_block = f"\n- **Error Summary:**\n```\n{err_summary}\n```\n" if err_summary else ""
+
+        body = f"""### 🤖 SupremeAI Agent Task Contract
+This task is mirrored automatically from a federation CI workflow failure. Open to **all autonomous agents** (Local Antigravity, Claude, ChatGPT, Mistral, external contributors).
+
+### Target Repository
+{src_repo}
+
+### Priority Tier
+P0-critical (Production CI failure / blocker)
+
+### Topological Layer
+Layer 2 (Tools / Workers / Sidecars)
+
+### Task Group (VALID_GROUPS registry)
+agent-orchestration
+
+### Summary / Problem Statement
+Workflow **{wf_name}** failed on repository `{src_repo}` (branch `{branch}`).
+- **Workflow Run:** [{run_id}]({run_url})
+- **Commit:** `{short_commit}`{err_block}
+- **Failure Logs / Check Details:** Inspect the check run logs in the linked run.
+
+### Acceptance Criteria
+1. Inspect the failing check logs in Run #{run_id}.
+2. Fix root cause in `{src_repo}`.
+3. Submit fix via zero-credential bridge (`bridge_submit_patch`) or fork PR.
+
+### 3-Tier Verification Contract
+1. Reflection: `git diff --stat` matches the fixed CI/code files.
+2. Smoke: CI checks compile and pass locally.
+3. Tests: relevant tests green.
+
+{marker}
+"""
+
+        payload = {
+            "title": title,
+            "body": body,
+            "labels": ["status:unclaimed", "P0-critical", "handoff:coder", "area:ci", f"repo:{short_name}"],
+        }
+
+        create_url = f"https://api.github.com/repos/{open_repo}/issues"
+        try:
+            req = urllib.request.Request(
+                create_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                print(f"✅ Mirrored failure to {open_repo}#{res.get('number')}: {res.get('html_url')}")
+        except urllib.error.HTTPError as e:
+            print(f"::warning::Failed to create mirror issue on {open_repo} (HTTP {e.code}): {e.read().decode('utf-8')}")
+        except Exception as e:
+            print(f"::warning::Failed to create mirror issue on {open_repo}: {e}")
+        PYEOF
