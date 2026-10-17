@@ -1240,7 +1240,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
       const authenticated = session.authenticated;
       const accessMode = accessModeFor(activeRole, authenticated);
       const scopes = session.scopes.length > 0 ? session.scopes : defaultClientScopes(activeRole);
-      const slotBinding = session.slotId ? { slotId: session.slotId, credentialId: session.credentialId } : undefined;
+      const slotBinding = session.slotId && session.slotVerified ? { slotId: session.slotId, credentialId: session.credentialId } : undefined;
       const sseTransport = new SSEServerTransport("/messages", res);
       sseSessions.set(sseTransport.sessionId, sseTransport);
       if (effectiveClient) {
@@ -1489,7 +1489,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
         const initAuthenticated = session.authenticated;
         const initAccessMode = accessModeFor(initRole, initAuthenticated);
         const initScopes = session.scopes.length > 0 ? session.scopes : defaultClientScopes(initRole);
-        const slotBinding = session.slotId ? { slotId: session.slotId, credentialId: session.credentialId } : undefined;
+        const slotBinding = session.slotId && session.slotVerified ? { slotId: session.slotId, credentialId: session.credentialId } : undefined;
 
         const httpTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
