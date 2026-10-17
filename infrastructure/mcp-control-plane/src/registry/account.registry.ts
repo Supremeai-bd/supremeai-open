@@ -321,47 +321,10 @@ export function buildAccountRegistry(): ProviderAccount[] {
       available: isAvailable("FIREBASE_SERVICE_ACCOUNT_JSON"),
     },
 
-    // ── AI Providers (Multi-Key Pools) ────────────────────
-    {
-      id: "ai-gemini",
-      provider: "ai",
-      displayName: "Google Gemini API Pool",
-      role: "llm-inference",
-      environment: "production",
-      capabilities: ["health", "ai_inference", "metrics"],
-      apiKeyRef: "GEMINI_API_KEY",
-      available: env.ai.geminiKeys.length > 0,
-    },
-    {
-      id: "ai-groq",
-      provider: "ai",
-      displayName: "Groq LPU Inference Pool",
-      role: "llm-inference",
-      environment: "production",
-      capabilities: ["health", "ai_inference", "metrics"],
-      apiKeyRef: "GROQ_API_KEY",
-      available: env.ai.groqKeys.length > 0,
-    },
-    {
-      id: "ai-openrouter",
-      provider: "ai",
-      displayName: "OpenRouter Unified Pool",
-      role: "llm-inference",
-      environment: "production",
-      capabilities: ["health", "ai_inference", "metrics"],
-      apiKeyRef: "OPENROUTER_API_KEY",
-      available: env.ai.openrouterKeys.length > 0,
-    },
-    {
-      id: "ai-mistral",
-      provider: "ai",
-      displayName: "Mistral AI Pool",
-      role: "llm-inference",
-      environment: "production",
-      capabilities: ["health", "ai_inference", "metrics"],
-      apiKeyRef: "MISTRAL_API_KEY",
-      available: !!env.ai.mistralKey,
-    },
+    // #643: direct LLM provider pools (gemini/groq/openrouter/mistral) were
+    // REMOVED from the zero-credential control plane — AI analysis is delegated
+    // to the external agent caller context (or Core API). No apiKeyRef for any
+    // LLM provider is required or stored in the tower runtime env anymore.
 
     // ── Kaggle ────────────────────────────────────────────
     {
