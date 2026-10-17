@@ -28,7 +28,15 @@ for p in (str(REPO_ROOT / "tests"), str(AGENTS_DIR)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import self_healing_reporter as shr  # noqa: E402
+def _load_reporter_module():
+    spec = importlib.util.spec_from_file_location(
+        "agents_self_healing_reporter", AGENTS_DIR / "self_healing_reporter.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+shr = _load_reporter_module()
 
 
 def _load_loop_module():
