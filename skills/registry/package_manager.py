@@ -59,6 +59,8 @@ class PackageManager:
         return names
 
     def remove(self, name: str) -> Path:
+        if not name or "/" in name or Path(name).name != name or name in (".", ".."):
+            raise PackageManagerError(f"invalid skill name: {name!r}")
         destination = self.target_root / name
         if not destination.is_dir():
             raise PackageManagerError(f"skill not installed: {name}")
@@ -85,9 +87,15 @@ class PackageManager:
         if candidate.is_dir():
             shutil.copytree(candidate, staging / "skill")
             return staging / "skill"
-        git_source = self._resolve_index(source) or source
+        git_source, git_ref = self._resolve_index(source)
+        if git_source is None:
+            git_source, git_ref = source, None
+        clone_cmd = ["git", "clone", "--depth", "1"]
+        if git_ref:
+            clone_cmd += ["--branch", git_ref]
+        clone_cmd += [git_source, str(staging / "skill")]
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", git_source, str(staging / "skill")],
+            clone_cmd,
             capture_output=True,
             text=True,
             timeout=120,
@@ -97,16 +105,19 @@ class PackageManager:
             raise PackageManagerError(f"git clone failed for {source!r}: {result.stderr.strip()[:200]}")
         return staging / "skill"
 
-    def _resolve_index(self, name: str) -> Optional[str]:
+    def _resolve_index(self, name: str) -> tuple[Optional[str], Optional[str]]:
+        """Return (git_url, ref) for an index name, or (None, None).
+
+        The ref is returned separately: ``url@ref`` is not valid git-clone
+        syntax (it must be passed as ``--branch <ref>``).
+        """
         if not self.index_path.is_file():
-            return None
+            return None, None
         skills = ProgressiveLoader.read_index(self.index_path)
         entry = skills.get(name)
         if entry is None:
-            return None
-        if entry.get("ref"):
-            return f"{entry['git']}@{entry['ref']}"
-        return str(entry["git"])
+            return None, None
+        return str(entry["git"]), entry.get("ref") or None
 
 
 def build_cli() -> argparse.ArgumentParser:
