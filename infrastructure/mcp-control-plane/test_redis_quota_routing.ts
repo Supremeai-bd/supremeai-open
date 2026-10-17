@@ -25,9 +25,11 @@ import assert from "node:assert/strict";
 import {
   isAccountQuotaExhausted,
   quotaChainStatus,
+  resetRedisUsageTracking,
 } from "./src/lib/redis_chain.js";
-import { recordHeartbeat } from "./src/registry/agent_heartbeat.js";
-import { recordPresence } from "./src/registry/mcp_presence.js";
+import { clearRedisL1Cache } from "./src/lib/ttl_cache.js";
+import { recordHeartbeat, resetRedisWriteDebounce } from "./src/registry/agent_heartbeat.js";
+import { recordPresence, resetPresenceWriteDebounce } from "./src/registry/mcp_presence.js";
 import { makeDispatchStore } from "./src/registry/orchestrator_dispatch.js";
 import { UpstashClientRegistryStore } from "./src/policy/client-registry.store.js";
 
@@ -41,12 +43,18 @@ for (const k of ["UPSTASH_REDIS_TERTIARY_REST_URL", "UPSTASH_REDIS_TERTIARY_REST
   delete process.env[k];
 }
 
-/** Cooldown state is module-global — clear it before/after each scenario. */
+/** Cooldown state is module-global — clear it before/after each scenario.
+ *  #646: usage counters + write debouncers + L1 cache are also global —
+ *  reset them so every scenario starts from a clean fleet. */
 function resetCooldowns(): void {
   // Expired-check deletes the entry: any nowMs beyond the stored until works.
   for (const label of ["primary", "secondary"]) {
     isAccountQuotaExhausted(label, 8_200_000_000_000);
   }
+  resetRedisUsageTracking();
+  resetRedisWriteDebounce();
+  resetPresenceWriteDebounce();
+  clearRedisL1Cache();
 }
 
 // ── Host-keyed fetch mock: primary answers quota, secondary answers success ─
