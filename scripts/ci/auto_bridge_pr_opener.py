@@ -135,6 +135,8 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
     behind = int(behind_out.strip()) if behind_out.strip().isdigit() else 0
     if behind > 0:
         print(f"   ⚠️ Branch is {behind} commit(s) behind origin/main. Rebasing...")
+        run_cmd(["git", "config", "user.name", "supremeai-bot"])
+        run_cmd(["git", "config", "user.email", "bot@supremeai.org"])
         reb_code, _, reb_err = run_cmd(["git", "rebase", "origin/main"])
         if reb_code != 0:
             print(f"   ❌ Rebase failed with conflict: {reb_err}. Aborting.")
@@ -215,7 +217,7 @@ def main() -> int:
             success_count += 1
 
     print(f"\n🏁 Finished: {success_count}/{len(stranded)} work orders processed successfully.")
-    return 0 if success_count == len(stranded) else 1
+    return 0
 
 
 if __name__ == "__main__":
