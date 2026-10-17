@@ -66,6 +66,10 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
   const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(accountRepoUrl);
   const fullName = match ? `${match[1]}/${match[2].replace(/\.git$/, "")}` : accountId;
   const shortName = fullName.split("/").pop() ?? fullName;
+  // কোর মোনোরিপো সার্বভৌম সিকিউরিটি: 'supremeai' শুধুমাত্র admin ও supremeadmin রোলের জন্য উন্মুক্ত।
+  if (shortName === "supremeai" && roleRank(store.role) < 4) {
+    return `Forbidden: core monorepo 'supremeai' is strictly restricted to admin and supremeadmin roles; non-admin roles are limited to satellite repos (current role: '${store.role}').`;
+  }
   if (access === "satellite-readonly" && (shortName === "supremeai" || !isSatelliteRepo(shortName))) {
     return `Forbidden: restricted_viewer is limited to satellite repos; '${shortName}' is outside the allowlist (core repo is blocked).`;
   }
