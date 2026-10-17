@@ -1,0 +1,3 @@
+.github/actions/gitleaks-scan@main
+.github/workflows/pipeline.satellite.yml
+.github/actions/report-ci-failure@main
