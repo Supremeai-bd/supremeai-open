@@ -67,6 +67,8 @@ Never invent a parallel workflow. The task contract is the common envelope for e
 1. **No Claim -> No Branch:** `atomic_claim.sh` must run and post both claim signals (`status:claimed` label + `<!-- atomic-claim -->` comment) **BEFORE** checking out or creating any task branch. Branch creation without a prior claim is fail-closed rejected by `continuous_agent_loop.py`.
 2. **No Branch -> No Push:** Any git push targeting an issue is rejected by `.githooks/pre-push` if the issue has no active claim marker on GitHub. Furthermore, PRs opened without a prior claim are strictly blocked by the Claim Gate (`claim-guard`). The claim comment on the issue is the evidence the gate checks — it must exist before CI runs.
 
+**Cohesive Task Sizing (Repo-Domain Anti-Thrashing, P7, #522):** frame every task as one cohesive, repo-scoped atomic slice (Code + Types + Tests + Contract) for a single primary repository — never fragmented micro-issues racing on the same files, never monster PRs beyond the ingestion ceiling (≤ 30 files / ≤ 200 KB diff). Before dispatch or claim, inspect active tasks in the same `sub_group`: declared Touching Files must not collide with an in-flight claim (fail-closed).
+
 ## 2.1 Autonomous Work Submission (Zero-Admin Policy)
 
 Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bots) must submit work autonomously using whichever of the following 3 pathways matches their operational capabilities:
