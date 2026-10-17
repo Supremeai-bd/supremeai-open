@@ -187,7 +187,12 @@ def audit_satellite(
         return SatelliteReport(repo, VERDICT_UNREACHABLE, reason=str(exc))
     except UnreachableError as exc:
         return SatelliteReport(repo, VERDICT_UNREACHABLE, reason=str(exc))
-    issues, prs, details = classify_items(items if isinstance(items, list) else [])
+    if not isinstance(items, list):
+        return SatelliteReport(
+            repo, VERDICT_UNREACHABLE,
+            reason="malformed payload: expected a JSON list of open items, got "
+                   f"{type(items).__name__}")
+    issues, prs, details = classify_items(items)
     if issues == 0 and prs == 0:
         return SatelliteReport(repo, VERDICT_CLEAN)
     return SatelliteReport(repo, VERDICT_VIOLATION, issues, prs, details)
@@ -206,7 +211,9 @@ def decide_exit_code(reports: list[SatelliteReport]) -> int:
     """Map the audit matrix onto the documented exit codes."""
     if any(r.verdict == VERDICT_VIOLATION for r in reports):
         return 1
-    if reports and all(r.verdict == VERDICT_UNREACHABLE for r in reports):
+    if any(r.verdict == VERDICT_UNREACHABLE for r in reports):
+        # Degraded visibility is itself a failure: partial blindness (some
+        # satellites unreachable, e.g. API rate-limit) must not read as pass.
         return 2
     return 0
 
