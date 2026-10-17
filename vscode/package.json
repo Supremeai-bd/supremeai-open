@@ -1,0 +1,76 @@
+{
+  "name": "supremeai-vscode",
+  "displayName": "SupremeAI Federation IDE Bridge",
+  "description": "Developer workflow bridge and live federation runway telemetry for SupremeAI autonomous agents",
+  "version": "0.1.0",
+  "publisher": "supremeai",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "supremeai",
+    "mcp",
+    "agents",
+    "runway",
+    "telemetry"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "supremeai.dispatchTask",
+        "title": "Dispatch Task to Federation",
+        "category": "SupremeAI"
+      },
+      {
+        "command": "supremeai.viewRunway",
+        "title": "View Active PR Runway",
+        "category": "SupremeAI"
+      },
+      {
+        "command": "supremeai.emergencyStop",
+        "title": "Trigger Emergency Autonomy Kill-Switch",
+        "category": "SupremeAI"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "SupremeAI Configuration",
+      "properties": {
+        "supremeai.towerUrl": {
+          "type": "string",
+          "default": "https://supremeai-mcp-tower.onrender.com/mcp",
+          "description": "MCP Control Tower URL for task dispatch and telemetry"
+        },
+        "supremeai.autoRefreshSeconds": {
+          "type": "number",
+          "default": 30,
+          "description": "Telemetry poll cadence in seconds"
+        },
+        "supremeai.enableNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notification when an agent completes a task or CI gate fails"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "tsx src/test/extension.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.3.3"
+  }
+}
