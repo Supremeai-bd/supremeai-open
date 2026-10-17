@@ -1,183 +1,59 @@
 # SupremeAI — AGENTS.md
 
-> **Agent Entry Point / Universal Constitution**
->
-> **Freedom:** Agent controls **HOW** to solve an assigned task inside its contract.
-> **Control:** Admin/System controls **WHERE, WHAT, ACCESS, LIMITS, STOPPING and major architectural decisions**.
->
-> **Canonical rule source:** [`AGENT_RULES.md`](./AGENT_RULES.md)
-> **Governance issue:** [#3095](https://github.com/Supremeai-bd/supremeai/issues/3095)
+> **Agent Universal Constitution**  
+> **Freedom:** Agent controls **HOW** to solve an assigned task inside its contract.  
+> **Control:** Admin/System controls **WHERE, WHAT, ACCESS, LIMITS, STOPPING and major architectural decisions**.  
+> **Canonical Rules:** [`AGENT_RULES.md`](./AGENT_RULES.md) · **Admin Work Budget:** ≤ 0.01% (Zero-Admin)
 
-## 0. The Agent Loop — One Simple Entry Point
+---
 
-Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispatcher IS the existing `scripts/agents/continuous_agent_loop.py` — never build a new loop.
+## 1. Visual Task Architecture (Federation Flow at a Glance)
 
-> **Operational Note for External / Community Agents on this Repository:**  
-> If you are an external or web AI working on Supremeai-bd/supremeai-open without CLI/vault access:
-> - **Primary & Recommended (Zero-Credential):** Follow **§2.1 Pathway 1 (MCP Control Tower Bridge)**. The MCP Control Tower directly provides relevant code, task specifications, and context to you via MCP tools. You implement in-context and return the solution; the Control Tower proxy bot handles branch creation, commits, and PR submission.
-> - **Alternative (With GitHub Token / Local CLI):** Follow **§2.1 Pathway 2 / §8 Bridge Lane** (fork + branch `contributor/issue-<task-id>` or `bridge/<task-id>` + PR). Use the standalone open runner: `python scripts/agents/continuous_agent_loop.py`.
+```mermaid
+flowchart TD
+    subgraph INGRESS ["1. Ingress Pathways (§2)"]
+        P1["Pathway 1: MCP Control Tower<br>(Zero-Credential Bridge)"] --> OPEN["Supremeai-bd/supremeai-open<br>(Public SSOT & Task Hub)"]
+        P2["Pathway 2: Public Fork & PR<br>(External Web AI / Contributors)"] --> OPEN
+        P3["Pathway 3: Ephemeral JIT Lease<br>(Automated CLI Runners)"] --> OPEN
+    end
 
-*(Note: In the table below, internal monorepo scripts such as `atomic_claim.sh` and `role_registry.py` run on the private backend CI Guardian. Open contributors use `scripts/agents/continuous_agent_loop.py` to drive all 8 steps locally.)*
+    subgraph LOOP ["2. The 8-Step Agent Lifecycle (§3)"]
+        OPEN --> S1["1. Understand & 2. Load Rules"]
+        S1 --> S2["3. Inspect State & Preflight (§2.4)"]
+        S2 --> S3["4. Atomic Claim (No Claim = No Branch/Work)"]
+        S3 --> S4["5. Smallest Safe Diff (≤ 30 files, ≤ 200 KB)"]
+        S4 --> S5["6. 3-Tier Verification (Reflection → Smoke → Tests)"]
+        S5 --> S6["7. PR Record + 8. Board Freshness Re-Check (#4177)"]
+    end
 
-| Step | Do | Existing tool (Public / Monorepo) |
-|---|---|---|
-| 1. Understand | Read the task issue + linked context | `gh issue view <n>` / `continuous_agent_loop.py --issue <n>` |
-| 2. Rules | Load governing rules + your role contract | [`AGENT_RULES.md`](./AGENT_RULES.md) §1–§3 · `scripts/agents/role_registry.py` |
-| 3. Inspect state | Queue, open PRs, active claims, token freshness | `continuous_agent_loop.py` · `issue_queue_manager.py audit` |
-| 4. Claim | Atomic claim (session marker; no claim, no work) | Session branch / `scripts/ci/atomic_claim.sh` |
-| 5. Work | Smallest safe change inside declared scope | Standard Task Contract (`continuous_agent_loop.build_task_contract()`) |
-| 6. Verify | 3-tier contract (process phases): reflection → boot smoke → tests · evidence tiers SSOT: AGENT_LOOP_SPEC §4 | `continuous_agent_loop.py --verify-only` |
-| 7. Record | PR with full template + Test Evidence (+ meaningful decision note; `Closes #N` must also ride in the **commit message** — squash auto-close doctrine, AGENT_RULES U8) | `continuous_agent_loop.py --auto-pr` / REST PR create |
-| 8. Return | Report outcome **with fresh-board re-check** (#4177), release claim, loop back | `continuous_agent_loop.py` + `gh pr list` re-poll |
+    subgraph TRANSIT ["3. Ephemeral Transit & Landing (§4)"]
+        S6 --> GATE{"Merge Gate<br>(Fail-Closed)"}
+        GATE -- Green --> MERGE["Landing to main"]
+        MERGE --> DISPATCH["Dispatch to Target Repository<br>(Monorepo / 1 of 12 Satellites)"]
+        DISPATCH --> PRUNE["Auto-Prune Transit Patch<br>(Zero-Residue #416)"]
+    end
 
-Hard boundaries during the loop: gates outrank agent preference (§1.4) · no competing/duplicate PRs for issues with an active open PR (AGENT_RULES.md U4) · scoped credentials only (`credential_manager` — master vault keys never reach children) · single-vs-multi execution follows Rule B (`role_registry.plan_task_execution()` — advisory).
-
-## 1. First Rule: Authority
-
-1. Admin's explicit instruction has highest authority, subject to safety: if an instruction may cause data loss, production outage or security breach, stop and request confirmation.
-2. When no direct Admin decision exists, this file + [`AGENT_RULES.md`](./AGENT_RULES.md) are the agent baseline. Other documents explain context; they do not silently override the constitution.
-3. Major architectural, governance, policy or planning changes require an `ADMIN_DECISION` issue and must wait for the decision before implementation.
-4. System-enforced gates outrank agent preference. An agent must never bypass a safety, scope, freshness, template, permission, duplicate, evidence or merge gate.
-
-## 2. Second Rule: Stateless Task Lifecycle
-
-Every agent is a task execution role, not a permanent identity:
-
-```text
-READ ENTRYPOINT
-  → LOAD AGENT_RULES
-  → LOAD TASK/ROLE CONTRACT
-  → CHECK GROUP + PRIORITY + SEQUENCE
-  → PREFLIGHT MAIN + OPEN PRs + EXISTING WORK
-  → CLAIM (atomic_claim.sh — BEFORE any code change or PR)
-  → WORK INSIDE SCOPE
-  → VERIFY (tests + gates + evidence)
-  → RECORD EVIDENCE + DECISION LEDGER
-  → PR / HANDOFF (only AFTER claim is posted)
-  → BOARD-FRESHNESS RE-CHECK (#4177 — re-poll open PRs + queue before declaring done)
-  → CLEAN EXIT (release locks, stop heartbeat, trim worklog)
-  → RERUN continue_loop.py (next task immediately — no sleep, per Rule 5)
+    classDef hub fill:#1d76db,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef gate fill:#d93f0b,stroke:#fff,stroke-width:2px,color:#fff;
+    class OPEN hub;
+    class GATE gate;
 ```
 
-Never invent a parallel workflow. The task contract is the common envelope for every model and role.
+---
 
-**Board-freshness rule (#4177):** the snapshot taken at task-start is not the whole mission. Work often takes long enough for new PRs/issues to arrive mid-flight — a completion declaration made against the start-time snapshot silently drops them. Before declaring any task, batch or founder-directed mission "done", re-poll the board and report the fresh snapshot; handle new arrivals or explicitly list them as outstanding (per [`AGENT_RULES.md`](./AGENT_RULES.md) U5/U7/U8).
+## 2. Work Submission Pathways (Zero-Admin ≤ 0.01%)
 
-**Critical ordering (Two-Tier Ingress Invariant, #430):**
-1. **No Claim -> No Branch:** `atomic_claim.sh` must run and post both claim signals (`status:claimed` label + `<!-- atomic-claim -->` comment) **BEFORE** checking out or creating any task branch. Branch creation without a prior claim is fail-closed rejected by `continuous_agent_loop.py`.
-2. **No Branch -> No Push:** Any git push targeting an issue is rejected by `.githooks/pre-push` if the issue has no active claim marker on GitHub. Furthermore, PRs opened without a prior claim are strictly blocked by the Claim Gate (`claim-guard`). The claim comment on the issue is the evidence the gate checks — it must exist before CI runs.
-
-**Cohesive Task Sizing (Repo-Domain Anti-Thrashing, P7, #522):** frame every task as one cohesive, repo-scoped atomic slice (Code + Types + Tests + Contract) for a single primary repository — never fragmented micro-issues racing on the same files, never monster PRs beyond the ingestion ceiling (≤ 30 files / ≤ 200 KB diff). Before dispatch or claim, inspect active tasks in the same `sub_group`: declared Touching Files must not collide with an in-flight claim (fail-closed).
-
-## 2.1 Autonomous Work Submission (Zero-Admin Policy)
-
-Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bots) must submit work autonomously using whichever of the following 3 pathways matches their operational capabilities:
-
-> **Operator handbook:** [`docs/ZERO_ADMIN_GUIDE.md`](./docs/ZERO_ADMIN_GUIDE.md) (#50) — why manual merging is eliminated by design, the CI Guardian criteria, and the submitter checklist for 100% autonomous auto-merge.
-
-### Pathway 1: MCP Control Tower Bridge (Zero-Credential Submission)
-* **Target:** Agents connected via Model Context Protocol (MCP) to `supremeai-control-tower` (Claude, Cursor, Antigravity, or MCP clients).
-* **Remote MCP Server:**
-  - Standard Streamable MCP: `https://supremeai-mcp-tower.onrender.com/mcp`
-  - SSE Endpoint: `https://supremeai-mcp-tower.onrender.com/sse`
-* **Zero-Credential Connection Config (`mcp.json`):**
-  ```json
-  {
-    "mcpServers": {
-      "supremeai-control-tower": {
-        "url": "https://supremeai-mcp-tower.onrender.com/mcp"
-      }
-    }
-  }
-  ```
-  *(Tokenless connections are automatically registered as guest viewers with read-only scopes via zero-manual-registration).*
-* **Execution & Code Delivery:**
-  1. **Code & Task Provisioning:** The MCP Control Tower directly provides relevant source files, task context, and schemas to the agent via MCP tools (`bridge_work_order`, `bridge_guide`, `github_read_file`). The agent does not need to guess, clone private repos, or have local filesystem access.
-  2. **In-Context Implementation:** The agent analyzes the provided code, develops the fix/feature inside its context, and submits the completed files via `bridge_submit_patch`.
-  3. **Autonomous Submission & Landing:** Control Tower's server-side GitHub App automatically creates the `bridge/<task-id>` branch on `Supremeai-bd/supremeai-open`, commits the files, and creates the Bridge Work Order issue autonomously.
-  4. **Zero Credentials Needed:** Agent needs **zero** direct GitHub tokens, private keys, or collaborator write access.
-
-### Pathway 2: Public Window Fork & Pull Request (`supremeai-open`)
-* **Target:** External web agents without MCP or credentials (e.g., Mistral, Z.ai, ChatGPT, external contributors).
-* **Public Repository:** [`https://github.com/Supremeai-bd/supremeai-open`](https://github.com/Supremeai-bd/supremeai-open)
-* **Execution:**
-  1. Agent forks the public `Supremeai-bd/supremeai-open` repository (zero access needed).
-  2. Pushes proposed changes to its fork branch.
-  3. Opens a Pull Request against `Supremeai-bd/supremeai-open:main`.
-  4. Internal automation ingests the PR, ports changes to the private pipeline, verifies, and merges without admin manual effort.
-
-### Pathway 3: Ephemeral JIT Lease (Automated CLI / Script Agents)
-* **Target:** Scripted workers, runners, or bots executing with terminal/API access.
-* **Execution:**
-  1. Mint a 1-hour time-limited lease token via `scripts/agents/credential_manager.py`:
-     ```bash
-     python scripts/agents/credential_manager.py --lease <agent-name> --ttl 3600
-     ```
-  2. Push the branch using the ephemeral token:
-     ```bash
-     git push https://x-access-token:<TOKEN>@github.com/Supremeai-bd/supremeai.git <branch>
-     ```
-  3. Create the PR via GitHub REST API. Internal CI Guardian evaluates and merges autonomously.
-
-### 2.2 Loop-Granted Authority — No Permission-Asking (U10)
-
-The loop **is** the permission. Agents never emit "should I start / বললেই পরের batch শুরু করছি / shall I proceed?" style output. When self-checkable preconditions pass (claimable issue, no admin gate, fresh board per #4177, valid credentials, green CI), work proceeds immediately; status reports state facts, never permission questions. Escalation is reserved for hard blockers only (missing credentials, destructive ops, ADMIN_DECISION gates, contradictory instructions). Canonical rule: [`AGENT_RULES.md`](./AGENT_RULES.md) **U10**.
-
-## 2.3 Public-First SSOT Doctrine (Public Boundary Contract, #155)
-
-`supremeai-open` is the **public SSOT for everything provable in public**; the private monorepo `Supremeai-bd/supremeai` is the SSOT for everything that needs private context. Landed public work flows into the private monorepo automatically through the bridge pipeline (`landing.yml`) — never by hand.
-
-### 2.3.1 What MUST NOT live in `supremeai-open` (private monorepo exclusives)
-
-These require private monorepo context, private credentials, or live databases and can never be executed here:
-
-1. **Proprietary Core Intelligence & Backend** (`backend/`, `supremeai-core`): real orchestrator decision logic, internal state machines, private runtime services.
-2. **Production Secrets & Vault Access:** Infisical master keys, live Supabase service keys, production Redis tokens, live cloud infrastructure credentials.
-3. **Live Database Migrations & Direct DB Tests:** schema migrations against production/staging databases.
-4. **Production Deployment Pipelines:** live Render / Cloudflare / Vercel production deployments that require proprietary backend context (e.g. `../../backend`).
-5. **Full Internal Monorepo Orchestration:** workspaces requiring private packages or proprietary core dependencies.
-
-This boundary is machine-enforced, not advisory: `scripts/ci/boundary_sanitization_guard.py` fail-closes the PR on proprietary paths or content (the `pipeline.yml` guard job), and gitleaks fail-closes on credentials.
-
-### 2.3.2 Shift-Left De-duplication (what private CI never re-runs)
-
-Because the free public runtime proves these first, they are **eliminated from private workflows** (quota is a shared 2,000 min/month Free-org budget — see `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`): branch naming · issue reference · anti-duplicate PR · full Python matrix (3.10–3.13; private pins 3.11) · MCP Control Plane TS typecheck & test suites · gitleaks full-history scan · boundary sanitization audit · docs/link/markdown checks · lint & formatting passes · dependency vulnerability scans · AI PR evaluation. Private CI keeps ONLY what requires private context: backend integration smoke, production deployment, bridge intake validation, and scheduled ops maintenance.
-
-### 2.3.3 Lightweight & Reusable Components (cross-federation SSOT)
-
-The diet is built from small, zero-bloat building blocks reused identically across repositories:
-
-1. **Zero-checkout fast metadata guards (~2–3s):** branch naming (pure event-context regex), issue reference (title/body regex), anti-duplicate PR (single `gh pr list` JSON query) — all zero clone, drop-in reusable across any federation repo.
-2. **Zero-dependency Python validation scripts (`scripts/ci/`):** `boundary_sanitization_guard.py` is 100% standard library, zero network, ~1s — the same file polices public and private trees.
-3. **Reusable composite actions (`.github/actions/`):**
-   - `setup-node-tower`: Node 24 setup + caching + `npm ci` + `tsc` in one action (cuts ~40 lines of YAML per workflow).
-   - `gitleaks-scan`: standardized zero-config secret scanner.
-4. **Path-filtered fast paths (sparse execution):** docs-only diffs (`docs/**`, `*.md`) skip the test matrix and Tower build and pass in <5 seconds; secrets scanning still runs (documentation can leak too).
-5. **Unified workflows with `workflow_call`-ready steps:** `pipeline.yml` (validation + cron) and `landing.yml` (auto-merge + bridge dispatch, dispatch structurally ordered after a successful merge in the same run).
-
-### 2.3.4 Workflow Diet (topology)
-
-| Surface | Before | After |
+| Pathway | Who & When | Mechanism |
 |---|---|---|
-| `supremeai-open` | 5 workflows | **2**: `pipeline.yml` (guards → Python 3.10–3.13 matrix + secrets-scan + mcp-tower + event-driven intake), `landing.yml` (auto-merge → bridge dispatch → auto-prune ephemeral patches, #416) |
-| `supremeai` (private) | 18 workflows | **4**: `pr-pipeline`, `deploy-train`, `bridge-intake`, `ops-maintenance` (private-side change) |
+| **1. MCP Control Tower (Primary)** | Claude, Cursor, Antigravity, Web bots | Zero-credential: tools provide context; proxy bot commits & opens PR. Endpoint: `https://supremeai-mcp-tower.onrender.com/mcp` |
+| **2. Public Fork & PR** | External agents without credentials | Fork `supremeai-open`, push to fork, PR against `main`. Automated pipeline ports & verifies. |
+| **3. Ephemeral JIT Lease** | CLI scripts / local automated runners | Mint 1-hour lease token via `credential_manager.py` (Rule U4: zero master keys). |
 
-Split/merge justification per AGENT_RULES P4: the public split existed for fork-security isolation; consolidation is safe because untrusted validation (guards/matrix) and trusted landing (merge/dispatch) remain in **separate workflows with separate permission sets** (`contents: read` vs `contents/pull-requests/issues: write`).
+*U10 Rule: The loop is the permission. Never ask "should I proceed" when self-checkable preconditions pass.*
 
-### 2.3.5 Zero-Duplicate Mandate (U4, hard rule)
+---
 
-Because landed changes on `supremeai-open` are automatically ingested into `Supremeai-bd/supremeai` via this consolidated pipeline, contributors and agents **must never create duplicate manual PRs on the private repository** for work handled at the public boundary. One issue = at most one open PR, anywhere in the federation.
-
-### 2.3.6 Ephemeral Transit Pipeline & Auto-Pruning Doctrine (#416)
-
-`supremeai-open` operates strictly as an **Ephemeral Transit Station (ক্ষণস্থায়ী ডাকবাক্স)** rather than a permanent storage depot:
-1. Contributors submit code/patches to `Supremeai-bd/supremeai-open`.
-2. Merge Gate evaluates fail-closed and auto-merges into `main`.
-3. `landing.yml` streams the patch to the designated federation satellite repository (1 of 11) and central monorepo via Webhook / Dispatch.
-4. `landing.yml` immediately auto-prunes the patch file (`git rm patches/*`) and commits `chore(bridge): auto-prune transit patch ... [skip ci]`.
-5. `supremeai-open` remains permanently lightweight, zero-residue, and pristine.
-
-## 2.4 Role Preflight Invariants (ভূমিকাভিত্তিক আত্ম-জিজ্ঞাসা)
+## 3. Role Preflight Invariants (৩-সেকেন্ড আত্ম-জিজ্ঞাসা)
 
 যেকোনো কোড বা অ্যাকশনের পূর্বে প্রতিটি রোলের ৩-সেকেন্ড প্রি-ফ্লাইট চেক:
 - **Planner:** বিদ্যমান কোডে ৮০% আছে কি? নতুন জটিলতা ছাড়া কি পুরনো কোড রিইউজ করা যায়? (রুল §6)
@@ -187,99 +63,30 @@ Because landed changes on `supremeai-open` are automatically ingested into `Supr
 - **Human Eye:** এডমিন শ্রম ≤ ০.০১% অক্ষত তো? ওয়ান-টাইম ফিক্স না করে সিস্টেমে স্থায়ী নিয়ম শেখানো হচ্ছে কি?
 - **3rd Party Platforms:** মাস্টার-কি সম্পূর্ণ আইসোলেটেড তো? সার্ভার স্লিপ হলেও কোল্ড-স্টার্ট রিট্রাই আছে তো?
 
-## 3. New Agent: Required Reading Path
+---
 
-1. **This file** — authority, lifecycle and navigation.
-2. **[ECOSYSTEM_MAP.md](./ECOSYSTEM_MAP.md)** — federation repository directory and cross-repo target routing.
-3. **[AGENT_RULES.md](./AGENT_RULES.md)** — global policies + role policies + verification + tooling.
-4. **Task Contract / Issue Template** — exact task type, scope, group, priority, sequence, dependencies and acceptance criteria.
-5. **Relevant group/domain document** — only the context required by the assigned task.
-6. **Issue + related PRs + evidence** — current state before making changes.
-7. **After work:** verification + decision ledger + linked evidence.
+## 4. Universal Boundaries & Core Philosophy
 
-If a referenced document is missing or contradictory, do not guess. Report the gap and follow the Admin Decision path when required.
+### Agent Freedom vs Hard Boundaries
+- **Agent decides:** Implementation inside declared scope, testing, smallest safe approach, evidence-backed optimizations.
+- **Agent may NOT decide alone:** Major architecture changes, permission/boundary alterations, destructive ops, wide scope expansion (requires `ADMIN_DECISION` issue).
+- **Hard Ordering:** **No Claim → No Branch** (`atomic_claim.sh` first) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
 
-## 4. Agent Freedom vs Boundary
-
-### Agent may decide
-- implementation details inside assigned scope;
-- how to debug and test;
-- which existing compatible pattern to reuse;
-- the smallest safe implementation approach;
-- evidence-backed local optimizations that do not alter protected architecture/policy.
-
-### Agent may not decide alone
-- major architecture/workflow topology changes;
-- security/permission boundary changes;
-- governance/rule changes;
-- destructive or irreversible operations;
-- broad scope expansion;
-- replacing an established architecture with a substantially different one without evidence and required approval.
-
-If an existing design appears unnecessarily complex, do **not** silently preserve it forever and do **not** silently rewrite it:
-
-```text
-Finding → Evidence → Simpler Alternative → Impact
-       → ADMIN_DECISION (when architectural) → Wait
-```
-
-## 5. Document Circle
-
-SupremeAI documentation is a connected ecosystem, not isolated files.
-
-- [`AGENT_RULES.md`](./AGENT_RULES.md) — agent policy constitution.
-- [`README.md`](./README.md) — boundary + artifact table · [`docs/CONSUMERS.md`](./docs/CONSUMERS.md) — consumer onboarding · [`api-schemas/gateway.openapi.yaml`](./api-schemas/gateway.openapi.yaml) — the stable API surface.
-- Domain/planning documents — detailed context.
-- Every canonical document should expose `related_docs`, source issue/PR and status where applicable.
-- Prefer repository-relative links for stability; include canonical GitHub URLs where navigation outside the repo is useful.
-- Do not create orphan canonical documents.
-- When a document is renamed, superseded or split, update inbound/outbound links.
-
-The goal is a navigable circle:
-
-```text
-Entry → Rules → Task → Group → Domain Plan
-  ↑                                  ↓
-  └──── Evidence ← Issue ← PR ← Verify
-```
-
-## 6. Core Philosophy
-
+### Core Philosophy
 - **Simple + effective > clever + complex.**
-- **Incremental improvement > premature scale.**
-- **Preserve working architecture by default.**
+- **Existing work before new work.** (80% reuse rule)
 - **Complexity must earn its existence.**
-- **Evidence before action.**
-- **Issue validity before implementation.**
-- **Existing work before new work.**
-- **System guards enforce critical boundaries; agents do not police themselves.**
-
-## 7. Machine Enforcement
-
-The canonical validator is:
-
-```bash
-python scripts/ci/generate_agents_md.py --check
-```
-
-It should remain the enforcement entrypoint for this two-file constitution and be extended as the document-circle contract evolves.
-
-## 8. Bridge — External / Public Agent Lane
-
-No private-repo access? All work flows through the public bridge on this repo:
-
-> **Lane eligibility:** Zero-credential agents submit directly via **§2.1 Pathway 1** using the `bridge_submit_patch` MCP tool without needing GitHub write access. Alternatively, external agents without MCP access can use **§2.1 Pathway 2** (fork + PR).
-
-1. **Patch branch** `bridge/<task-id>` on this repo (diff base = `main`). Created autonomously via `bridge_submit_patch` or pushed by authorized agents. This repo's `main` is never written by agents.
-2. **Bridge Work Order** issue (issue template: `.github/ISSUE_TEMPLATE/bridge-work-order.yml`).
-3. **Bridge intake** (inside the private codebase) validates the work order fail-closed:
-   task-id format → dedup → diff size/file limits → secret-pattern scan → forbidden-path check.
-   Clean orders become a private PR through the full constitutional gate chain; results are
-   reported back on your issue (`bridge:in-gates` / `bridge:landed` / `bridge:rejected` / `bridge:admin-review`).
-
-Universal rules U1–U9 and the authority rules §1 apply unchanged to bridge work.
-Machine contract: `scripts/bridge/README.md` in the private codebase.
+- **Issue validity before implementation.** (Never fix a ghost issue)
+- **Evidence before action.** (Claims without proof are rejected)
+- **System guards enforce boundaries; agents do not police themselves.**
 
 ---
 
-**Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) and load only the role/task policy required for the current assignment.
+## 5. Navigation Circle & Machine Enforcement
+
+```text
+Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain → Verify Evidence → Landing
+```
+
+- **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
+- **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
