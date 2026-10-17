@@ -86,8 +86,8 @@ The runner is a single stdlib-only Python entrypoint:
 Integration modes (non-exclusive):
 
 - **`--pick-next`** — autonomous mode: claim the highest-priority claimable issue and
-  run one full 8-step cycle. This is the mode the scheduled pipeline job uses every 30
-  minutes.
+  run one full 8-step cycle. This is the mode the pipeline's `agent-loop` job uses when
+  dispatched manually; its */30 schedule is disabled per admin directive.
 - **`--issue <n>`** — targeted mode: claim a specific issue (still subject to the
   duplicate-PR preflight and all gates).
 - **`--loop` + `--max-tasks N`** — sequential mode: N cycles back-to-back with a short
@@ -138,6 +138,6 @@ retrying a broken harness unchanged is the wrong response.
 ## Related Documents
 
 - [AGENTS.md](../AGENTS.md) — agent entrypoint, zero-admin pathways
-- [AGENT_RULES.md](../AGENT_RULES.md) — policy source (U1–U10, P1–P6)
+- [AGENT_RULES.md](../AGENT_RULES.md) — policy source (U1–U10, P0–P7)
 - [docs/AGENT_LOOP_SPEC.md](./AGENT_LOOP_SPEC.md) — envelope schema §2, canonical flag surface §4b, open guards §5
 - [docs/CONTRIBUTING.md](./CONTRIBUTING.md) — contributor quickstart and submission paths

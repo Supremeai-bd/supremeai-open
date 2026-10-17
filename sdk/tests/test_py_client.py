@@ -72,7 +72,7 @@ class MockGateway(BaseHTTPRequestHandler):
                 {"id": "run_123", "status": "queued", "task": state["last_body"].get("task", "")},
             )
         else:
-            self._send_json(404, {"code": "NOT_FOUND", "message": "unknown path"})
+            self._send_json(404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}})
 
     def do_GET(self):
         state = self.server.state  # type: ignore[attr-defined]
@@ -83,11 +83,11 @@ class MockGateway(BaseHTTPRequestHandler):
                 state["flaky_hits"] += 1
                 should_fail = state["flaky_hits"] <= 2
             if should_fail:
-                self._send_json(503, {"code": "UPSTREAM_BUSY", "message": "try again"})
+                self._send_json(503, {"error": {"code": "UPSTREAM_BUSY", "message": "try again"}})
             else:
                 self._send_json(200, {"ok": True, "attempts": state["flaky_hits"]})
         elif self.path == "/v1/always-503":
-            self._send_json(503, {"code": "UPSTREAM_BUSY", "message": "never recovers"})
+            self._send_json(503, {"error": {"code": "UPSTREAM_BUSY", "message": "never recovers"}})
         elif self.path.endswith("/stream"):
             body = SSE_BODY.encode("utf-8")
             self.send_response(200)
@@ -96,7 +96,7 @@ class MockGateway(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         else:
-            self._send_json(404, {"code": "NOT_FOUND", "message": "unknown path"})
+            self._send_json(404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}})
 
 
 class MockGatewayServer(ThreadingHTTPServer):
