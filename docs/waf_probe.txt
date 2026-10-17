@@ -1,0 +1,2 @@
+grep -Eq '^(contributor|bridge)/' || { echo '::error::'; exit 1; }
+xargs -0 -n1 python -m py_compile
