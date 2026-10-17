@@ -122,8 +122,8 @@ def mandatory_invariant_checklist() -> list[dict[str, str]]:
         },
         {
             "id": "stale-base-guard",
-            "rule": "Stale-base guard: rebase onto current origin/main before push; "
-            "branches behind main are rejected by the pre-push gate.",
+            "rule": "Stale-base guard (Dual-Rebase Mandate): rebase onto latest origin/main at work start (pre-branch) "
+            "and before push (pre-push); branches behind main are rejected by the pre-push gate.",
         },
     ]
 
@@ -845,8 +845,53 @@ def step_3_inspect_state(force: bool = False) -> dict[str, str]:
     return {"branch": branch, "dirty": str(dirty), "clean": str(not dirty)}
 
 
+def pre_work_rebase_guard() -> tuple[bool, int, str]:
+    """Start-of-Work Rebase Mandate (#161, #514).
+
+    Before creating or switching to a work branch, fetch upstream main and ensure
+    the local branch/HEAD is synchronized with latest upstream main (0 commits behind).
+    If behind, rebase onto FETCH_HEAD. Fail-closed: rebase conflicts or unverifiable
+    state aborts branch creation.
+
+    Returns (synced, behind, detail):
+      synced=True  → safe to proceed with branch creation;
+      synced=False → branch creation MUST NOT proceed (detail explains why).
+    """
+    fetch_code, _, fetch_err = run_cmd(
+        ["git", "fetch", f"https://github.com/{UPSTREAM_REPO}.git", "main"],
+        check=False,
+    )
+    if fetch_code != 0:
+        return False, 0, f"pre-work fetch of upstream main failed: {fetch_err or 'unknown'}"
+    count_code, count_out, count_err = run_cmd(
+        ["git", "rev-list", "--count", "HEAD..FETCH_HEAD"], check=False
+    )
+    if count_code != 0:
+        return False, 0, f"pre-work behind-count failed: {count_err or 'unknown'}"
+    try:
+        behind = int((count_out or "0").strip() or "0")
+    except ValueError:
+        return False, 0, f"unparseable behind-count: {count_out!r}"
+    if behind <= 0:
+        return True, 0, "fresh work-start base (0 commits behind upstream main)"
+    log("🔄", f"[Start-of-Work Rebase] Local is {behind} commit(s) behind upstream main. Rebasing before branch creation...")
+    rebase_code, _, rebase_err = run_cmd(["git", "rebase", "FETCH_HEAD"], check=False)
+    if rebase_code != 0:
+        run_cmd(["git", "rebase", "--abort"], check=False)
+        return False, behind, f"start-of-work rebase onto upstream main failed — aborted, branch blocked: {rebase_err or 'conflict'}"
+    return True, behind, f"rebased onto upstream main (+{behind} commit(s)) — fresh start"
+
+
 def step_4_branch(task: dict[str, Any]) -> str | None:
     """Step 4: Atomic Claim -> Branch Creation Contract (No claim -> no branch, #430)."""
+    # 🔒 GATE 0: START-OF-WORK REBASE GUARD (Dual-Rebase Mandate: start & pre-push)
+    synced, behind, sync_detail = pre_work_rebase_guard()
+    if not synced:
+        log("❌", f"[Fail-Closed Gate] Start-of-work rebase guard blocked branch creation: {sync_detail}")
+        return None
+    if behind > 0:
+        log("✅", f"[Start-of-Work Rebase] Branch point aligned with latest upstream main ({sync_detail}).")
+
     issue_num = task.get("id", "adhoc")
     target_branch = f"contributor/issue-{issue_num}" if issue_num != "adhoc" else f"contributor/work-{int(time.time())}"
 
