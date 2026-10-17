@@ -231,7 +231,7 @@ export async function assertSlotAuthorization(
   // checks. Network-backed registries enforce a freshness window; local
   // (file/memory) stores are authoritative by construction.
   let source: "local" | "store" = "local";
-  if (isRegistryNetworkBacked()) {
+  if (isSlotId(slotId) && isRegistryNetworkBacked()) {
     source = "store";
     if (Date.now() - lastStoreVerificationAt() > slotStoreMaxStalenessMs()) {
       const refresh = await refreshRegistryFromStore();

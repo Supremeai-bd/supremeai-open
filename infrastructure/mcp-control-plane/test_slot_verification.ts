@@ -256,6 +256,25 @@ await check("unreachable operational store -> fail-CLOSED denial (Invariant 5)",
   }
 });
 
+await check("unverified named guest (?client=...) is NOT subjected to fail-closed slot store check (#610)", async () => {
+  process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:1";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "unreachable-for-test";
+  __setRegistryStoreForTests(new UpstashClientRegistryStore("supremeai:test:client-registry"));
+  try {
+    const session = await resolveSlotSession(fakeReq("/sse?client=unverified-guest"), { role: null, tenantId: "tenant_default" });
+    assert.equal(session.slotVerified, false, "uncredentialed caller must not be slotVerified");
+    assert.equal(session.role, "viewer", "uncredentialed caller falls back to viewer");
+    // Verify that assertSlotAuthorization on a non-slot identity does not fail-close with slot-store-unreachable
+    const namedId = session.client?.id ?? "named_unverified-guest";
+    const verdict = await assertSlotAuthorization(namedId);
+    assert.notEqual(verdict.reason, "slot-store-unreachable", "unverified named guest must not be blocked by slot-store-unreachable");
+  } finally {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    __setRegistryStoreForTests(new JsonFileClientRegistryStore(process.env.MCP_CLIENT_REGISTRY_FILE!));
+  }
+});
+
 // ── Cross-tenant isolation ──────────────────────────────────────────────────
 await check("cross-tenant slot operations are denied (tenant scope)", () => {
   const tenantSlot = provisionSlot({ name: "tenant-a-slot", role: "agent", tenantId: "tenant_a" });
