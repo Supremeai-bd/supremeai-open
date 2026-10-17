@@ -1,0 +1,278 @@
+/* Federation Cockpit — dark glassmorphism theme, HSL palette, micro-animations. */
+
+:root {
+  --cockpit-bg: hsl(225 35% 7%);
+  --cockpit-panel: hsl(225 32% 11% / 0.72);
+  --cockpit-border: hsl(220 25% 30% / 0.45);
+  --cockpit-text: hsl(220 20% 92%);
+  --cockpit-text-dim: hsl(220 12% 62%);
+  --cockpit-accent: hsl(158 64% 52%);
+  --cockpit-green: hsl(152 60% 46%);
+  --cockpit-red: hsl(4 74% 58%);
+  --cockpit-amber: hsl(40 92% 56%);
+  --cockpit-radius: 14px;
+}
+
+.cockpit-panel {
+  background: var(--cockpit-panel);
+  border: 1px solid var(--cockpit-border);
+  border-radius: var(--cockpit-radius);
+  padding: 20px;
+  color: var(--cockpit-text);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 34px hsl(225 50% 3% / 0.45);
+  transition: border-color 200ms ease, transform 200ms ease;
+}
+
+.cockpit-panel:hover {
+  border-color: hsl(220 25% 42% / 0.6);
+}
+
+.cockpit-panel-title {
+  margin: 0 0 14px;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cockpit-text-dim);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- CI status dots ---- */
+.ci-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+
+.ci-dot-green { background: var(--cockpit-green); box-shadow: 0 0 8px var(--cockpit-green); }
+.ci-dot-red { background: var(--cockpit-red); box-shadow: 0 0 8px var(--cockpit-red); animation: cockpit-pulse 1.6s ease-in-out infinite; }
+.ci-dot-amber { background: var(--cockpit-amber); box-shadow: 0 0 8px var(--cockpit-amber); }
+
+@keyframes cockpit-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ---- Runway ---- */
+.runway-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.runway-column {
+  background: hsl(226 34% 9% / 0.6);
+  border: 1px solid var(--cockpit-border);
+  border-radius: 10px;
+  padding: 10px;
+  min-height: 140px;
+}
+
+.runway-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.runway-column-title { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cockpit-text-dim); }
+.runway-column-count { font-size: 0.72rem; color: var(--cockpit-accent); }
+
+.runway-cards { display: flex; flex-direction: column; gap: 8px; }
+.runway-empty { margin: 6px 2px; font-size: 0.75rem; color: var(--cockpit-text-dim); font-style: italic; }
+
+.runway-card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: hsl(225 30% 14% / 0.85);
+  border: 1px solid var(--cockpit-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: default;
+  transition: transform 160ms ease, border-color 160ms ease;
+  animation: cockpit-rise 260ms ease both;
+}
+
+.runway-card:hover { transform: translateY(-2px); border-color: var(--cockpit-accent); }
+.runway-card.ci-red { border-color: hsl(4 74% 58% / 0.55); }
+
+.runway-card-title { margin: 0; font-size: 0.8rem; line-height: 1.35; overflow-wrap: anywhere; }
+.runway-card-meta { margin: 3px 0 0; font-size: 0.68rem; color: var(--cockpit-text-dim); overflow-wrap: anywhere; }
+
+@keyframes cockpit-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Satellite matrix ---- */
+.satellite-parity { font-size: 0.72rem; letter-spacing: 0; text-transform: none; color: var(--cockpit-accent); }
+
+.satellite-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.satellite-cell {
+  background: hsl(226 34% 9% / 0.6);
+  border: 1px solid var(--cockpit-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: border-color 160ms ease;
+}
+
+.satellite-up:hover { border-color: var(--cockpit-green); }
+.satellite-down { border-color: hsl(4 74% 58% / 0.5); animation: cockpit-pulse 2.4s ease-in-out infinite; }
+
+.satellite-cell-head { display: flex; align-items: center; gap: 7px; }
+.satellite-name { font-size: 0.82rem; font-weight: 600; }
+.satellite-claims { margin-left: auto; font-size: 0.66rem; color: var(--cockpit-amber); }
+
+.satellite-cell-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 0.66rem; color: var(--cockpit-text-dim); flex-wrap: wrap; }
+.satellite-sha { font-family: ui-monospace, monospace; }
+
+/* ---- Swarm defense ---- */
+.defense-gauge {
+  position: relative;
+  height: 18px;
+  border-radius: 999px;
+  background: hsl(226 34% 9% / 0.9);
+  border: 1px solid var(--cockpit-border);
+  overflow: hidden;
+}
+
+.defense-gauge-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cockpit-green), var(--cockpit-amber));
+  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.defense-gauge-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: var(--cockpit-text);
+}
+
+.defense-stats { display: flex; gap: 18px; margin: 14px 0 0; flex-wrap: wrap; }
+.defense-stat dt { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--cockpit-text-dim); }
+.defense-stat dd { margin: 3px 0 0; font-size: 1.05rem; font-weight: 600; }
+
+.defense-level-nominal { color: var(--cockpit-green); }
+.defense-level-elevated { color: var(--cockpit-amber); }
+.defense-level-critical { color: var(--cockpit-red); animation: cockpit-pulse 1.4s ease-in-out infinite; }
+
+.defense-critical .defense-gauge-fill { background: linear-gradient(90deg, var(--cockpit-amber), var(--cockpit-red)); }
+
+/* ---- Emergency console ---- */
+.emergency-state { font-size: 0.8rem; letter-spacing: 0.05em; margin: 0 0 12px; }
+.emergency-armed { color: var(--cockpit-green); }
+.emergency-disarmed { color: var(--cockpit-red); }
+
+.kill-switch,
+.rearm-switch {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+}
+
+.kill-switch {
+  background: linear-gradient(180deg, hsl(4 74% 52%), hsl(4 70% 42%));
+  color: hsl(0 0% 100%);
+  box-shadow: 0 6px 20px hsl(4 74% 40% / 0.4);
+}
+
+.kill-switch:hover { transform: translateY(-1px); filter: brightness(1.08); }
+.kill-switch:active { transform: translateY(1px); }
+
+.rearm-switch {
+  background: hsl(158 64% 40%);
+  color: hsl(160 40% 98%);
+}
+
+.rearm-switch:hover { filter: brightness(1.1); }
+
+.kill-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: hsl(225 50% 3% / 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  animation: cockpit-fade 160ms ease both;
+}
+
+@keyframes cockpit-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.kill-modal {
+  width: min(92vw, 380px);
+  background: hsl(225 32% 10%);
+  border: 1px solid hsl(4 74% 58% / 0.45);
+  border-radius: var(--cockpit-radius);
+  padding: 20px;
+  animation: cockpit-rise 220ms ease both;
+}
+
+.kill-modal h3 { margin: 0 0 8px; font-size: 0.95rem; }
+.kill-modal p { margin: 0 0 12px; font-size: 0.78rem; color: var(--cockpit-text-dim); line-height: 1.45; }
+
+.kill-pin-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: hsl(226 34% 8%);
+  border: 1px solid var(--cockpit-border);
+  border-radius: 8px;
+  color: var(--cockpit-text);
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  letter-spacing: 0.3em;
+}
+
+.kill-pin-input:focus { outline: none; border-color: var(--cockpit-accent); }
+
+.kill-modal-error { color: var(--cockpit-red); font-size: 0.74rem; margin: 8px 0 0; }
+
+.kill-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
+.kill-cancel,
+.kill-confirm {
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--cockpit-border);
+  background: transparent;
+  color: var(--cockpit-text);
+}
+
+.kill-confirm { background: hsl(4 74% 48%); border-color: transparent; color: white; }
+.kill-cancel:hover { border-color: var(--cockpit-accent); }
+.kill-confirm:hover { filter: brightness(1.1); }
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+  .runway-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .runway-grid { grid-template-columns: 1fr; }
+  .cockpit-panel { padding: 14px; }
+}
