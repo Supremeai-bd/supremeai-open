@@ -166,197 +166,158 @@ export function responseIndicatesQuotaExhaustion(status: number, body: string): 
   );
 }
 
-/** পর্যবেক্ষণের জন্য cooldown snapshot (invariant #5 — fleet observability)।
- *  #646: প্রতিটি entry-তে in-memory usage estimate যোগ হলো (additive —
- *  বিদ্যমান consumer-রা অপরিবর্তিত ফিল্ডেই চলবে)। */
-export function quotaChainStatus(nowMs: number = Date.now()): { label: string; cooldownUntil: string | null; isActivePrimary: boolean; usage?: { estimatedCommands: number; limit: number; softThreshold: number; softThresholdHit: boolean } }[] {
+// ── Preemptive quota ledger (#646 — 480k soft threshold) ───────────────────
+// বাংলা মন্তব্য: প্রতিক্রিয়াশীল (reactive) রোটেশন কোটার হার্ড সীমা ভাঙার
+// পরে — অর্থাৎ একটি ব্যর্থ রিকোয়েস্ট খেয়ে ফেলার পরে — ঘটে। #646 এটিকে
+// প্রিএম্পটিভ (preemptive) করে: প্রতিটি account-এ সত্যিই পাঠানো Redis
+// command-এর একটি লোকাল মাসিক লেজার এখানে রাখা হয়; ব্যবহার ≥ ৯৬% (ডিফল্ট
+// 500k-এর 480k) হলেই account-টি উইন্ডো রিসেট পর্যন্ত soft-cooldown-এ চলে যায় —
+// একই cooldown registry (quotaCooldownUntil) ব্যবহার করে, তাই
+// activeAccountChain() হার্ড 500k সীমা স্পর্শের আগেই পরের account-এ ঘুরে যায়
+// এবং কোনো রিকোয়েস্ট কখনোই হার্ড বাউন্ডারিতে হিট করে না।
+//
+// উইন্ডো: Upstash free tier মাসিক (মাসের ১ তারিখ 00:00 UTC রিসেট) —
+// currentQuotaWindowStartMs() দিয়ে রোলওভার শনাক্ত হয়; নতুন উইন্ডোতে কাউন্ট
+// স্বয়ংক্রিয়ভাবে ০ হয় এবং cooldown মেয়াদও nextQuotaResetEpochMs পর্যন্ত।
+//
+// সীমা-কনফিগ: UPSTASH_QUOTA_LIMIT (ডিফল্ট 500000), UPSTASH_QUOTA_SOFT_THRESHOLD
+// (ডিফল্ট ৯৬% = 480000)। Getter ফাংশন — টেস্টে env পাল্টানো যায়।
+
+export function quotaLimit(): number {
+  const v = Number(process.env.UPSTASH_QUOTA_LIMIT);
+  return Number.isFinite(v) && v > 0 ? v : 500_000;
+}
+
+export function quotaSoftThreshold(): number {
+  const v = Number(process.env.UPSTASH_QUOTA_SOFT_THRESHOLD);
+  if (Number.isFinite(v) && v > 0) return v;
+  return Math.floor(quotaLimit() * 0.96);
+}
+
+/** বর্তমান মাসিক UTC কোটা উইন্ডোর শুরু (মাসের ১ তারিখ 00:00 UTC)। */
+export function currentQuotaWindowStartMs(nowMs: number = Date.now()): number {
+  const d = new Date(nowMs);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0);
+}
+
+type UsageLedgerEntry = { windowStartMs: number; commands: number };
+const usageLedger = new Map<string, UsageLedgerEntry>();
+
+/** ওই account-এর বর্তমান উইন্ডোর command কাউন্ট (উইন্ডো বদলালে ০)। */
+export function accountUsageCommands(label: string, nowMs: number = Date.now()): number {
+  const entry = usageLedger.get(label);
+  if (!entry || entry.windowStartMs !== currentQuotaWindowStartMs(nowMs)) return 0;
+  return entry.commands;
+}
+
+/**
+ * ওই account-এ এইমাত্র পাঠানো n টি command লেজারে যোগ করে; কাউন্ট সফট
+ * থ্রেশহোল্ড ছুঁলে প্রিএম্পটিভ soft-cooldown মার্ক করে (#646)। ফেরত দেয়
+ * আপডেটেড কাউন্ট।
+ */
+export function recordRedisCommands(label: string, commands: number, nowMs: number = Date.now()): number {
+  const n = Math.round(commands);
+  if (!Number.isFinite(n) || n <= 0) return accountUsageCommands(label, nowMs);
+  const windowStartMs = currentQuotaWindowStartMs(nowMs);
+  const entry = usageLedger.get(label);
+  const freshWindow = !entry || entry.windowStartMs !== windowStartMs;
+  const updated = (freshWindow ? 0 : entry.commands) + n;
+  usageLedger.set(label, { windowStartMs, commands: updated });
+  if (updated >= quotaSoftThreshold() && !isAccountQuotaExhausted(label, nowMs)) {
+    markAccountQuotaExhausted(label, nextQuotaResetEpochMs(nowMs));
+    console.warn(
+      `[redis-chain] "${label}" প্রিএম্পটিভ কোটা রোটেশন (#646): ${updated} commands >= ` +
+        `সফট থ্রেশহোল্ড ${quotaSoftThreshold()} — হার্ড ${quotaLimit()} সীমা স্পর্শের আগেই পরের account-এ rotate।`,
+    );
+  }
+  return updated;
+}
+
+/**
+ * #646 প্রিএম্পটিভ গার্ড — পাঠানোর আগে n টি command রিজার্ভ করে; রিজার্ভের
+ * ফলে সফট থ্রেশহোল্ড অতিক্রম হলে quota-shaped error ছুঁড়ে দেয় যাতে
+ * runWithAccountChain ইঞ্জিন ওই রিকোয়েস্টটি পরের account-এ সরিয়ে নেয় —
+ * অর্থাৎ থ্রেশহোল্ড-ক্রসিং রিকোয়েস্টটি পর্যন্ত ওই account-এ যায় না।
+ * রক্ষণশীল পক্ষ: স্কিপ হওয়া command-ও কাউন্ট হয় (আন্ডার-কাউন্ট কখনো নয়)।
+ */
+export function quotaGuard(account: RedisAccountConfig, commands: number, nowMs: number = Date.now()): void {
+  const projected = recordRedisCommands(account.label, commands, nowMs);
+  if (projected >= quotaSoftThreshold()) {
+    throw new RedisQuotaExhaustedError(
+      account.label,
+      `Upstash [${account.label}] প্রিএম্পটিভ কোটা রোটেশন (#646): রিজার্ভে ${projected} commands >= ` +
+        `সফট থ্রেশহোল্ড ${quotaSoftThreshold()} — হার্ড সীমা স্পর্শের আগেই chain-এ পরের account ব্যবহার হচ্ছে`,
+    );
+  }
+}
+
+/** পর্যবেক্ষণের জন্য per-account usage snapshot (redis.rotation_status)। */
+export function redisUsageLedgerStatus(nowMs: number = Date.now()): Array<{
+  label: string;
+  commands: number;
+  limit: number;
+  softThreshold: number;
+  percentUsed: number;
+  preemptivelyCooled: boolean;
+}> {
+  return buildAccountChain().map((account) => {
+    const commands = accountUsageCommands(account.label, nowMs);
+    return {
+      label: account.label,
+      commands,
+      limit: quotaLimit(),
+      softThreshold: quotaSoftThreshold(),
+      percentUsed: Math.round((commands / quotaLimit()) * 10000) / 100,
+      preemptivelyCooled: isAccountQuotaExhausted(account.label, nowMs),
+    };
+  });
+}
+
+// ── Last-successful-contact tracker (#646 health-sweep quota guard) ─────────
+// বাংলা মন্তব্য: background health sweep প্রতি interval-এ Redis PING পাঠিয়ে
+// কোটা পোড়ায়। সাম্প্রতিক সফল contact-এর প্রমাণ থাকলে (ডিফল্ট < ৩০s) sweep
+// probe-টি বাদ দেওয়া যায় — adapters/redis pingRedis() এই ট্র্যাকার দেখে।
+
+export type RedisContactInfo = { ms: number; account: string; mode: string };
+
+let lastContact: RedisContactInfo | null = null;
+
+/** একটি সফল Redis command/contact রেকর্ড করে (REST/TCP wrapper-রা ডাকে)। */
+export function noteRedisContact(account: string, mode: string, nowMs: number = Date.now()): void {
+  lastContact = { ms: nowMs, account, mode };
+}
+
+/** সর্বশেষ সফল contact ও তার বয়স ms-এ; কখনো হয়নি হলে null। */
+export function lastRedisContact(nowMs: number = Date.now()): { ageMs: number; account: string; mode: string } | null {
+  if (!lastContact) return null;
+  return {
+    ageMs: Math.max(0, nowMs - lastContact.ms),
+    account: lastContact.account,
+    mode: lastContact.mode,
+  };
+}
+
+/** Health-sweep probe skip উইন্ডো (ms) — env REDIS_HEALTH_PROBE_SKIP_MS, ডিফল্ট 30s (#646)। */
+export function redisHealthProbeSkipMs(): number {
+  const v = Number(process.env.REDIS_HEALTH_PROBE_SKIP_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 30_000;
+}
+
+/** পর্যবেক্ষণের জন্য cooldown snapshot (invariant #5 — fleet observability)। */
+export function quotaChainStatus(nowMs: number = Date.now()): { label: string; cooldownUntil: string | null; isActivePrimary: boolean }[] {
   const activePrimary = getActiveRedisAccount(nowMs).label;
   const chain = buildAccountChain();
   if (chain.length === 0) {
     return [{ label: "primary", cooldownUntil: null, isActivePrimary: true }];
   }
-  const windowStartMs = currentQuotaWindowStartMs(nowMs);
   return chain.map((account) => {
     const until = quotaCooldownUntil.get(account.label);
-    const usageEntry = quotaUsageCount.get(account.label);
-    const estimatedCommands = usageEntry && usageEntry.windowStartMs === windowStartMs ? usageEntry.count : 0;
     return {
       label: account.label,
       cooldownUntil: until && nowMs < until ? new Date(until).toISOString() : null,
       isActivePrimary: account.label === activePrimary,
-      usage: {
-        estimatedCommands,
-        limit: upstashCommandLimit(),
-        softThreshold: upstashSoftThreshold(),
-        softThresholdHit: estimatedCommands >= upstashSoftThreshold(),
-      },
     };
   });
-}
-
-// ── Preemptive rotation registry (#646 — 480k soft threshold) ───────────────
-// বাংলা মন্তব্য: আগে পুরো পলিসি ছিল reactive — 500k সিলিং ভাঙার পর error body
-// দেখে cooldown (#26/#2613)। কিন্তু সিলিং ভাঙা **সেই একটি কল** তবুও fail করত
-// (live incident: ERR ... Limit: 500000, Usage: 500002)। #646-এর চুক্তি:
-// 96% সফট থ্রেশহোল্ডে (ডিফল্ট 480,000) পৌঁছাতেই account স্বয়ংক্রিয়ভাবে
-// rotation পুল থেকে সরে যাবে — কোনো rejected request ঘটবেই না।
-//
-// Usage-এর সত্য-উৎস (honest tiering — U2):
-//   1. **Local command counter** (প্রাথমিক): tower-এর REST clients প্রতিটি
-//      সফল কমান্ডে `noteRedisCommands` ডাকে। এটি tower-নিজস্ব খরচের
-//      নিম্নসীমা (lower bound) — একই Upstash account অন্য সার্ভিসও ব্যবহার
-//      করতে পারে, তাই সম্পূর্ণ সত্য নয়; কিন্তু self-consistent ও zero-cost।
-//   2. **Quota error body parse** (reactive fallback): "Limit: X, Usage: Y"
-//      প্যাটার্ন থেকে প্রকৃত usage রেকর্ড হয় — local counter যতই থাকুক,
-//      ভুল হলে সত্যে সংশোধিত হয়।
-//   3. **Response headers** (defensive): কোনো account `x-upstash-remaining-*`
-//      জাতীয় header পাঠালে সেটিকে authoritative ধরা হয়।
-const quotaUsageCount = new Map<string, { count: number; windowStartMs: number }>();
-
-/** বর্তমান কোটা উইন্ডোর শুরু (ms epoch) — nextQuotaResetEpochMs-এর জ্যামিতির সাথে মিলিয়ে। */
-export function currentQuotaWindowStartMs(nowMs: number = Date.now()): number {
-  const windowType = (process.env.UPSTASH_QUOTA_WINDOW || "monthly").toLowerCase();
-  const d = new Date(nowMs);
-  if (windowType === "daily" || windowType === "day") {
-    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
-  }
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0);
-}
-
-/** মাসিক কমান্ড লিমিট (Upstash free tier: 500,000; env UPSTASH_COMMAND_LIMIT)। */
-export function upstashCommandLimit(): number {
-  const raw = Number(process.env.UPSTASH_COMMAND_LIMIT);
-  return Number.isFinite(raw) && raw > 0 ? raw : 500_000;
-}
-
-/** সফট থ্রেশহোল্ড: এখানে পৌঁছাতেই preemptive rotate (env
- *  UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD; ডিফল্ট = 96% of limit = 480,000)। */
-export function upstashSoftThreshold(): number {
-  const raw = Number(process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD);
-  if (Number.isFinite(raw) && raw > 0) return raw;
-  return Math.floor(upstashCommandLimit() * 0.96);
-}
-
-/**
- * একটি account-এ সফল Redis কমান্ডের হিসাব রাখে (উইন্ডো-সচেতন) এবং সফট
- * থ্রেশহোল্ড ছুঁলে preemptive rotate করে। REST clients প্রতিটি সফল কমান্ডে
- * এটি ডাকবে — কোনো extra Redis request খরচ হয় না (in-memory)।
- */
-export function noteRedisCommands(label: string, n: number = 1, nowMs: number = Date.now()): void {
-  if (n <= 0) return;
-  const windowStartMs = currentQuotaWindowStartMs(nowMs);
-  const entry = quotaUsageCount.get(label);
-  const fresh = !entry || entry.windowStartMs !== windowStartMs;
-  const count = (fresh ? 0 : entry.count) + n;
-  quotaUsageCount.set(label, { count, windowStartMs });
-  maybePreemptiveRotate(label, nowMs);
-}
-
-/**
- * সফট থ্রেশহোল্ডে পৌঁছালে account-কে পরবর্তী কোটা রিসেট পর্যন্ত cooldown-এ
- * ফেলে (reactive error-এর আগেই)। Returns true যদি এই কলেই rotation ঘটে।
- */
-export function maybePreemptiveRotate(label: string, nowMs: number = Date.now()): boolean {
-  const entry = quotaUsageCount.get(label);
-  if (!entry) return false;
-  const windowStartMs = currentQuotaWindowStartMs(nowMs);
-  const count = entry.windowStartMs === windowStartMs ? entry.count : 0;
-  if (count < upstashSoftThreshold()) return false;
-  if (isAccountQuotaExhausted(label, nowMs)) return false;
-  markAccountQuotaExhausted(label, nextQuotaResetEpochMs(nowMs));
-  console.warn(
-    `[redis-chain] PREEMPTIVE ROTATION (#646): "${label}" সফট থ্রেশহোল্ড ${upstashSoftThreshold()} ` +
-      `অতিক্রম করেছে (local estimate: ${count}/${upstashCommandLimit()}) — 500k error হওয়ার আগেই ` +
-      `পরের account-এ rotate করা হলো (zero rejected requests)।`,
-  );
-  return true;
-}
-
-/**
- * Quota error body থেকে প্রকৃত usage রেকর্ড করে — Upstash-এর live incident
- * শেপ: "ERR max requests limit exceeded. Limit: 500000, Usage: 500002"।
- * Local counter ভুল হলে সত্যে সংশোধন + সাথে সাথে preemptive check।
- */
-export function noteQuotaErrorUsage(label: string, body: string, nowMs: number = Date.now()): void {
-  const match = /Limit:\s*(\d+),\s*Usage:\s*(\d+)/i.exec(body ?? "");
-  if (!match) return;
-  const limit = Number(match[1]);
-  const usage = Number(match[2]);
-  if (!Number.isFinite(limit) || !Number.isFinite(usage)) return;
-  const windowStartMs = currentQuotaWindowStartMs(nowMs);
-  quotaUsageCount.set(label, { count: Math.max(usage, 0), windowStartMs });
-  if (Number.isFinite(limit) && limit > 0 && !process.env.UPSTASH_COMMAND_LIMIT) {
-    // প্রথমবার সত্যিকারের limit দেখা গেলে env-default হিসেবে ধরে নিই —
-    // (এটি শুধু এই প্রক্রিয়ার মেমরিতে; env সেট থাকলে সেটাই সম্মানিত থাকে)।
-  }
-  maybePreemptiveRotate(label, nowMs);
-}
-
-/** Defensive header-ভিত্তিক usage — Upstash ভবিষ্যতে remaining header দিলে
- *  সেটি authoritative (local counter-কে ওভাররাইড করে)। */
-export function noteRedisResponseHeaders(
-  label: string,
-  headers: Headers | Record<string, string | string[] | undefined>,
-  nowMs: number = Date.now(),
-): boolean {
-  let remaining: number | null = null;
-  const names = [
-    "x-upstash-remaining-requests",
-    "x-upstash-remaining",
-    "x-ratelimit-remaining",
-  ];
-  for (const name of names) {
-    const value =
-      typeof (headers as Headers).get === "function"
-        ? (headers as Headers).get(name)
-        : (headers as Record<string, string | undefined>)[name];
-    if (value !== undefined && value !== null) {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed) && parsed >= 0) {
-        remaining = parsed;
-        break;
-      }
-    }
-  }
-  if (remaining === null) return false;
-  const limit = upstashCommandLimit();
-  const windowStartMs = currentQuotaWindowStartMs(nowMs);
-  quotaUsageCount.set(label, {
-    count: Math.max(limit - remaining, 0),
-    windowStartMs,
-  });
-  maybePreemptiveRotate(label, nowMs);
-  return true;
-}
-
-/** পর্যবেক্ষণের জন্য per-account usage snapshot (in-memory নিম্নসীমা)। */
-export function redisUsageSnapshot(nowMs: number = Date.now()): {
-  label: string;
-  estimatedCommands: number;
-  limit: number;
-  softThreshold: number;
-  softThresholdHit: boolean;
-  windowStartMs: number;
-}[] {
-  const windowStartMs = currentQuotaWindowStartMs(nowMs);
-  return buildAccountChain().map((account) => {
-    const entry = quotaUsageCount.get(account.label);
-    const count = entry && entry.windowStartMs === windowStartMs ? entry.count : 0;
-    return {
-      label: account.label,
-      estimatedCommands: count,
-      limit: upstashCommandLimit(),
-      softThreshold: upstashSoftThreshold(),
-      softThresholdHit: count >= upstashSoftThreshold(),
-      windowStartMs,
-    };
-  });
-}
-
-/** Test/reset hook — সব usage counter মুছে দেয় (cooldown-এ ঢোকানো account
- *  আলাদাভাবে isAccountQuotaExhausted দিয়ে expire করতে হয়)। */
-export function resetRedisUsageTracking(): void {
-  quotaUsageCount.clear();
 }
 
 // ── Single account-chain walk engine (#110) ─────────────────────────────────
