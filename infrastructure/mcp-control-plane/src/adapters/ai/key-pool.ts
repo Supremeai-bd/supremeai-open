@@ -1,59 +1,34 @@
+/**
+ * AI key-pool tombstone (issue #643 — zero-credential control plane).
+ *
+ * বাংলা মন্তব্য: AIKeyPool আগে Gemini/Groq/OpenRouter/Mistral provider key-গুলো
+ * round-robin ভাবে ধারণ করত। #643 অনুযায়ী control plane আর কোনো সরাসরি LLM
+ * provider key ধারণ বা require করবে না — analysis বাইরের agent-caller context-এ
+ * delegate করা হয়। ক্লাসটি back-compat import রক্ষার্থে রাখা হয়েছে, কিন্তু
+ * সদা খালি: কোনো key সংরক্ষণ করা হয় না, কোনো key পড়া হয় না।
+ */
+
+export const KEY_POOL_RETIRED_NOTICE =
+  "AIKeyPool is retired — the MCP Control Tower holds no direct LLM provider keys (#643).";
+
 export class AIKeyPool {
-  private keys: string[];
-  private currentIndex: number = 0;
-
-  constructor(keys: string[]) {
-    this.keys = keys.filter((k) => k.trim().length > 0);
+  constructor(_keys?: string[]) {
+    // ইচ্ছাকৃতভাবে constructor-এর argument উপেক্ষা করা হয় — কোনো key
+    // মেমরিতে রাখা হয় না (#643 zero-credential contract)।
   }
 
+  /** সর্বদা ০ — pool স্থায়ীভাবে খালি। */
   get length(): number {
-    return this.keys.length;
+    return 0;
   }
 
-  /**
-   * Get the next key in the pool (round-robin).
-   */
+  /** সৎ ব্যর্থতা — কোনো key নেই (কখনোই থাকবে না, #643)। */
   public getNextKey(): string {
-    if (this.keys.length === 0) {
-      throw new Error("No keys available in the pool");
-    }
-    const key = this.keys[this.currentIndex];
-    this.currentIndex = (this.currentIndex + 1) % this.keys.length;
-    return key;
+    throw new Error(KEY_POOL_RETIRED_NOTICE);
   }
 
-  /**
-   * Execute a function with a key, falling back to the next key if a rate limit occurs.
-   * By default, it will retry up to the number of keys in the pool.
-   */
-  public async execute<T>(
-    operation: (key: string) => Promise<T>,
-    isRateLimitError: (error: any) => boolean
-  ): Promise<T> {
-    if (this.keys.length === 0) {
-      throw new Error("No keys available in the pool");
-    }
-
-    let attempts = 0;
-    const maxAttempts = this.keys.length;
-    let lastError: any;
-
-    while (attempts < maxAttempts) {
-      const key = this.getNextKey();
-      try {
-        return await operation(key);
-      } catch (err) {
-        lastError = err;
-        if (isRateLimitError(err)) {
-          console.warn(`[AIKeyPool] Rate limit hit on key. Trying next... (${attempts + 1}/${maxAttempts})`);
-          attempts++;
-        } else {
-          // If it's not a rate limit error, don't fallback, just throw
-          throw err;
-        }
-      }
-    }
-
-    throw new Error(`All keys in the pool are rate-limited. Last error: ${lastError?.message}`);
+  /** সৎ ব্যর্থতা — operation চালানোর জন্য কোনো key সরবরাহ করা হয় না। */
+  public async execute<T>(_operation: (key: string) => Promise<T>, _isRateLimitError: (error: unknown) => boolean): Promise<T> {
+    throw new Error(KEY_POOL_RETIRED_NOTICE);
   }
 }
