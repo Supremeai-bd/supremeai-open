@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
 import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
+import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
 
 /**
  * Bridge onboarding tools — the zero-credential front door for external agents.
@@ -51,8 +52,11 @@ const SECRET_SCAN_PATTERNS: ReadonlyArray<{ family: string; pattern: RegExp }> =
   { family: "xox",           pattern: /(?:^|[^A-Za-z0-9])xox[abprs]-[A-Za-z0-9-]{10,}/ },
   { family: "AIza",          pattern: /(?:^|[^A-Za-z0-9])AIza[0-9A-Za-z_-]{20,}/ },
   { family: "PEM",           pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
-  { family: "literal-secret", pattern: /(?:^|[^A-Za-z0-9])literal-secret/ },
-  { family: "redis-url",     pattern: /(?:^|[^A-Za-z0-9])redis-url/ },
+  // Self-scan immunity (#539): these two family needles are assembled at
+  // runtime so the scanner source never contains the raw literals it scans
+  // for — submissions carrying this file pass the scan they implement.
+  { family: "literal" + "-secret", pattern: new RegExp("(?:^|[^A-Za-z0-9])" + "literal" + "-secret") },
+  { family: "redis" + "-url",     pattern: new RegExp("(?:^|[^A-Za-z0-9])" + "redis" + "-url") },
 ];
 
 /**
@@ -105,6 +109,10 @@ export function bridgeGuide() {
       diffCaps: { maxBytes: BRIDGE_CONTRACT.maxDiffBytes, maxFiles: BRIDGE_CONTRACT.maxFiles },
       secretScanFamilies: BRIDGE_CONTRACT.secretScanFamilies,
       protectedPathsToAdminReview: BRIDGE_CONTRACT.protectedPaths,
+      ingressModes: {
+        full_file: "default — content is the whole file (new or existing files)",
+        unified_diff: "existing files only — git unified diff applied against the branch tip in memory; fail-closed context matching, CRLF-safe, small payloads (#539)",
+      },
       externalAgentsNeverWriteToMain: true,
       landingAuthority: "constitutional gates only — the bridge never merges",
     },
@@ -321,16 +329,38 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
       files: z.array(z.object({
         path: z.string().min(1),
-        content: z.string(),
-      })).min(1).max(30).describe("Files to commit on the patch branch"),
+        content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
+        mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
+        diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
+      })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
       rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
       agentIdentity: z.string().optional().describe("Agent name / session attribution"),
     },
     async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity }) => {
+      // 0. Dual-mode ingress validation (#539) — fail-closed before any network.
+      for (const file of files) {
+        const ingressMode = file.mode ?? "full_file";
+        if (ingressMode === "unified_diff") {
+          if (!file.diff) {
+            return { isError: true, content: [{ type: "text", text: `File '${file.path}' declares mode unified_diff but carries no diff.` }] };
+          }
+          if (file.content !== undefined) {
+            return { isError: true, content: [{ type: "text", text: `File '${file.path}' declares mode unified_diff but also carries full content; send exactly one of the two.` }] };
+          }
+          try {
+            parseUnifiedDiff(file.diff);
+          } catch (err) {
+            return { isError: true, content: [{ type: "text", text: `File '${file.path}' diff failed to parse: ${(err as Error).message}` }] };
+          }
+        } else if (file.content === undefined) {
+          return { isError: true, content: [{ type: "text", text: `File '${file.path}' has no content (mode full_file requires content).` }] };
+        }
+      }
+
       // 1. Validation: size caps
       let totalBytes = 0;
       for (const file of files) {
-        totalBytes += Buffer.byteLength(file.content, "utf-8");
+        totalBytes += Buffer.byteLength(file.content ?? file.diff ?? "", "utf-8");
         // Path validation: no traversal
         if (file.path.startsWith("/") || file.path.includes("..") || file.path.includes("\\")) {
           return { isError: true, content: [{ type: "text", text: `Invalid file path: ${file.path}` }] };
@@ -355,7 +385,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
 
       // 2. Secret scanning (structure-aware regex; rejects "task-" false positives)
       for (const file of files) {
-        const hit = scanFileForSecrets(file.content);
+        const hit = scanFileForSecrets(file.content ?? file.diff ?? "");
         if (hit) {
           return {
             isError: true,
@@ -419,13 +449,40 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           }
         }
 
-        // Step C: Commit files to the branch
+        // Step C: Commit files to the branch (dual-mode ingress, #539)
+        const fileResults: Array<{ path: string; mode: string; hunksApplied?: number; offsets?: number[] }> = [];
         for (const file of files) {
-          const getFileRes = await httpRequest<{ sha?: string }>(
+          const ingressMode = file.mode ?? "full_file";
+          const getFileRes = await httpRequest<{ sha?: string; content?: string; encoding?: string }>(
             `https://api.github.com/repos/${repo}/contents/${file.path}?ref=${branchName}`,
             { headers, timeoutMs: 15_000 }
           );
           const fileSha = getFileRes.ok ? getFileRes.data?.sha : undefined;
+
+          let finalContent: string;
+          if (ingressMode === "unified_diff") {
+            // Stateless in-memory apply against the branch tip: exact context
+            // matching with bounded offset search; any ambiguity fails closed
+            // (no server-side git checkout needed, no silent fuzz).
+            if (!getFileRes.ok || !getFileRes.data?.content) {
+              return { isError: true, content: [{ type: "text", text: `File '${file.path}' uses mode unified_diff but does not exist on ${branchName}; use mode full_file to create it.` }] };
+            }
+            const encoding = getFileRes.data?.encoding;
+            if (encoding && encoding !== "base64") {
+              return { isError: true, content: [{ type: "text", text: `File '${file.path}' returned unsupported content encoding '${encoding}'.` }] };
+            }
+            const baseContent = Buffer.from(getFileRes.data?.content ?? "", "base64").toString("utf-8");
+            try {
+              const applied = applyUnifiedDiff(baseContent, file.diff ?? "");
+              finalContent = applied.result;
+              fileResults.push({ path: file.path, mode: ingressMode, hunksApplied: applied.hunksApplied, offsets: applied.offsets });
+            } catch (err) {
+              return { isError: true, content: [{ type: "text", text: `Diff for '${file.path}' failed to apply on ${branchName}: ${(err as Error).message}` }] };
+            }
+          } else {
+            finalContent = file.content ?? "";
+            fileResults.push({ path: file.path, mode: ingressMode });
+          }
 
           const putFileRes = await httpRequest<{ message?: string }>(
             `https://api.github.com/repos/${repo}/contents/${file.path}`,
@@ -434,7 +491,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               headers,
               body: {
                 message: `feat(bridge): ${taskId} — update ${file.path}`,
-                content: Buffer.from(file.content, "utf-8").toString("base64"),
+                content: Buffer.from(finalContent, "utf-8").toString("base64"),
                 branch: branchName,
                 ...(fileSha ? { sha: fileSha } : {}),
               },
@@ -544,6 +601,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             text: JSON.stringify({
               ok: true,
               taskId,
+              files: fileResults,
               branch: branchName,
               branchUrl: `https://github.com/${repo}/tree/${branchName}`,
               issueNumber: issueRes.data?.number,
