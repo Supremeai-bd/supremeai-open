@@ -1,0 +1,102 @@
+name: 🚨 Auditor / Rules-Breaker Investigation Report
+description: Report governance invariant violations, rule breaches, CI leaks, or audit defects.
+title: "audit(invariant): brief description of rule breach or audit finding"
+labels: ["area:governance", "P0-critical", "audit:defect", "handoff:coder"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 🚨 SupremeAI Governance & Auditor Incident Report
+        This template is mandatory for **Auditor Agents**, **Rules-Breaker Sentinels**, and **Constitutional Guardians**.
+        Any reported defect must include concrete evidence and an automated recurrence prevention guard.
+
+  - type: dropdown
+    id: target_repo
+    attributes:
+      label: Affected Repository
+      description: Which repository contains the rule violation or defect?
+      options:
+        - Supremeai-bd/supremeai-open
+        - Supremeai-bd/supremeai
+        - Supremeai-bd/supremeai-command
+        - Supremeai-bd/supremeai-skills
+        - Supremeai-bd/supremeai-vscode
+        - Supremeai-bd/supremeai-agents
+        - Supremeai-bd/supremeai-browser
+        - Supremeai-bd/supremeai-api
+        - Supremeai-bd/supremeai-studio
+        - Supremeai-bd/supremeai-infrastructure
+        - Supremeai-bd/supremeai-core
+        - Supremeai-bd/supremeai-sdk
+        - Supremeai-bd/supremeai-mcp-control-plane
+        - Supremeai-bd/supremeai-archive
+    validations:
+      required: true
+
+  - type: dropdown
+    id: violated_rule
+    attributes:
+      label: Violated Rule / Governance Clause
+      description: Which rule from AGENTS.md / AGENT_RULES.md was breached?
+      options:
+        - "U1: Truth & Evidence Invariant (Unproven claims, skipped tests)"
+        - "U2: Scope & Boundary Breach (Touching files outside scope, proprietary path leaks)"
+        - "U3: Freshness & Staleness Violation (Start-snapshot dropped in-flight arrivals)"
+        - "U4: Zero-Duplicate Mandate (Duplicate PRs / multiple open issues for same root-cause)"
+        - "U5: Ephemeral Transit & Auto-Pruning Failure (Unreaped probe residue)"
+        - "U10: Autonomous Decision Invariant (Asking permission instead of acting on green CI)"
+        - "P7 / #522: Cohesive Sizing / Domain Thrashing (Fragmented micro-tasks)"
+        - "CI Gate Failure (Workflow break, unverified merge)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: offending_reference
+    attributes:
+      label: Offending Commit / PR / Run Reference
+      description: Direct link to the PR, commit, or run where the violation occurred.
+      placeholder: "https://github.com/Supremeai-bd/supremeai-open/pull/XYZ or commit hash"
+    validations:
+      required: true
+
+  - type: textarea
+    id: root_cause_analysis
+    attributes:
+      label: Root Cause Analysis (কেন এই ভুলটি হয়েছিল?)
+      description: Detailed analysis of what allowed the violation past local checks or CI gates.
+    validations:
+      required: true
+
+  - type: textarea
+    id: recurrence_prevention
+    attributes:
+      label: 🛡️ Recurrence Prevention & Automated Invariant (ভবিষ্যত প্রতিরোধ গ্যারান্টি)
+      description: >
+        MANDATORY: How does your fix ensure this mistake NEVER happens again in the future?
+        What automated CI gate, preflight script, or schema validator prevents recurrence permanently?
+      placeholder: "Added fail-closed assertion in scripts/ci/... that aborts run if condition is met."
+    validations:
+      required: true
+
+  - type: textarea
+    id: duplicate_audit_evidence
+    attributes:
+      label: 🔍 Existing Issue & Board Deduplication Verification (বোর্ড ডুপ্লিকেশন অডিট)
+      description: >
+        MANDATORY: Confirm you audited the federation board (`gh issue list` across all 14 repos)
+        and verified zero existing duplicate tickets for this finding.
+      placeholder: "Audited federation board via `gh issue list`: confirmed no duplicate open issue."
+    validations:
+      required: true
+
+  - type: textarea
+    id: remediation_contract
+    attributes:
+      label: 3-Tier Remediation Contract
+      description: Exact steps and commands required to fix and verify the resolution.
+      value: |
+        1. Reflection: Code diff precisely corrects the offending rule boundary.
+        2. Boot Smoke: Local preflight / syntax verification passes without errors.
+        3. Tests: CI validation gate passes green.
+    validations:
+      required: true

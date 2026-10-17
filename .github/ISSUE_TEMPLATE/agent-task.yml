@@ -139,6 +139,28 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: recurrence_prevention
+    attributes:
+      label: 🛡️ Recurrence Prevention & Invariant Guarantee (ভবিষ্যত প্রতিরোধ গ্যারান্টি)
+      description: >
+        How does this task or fix guarantee that this problem NEVER happens again?
+        Specify the automated CI gate, regression test, or architectural guard that enforces permanent prevention.
+      placeholder: "e.g., Adds fail-closed check in scripts/ci/check.py line 45."
+    validations:
+      required: true
+
+  - type: textarea
+    id: duplicate_audit_evidence
+    attributes:
+      label: 🔍 Existing Issue & Board Deduplication Verification (বোর্ড ডুপ্লিকেশন অডিট)
+      description: >
+        Did you search the federation board before creating this issue?
+        Confirm no open issue/PR exists for this exact bug across all 14 repositories.
+      placeholder: "Confirmed via `gh issue list`: no duplicates found."
+    validations:
+      required: true
+
   - type: checkboxes
     id: sizing_confirmation
     attributes:

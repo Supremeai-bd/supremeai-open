@@ -119,6 +119,38 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: probe_lifecycle
+    attributes:
+      label: ⏱️ Work Order Nature (Production Change vs Ephemeral Probe)
+      description: Is this a permanent production fix/feature or an ephemeral test/probe?
+      options:
+        - "Production Change (Permanent — Must go through full landing)"
+        - "Ephemeral Probe / Test (Auto-reap upon verification, TTL <= 15m)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: recurrence_prevention
+    attributes:
+      label: 🛡️ Recurrence Prevention & Invariant Guarantee
+      description: >
+        How does this change prevent this bug or regression from happening again in the future?
+        Cite the automated test, CI gate, or architectural assertion that guarantees prevention permanently.
+      placeholder: "e.g., Added unit test in tests/test_*.py; enforced via CI preflight assertion."
+    validations:
+      required: true
+
+  - type: textarea
+    id: duplicate_audit_evidence
+    attributes:
+      label: 🔍 Existing Issue & Board Deduplication Verification
+      description: >
+        Confirm you searched the board and verified zero collisions with existing open issues or PRs.
+      placeholder: "Searched `gh issue list` and `gh pr list`: verified no conflicting or duplicate PRs."
+    validations:
+      required: true
+
   - type: checkboxes
     id: sizing_confirmation
     attributes:
