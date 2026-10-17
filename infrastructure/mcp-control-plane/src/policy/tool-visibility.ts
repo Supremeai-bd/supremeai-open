@@ -117,6 +117,10 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
   "bridge_work_order",
   "bridge_submit_patch",
   "work_claim",
+  // #621: bridge hardening — feedback read-back + claim lease lifecycle
+  "bridge_read_feedback",
+  "bridge_work_renew",
+  "bridge_work_release",
   // docs
   "docs_search",
   "docs_list",
@@ -130,6 +134,9 @@ const MUTATING_TOOLS: readonly string[] = [
   "agent_review_workflow_execute",
   "bridge_submit_patch",
   "work_claim",
+  // #621: renew posts markers, release flips labels — both are lane writes
+  "bridge_work_renew",
+  "bridge_work_release",
 ];
 
 export const TOOL_PROFILES: Record<ToolProfile, readonly string[]> = {

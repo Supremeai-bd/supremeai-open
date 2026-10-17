@@ -642,6 +642,15 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
     }
   }
 
+  // #621 Phase 3: enforce the sliding idle window CONTINUOUSLY, not only
+  // lazily on the next initialize. The bounded session table previously only
+  // reaped when a NEW client initialized, so idle/dead sessions could occupy
+  // table slots between initializes; a 60s unref'd sweep keeps the table
+  // honest (lastActivityMs stays the single sliding-expiry signal).
+  const sessionReaperTimer = setInterval(reapIdleHttpSessions, 60_000);
+  // Never hold the process open just for the reaper — Render spin-down must
+  // stay possible; the timer dies with the event loop.
+
   /** True when the parsed JSON-RPC body is an `initialize` request (or batch containing one). */
   function isMcpInitializeRequest(body: unknown): boolean {
     if (!body) return false;
@@ -1302,7 +1311,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
       const sid = parsedUrl.searchParams.get("sessionId");
       const sseTransport = sid ? sseSessions.get(sid) : undefined;
       if (!sseTransport) {
-        writeJson(res, 404, { error: "Session not found" });
+        // #621 Phase 3: structured + recoverable (same contract as /mcp).
+        writeJson(res, 404, { error: "Session not found", code: "session_not_found", recoverable: true, action: "reconnect-sse" });
         return;
       }
       // #48: slot-bound sessions are re-authorized LIVE on every message —
@@ -1405,7 +1415,11 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
         if (sessionIdHeader) {
           const entry = httpSessions.get(sessionIdHeader);
           if (!entry) {
-            writeJson(res, 404, { jsonrpc: "2.0", error: { code: -32001, message: "Session not found. Send a new initialize request to establish a session." }, id: null });
+            // #621 Phase 3: session loss is EXPECTED after redeploys/spin-downs
+            // (the session table is in-memory by design). Structured, recoverable
+            // error so automated agents self-heal with a fresh initialize instead
+            // of treating -32001 as fatal.
+            writeJson(res, 404, { jsonrpc: "2.0", error: { code: -32001, message: "Session not found. Send a new initialize request to establish a session.", data: { code: "session_not_found", recoverable: true, action: "send-initialize" } }, id: null });
             return;
           }
           entry.lastActivityMs = Date.now();
