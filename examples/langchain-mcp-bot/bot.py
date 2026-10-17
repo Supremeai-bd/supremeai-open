@@ -24,7 +24,7 @@ if present, real StructuredTool) → multi-tool loop. Exit code 0 = passed.
 
 Optional live run (network + deps):
     pip install langchain-core
-    export SUPREMAI_TOKEN=...            # Tower credential, header-only
+    export SUPREMEAI_API_KEY=...            # Tower credential, header-only
     python bot.py --live --base-url https://supremeai-mcp-tower.onrender.com
 """
 from __future__ import annotations
@@ -613,7 +613,7 @@ def main(argv: list[str]) -> int:
         return _self_test()
 
     if args.live:
-        token = os.environ.get("SUPREMAI_TOKEN")  # header-only, never in URLs
+        token = os.environ.get("SUPREMEAI_API_KEY")  # header-only, never in URLs
 
         async def live():
             client = McpSseClient(args.base_url, args.client_name, token=token)

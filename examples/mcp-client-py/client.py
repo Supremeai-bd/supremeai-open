@@ -159,11 +159,14 @@ class McpHttpClient:
         return result
 
     def list_tools(self) -> list:
-        result = self._rpc("tools/list")
-        return result.get("tools", [])
+        envelope = self._rpc("tools/list")
+        result = envelope.get("result") if isinstance(envelope, dict) else None
+        return result.get("tools", []) if isinstance(result, dict) else []
 
     def call_tool(self, name: str, arguments: dict | None = None) -> dict:
-        return self._rpc("tools/call", {"name": name, "arguments": arguments or {}})
+        envelope = self._rpc("tools/call", {"name": name, "arguments": arguments or {}})
+        result = envelope.get("result") if isinstance(envelope, dict) else None
+        return result if isinstance(result, dict) else envelope
 
     def close(self) -> None:
         """DELETE /mcp — always release the session on shutdown (etiquette §5)."""
