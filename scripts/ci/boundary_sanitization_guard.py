@@ -113,7 +113,7 @@ APPROVED_SUBTREES = {
     # scripts/). Registry entries are second-level path segments; a file is
     # as valid a segment as a directory. Expansion per the process documented
     # in this module's docstring (PR references the governing issue #45).
-    "scripts": {"agents", "ops", "ci", "tower", "validate_schemas.py"},
+    "scripts": {"agents", "ops", "ci", "tower", "bridge", "validate_schemas.py"},
     ".github": {"ISSUE_TEMPLATE", "workflows", "actions", "PULL_REQUEST_TEMPLATE.md"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
 }
