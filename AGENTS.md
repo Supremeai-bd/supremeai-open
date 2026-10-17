@@ -177,8 +177,38 @@ Because landed changes on `supremeai-open` are automatically ingested into `Supr
 4. `landing.yml` immediately auto-prunes the patch file (`git rm patches/*`) and commits `chore(bridge): auto-prune transit patch ... [skip ci]`.
 5. `supremeai-open` remains permanently lightweight, zero-residue, and pristine.
 
+## 2.4 Role-Based Preflight Invariants (ভূমিকাভিত্তিক আত্ম-জিজ্ঞাসা ও কোর ফিলোসফি)
 
-## 3. New Agent: Required Reading Path
+Before writing any code, opening a work order, modifying a pipeline, or dispatching an execution, every agent or human operator must evaluate its respective role-specific self-reflection questions:
+
+### 2.4.1 Planner / Architect Agent (প্ল্যানার ও আর্কিটেক্ট)
+1. **Existing Work First:** Does an existing module, service, or pattern in the federation already solve 80% of this? Reusing and extending existing architecture outranks creating new files (*AGENTS.md §6: Existing work before new work*).
+2. **Complexity Justification:** Am I introducing unnecessary new layers, schemas, or dependencies? Complexity must earn its existence (*AGENTS.md §6: Simple + effective > clever + complex & Complexity must earn its existence*).
+
+### 2.4.2 Coder / Contributor Agent (কোডার ও কন্ট্রিবিউটর)
+1. **Live Issue Validity:** Did I verify that the issue is still reproducible and active on the current `main` branch before writing code? Never fix an already-resolved ghost issue (*AGENTS.md §6: Issue validity before implementation*).
+2. **Solution Optimality Reflection:** Is the suggestion in the issue truly the simplest, cleanest solution, or did I evaluate an alternative that solves it with fewer lines and zero bloat? (*AGENTS.md §6: Simple + effective > clever + complex*).
+
+### 2.4.3 Auditor / Rules-Breaker Agent (অডিটর ও সেন্টিনেল)
+1. **Live Proof over Stale Cache:** Is this reported rule breach or finding active and reproducible on current live `main`, or is it an outdated artifact/cache? (*AGENTS.md §6: Evidence before action*).
+2. **Permanent Recurrence Prevention:** Does the reported defect define an automated CI gate, regression test, or validator ensuring this failure NEVER recurs? (*AGENTS.md §6: Zero-duplicate & system guards enforce boundaries*).
+
+### 2.4.4 CI Fixer Agent (সিআই ফিক্সার)
+1. **Root Cause over Workaround:** Am I fixing the actual version, configuration, or type error, or am I hacking `--skip-tests`, `--ignore-scripts`, or `|| true` to artificially force green? Gates outrank agent preference.
+2. **Cross-Platform Invariant:** Does the workflow/script execute deterministically across Linux, Windows, and macOS without unportable shell commands?
+3. **Quota & Fast-Path Protection:** Does the fix preserve the < 5s fast path for docs/metadata without burning runner minutes on the 2,000 min/mo free quota?
+
+### 2.4.5 Human Eye (Admin & Supervisory Oversight)
+1. **Intervention Necessity:** Is human intervention strictly necessary due to a hard credential/vault boundary, or could a clearer agent task contract solve this autonomously? (Admin budget ≤ 0.01%).
+2. **Permanent System Learning:** Instead of an ad-hoc one-time manual fix, what rule, template, or prompt instruction will teach autonomous agents to never need human help for this again?
+3. **Constitutional Alignment:** Does the instruction uphold `AGENTS.md` and `AGENT_RULES.md` without creating unrecorded architectural debt?
+
+### 2.4.6 3rd Party Platforms & Bridge Integrators (Render, Supabase, Cloudflare, MCP Tower)
+1. **Zero-Credential Public Boundary:** Are master infrastructure keys (Infisical, Prod Supabase service role) strictly isolated from 3rd-party contexts and external web bots? (§2.1 Pathway 1).
+2. **Cold-Start & Failure Resilience:** If the 3rd-party service spins down or drops connection (e.g. Render spin-down, DB pooler timeout), does the client fail-soft with retries and circuit breakers instead of crashing?
+3. **Stable Schema Conformance:** Does all external communication strictly adhere to the frozen gateway contract (`api-schemas/gateway.openapi.yaml`)?
+
+
 
 A newly added agent should not need tribal knowledge. Start here, then follow the links in order:
 
