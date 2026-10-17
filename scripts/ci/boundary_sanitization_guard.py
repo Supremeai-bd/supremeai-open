@@ -68,6 +68,7 @@ if hasattr(sys.stdout, "reconfigure"):
 APPROVED_TOP_LEVEL_DIRS = {
     ".github",
     ".githooks",  # issue #161: local ingress pre-push guard (poka-yoke, no runtime surface)
+    ".agents",    # Agent workspace customizations (rules, skills, minimal-elegance)
     "api-schemas",
     "docs",
     "examples",
