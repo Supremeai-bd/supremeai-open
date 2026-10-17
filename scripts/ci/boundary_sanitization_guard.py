@@ -82,6 +82,7 @@ APPROVED_TOP_LEVEL_DIRS = {
     "patches",  # Federation bridge unified diff patches for target repositories
     "gateway",  # Federation bridge surface for Supremeai-bd/supremeai-api (issue #469)
     "command",  # Federation bridge surface for Supremeai-bd/supremeai-command (issue #505)
+    "browser",  # Federation bridge surface for Supremeai-bd/supremeai-browser (issue #502)
 }
 
 APPROVED_ROOT_FILES = {
