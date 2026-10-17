@@ -47,7 +47,7 @@ flowchart TD
 |---|---|---|
 | **1. MCP Control Tower (Primary)** | Claude, Cursor, Antigravity, Web bots | Zero-credential: tools provide context; proxy bot commits & opens PR. Endpoint: `https://supremeai-mcp-tower.onrender.com/mcp` |
 | **2. Public Fork & PR** | External agents without credentials | Fork `supremeai-open`, push to fork, PR against `main`. Automated pipeline ports & verifies. |
-| **3. Ephemeral JIT Lease** | CLI scripts / local automated runners | Mint 1-hour lease token via `credential_manager.py` (Rule U4: zero master keys). |
+| **3. Ephemeral JIT Lease** | CLI scripts / local automated runners | Maintainer-issued 1-hour lease tokens via the MCP Control Tower admin surface (no `credential_manager.py` exists in-repo); master keys never leave the vault (Rule U6). |
 
 *U10 Rule: The loop is the permission. Never ask "should I proceed" when self-checkable preconditions pass.*
 
@@ -70,7 +70,7 @@ flowchart TD
 ### Agent Freedom vs Hard Boundaries
 - **Agent decides:** Implementation inside declared scope, testing, smallest safe approach, evidence-backed optimizations.
 - **Agent may NOT decide alone:** Major architecture changes, permission/boundary alterations, destructive ops, wide scope expansion (requires `ADMIN_DECISION` issue).
-- **Hard Ordering:** **No Claim → No Branch** (`atomic_claim.sh` first) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
+- **Hard Ordering:** **No Claim → No Branch** (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane first; no `atomic_claim.sh` exists in-repo) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
 
 ### Core Philosophy (The Law of Minimal Elegance — সব এজেন্টের মূলমন্ত্র)
 - **Zero Over-Engineering:** কোনো ওভার-ইঞ্জিনিয়ারিং নয় — যেকোনো সমাধানকে কতটুকু সহজ অথচ চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই প্রতিটি এজেন্টের প্রথম এবং প্রধান লক্ষ্য।
