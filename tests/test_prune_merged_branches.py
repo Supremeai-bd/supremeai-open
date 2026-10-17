@@ -6,13 +6,22 @@ credentials. Mirrors the project's stdlib-only offline test doctrine.
 """
 
 import os
+import shutil
 import subprocess
 import tempfile
 import textwrap
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(REPO_ROOT, "scripts", "bridge", "prune_merged_branches.sh")
+SCRIPT = os.path.join(REPO_ROOT, "scripts", "bridge", "prune_merged_branches.sh").replace("\\", "/")
+
+BASH = "bash"
+if os.name == "nt":
+    git_bin = shutil.which("git")
+    if git_bin:
+        git_bash = os.path.join(os.path.dirname(os.path.dirname(git_bin)), "bin", "bash.exe")
+        if os.path.exists(git_bash):
+            BASH = git_bash
 
 FAKE_GH = textwrap.dedent(
     """\
@@ -64,7 +73,7 @@ class PruneMergedBranchesTest(unittest.TestCase):
         # fake gh on PATH
         self.bindir = os.path.join(base, "bin")
         os.makedirs(self.bindir)
-        self.ghlog = os.path.join(base, "gh.log")
+        self.ghlog = os.path.join(base, "gh.log").replace("\\", "/")
         with open(os.path.join(self.bindir, "gh"), "w", encoding="utf-8") as fh:
             fh.write(FAKE_GH)
         os.chmod(os.path.join(self.bindir, "gh"), 0o755)
@@ -90,7 +99,7 @@ class PruneMergedBranchesTest(unittest.TestCase):
     def _run(self, *extra, base="main"):
         env = dict(self.env, REMOTE="origin", BASE=base)
         return subprocess.run(
-            ["bash", SCRIPT, *extra],
+            [BASH, SCRIPT, *extra],
             cwd=self.work, env=env, capture_output=True, text=True,
         )
 
@@ -106,7 +115,8 @@ class PruneMergedBranchesTest(unittest.TestCase):
     def test_execute_deletes_merged_only_via_gh(self):
         r = self._run("--execute")
         self.assertEqual(r.returncode, 0, r.stderr)
-        log = open(self.ghlog, encoding="utf-8").read()
+        with open(self.ghlog, encoding="utf-8") as fh:
+            log = fh.read()
         self.assertIn("-X DELETE repos/", log)
         self.assertIn("git/refs/heads/bridge/bridge-20261017-old-wo", log)
         self.assertIn("git/refs/heads/contributor/issue-999", log)
@@ -116,7 +126,7 @@ class PruneMergedBranchesTest(unittest.TestCase):
     def test_execute_failure_reflected_in_exit_code(self):
         env = dict(self.env, REMOTE="origin", BASE="main", FAKE_GH_FAIL="1")
         r = subprocess.run(
-            ["bash", SCRIPT, "--execute"],
+            [BASH, SCRIPT, "--execute"],
             cwd=self.work, env=env, capture_output=True, text=True,
         )
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
