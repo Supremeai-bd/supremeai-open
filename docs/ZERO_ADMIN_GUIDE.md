@@ -96,7 +96,7 @@ A PR that satisfies this checklist has historically landed **without any admin a
 ## Related Documents
 
 - [AGENTS.md](../AGENTS.md) — agent constitution; §2.1 Zero-Admin policy and the 3 submission pathways
-- [AGENT_RULES.md](../AGENT_RULES.md) — operational policy contracts (U1–U12; U4 anti-duplicate, U8 closing-keyword doctrine, U10 loop-granted authority)
+- [AGENT_RULES.md](../AGENT_RULES.md) — operational policy contracts (U1–U10; U4 anti-duplicate, U8 decision-ledger & closing-keyword doctrine, U10 loop-granted authority)
 - [docs/GUARDIAN_EVALUATION.md](./GUARDIAN_EVALUATION.md) — CI Guardian verdict SSOT (checks, scores, healing instructions)
 - [docs/INGRESS_SECURITY_POLICY.md](./INGRESS_SECURITY_POLICY.md) — Zero-Force-Push, stale-base rejection, and public-first ingress enforcement
 - [docs/OPS_ACTIONS_QUOTA_RUNBOOK.md](./OPS_ACTIONS_QUOTA_RUNBOOK.md) — the 2-workflow quota diet that makes shift-left enforcement free
