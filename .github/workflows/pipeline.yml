@@ -42,6 +42,8 @@ on:
     types: [opened, edited, reopened, synchronize, ready_for_review]
   # schedule:
   #   - cron: "*/30 * * * *" # disabled per admin directive — Pipeline Cron does not run autonomous cycles unattended
+  repository_dispatch:
+    types: [federation_ci_failed]
   workflow_dispatch:
     inputs:
       auto_pr:
@@ -55,6 +57,32 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 📢 Federation CI Failure Ingress (event-driven from any of the 12 repos)
+  # ---------------------------------------------------------------------------
+  federation-ci-mirror:
+    name: "📢 Federation CI Failure Ingress"
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'federation_ci_failed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Mirror Failure to Open Queue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/federation_ci_watchdog.py --payload "$PAYLOAD"
+
   # ---------------------------------------------------------------------------
   # ⚡ Real-Time Bridge Intake & PR Opener (push to bridge/**)
   # ---------------------------------------------------------------------------
