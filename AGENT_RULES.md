@@ -107,6 +107,13 @@ External platforms may inspire ideas, but agents must not turn ecosystem scoutin
 ## P6 — Defect Class Prevention over Symptom Patching
 When fixing any bug, failure or regression, first analyze whether the defect is an isolated one-off occurrence or part of a systemic/recurring class. Never apply a superficial symptom patch (e.g., swallow echoes, per-call ad-hoc bypass, single-line error masking) that leaves the underlying condition open to repeat. If a problem can recur, eliminate the entire class at the root cause — preferably via machine-enforced guards, SSOT definitions, compile/schema checks, or permanent regression tests.
 
+## P7 — Repo-Domain Cohesion & Anti-Thrashing Policy (#522)
+Tasks and work orders must be framed as **cohesive, domain-bounded feature slices** with a single primary target repository — never as fragmented micro-issues racing on the same file tree, and never as monster PRs breaching the bridge ingestion ceiling (≤ 30 files, ≤ 200 KB diff). Because satellite repositories and functional domains have isolated file trees, repo-scoped tasks execute concurrently with **zero file-level contention**.
+
+1. **Cohesive Work Package:** one atomic slice = Code + Types + Tests + Contract for ONE primary repo. Do not split a single feature into micro-issues ("add header", "add function", "add test") — combine them into one work package.
+2. **Anti-Overlap Scope Guard:** before creating or dispatching an issue, inspect active tasks and claims in the same `sub_group`; declared `Touching Files` must not collide with another in-flight claim. Dispatchers and reviewers reject overlapping touching files when an active session claim exists on the same path (fail-closed).
+3. **Why (Anti-Race):** fragmented micro-issues touching the same files create O(N²) rebase churn (`behind: 1`, `behind: 2` after every neighbour merge), CI quota exhaustion, and merge-queue contention across the 11-satellite federation.
+
 ---
 
 # 3. Role Policy Contracts
