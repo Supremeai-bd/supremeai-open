@@ -1,147 +1,80 @@
-# SupremeAI Open Foundation
+# supremeai-browser
 
-> **Open the implementation that teaches people how to use SupremeAI; keep private the implementation that reveals why SupremeAI performs better.**
+Stealth Automation Sandbox & Anti-Detect Headless Runtime for the SupremeAI
+11-satellite federation (seed-foundation per issue #502).
 
-This repository is the **public boundary** of the SupremeAI federation (roadmap §4.3 / Phase 8 foundation).
-It contains only artifacts that are useful *outside* SupremeAI's private intelligence:
-
-## Federation at a glance
-
-```mermaid
-flowchart LR
-    AGENT["🤖 Autonomous agents<br/>(MCP bridge · fork+PR · JIT lease)"]
-
-    subgraph OPEN["supremeai-open · Public Window (this repo)"]
-        direction TB
-        TASKS["Task contracts (issues)"] --> GUARDS["7 PR guards<br/>+ CI Guardian"]
-        GUARDS --> GATE["Merge Gate<br/>(squash authority)"]
-    end
-
-    subgraph PRIVATE["Private federation cores"]
-        direction TB
-        TOWER["mcp-control-plane<br/>Control Tower · tool plane"]
-        API["supremeai-api<br/>Gateway"]
-        CORE["supremeai-core<br/>decision moat"]
-        STUDIO["supremeai-studio<br/>Studio UI"]
-    end
-
-    AGENT --> TASKS
-    AGENT <-.->|"MCP tools · zero credentials"| TOWER
-    GATE ==>|"auto-bridge<br/>(webhook / direct dispatch)"| PRIVATE
-
-    classDef boundary fill:none,stroke-width:2px;
-    classDef core fill:none,stroke-dasharray:4 3;
-    class OPEN boundary;
-    class PRIVATE core;
-```
-
-> Consuming the platform (not contributing)? Start at
-> [`docs/CONSUMERS.md`](./docs/CONSUMERS.md) and the
-> [`api-schemas/gateway.openapi.yaml`](./api-schemas/gateway.openapi.yaml)
-> Gateway surface. Contributing? [`AGENTS.md`](./AGENTS.md) and
-> [`docs/ZERO_ADMIN_GUIDE.md`](./docs/ZERO_ADMIN_GUIDE.md) are the entry points.
-
-### 🌐 Live Federation Services
-
-| Service | Live URL | Description |
-|---|---|---|
-| **SupremeAI Studio (Web UI)** | [https://supremeai-studio-live.vercel.app](https://supremeai-studio-live.vercel.app) | User-facing React/Vite console interface and agent workspace |
-| **MCP Control Tower** | [`https://supremeai-mcp-tower.onrender.com`](https://supremeai-mcp-tower.onrender.com) | Remote Streamable HTTP (`/mcp`) & SSE (`/sse`) tool plane |
-| **API Gateway** | [`https://supremeai-api.onrender.com`](https://supremeai-api.onrender.com) | Unified OpenAI-compatible multi-LLM provider gateway |
-
-| Path | What it is |
-|---|---|
-| `api-schemas/gateway.openapi.yaml` | **The stable SupremeAI API Gateway surface** (OpenAI-compatible `/v1/chat/completions`) — byte-mirror of `supremeai-api/contracts/openapi.yaml` |
-| `examples/gateway_client.py` | Zero-dependency Python client for the Gateway (typed errors, retry only on 502/503) — byte-mirror of `supremeai-api/scripts/clients/gateway_client.py` |
-| `docs/CONSUMERS.md` | Consumer onboarding: the 3-line contract, key lifecycle, error semantics — mirror of `supremeai-api/docs/CONSUMERS.md` |
-| `ECOSYSTEM_MAP.md` | **The Federation Ecosystem Map** — architecture directory for agents working across repos |
-| [`docs/AGENT_PORTAL_SPEC.md`](./docs/AGENT_PORTAL_SPEC.md) | **Agent Portal & Federation Bridge architecture spec** (#23): two-repo relationship, the 3 submission pathways mapped to machinery, guard/gate/router map, clickable contract-schema references |
-| [`docs/FAQ.md`](./docs/FAQ.md) | **Operational FAQ** (#23): symptom→cause→fix for every known validation-error class (naming, duplicates, boundary, stale-base, force-push, keyword propagation, env-skips) |
-| `AGENTS.md` | Agent entrypoint: autonomous work-submission loop, submission pathways, bridge lane |
-| `AGENT_RULES.md` | Agent policy constitution: universal rules, policies, roles, fail-closed guards |
-| `.github/workflows/pipeline.yml` | Unified validation & cron engine (#155): guards → Python 3.10–3.13 matrix + Tower TS verification + secret scan, plus the 30-minute cron that starts the existing dispatcher `scripts/agents/continuous_agent_loop.py --pick-next` (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch; event-driven intake via the MCP Tower, see `infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md`) |
-| `.github/workflows/landing.yml` | Unified autonomous landing & bridge dispatch (#155): auto-squash-merge on full gate success, then the same run streams the landed patch reference into the private bridge queue |
-| `.github/ISSUE_TEMPLATE/bridge-work-order.yml` | Work-order template for bridge submissions (task id, patch branch, test evidence) |
-| `LICENSE` | MIT |
-
-## The one stable contract
+## Triple-Tier Browser Architecture
 
 ```
-Client ──SUPREMEAI_API_KEY──▶ SupremeAI Gateway ──▶ Provider Adapters (Gemini / Groq / …)
+┌──────────────────────────────────────────────────────────────────┐
+│ TIER 1 — STEALTH (high security)                                 │
+│   runtime/stealth_profile.py                                     │
+│   • Coherent canvas PRNG: one session seed drives all noise       │
+│   • Normalized WebGL vendor/renderer table (standard shapes)      │
+│   • Natural input curves: bounded cubic-Bezier pointer gestures   │
+├──────────────────────────────────────────────────────────────────┤
+│ TIER 2 — CONTENT PRUNING (Crawl4AI pattern)                      │
+│   runtime/content_pruner.py + runtime/semantic_extractor.py      │
+│   • Link-density scoring strips navbars/footers/ads/boilerplate   │
+│   • Messy HTML → clean Markdown with numbered citations           │
+│   • Semantic DOM outline with token-budget estimate (Moli line)   │
+├──────────────────────────────────────────────────────────────────┤
+│ TIER 3 — WALLED GARDEN (Agent-Reach pattern)                     │
+│   runtime/cookie_bridge.py                                       │
+│   • Fail-closed, EMPTY-by-default domain allowlist                │
+│   • JSON / Netscape cookies.txt import-export, byte-stable        │
+│   • Values redacted in every log and repr                         │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-- One stable SupremeAI API on the outside; dynamic, replaceable, multi-provider intelligence on the inside.
-- Provider credentials never leave the server side. Your `SUPREMEAI_API_KEY` is the only thing you need.
+Supporting modules: `runtime/session_manager.py` (Playwright launch OR direct
+CDP attachment; capability-probed, fail-closed), `runtime/infinite_scanner.py`
+(deterministic scroll plans + lazy-load expansion JS), `runtime/config.py`
+(immutable, validated browser profiles).
 
-## What goes here vs. what never goes here
+## Installation
 
-**Belongs here:** generic interfaces, examples, open schemas, documentation helpers, consumer tooling.
+```bash
+pip install -e .            # core (stdlib-only)
+pip install -e ".[runtime]" # optional playwright/lxml extras
+```
 
-**Never here:** proprietary routing policies, internal autonomy scoring, private repair/healing policy, key-plane internals.
+## Usage
 
-## Drift protection
+```python
+from runtime.content_pruner import ContentPruner
+from runtime.stealth_profile import generate, bezier_path
+from runtime.cookie_bridge import CookieBridge
 
-Mirrors above are byte-parity-checked daily by the federation integration CI
-(`supremeai-infrastructure` → `federation-integration.yml`, roadmap §21). If a mirror drifts from its
-source-of-truth, that check fails closed.
+fp = generate("my-session-seed")           # deterministic fingerprint
+path = bezier_path((0, 0), (300, 200))     # natural pointer gesture
+out = ContentPruner().prune(html)          # markdown + numbered citations
+bridge = CookieBridge(allowlist=["reddit.com"])  # walled garden, explicit
+```
 
-## 🤖 Continuous Agent Loop & Federation Roles
+## Verification Contract (3-tier)
 
-`supremeai-open` acts as the **Public Face / Embassy** (`scripts/agents/continuous_agent_loop.py`), providing an open zero-dependency CLI entrypoint for any agent or contributor. The internal engines, schedulers, and worker daemons reside in the `supremeai-agents` core satellite.
+1. **Reflection check** — the banned driver-string grep over `runtime/`
+   returns zero matches (guarded by a test in the battery as well).
+2. **Boot smoke:**
 
-> **Continuous Loop Core Doctrine:**
-> *"কার কী দায়িত্ব তা বুঝিয়ে দেওয়া, দায়িত্ব পালনের সময় কোন রুলস মানতে হবে আর কোনটা মানবে না তা বেঁধে দেওয়া, এবং কাজে লাঠি লাগবে নাকি ছুরি লাগবে (Weapon Provisioning) তা সুনির্দিষ্ট করে দেওয়াই Continuous Agent Loop-এর মূল কাজ।"*
+```bash
+python3 -c "from runtime.session_manager import BrowserSessionManager; from runtime.content_pruner import ContentPruner; print('Browser runtime boot smoke: SUCCESS')"
+```
 
-### 1. Two-Paradigm Dispatch Architecture
-- **Task-Driven Roles (Event & Runway Driven):**
-  - **Coder:** Feature/bug implementation within scope under atomic single-lock.
-  - **CI Fixer:** Preempts backlog to heal failing PR checks and unblock the runway.
-  - **Task Auditor:** Pre-landing verification for boundaries, secret leaks, and decision ledgers.
-- **Time-Driven / Platform-Driven Roles (Scheduled Cron & Periodic Probing):**
-  - **Ecosystem Scout:** Global tech radar scouring outside innovations (Meta, Anthropic, OpenAI) with full-spectrum evaluation (pros, cons, "এটা করা যাবে না", risks) producing min. 10 proposals.
-  - **Federation Auditor:** Internal inspector auditing commit parity, drift, and cleanliness across the 11 canonical satellites.
-  - **Human Eye (Visual QA):** SupremeAI's PR & Styling Team (*"বস, এই ড্রেসে ভালো লাগছে না, ওই ড্রেস পরেন"*), profiling visual polish, typography, and premium user experience (Issue create only).
-  - **Rules Breaker:** Dual-vector chaos hacker (breaks existing guards + exploits unprotected gaps to measure worst-case damage, filing failing tests and P0 issues).
-  - **3rd-Party Platform Guardian:** High-frequency prober for external model latency and quotas (auto-failovers if possible, else creates issues).
+3. **Unit tests:**
 
-### 2. Weapons & Scoped Permissions Matrix (লাঠি বনাম ছুরি — RBAC)
+```bash
+python3 -m pytest tests/test_browser_foundation.py -v   # 15 passing, offline
+```
 
-| Role | Weapon Metaphor | Scoped Tools & Permissions | Forbidden Operations |
-|---|---|---|---|
-| **Coder** | Surgical Knife 🔪 | Code edit, Local test runner, Git branch, PR create | Claiming without atomic lock, breaking scope |
-| **CI Fixer** | Emergency Defibrillator ⚡ | Direct commit on PR branch, CI log parser | Grabbing backlog when PR runway is blocked |
-| **Task Auditor** | Policy Stamp 📋 | Boundary guards, Gitleaks scanner, PR approve/block | Direct source code modifications |
-| **Ecosystem Scout** | Long-Range Telescope 🔭 | Web search, URL readers, Issue creation | Local code edits, uncritical hype |
-| **Federation Auditor** | Ledger Microscope 🔬 | Multi-repo git reader (11 satellites), Issue create | Direct source code edits |
-| **Human Eye** | Stylist Camera & Mirror 📸 | Browser subagent, Screenshot capture, Issue create | Direct code or CSS edits |
-| **Rules Breaker** | Sledgehammer & Lockpick 🔨 | Adversarial fuzzers, `tests/adversarial/` commits | Production damage, writing self-patches |
-| **3rd-Party Guardian** | Routing Circuit Breaker 🔌 | Provider prober, Dynamic Failover Toggle, Issue create | Corrupting permanent configuration files |
+## Honesty Notes
 
----
-
-## Bridge — external agent work submission (v1)
-
-Agents work **in public**; code lands **private** after the full constitutional gate battery.
-
-> **Lane eligibility:** the `bridge/<task-id>` branch lane requires **collaborator write access**
-> to this repo (proxy bots / org agents). Zero-credential agents **cannot push branches here** —
-> use §2.1 Pathway 2 of [`AGENTS.md`](./AGENTS.md) (fork + PR) instead; the PR is ingested by the
-> same internal automation.
-
-1. Push your patch branch to this repo: `bridge/<task-id>` (diff base = `main`).
-2. Open a **Bridge Work Order** issue (issue template above).
-3. The bridge (running inside the private codebase) validates fail-closed, applies the patch,
-   and opens a gated PR. Status flows back to your issue via labels + comments.
-
-This repo's `main` stays byte-clean: the bridge never writes to it — only the federation
-mirror CI maintains the public artifacts above.
-
----
-
-## Contributing
-
-New here? Start with **[`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)** — the
-zero-credential contributor guide covering both human (fork + PR) and autonomous-agent
-(8-step loop, MCP Tower lane) workflows, the 3-tier verification contract, scope caps,
-and a field-tested troubleshooting table. The governance contracts live in
-[`AGENTS.md`](./AGENTS.md) and [`AGENT_RULES.md`](./AGENT_RULES.md).
+- The core package is stdlib-only by constitutional design; `playwright` and
+  `lxml` are optional extras for the execution tier. Importing `runtime/`
+  never requires them (capability probes fail closed with precise errors).
+- The content pruner adapts the Crawl4AI heuristic school (text-vs-link
+  density + tag/attribute scoring) in a pure-stdlib implementation; it is not
+  a vendored copy of Crawl4AI code.
+- The cookie bridge stores what you feed it in-process; it performs no
+  network I/O and starts locked until an operator allowlists domains.
