@@ -92,7 +92,12 @@ class SupremeAIClient:
                         parsed = json.loads(raw.decode("utf-8"))
                     except ValueError:
                         parsed = None
-                shape = parsed if isinstance(parsed, dict) else {}
+                parsed_obj = parsed if isinstance(parsed, dict) else {}
+                # The gateway nests error details under "error"
+                # ({"error": {"code", "message", ...}}); unwrap it, falling
+                # back to the top-level shape for legacy/plain bodies.
+                inner = parsed_obj.get("error")
+                shape = inner if isinstance(inner, dict) else parsed_obj
                 error = GatewayError(
                     status=exc.code,
                     code=str(shape.get("code", "GATEWAY_ERROR")),
