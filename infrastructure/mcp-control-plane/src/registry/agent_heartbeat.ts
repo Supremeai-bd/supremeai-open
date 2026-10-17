@@ -29,11 +29,15 @@ import Redis from "ioredis";
 import {
   activeAccountChain,
   buildAccountChain,
+  getActiveRedisAccount,
+  noteQuotaErrorUsage,
+  noteRedisCommands,
   RedisQuotaExhaustedError,
   responseIndicatesQuotaExhaustion,
   runWithAccountChain,
   type RedisAccountConfig,
 } from "../lib/redis_chain.js";
+import { WriteDebouncer, l1CacheTtlMs, withL1Cache } from "../lib/ttl_cache.js";
 
 export type { RedisAccountConfig };
 // Back-compat re-export: chain construction moved to lib/redis_chain.ts but
@@ -63,6 +67,28 @@ export type HeartbeatStatusEntry = HeartbeatRecord & {
   ageSeconds: number;
   state: HeartbeatState;
 };
+
+// ── #646 AC2: heartbeat write debounce (Redis command-burn reduction) ──────
+// বাংলা: heartbeat প্রতি slot প্রতি ~৪৫s লেখে (HSET + SET = ২ কমান্ড)। Online
+// threshold ৯০s — তাই ৬০s উইন্ডোর ভিতরের ডুপ্লিকেট লেখা Redis-এ না গিয়েও
+// state machine অক্ষত থাকে: সর্বোচ্চ staleness ৬০s < ৯০s (state এখনো "online"),
+// আর missed-writer detection সর্বোচ্চ ৬০s দেরিতে হয় (স্বীকার্য)। ৪৫s-পিং চক্রে
+// প্রায় ৫০% লেখা বাঁচে। env REDIS_HEARTBEAT_DEBOUNCE_SECONDS=0 দিলে বন্ধ।
+export const HEARTBEAT_WRITE_DEBOUNCE_SECONDS = (() => {
+  const raw = Number(process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 60;
+})();
+// Window reads env dynamically (per check/record) — operators can tune or
+// disable (0) at runtime, and tests can toggle per scenario without reload.
+const heartbeatWriteDebouncer = new WriteDebouncer<{ account: string }>(() => {
+  const raw = Number(process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS);
+  return (Number.isFinite(raw) && raw >= 0 ? raw : 60) * 1000;
+});
+
+/** Test/reset hook — debounce state মুছে দেয় (টেস্টগুলো স্বাধীনভাবে লেখা যাচাই করুক)। */
+export function resetRedisWriteDebounce(): void {
+  heartbeatWriteDebouncer.reset();
+}
 
 /** Validates a slot id. Returns an error message, or null when valid. */
 export function validateSlot(slot: string): string | null {
@@ -126,6 +152,8 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
       // runWithAccountChain ইঞ্জিন করে (#110) — client শুধু quota-শেপড error
       // throw করে, একটাই marking policy থাকে।
       const errText = await res.text().catch(() => "");
+      // #646: error body-তে প্রকৃত usage থাকলে সত্যে সংশোধন (reactive fallback)।
+      noteQuotaErrorUsage(account.label, errText);
       if (responseIndicatesQuotaExhaustion(res.status, errText)) {
         throw new RedisQuotaExhaustedError(
           account.label,
@@ -137,6 +165,7 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
     const payload = (await res.json()) as { result?: unknown; error?: string };
     if (payload.error) {
       if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
+        noteQuotaErrorUsage(account.label, String(payload.error));
         throw new RedisQuotaExhaustedError(
           account.label,
           `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
@@ -144,6 +173,8 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
       }
       throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
     }
+    // #646 AC1: সফল কমান্ড গণনা — preemptive rotation-এর প্রাথমিক সত্য-উৎস।
+    noteRedisCommands(account.label, 1);
     return payload.result;
   };
   return {
@@ -259,6 +290,9 @@ export type RecordHeartbeatResult = {
   ttlSeconds: number;
   redisAccount: string;
   onlineThreshold: string;
+  /** #646: true হলে এই কলটি debounce উইন্ডোর কারণে Redis-এ যায়নি —
+   *  আগের লেখাই সর্বশেষ সত্য (state machine অক্ষত)। */
+  debounced?: boolean;
 };
 
 /**
@@ -281,6 +315,25 @@ export async function recordHeartbeat(
   }
 
   const nowMs = Date.now();
+
+  // #646 AC2: debounce চেক — উইন্ডোর ভিতরের ডুপ্লিকেট লেখা Redis-এ যায় না।
+  // chain-validation-এর পরে বসানো হয়েছে, তাই "No Redis configuration" error
+  // আগের মতোই throw হয় (CI contract অক্ষত)।
+  const debounceDecision = heartbeatWriteDebouncer.check(`hb:${input.slot}`, nowMs);
+  if (debounceDecision.skip) {
+    const lastWriteMs = debounceDecision.lastWriteMs;
+    return {
+      ok: true,
+      slot: input.slot,
+      agentId: input.agentId?.trim() || input.slot,
+      heartbeatAt: new Date(lastWriteMs).toISOString(),
+      ttlSeconds: HEARTBEAT_TTL_SECONDS,
+      redisAccount: debounceDecision.metadata?.account ?? getActiveRedisAccount().label,
+      onlineThreshold: `ping again within ${HEARTBEAT_ONLINE_THRESHOLD_SECONDS}s to stay 'online'`,
+      debounced: true,
+    };
+  }
+
   const record: HeartbeatRecord = {
     slot: input.slot,
     agentId: input.agentId?.trim() || input.slot,
@@ -318,6 +371,8 @@ export async function recordHeartbeat(
         ),
     },
   );
+  // #646: লেখা সফল হলেই debounce রেকর্ড — ব্যর্থ লেখা কখনো উইন্ডো পয়জন করবে না।
+  heartbeatWriteDebouncer.record(`hb:${input.slot}`, Date.now(), { account: account.label });
   return {
     ok: true,
     slot: record.slot,
@@ -338,8 +393,21 @@ export type AccountReadStatus = {
   quotaCooldown?: boolean;
 };
 
-/** Lists every live heartbeat record with derived real-time state. */
+/** Lists every live heartbeat record with derived real-time state.
+ *  #646 AC2: L1 read-through cache (default 5s, env REDIS_L1_CACHE_TTL_MS,
+ *  0 = off) — dashboard sweep burst একটি TTL উইন্ডোতে একবারই Redis-এ যায়। */
 export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
+  ok: true;
+  now: string;
+  ttlSeconds: number;
+  onlineThresholdSeconds: number;
+  accounts: AccountReadStatus[];
+  slots: HeartbeatStatusEntry[];
+}> {
+  return withL1Cache("l1:agent-heartbeats", l1CacheTtlMs(), () => listHeartbeatsFresh(nowMs), nowMs);
+}
+
+async function listHeartbeatsFresh(nowMs: number): Promise<{
   ok: true;
   now: string;
   ttlSeconds: number;

@@ -17,6 +17,8 @@
 
 import {
   activeAccountChain,
+  noteQuotaErrorUsage,
+  noteRedisCommands,
   RedisQuotaExhaustedError,
   responseIndicatesQuotaExhaustion,
   runWithAccountChain,
@@ -207,6 +209,7 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
             const payload = (await res.json()) as { result?: unknown; error?: string };
             if (payload.error) {
               if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
+                noteQuotaErrorUsage(account.label, String(payload.error));
                 throw new RedisQuotaExhaustedError(
                   account.label,
                   `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
@@ -214,6 +217,8 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
               }
               throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
             }
+            // #646 AC1: সফল কমান্ড গণনা — preemptive rotation-এর প্রাথমিক সত্য-উৎস।
+            noteRedisCommands(account.label, 1);
             return payload.result;
           },
           {

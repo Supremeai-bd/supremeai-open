@@ -29,10 +29,39 @@ import {
   type HeartbeatState,
   type HeartbeatStatusEntry,
 } from "./agent_heartbeat.js";
-import { activeAccountChain, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
+import {
+  activeAccountChain,
+  noteQuotaErrorUsage,
+  noteRedisCommands,
+  RedisQuotaExhaustedError,
+  responseIndicatesQuotaExhaustion,
+  runWithAccountChain,
+  type RedisAccountConfig,
+} from "../lib/redis_chain.js";
+import { WriteDebouncer, l1CacheTtlMs, withL1Cache } from "../lib/ttl_cache.js";
 
 export const PRESENCE_KEY_PREFIX = "supremeai:mcp-presence:";
 export const PRESENCE_TTL_SECONDS = 300;
+
+// ── #646 AC2: presence write debounce (Redis command-burn reduction) ────────
+// বাংলা: presence প্রতিটি MCP রিকোয়েস্টে sliding-TTL refresh লেখে — একজন
+// সক্রিয় client মিনিটে ডজনখানেক SET পাঠাতে পারে। TTL ৩০০s + state threshold
+// ৯০s, তাই ৬০s উইন্ডোর ডুপ্লিকেট লেখা বাদ দিলেও presence-সত্য অক্ষত থাকে।
+// env REDIS_PRESENCE_DEBOUNCE_SECONDS=0 দিলে বন্ধ।
+export const PRESENCE_WRITE_DEBOUNCE_SECONDS = (() => {
+  const raw = Number(process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 60;
+})();
+// Window reads env dynamically (per check/record) — see agent_heartbeat.ts.
+const presenceWriteDebouncer = new WriteDebouncer<{ account: string }>(() => {
+  const raw = Number(process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS);
+  return (Number.isFinite(raw) && raw >= 0 ? raw : 60) * 1000;
+});
+
+/** Test/reset hook — debounce state মুছে দেয়। */
+export function resetPresenceWriteDebounce(): void {
+  presenceWriteDebouncer.reset();
+}
 
 export type PresenceProtocol = "streamable-http" | "sse" | "stdio" | "custom";
 
@@ -131,6 +160,8 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
       // this account into cooldown and shift to the next one. Presence used
       // to be the one routed path with NO quota marking; now all are identical.
       const errText = await res.text().catch(() => "");
+      // #646: error body-তে প্রকৃত usage থাকলে সত্যে সংশোধন (reactive fallback)।
+      noteQuotaErrorUsage(account.label, errText);
       if (responseIndicatesQuotaExhaustion(res.status, errText)) {
         throw new RedisQuotaExhaustedError(
           account.label,
@@ -142,6 +173,7 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
     const payload = (await res.json()) as { result?: unknown; error?: string };
     if (payload.error) {
       if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
+        noteQuotaErrorUsage(account.label, String(payload.error));
         throw new RedisQuotaExhaustedError(
           account.label,
           `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
@@ -149,6 +181,8 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
       }
       throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
     }
+    // #646 AC1: সফল কমান্ড গণনা — preemptive rotation-এর প্রাথমিক সত্য-উৎস।
+    noteRedisCommands(account.label, 1);
     return payload.result;
   };
   return {
@@ -234,6 +268,8 @@ export type RecordPresenceResult = {
   ok: true;
   key: string;
   ttlSeconds: number;
+  /** #646: true হলে এই কলটি debounce উইন্ডোর কারণে Redis-এ যায়নি। */
+  debounced?: boolean;
 };
 
 /**
@@ -261,6 +297,14 @@ export async function recordPresence(
     updatedAt: new Date(nowMs).toISOString(),
   };
   const key = presenceKey(record.clientName, record.clientId);
+
+  // #646 AC2: debounce চেক — chain-validation-এর পরে, তাই "No Redis
+  // configuration" error আগের মতোই throw হয় (CI contract অক্ষত)।
+  const debounceDecision = presenceWriteDebouncer.check(key, nowMs);
+  if (debounceDecision.skip) {
+    return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS, debounced: true };
+  }
+
   const value = JSON.stringify(record);
   // #110: chain-walk + quota-marking through the single engine; the failure
   // message stays byte-identical to the deleted hand-rolled loop.
@@ -279,6 +323,8 @@ export async function recordPresence(
         ),
     },
   );
+  // #646: লেখা সফল হলেই debounce রেকর্ড — ব্যর্থ লেখা উইন্ডো পয়জন করবে না।
+  presenceWriteDebouncer.record(key, Date.now());
   return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS };
 }
 
@@ -289,8 +335,13 @@ export type PresenceListResult = {
   clients: PresenceStatusEntry[];
 };
 
-/** সব সক্রিয় interactive-client presence (সব account-chain merge, freshest wins)। */
+/** সব সক্রিয় interactive-client presence (সব account-chain merge, freshest wins)।
+ *  #646 AC2: L1 read-through cache (default 5s, env REDIS_L1_CACHE_TTL_MS, 0 = off)। */
 export async function listPresence(nowMs: number = Date.now()): Promise<PresenceListResult> {
+  return withL1Cache("l1:mcp-presence", l1CacheTtlMs(), () => listPresenceFresh(nowMs), nowMs);
+}
+
+async function listPresenceFresh(nowMs: number): Promise<PresenceListResult> {
   const chain = activeAccountChain();
   if (chain.length === 0) {
     throw new Error(
