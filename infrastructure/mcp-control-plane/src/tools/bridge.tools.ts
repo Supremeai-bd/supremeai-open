@@ -513,4 +513,200 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       }
     }
   );
+
+  server.tool(
+    "work.claim",
+    "Atomically claim an open task issue per S0.1 specification (Invariant #430). Adds status:claimed, removes status:unclaimed, and posts an atomic-claim comment with a 30-minute lease. Zero-credential self-serve for all coder agents.",
+    {
+      issueNumber: z.number().int().positive().describe("Task issue number to claim"),
+      agentId: z.string().optional().describe("Optional caller identity (defaults to authenticated client or contributor)"),
+    },
+    async ({ issueNumber, agentId }) => {
+      const repo = bridgeOpenRepo();
+      const agent = (agentId || "contributor-agent").trim().replace(/[^A-Za-z0-9_.:-]/g, "-");
+      const headers = await githubHeaders(true);
+
+      if (!headers.Authorization) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "CLAIM_ERROR: GitHub App credentials unavailable on Tower." }],
+        };
+      }
+
+      try {
+        // Step 1: Fetch target issue
+        const issueRes = await httpRequest<{ state?: string; labels?: Array<{ name?: string }>; message?: string }>(
+          `https://api.github.com/repos/${repo}/issues/${issueNumber}`,
+          { headers, timeoutMs: 15_000 }
+        );
+        if (!issueRes.ok) {
+          if (issueRes.status === 404) {
+            return { isError: true, content: [{ type: "text", text: `ISSUE_NOT_FOUND: Issue #${issueNumber} does not exist.` }] };
+          }
+          return { isError: true, content: [{ type: "text", text: `HTTP ${issueRes.status}: ${issueRes.data?.message || "Failed to inspect issue"}` }] };
+        }
+
+        if (issueRes.data?.state === "closed") {
+          return { isError: true, content: [{ type: "text", text: `ISSUE_CLOSED: Issue #${issueNumber} is already closed.` }] };
+        }
+
+        const labels = (issueRes.data?.labels || []).map((l) => (l.name || "").toLowerCase());
+        const hadClaimedLabel = labels.includes("status:claimed") || labels.includes("status:in-progress");
+
+        // Step 2: Fetch comments to parse active marker
+        const commentsRes = await httpRequest<Array<{ body?: string; created_at?: string }>>(
+          `https://api.github.com/repos/${repo}/issues/${issueNumber}/comments?per_page=100`,
+          { headers, timeoutMs: 15_000 }
+        );
+
+        let latestClaim: { agent: string; ts: Date; ttlMinutes: number } | null = null;
+        if (commentsRes.ok && Array.isArray(commentsRes.data)) {
+          for (const c of commentsRes.data) {
+            const body = c.body || "";
+            // Match <!-- atomic-claim:issue=123,agent=xyz,ts=...,ttl=30m --> or legacy JSON marker
+            const match = /<!--\s*atomic-claim:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+),ttl=(\d+)m\s*-->/.exec(body);
+            if (match) {
+              const claimTs = new Date(match[3]);
+              if (!isNaN(claimTs.getTime())) {
+                if (!latestClaim || claimTs > latestClaim.ts) {
+                  latestClaim = { agent: match[2], ts: claimTs, ttlMinutes: parseInt(match[4], 10) || 30 };
+                }
+              }
+            } else if (body.includes("<!-- atomic-claim -->") && body.includes('"claimedAt"')) {
+              // Legacy JSON marker fallback
+              try {
+                const jsonMatch = /```json\s*(\{[\s\S]*?\})\s*```/.exec(body);
+                if (jsonMatch) {
+                  const parsed = JSON.parse(jsonMatch[1]);
+                  const claimTs = new Date(parsed.claimedAt);
+                  if (!isNaN(claimTs.getTime())) {
+                    if (!latestClaim || claimTs > latestClaim.ts) {
+                      latestClaim = { agent: parsed.claimedBy || "legacy-agent", ts: claimTs, ttlMinutes: parsed.leaseMinutes || 30 };
+                    }
+                  }
+                }
+              } catch {}
+            }
+          }
+        }
+
+        const now = new Date();
+        const ttlMs = (latestClaim?.ttlMinutes || 30) * 60 * 1000;
+        const isLive = latestClaim ? now.getTime() - latestClaim.ts.getTime() < ttlMs : false;
+
+        let decision = "GRANT_NEW";
+        if (latestClaim) {
+          if (latestClaim.agent === agent) {
+            decision = isLive ? "NOOP_SELF" : "GRANT_RENEW";
+          } else {
+            if (isLive) {
+              return {
+                isError: true,
+                content: [{ type: "text", text: `CLAIM_CONFLICT_OTHER: Issue #${issueNumber} is actively claimed by '${latestClaim.agent}'. Expires at ${new Date(latestClaim.ts.getTime() + ttlMs).toISOString()}.` }],
+              };
+            }
+            decision = "GRANT_TAKEOVER";
+          }
+        }
+
+        if (decision === "NOOP_SELF") {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                decision: "NOOP_SELF",
+                issueNumber,
+                agentId: agent,
+                message: `Claim is already active for '${agent}' (idempotent no-op).`,
+                expiresAt: new Date(latestClaim!.ts.getTime() + ttlMs).toISOString(),
+              }, null, 2),
+            }],
+          };
+        }
+
+        // Step 3: Add status:claimed label
+        const addLabelRes = await httpRequest(
+          `https://api.github.com/repos/${repo}/issues/${issueNumber}/labels`,
+          {
+            method: "POST",
+            headers,
+            body: { labels: ["status:claimed"] },
+            timeoutMs: 15_000,
+          }
+        );
+        if (!addLabelRes.ok) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `LABEL_WRITE_FAILED: Failed to add status:claimed to #${issueNumber} (HTTP ${addLabelRes.status}).` }],
+          };
+        }
+
+        // Step 4: Post marker comment (Rollback label if comment fails)
+        const nowIso = now.toISOString().replace(/\.\d{3}Z$/, "Z");
+        const marker = [
+          `<!-- atomic-claim:issue=${issueNumber},agent=${agent},ts=${nowIso},ttl=30m -->`,
+          `**Claimed by Agent (\`${agent}\`)** via Tower \`work.claim\` (${decision}).`,
+          "",
+          `- Decision: \`${decision}\``,
+          `- Claim timestamp: \`${nowIso}\``,
+          `- Lease: \`30m\` (expires \`${new Date(now.getTime() + 30 * 60 * 1000).toISOString()}\`)`,
+          `- Invariant #430 planes: label (\`status:claimed\`) + marker comment.`,
+        ].join("\n");
+
+        const postCommentRes = await httpRequest(
+          `https://api.github.com/repos/${repo}/issues/${issueNumber}/comments`,
+          {
+            method: "POST",
+            headers,
+            body: { body: marker },
+            timeoutMs: 15_000,
+          }
+        );
+
+        if (!postCommentRes.ok) {
+          // Atomic Rollback: remove status:claimed if we added it
+          if (!hadClaimedLabel) {
+            await httpRequest(
+              `https://api.github.com/repos/${repo}/issues/${issueNumber}/labels/status%3Aclaimed`,
+              { method: "DELETE", headers, timeoutMs: 10_000 }
+            );
+          }
+          return {
+            isError: true,
+            content: [{ type: "text", text: `COMMENT_WRITE_FAILED: Failed to post claim comment on #${issueNumber} (HTTP ${postCommentRes.status}). Rolled back label.` }],
+          };
+        }
+
+        // Step 5: Remove status:unclaimed if present (best-effort)
+        if (labels.includes("status:unclaimed")) {
+          await httpRequest(
+            `https://api.github.com/repos/${repo}/issues/${issueNumber}/labels/status%3Aunclaimed`,
+            { method: "DELETE", headers, timeoutMs: 10_000 }
+          );
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              decision,
+              issueNumber,
+              agentId: agent,
+              claimedAt: nowIso,
+              ttlMinutes: 30,
+              expiresAt: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+              planes: ["label:status:claimed", "comment:atomic-claim"],
+            }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `work.claim execution error: ${(err as Error).message}` }],
+        };
+      }
+    }
+  );
 }
