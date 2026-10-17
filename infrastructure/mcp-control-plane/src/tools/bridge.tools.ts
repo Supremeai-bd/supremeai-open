@@ -514,14 +514,13 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
-    "work.claim",
-    "Atomically claim an open task issue per S0.1 specification (Invariant #430). Adds status:claimed, removes status:unclaimed, and posts an atomic-claim comment with a 30-minute lease. Zero-credential self-serve for all coder agents.",
-    {
-      issueNumber: z.number().int().positive().describe("Task issue number to claim"),
-      agentId: z.string().optional().describe("Optional caller identity (defaults to authenticated client or contributor)"),
-    },
-    async ({ issueNumber, agentId }) => {
+  const claimHandler = async ({
+    issueNumber,
+    agentId,
+  }: {
+    issueNumber: number;
+    agentId?: string;
+  }): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> => {
       const repo = bridgeOpenRepo();
       const agent = (agentId || "contributor-agent").trim().replace(/[^A-Za-z0-9_.:-]/g, "-");
       const headers = await githubHeaders(true);
@@ -707,6 +706,15 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           content: [{ type: "text", text: `work.claim execution error: ${(err as Error).message}` }],
         };
       }
-    }
+  };
+
+  server.tool(
+    "work.claim",
+    "Atomically claim an open task issue per S0.1 specification (Invariant #430). Adds status:claimed, removes status:unclaimed, and posts an atomic-claim comment with a 30-minute lease. Zero-credential self-serve for all coder agents.",
+    {
+      issueNumber: z.number().int().positive().describe("Task issue number to claim"),
+      agentId: z.string().optional().describe("Optional caller identity (defaults to authenticated client or contributor)"),
+    },
+    claimHandler
   );
 }
