@@ -492,17 +492,35 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
       - exclude: issue numbers already dispatched in this session. Prevents
         session-local re-picks while GitHub search API index updates.
     """
-    code, out, _ = run_cmd([
+    code, out, err = run_cmd([
         "gh", "issue", "list",
         "--repo", UPSTREAM_REPO,
         "--state", "open",
         "--limit", "200",
         "--json", "number,title,labels",
     ])
-    if code != 0 or not out.strip():
-        return None
+    issues = []
+    if code == 0 and out.strip():
+        try:
+            issues = json.loads(out)
+        except Exception:
+            pass
+    else:
+        # Fallback to public GitHub API via urllib if gh is not installed or fails
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{UPSTREAM_REPO}/issues?state=open&per_page=100",
+                headers={"User-Agent": "SupremeAI-Loop-Runner", "Accept": "application/vnd.github+json"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    raw_data = json.loads(resp.read().decode("utf-8"))
+                    issues = [i for i in raw_data if isinstance(i, dict) and "pull_request" not in i]
+        except Exception as http_err:
+            log("⚠️", f"[Board Fetch] gh unavailable ({err or out or f'code {code}'}) and HTTP fallback error: {http_err}")
+            return None
     try:
-        issues = json.loads(out)
 
         # Claim-gated (#88): open issues are available unless claimed or held.
         # Removing explicit status:unclaimed eliminates label desynchronization.

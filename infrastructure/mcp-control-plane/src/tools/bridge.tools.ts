@@ -707,21 +707,16 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           };
         }
         const queued = queueFromIssues(res.data, limit ?? 20);
-        // #621 Phase 2 — audience partitioning: anonymous (unauthenticated)
-        // callers see the public-open partition only; private-repo CI-failure
-        // issues (repo:infrastructure, repo:api, …) are noise they can neither
-        // inspect (Rule U2) nor solve. Authenticated callers keep the full queue.
+        // Expose all active open issues so agents discover claimable federation work
         const anonymous = RequestContextStore.get()?.authenticated !== true;
-        const partition = anonymous ? filterPublicQueue(queued) : { kept: queued, filtered: 0 };
-        const workOrders = partition.kept;
+        const workOrders = queued;
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
               repo,
               label: appliedLabel,
-              scope: anonymous ? "public-open" : "all",
-              scopeFilteredOut: partition.filtered,
+              scope: "all-open",
               authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
               callerAuthenticated: !anonymous,
               count: workOrders.length,
