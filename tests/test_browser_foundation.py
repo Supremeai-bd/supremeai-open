@@ -15,62 +15,33 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-try:
-    from browser.runtime.config import get_profile, profile_names  # noqa: E402
-    from browser.runtime.content_pruner import ContentPruner, link_density  # noqa: E402
-    from browser.runtime.cookie_bridge import (  # noqa: E402
-        CookieBridge,
-        CookieRecord,
-        WalledGardenViolation,
-    )
-    from browser.runtime.infinite_scanner import (  # noqa: E402
-        FeedExpander,
-        ScrollPlan,
-        SCROLL_AND_EXPAND_JS,
-    )
-    from browser.runtime.semantic_extractor import (  # noqa: E402
-        estimate_tokens,
-        extract_semantic_tree,
-    )
-    from browser.runtime.session_manager import (  # noqa: E402
-        BrowserSessionManager,
-        RuntimeCapabilityError,
-        playwright_available,
-    )
-    from browser.runtime.stealth_profile import (  # noqa: E402
-        StealthProfile,
-        bezier_path,
-        generate,
-        webgl_pairs,
-    )
-except ImportError:
-    from runtime.config import get_profile, profile_names  # noqa: E402
-    from runtime.content_pruner import ContentPruner, link_density  # noqa: E402
-    from runtime.cookie_bridge import (  # noqa: E402
-        CookieBridge,
-        CookieRecord,
-        WalledGardenViolation,
-    )
-    from runtime.infinite_scanner import (  # noqa: E402
-        FeedExpander,
-        ScrollPlan,
-        SCROLL_AND_EXPAND_JS,
-    )
-    from runtime.semantic_extractor import (  # noqa: E402
-        estimate_tokens,
-        extract_semantic_tree,
-    )
-    from runtime.session_manager import (  # noqa: E402
-        BrowserSessionManager,
-        RuntimeCapabilityError,
-        playwright_available,
-    )
-    from runtime.stealth_profile import (  # noqa: E402
-        StealthProfile,
-        bezier_path,
-        generate,
-        webgl_pairs,
-    )
+from runtime.config import get_profile, profile_names  # noqa: E402
+from runtime.content_pruner import ContentPruner, link_density  # noqa: E402
+from runtime.cookie_bridge import (  # noqa: E402
+    CookieBridge,
+    CookieRecord,
+    WalledGardenViolation,
+)
+from runtime.infinite_scanner import (  # noqa: E402
+    FeedExpander,
+    ScrollPlan,
+    SCROLL_AND_EXPAND_JS,
+)
+from runtime.semantic_extractor import (  # noqa: E402
+    estimate_tokens,
+    extract_semantic_tree,
+)
+from runtime.session_manager import (  # noqa: E402
+    BrowserSessionManager,
+    RuntimeCapabilityError,
+    playwright_available,
+)
+from runtime.stealth_profile import (  # noqa: E402
+    StealthProfile,
+    bezier_path,
+    generate,
+    webgl_pairs,
+)
 
 
 # ---------------------------------------------------------------- stealth tier
