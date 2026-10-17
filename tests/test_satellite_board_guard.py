@@ -103,9 +103,13 @@ class VerdictLogicTest(unittest.TestCase):
         r = sbg.audit_satellite("core", fetch=fake_fetch(["garbage", None, 17]))
         self.assertEqual(r.verdict, sbg.VERDICT_CLEAN)
 
-    def test_09_non_list_payload_treated_as_empty(self):
+    def test_09_non_list_payload_is_fail_closed_unreachable(self):
+        # #658 fail-closed contract: a 200 response whose body is not a JSON
+        # list is unverifiable — never silently CLEAN (never fail-open).
         r = sbg.audit_satellite("core", fetch=fake_fetch(None))
-        self.assertEqual(r.verdict, sbg.VERDICT_CLEAN)
+        self.assertEqual(r.verdict, sbg.VERDICT_UNREACHABLE)
+        self.assertIn("malformed payload", r.reason)
+        self.assertIn("NoneType", r.reason)
 
 
 class UnreachablePathsTest(unittest.TestCase):

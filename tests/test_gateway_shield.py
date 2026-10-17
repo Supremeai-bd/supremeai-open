@@ -28,11 +28,20 @@ class Rule18Surface(unittest.TestCase):
 
     def test_02_schema_contract_structurally_valid(self):
         raw = (ROOT / "api-schemas" / "gateway.openapi.yaml").read_text(encoding="utf-8")
-        self.assertTrue(raw.startswith("openapi: 3.1.0"))
+        # The mirror is a byte-parity copy of the api SSOT (#648) and carries
+        # a comment header; the contract is the first declaration line, not
+        # byte offset zero.
+        decls = [line.strip() for line in raw.splitlines()
+                 if line.strip() and not line.lstrip().startswith("#")]
+        self.assertTrue(decls, "schema carries no declaration lines")
+        self.assertEqual(decls[0], "openapi: 3.1.0")
         self.assertIn("/v1/chat/completions:", raw)
         self.assertIn("/v1/models:", raw)
         self.assertIn("X-SupremeAI-Key", raw)
-        self.assertIn("bearerAuth", raw)
+        # SSOT auth scheme is the SupremeAIKey apiKey header (#648 byte-parity);
+        # the pre-sync bearerAuth name no longer exists in the contract.
+        self.assertIn("SupremeAIKey", raw)
+        self.assertIn("type: apiKey", raw)
 
 
 class Rule19VaultOnlyKeys(unittest.TestCase):
