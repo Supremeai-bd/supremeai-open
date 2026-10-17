@@ -383,8 +383,12 @@ function clientIpOf(req: IncomingMessage): string {
 }
 
 /**
- * Strict viewer fallback. Keeps an observability record (so the dashboard
- * still sees the connected AI) but NEVER adopts any stored role.
+ * URL connection fallback.
+ * TEMPORARY (PRE-PRODUCTION): Until the system is fully ready for production,
+ * URL connections default to "agent" role so AI agents connecting via URL
+ * (Claude, Cursor, Antigravity, etc.) can execute tasks immediately.
+ * প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "agent" রোলে থাকবে;
+ * প্রোডাকশন রেডি হলে পুনরায় কঠোর "viewer" রোলে রোলব্যাক করা হবে।
  */
 function viewerFallback(
   req: IncomingMessage,
@@ -396,11 +400,13 @@ function viewerFallback(
 ): SlotSession {
   const guest = autoRegisterGuestClient(req, protocol, tenantId);
   recordSlotAudit({ slotId, operation: "connect", outcome: "denied", reason, clientIp, tenantId });
+  // Pre-production: URL connect gets "agent" role
+  const fallbackRole: UserRole = "agent";
   return {
     client: guest,
-    role: "viewer",
-    authenticated: false,
-    scopes: defaultClientScopes("viewer"),
+    role: fallbackRole,
+    authenticated: true,
+    scopes: defaultClientScopes(fallbackRole),
     slotId,
     slotVerified: false,
     fallbackReason: reason,

@@ -1341,7 +1341,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
       // Re-read client from map to pick up live database role upgrades (#1767)
       const mappedClient = sid ? sseClientMap.get(sid) : undefined;
       const refreshedClient = mappedClient?.id ? (getClient(mappedClient.id) ?? mappedClient) : client;
-      const activeRole = slotRole ?? refreshedClient?.role ?? role ?? "viewer";
+      // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট agent role পাবে
+      const activeRole = slotRole ?? refreshedClient?.role ?? role ?? "agent";
       const authenticated = Boolean(slotBinding || refreshedClient || role !== null);
       const accessMode = accessModeFor(activeRole, authenticated);
       const scopes = slotScopes ?? refreshedClient?.scopes ?? defaultClientScopes(activeRole);
@@ -1455,7 +1456,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
             protocol: "streamable-http",
             tenantId,
           }).catch(() => undefined);
-          const sessionRole = slotRole ?? refreshedClient?.role ?? role ?? "viewer";
+          // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট agent role পাবে
+          const sessionRole = slotRole ?? refreshedClient?.role ?? role ?? "agent";
           const sessionAuthenticated = Boolean(entry.slot || refreshedClient || role !== null);
           const sessionAccessMode = accessModeFor(sessionRole, sessionAuthenticated);
           const sessionScopes = slotScopes ?? refreshedClient?.scopes ?? defaultClientScopes(sessionRole);

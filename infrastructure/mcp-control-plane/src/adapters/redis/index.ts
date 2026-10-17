@@ -72,20 +72,36 @@ function clientForAccount(account: RedisAccountConfig): ChainClient | null {
     const redisClient = new (Redis as any)(account.tcpUrl, {
       maxRetriesPerRequest: 1,
       connectTimeout: 5000,
+      lazyConnect: true,
+      enableOfflineQueue: false,
     });
+    // Prevent unhandled error event crashes in Node.js on unreachable TCP host
+    redisClient.on("error", () => {});
     return {
       mode: "ioredis-tcp",
       account: account.label,
-      ping: async () => await redisClient.ping(),
+      ping: async () => {
+        try {
+          return await redisClient.ping();
+        } finally {
+          redisClient.disconnect();
+        }
+      },
       info: async () => {
-        const infoStr = await redisClient.info();
-        redisClient.disconnect();
-        return infoStr;
+        try {
+          const infoStr = await redisClient.info();
+          return infoStr;
+        } finally {
+          redisClient.disconnect();
+        }
       },
       get: async (key: string) => {
-        const val = await redisClient.get(key);
-        redisClient.disconnect();
-        return val;
+        try {
+          const val = await redisClient.get(key);
+          return val;
+        } finally {
+          redisClient.disconnect();
+        }
       },
     };
   }

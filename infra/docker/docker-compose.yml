@@ -59,3 +59,8 @@ services:
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

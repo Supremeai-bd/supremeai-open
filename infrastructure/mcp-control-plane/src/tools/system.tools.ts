@@ -5,7 +5,8 @@ import { listResources, getResourceStatus } from "../registry/resource.registry.
 import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { RequestContextStore } from "../policy/auth.context.js";
-import { activeAccountChain } from "../lib/redis_chain.js";
+import { activeAccountChain, getActiveRedisAccount, markAccountQuotaExhausted, responseIndicatesQuotaExhaustion } from "../lib/redis_chain.js";
+import { pingRedis } from "../adapters/redis/index.js";
 
 /**
  * System-level MCP tools: summary, health, dependencies, and resource discovery.
@@ -145,65 +146,51 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
     return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
   }
 
-  // ── Redis (Upstash): REST ping with URL/apiKeyRef bearer token (chain failover supported) ──
+  // ── Redis (Upstash / TCP): REST ping with URL/apiKeyRef bearer token (chain failover supported) ──
   if (svc.provider === "redis") {
     const rest = upstashRestUrl(svc.url!);
-    if (!rest) return { ...base, url: svc.url!, status: "unreachable", httpStatus: null, latencyMs: null, error: "unparseable redis URL" };
-    // Prefer token extracted from URL password/username, or fall back to apiKeyRef from env (crucial for auto-rotated accounts like tertiary/quaternary)
-    const token = rest.token || bearerFor(svc.apiKeyRef);
+    const token = rest?.token || bearerFor(svc.apiKeyRef);
+    if (rest) {
+      try {
+        const res = await httpRequest<{ result?: string }>(rest.url, {
+          timeoutMs: 5000,
+          retries: 0,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const pong = res.ok && String(res.data?.result ?? "").toLowerCase() === "pong";
+        if (pong) {
+          return { ...base, url: rest.url, status: "healthy", httpStatus: res.status, latencyMs: res.latencyMs };
+        }
+        // If not pong, detect quota exhaustion and mark account in cooldown
+        const bodyStr = typeof res.data === "string" ? res.data : JSON.stringify(res.data ?? "");
+        if (responseIndicatesQuotaExhaustion(res.status, bodyStr)) {
+          markAccountQuotaExhausted(getActiveRedisAccount().label);
+        }
+      } catch (err) {
+        const errMsg = (err as Error).message;
+        if (responseIndicatesQuotaExhaustion(0, errMsg)) {
+          markAccountQuotaExhausted(getActiveRedisAccount().label);
+        }
+      }
+    }
+
+    // Failover: walk the active chain via pingRedis (handles both REST & TCP accounts)
     try {
-      const res = await httpRequest<{ result?: string }>(rest.url, {
-        timeoutMs: 5000,
-        retries: 0,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      // Upstash REST replies {"result":"PONG"} — compare case-insensitively
-      const pong = res.ok && String(res.data?.result ?? "").toLowerCase() === "pong";
-      if (!pong) {
-        // Fallback: iterate active account chain if primary or rotated account fails/exhausted
-        const chain = activeAccountChain();
-        for (const candidate of chain) {
-          if (!candidate.restUrl) continue;
-          const candRest = upstashRestUrl(candidate.restUrl);
-          const candToken = candidate.restToken || candRest?.token;
-          if (candRest && candRest.url !== rest.url && candToken) {
-            try {
-              const secRes = await httpRequest<{ result?: string }>(candRest.url, {
-                timeoutMs: 4000,
-                retries: 0,
-                headers: { Authorization: `Bearer ${candToken}` },
-              });
-              const secPong = secRes.ok && String(secRes.data?.result ?? "").toLowerCase() === "pong";
-              if (secPong) {
-                return { ...base, url: candRest.url, status: "healthy", httpStatus: secRes.status, latencyMs: secRes.latencyMs };
-              }
-            } catch {}
-          }
-        }
+      const pingResult = (await pingRedis()) as any;
+      if (pingResult && (pingResult.status === "PONG" || String(pingResult.status).toLowerCase() === "pong")) {
+        const activeLabel = pingResult.account || getActiveRedisAccount().label;
+        return {
+          ...base,
+          displayName: activeLabel === "primary" ? "Upstash Redis (Cache + Queue)" : `Upstash Redis (Cache + Queue [auto-rotated: ${activeLabel}])`,
+          url: svc.url!,
+          status: "healthy",
+          httpStatus: 200,
+          latencyMs: pingResult.latencyMs ?? 50,
+        };
       }
-      return { ...base, url: rest.url, status: pong ? "healthy" : "degraded", httpStatus: res.status, latencyMs: res.latencyMs, ...(pong ? {} : { error: "PING did not return pong" }) };
+      return { ...base, url: rest?.url || svc.url!, status: "degraded", httpStatus: null, latencyMs: null, error: "PING did not return pong" };
     } catch (err) {
-      // Also try failover on network/connection error across the active chain
-      const chain = activeAccountChain();
-      for (const candidate of chain) {
-        if (!candidate.restUrl) continue;
-        const candRest = upstashRestUrl(candidate.restUrl);
-        const candToken = candidate.restToken || candRest?.token;
-        if (candRest && candRest.url !== rest.url && candToken) {
-          try {
-            const secRes = await httpRequest<{ result?: string }>(candRest.url, {
-              timeoutMs: 4000,
-              retries: 0,
-              headers: { Authorization: `Bearer ${candToken}` },
-            });
-            const secPong = secRes.ok && String(secRes.data?.result ?? "").toLowerCase() === "pong";
-            if (secPong) {
-              return { ...base, url: candRest.url, status: "healthy", httpStatus: secRes.status, latencyMs: secRes.latencyMs };
-            }
-          } catch {}
-        }
-      }
-      return { ...base, url: rest.url, status: "unreachable", httpStatus: null, latencyMs: null, error: (err as Error).message };
+      return { ...base, url: rest?.url || svc.url!, status: "unreachable", httpStatus: null, latencyMs: null, error: (err as Error).message };
     }
   }
 
@@ -283,28 +270,6 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
     } catch {
       return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, error: "FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON" };
     }
-  }
-
-  // ── AI providers: authenticated models-list probes ──
-  if (svc.provider === "ai") {
-    const groqKey = env.ai.groqKeys[0];
-    const openrouterKey = env.ai.openrouterKeys[0];
-    const mistralKey = env.ai.mistralKey;
-    const probes: Record<string, { url: string; headers: Record<string, string>; authOptional?: boolean }> = {
-      "ai-gemini": { url: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", headers: { "x-goog-api-key": env.ai.geminiKeys[0] ?? "" } },
-      "ai-groq": { url: "https://api.groq.com/openai/v1/models", headers: groqKey ? { Authorization: `Bearer ${groqKey}` } : {} },
-      "ai-openrouter": { url: "https://openrouter.ai/api/v1/models", headers: openrouterKey ? { Authorization: `Bearer ${openrouterKey}` } : {}, authOptional: true },
-      "ai-mistral": { url: "https://api.mistral.ai/v1/models", headers: mistralKey ? { Authorization: `Bearer ${mistralKey}` } : {} },
-    };
-    const target = probes[svc.id];
-    if (!target) return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, error: `no AI probe implemented for ${svc.id}` };
-    const out = await probeHttp(target.url, target.headers);
-    if (out === "unreachable") return { ...base, url: target.url, status: "unreachable", httpStatus: null, latencyMs: null, error: "connection failed" };
-    if (out === "degraded") {
-      const reason = target.authOptional ? "models endpoint responded non-2xx" : "key rejected or non-2xx (check validity/quota/region)";
-      return { ...base, url: target.url, status: "degraded", httpStatus: null, latencyMs: null, error: reason };
-    }
-    return { ...base, url: target.url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
   }
 
   // ── Kaggle: pool config + authenticated competitions list (first token) ──

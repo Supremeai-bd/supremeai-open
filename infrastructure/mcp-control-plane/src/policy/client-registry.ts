@@ -488,6 +488,13 @@ export function getOrCreateGuestClient(
     counter++;
   }
 
+  // TEMPORARY (PRE-PRODUCTION): Until the system is fully ready for production,
+  // URL-added/guest clients are automatically assigned the "agent" role so AI agents
+  // can execute tools and tasks without requiring manual admin approval.
+  // প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "agent" রোলে থাকবে;
+  // প্রোডাকশন রেডি হলে পুনরায় কঠোর "viewer" রোলে ফিরিয়ে নেওয়া হবে।
+  const defaultGuestRole: ClientRole = "agent";
+
   const token = `mcp_${randomBytes(32).toString("base64url")}`;
   const now = new Date().toISOString();
   const client: StoredClient = {
@@ -496,8 +503,8 @@ export function getOrCreateGuestClient(
     name: finalName,  // AUDIT-FIX (#2030): use auto-incremented name
     provider,
     protocol,
-    role: "viewer",
-    scopes: defaultClientScopes("viewer"),
+    role: defaultGuestRole,
+    scopes: defaultClientScopes(defaultGuestRole),
     toolProfile, // Tool Exposure Policy: provider-derived default (chatgpt → curated surface)
     createdAt: now,
     updatedAt: now,

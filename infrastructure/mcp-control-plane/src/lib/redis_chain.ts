@@ -30,8 +30,18 @@ const CHAIN_ENV_SUFFIXES: Array<[string, string, string]> = [
 export function buildAccountChain(): RedisAccountConfig[] {
   const chain: RedisAccountConfig[] = [];
   const restUrl = env.redis.restUrl;
-  const restToken = env.redis.restToken;
+  let restToken = env.redis.restToken;
   const tcpUrl = env.redis.url;
+
+  // If restUrl has embedded token (e.g. https://default:TOKEN@host), extract it if restToken is missing
+  if (restUrl && !restToken) {
+    try {
+      const parsed = new URL(restUrl);
+      const token = decodeURIComponent(parsed.password || parsed.username || "");
+      if (token) restToken = token;
+    } catch {}
+  }
+
   if (restUrl && restToken) {
     chain.push({ label: process.env.REDIS_ACCOUNT_LABEL || "primary", restUrl, restToken });
   } else if (tcpUrl) {
@@ -42,6 +52,13 @@ export function buildAccountChain(): RedisAccountConfig[] {
     const token = process.env[tokenKey];
     if (url && token) chain.push({ label, restUrl: url, restToken: token });
   }
+
+  // If primary was REST and tcpUrl is also provided (e.g. local redis or emergency fallback),
+  // append it to the chain as an emergency fallback if all Upstash REST accounts exhaust quota.
+  if (restUrl && restToken && tcpUrl) {
+    chain.push({ label: "tcp-fallback", tcpUrl });
+  }
+
   return chain;
 }
 
@@ -128,8 +145,25 @@ export function getActiveRedisAccount(nowMs: number = Date.now()): RedisAccountC
 
 /** REST response-এ কোটা-ত্রুটির মার্কার আছে কি না (status + body উভয় থেকে)। */
 export function responseIndicatesQuotaExhaustion(status: number, body: string): boolean {
-  if (body && (body.includes(QUOTA_EXCEEDED_MARKER) || body.includes("ERR max requests limit exceeded"))) return true;
-  return status === 400 && body.includes("max requests limit");
+  if (status === 429 || status === 402) return true;
+  if (!body) return false;
+  const lower = body.toLowerCase();
+  return (
+    lower.includes(QUOTA_EXCEEDED_MARKER) ||
+    lower.includes("err max requests limit exceeded") ||
+    lower.includes("requests limit exceeded") ||
+    lower.includes("request limit exceeded") ||
+    lower.includes("daily request limit") ||
+    lower.includes("monthly request limit") ||
+    lower.includes("rate limit exceeded") ||
+    lower.includes("quota exceeded") ||
+    lower.includes("quota exhausted") ||
+    lower.includes("bandwidth limit exceeded") ||
+    lower.includes("too many requests") ||
+    lower.includes("payment required") ||
+    lower.includes("over quota") ||
+    (status === 400 && lower.includes("limit"))
+  );
 }
 
 /** পর্যবেক্ষণের জন্য cooldown snapshot (invariant #5 — fleet observability)। */

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import socket
+import ssl
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -138,17 +139,42 @@ class MiniRedis:
         if parsed.scheme not in ("redis", "rediss") or not parsed.hostname:
             raise KillSwitchUnavailable("REDIS_URL must be a redis:// URL")
         self.host = parsed.hostname
-        self.port = parsed.port or 6379
+        self.port = parsed.port or (6380 if parsed.scheme == "rediss" else 6379)
         self.timeout_s = timeout_s
+        self.password = parsed.password
+        self.username = parsed.username
+        self.is_ssl = parsed.scheme == "rediss"
 
     def _command(self, *args: bytes) -> str:
-        with socket.create_connection((self.host, self.port), timeout=self.timeout_s) as sock:
-            sock.sendall(encode_resp(*args))
-            sock.settimeout(self.timeout_s)
-            data = sock.recv(4096)
-        if not data:
-            raise DispatcherError("empty response from redis")
-        return parse_resp_line(data.split(CRLF)[0])
+        raw_sock = socket.create_connection((self.host, self.port), timeout=self.timeout_s)
+        try:
+            if self.is_ssl:
+                ctx = ssl.create_default_context()
+                sock = ctx.wrap_socket(raw_sock, server_hostname=self.host)
+            else:
+                sock = raw_sock
+            with sock:
+                sock.settimeout(self.timeout_s)
+                if self.password:
+                    if self.username:
+                        auth_cmd = encode_resp(b"AUTH", self.username.encode("utf-8"), self.password.encode("utf-8"))
+                    else:
+                        auth_cmd = encode_resp(b"AUTH", self.password.encode("utf-8"))
+                    sock.sendall(auth_cmd)
+                    auth_resp = sock.recv(4096)
+                    if auth_resp.startswith(b"-"):
+                        raise DispatcherError("Redis AUTH failed: %s" % parse_resp_line(auth_resp.split(CRLF)[0]))
+                sock.sendall(encode_resp(*args))
+                data = sock.recv(4096)
+            if not data:
+                raise DispatcherError("empty response from redis")
+            return parse_resp_line(data.split(CRLF)[0])
+        except Exception:
+            try:
+                raw_sock.close()
+            except Exception:
+                pass
+            raise
 
     def set_ex(self, key: str, value: str, ttl_s: int) -> str:
         return self._command(b"SET", key.encode("utf-8"), value.encode("utf-8"),

@@ -26,6 +26,10 @@ assert.equal(activeAccountChain()[0].label, "primary");
 // 2. Quota exhaustion marker detection
 assert.ok(responseIndicatesQuotaExhaustion(400, "ERR max requests limit exceeded. Limit: 500000, Usage: 500002"));
 assert.ok(responseIndicatesQuotaExhaustion(400, "command failed: max requests limit"));
+assert.ok(responseIndicatesQuotaExhaustion(429, "Too Many Requests"));
+assert.ok(responseIndicatesQuotaExhaustion(400, "Daily request limit exceeded"));
+assert.ok(responseIndicatesQuotaExhaustion(400, "Monthly request limit exceeded"));
+assert.ok(responseIndicatesQuotaExhaustion(402, "Payment Required"));
 assert.ok(!responseIndicatesQuotaExhaustion(200, "PONG"));
 
 // 3. Mark primary exhausted -> Auto-rotate to secondary
