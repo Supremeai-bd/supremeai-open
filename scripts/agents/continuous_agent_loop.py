@@ -932,6 +932,44 @@ def push_branch_direct(remote: str, branch: str) -> tuple[bool, str]:
     return True, f"pushed {branch} to {remote}"
 
 
+def pre_push_rebase_guard() -> tuple[bool, int, str]:
+    """#514 Pre-Push Rebase Invariant (Anti-Stale-Base Mandate).
+
+    Fetch ➔ Measure Behind ➔ Rebase — the caller MUST re-run the Step 6
+    verification tiers on the rebased tree before pushing (post-rebase
+    re-verification catches logic drift that a clean textual merge can
+    still introduce). Fail-closed: a failed rebase is aborted and the push
+    is blocked; an unverifiable base count also blocks the push.
+
+    Returns (fresh, behind, detail):
+      fresh=True  → safe to push (`behind` = 0 when already fresh);
+      fresh=False → push MUST NOT proceed (`detail` explains why).
+    """
+    fetch_code, _, fetch_err = run_cmd(
+        ["git", "fetch", f"https://github.com/{UPSTREAM_REPO}.git", "main"],
+        check=False,
+    )
+    if fetch_code != 0:
+        return False, 0, f"pre-push fetch of upstream main failed: {fetch_err or 'unknown'}"
+    count_code, count_out, count_err = run_cmd(
+        ["git", "rev-list", "--count", "HEAD..FETCH_HEAD"], check=False
+    )
+    if count_code != 0:
+        return False, 0, f"pre-push behind-count failed: {count_err or 'unknown'}"
+    try:
+        behind = int((count_out or "0").strip() or "0")
+    except ValueError:
+        return False, 0, f"unparseable behind-count: {count_out!r}"
+    if behind <= 0:
+        return True, 0, "fresh base (0 commits behind upstream main)"
+    log("⚠️", f"Target branch advanced by {behind} commit(s). Rebasing onto latest main... (#514)")
+    rebase_code, _, rebase_err = run_cmd(["git", "rebase", "FETCH_HEAD"], check=False)
+    if rebase_code != 0:
+        run_cmd(["git", "rebase", "--abort"], check=False)
+        return False, behind, f"rebase onto latest main failed — aborted, push blocked (#514): {rebase_err or ''}"
+    return True, behind, f"rebased onto latest main (+{behind} commit(s)) — re-verify before pushing"
+
+
 def step_7_record(
     task: dict[str, Any],
     branch: str,
@@ -945,13 +983,22 @@ def step_7_record(
     tc7 = (contract or {}).get("task_contract", {})
 
     if auto_pr:
-        # Pre-Push Rebase & Re-Verification Invariant (#514)
-        fresh, detail, new_evidence = pre_push_rebase_and_verify(branch)
+        # #514 Pre-Push Rebase Invariant: never push a stale base. Fetch,
+        # measure BEHIND, rebase if needed — then re-run the verification
+        # tiers on the rebased tree before the push (post-rebase
+        # re-verification; fresh evidence replaces the pre-rebase set).
+        fresh, behind, guard_detail = pre_push_rebase_guard()
         if not fresh:
-            log("❌", f"[Fail-Closed Gate] Pre-push freshness check failed: {detail}")
+            log("❌", f"[Fail-Closed Gate] Pre-push rebase guard blocked the push (#514): {guard_detail}")
             return False
-        if new_evidence:
-            evidence = new_evidence
+        if behind > 0:
+            log("🧪", f"[#514] Rebased (+{behind}) — re-running verification tiers on the rebased tree...")
+            reverrify_ok, reverrified_evidence = step_6_verify()
+            if not reverrify_ok:
+                log("❌", "[Fail-Closed Gate] Post-rebase re-verification failed (#514) — push blocked.")
+                return False
+            evidence = reverrified_evidence
+            log("✅", f"[#514] Post-rebase re-verification passed ({guard_detail}).")
 
     reflection = {
         "why": str(task.get("why") or "").strip()
