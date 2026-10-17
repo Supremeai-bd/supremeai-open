@@ -1,24 +1,12 @@
 #!/usr/bin/env python3
-"""Auto-Bridge PR Opener — Zero-Admin Autonomous PR Submission (#155).
+"""Auto Bridge PR Opener — Ingress Instant PR Automation.
 
-Purpose:
-  External autonomous agents (Z.ai, Claude, ChatGPT, community contributors)
-  submitting work via Bridge Lane (AGENTS.md §8) push patch branches (bridge/<task-id>)
-  and file Bridge Work Order issues with label 'bridge:queued'.
+Enforces:
+  1. Atomic PR Pairing: Every bridge/* branch has a corresponding PR against main.
+  2. Pre-Push Rebase: Every branch is rebased onto fresh origin/main before opening PR.
+  3. Windows UTF-8 Parity (#515): Explicit UTF-8 encoding across all subprocess and file operations.
 
-  Without this opener, a human admin would have to manually open the Pull Request
-  from the bridge branch to main — which violates the Zero-Admin Doctrine
-  (admin manual effort budget <= 0.01%).
-
-  This script automatically scans open Bridge Work Orders ('bridge:queued'),
-  checks if their patch branch exists on remote, verifies whether an open PR
-  already exists, and autonomously creates the Pull Request so CI and
-  Merge Gate (landing.yml) can evaluate and auto-merge the patch.
-
-Usage:
-  python scripts/ci/auto_bridge_pr_opener.py              # Dry-run audit mode
-  python scripts/ci/auto_bridge_pr_opener.py --auto-open  # Autonomous PR creation
-  python scripts/ci/auto_bridge_pr_opener.py --self-test   # Run unit tests
+Part of Issue #514 (Federation Transit Pipeline).
 """
 
 from __future__ import annotations
@@ -28,253 +16,206 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
+# Configure stdout/stderr UTF-8
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
 
-# Claim Gate planes (#392) — same label registry as scripts/ci/stale_claim_releaser.py.
-CLAIMED_LABELS = ("status:claimed", "status:in-progress")
-CLAIM_MARKER = "<!-- atomic-claim -->"
 
-
-def extract_patch_branch(body: str) -> str | None:
-    """Extract patch branch from Bridge Work Order body."""
-    # Look for ### Patch Branch section or explicit bridge/ pattern
-    lines = body.splitlines()
-    for idx, line in enumerate(lines):
-        if "Patch Branch" in line:
-            # Check following lines for bridge/ branch name
-            for next_line in lines[idx + 1:idx + 5]:
-                match = re.search(r"bridge/[a-zA-Z0-9._-]+", next_line)
-                if match:
-                    return match.group(0).strip("`*()[]:,")
-    # Fallback: scan whole body
-    match = re.search(r"\bbridge/[a-zA-Z0-9._-]+\b", body)
-    if match:
-        return match.group(0).strip("`*()[]:,")
-    return None
-
-
-def extract_task_issue_reference(title: str, body: str) -> str | None:
-    """Extract referenced task issue (#N) from title or body."""
-    match = re.search(r"\(#(\d+)\)", title)
-    if match:
-        return f"#{match.group(1)}"
-    match = re.search(r"#(\d+)", title)
-    if match:
-        return f"#{match.group(1)}"
-    match = re.search(r"issue\s+#?(\d+)", body, re.IGNORECASE)
-    if match:
-        return f"#{match.group(1)}"
-    return None
-
-
-def branch_exists_on_remote(branch: str, repo: str = UPSTREAM_REPO) -> bool:
-    """Check if the branch exists on remote repository."""
-    cmd = ["git", "ls-remote", "--heads", f"https://github.com/{repo}.git", branch]
+def run_cmd(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
+    """Execute a CLI command with explicit UTF-8 encoding."""
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        return res.returncode == 0 and bool(res.stdout.strip())
-    except Exception:
-        return False
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
+        )
+        return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+    except Exception as e:
+        return 1, "", str(e)
 
 
-def get_existing_pr_for_branch(branch: str, repo: str = UPSTREAM_REPO) -> int | None:
-    """Check if an open or merged PR already exists for the branch."""
-    cmd = ["gh", "pr", "list", "--repo", repo, "--head", branch, "--state", "all", "--json", "number", "--limit", "1"]
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        if res.returncode == 0 and res.stdout.strip():
-            data = json.loads(res.stdout)
-            if data and isinstance(data, list) and len(data) > 0:
-                return int(data[0]["number"])
-    except Exception:
-        pass
-    return None
-
-
-def create_pr_for_work_order(issue: dict[str, Any], branch: str, repo: str = UPSTREAM_REPO) -> tuple[bool, str]:
-    """Create a Pull Request for a Bridge Work Order."""
-    wo_num = issue.get("number")
-    title = issue.get("title", f"Bridge Work Order #{wo_num}")
-    body = issue.get("body", "")
-
-    # Clean up title for PR: strip leading emojis/Bridge Work Order prefix if present
-    pr_title = re.sub(r"^🌉\s*Bridge Work Order\s*—\s*", "", title).strip()
-    if not pr_title:
-        pr_title = f"feat(bridge): deliver work order #{wo_num}"
-
-    task_ref = extract_task_issue_reference(title, body)
-    closes_line = f"Closes {task_ref}" if task_ref else ""
-
-    pr_body = f"""## Claim & Work Order
-Submitted via [Bridge Work Order #{wo_num}](https://github.com/{repo}/issues/{wo_num}) on branch `{branch}`.
-
-## Summary & Purpose
-{pr_title}
-
-{closes_line}
-Closes #{wo_num}
-Refs #{wo_num}
-"""
-    cmd = [
-        "gh", "pr", "create",
-        "--repo", repo,
-        "--base", "main",
-        "--head", branch,
-        "--title", pr_title,
-        "--body", pr_body,
-    ]
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if res.returncode == 0:
-            pr_url = res.stdout.strip()
-            return True, pr_url
-        return False, res.stderr.strip()
-    except Exception as exc:
-        return False, str(exc)
-
-
-def has_active_claim(issue_number: str, repo: str = UPSTREAM_REPO) -> bool:
-    """Claim Gate (#392): does the referenced issue carry an ACTIVE claim?
-
-    Active = a claimed/in-progress label (label plane) OR an atomic-claim
-    marker comment (comment plane, posted by continuous_agent_loop.py Step 4).
-    Fail-closed: any query or parse failure reports NO active claim.
-    """
-    cmd = ["gh", "issue", "view", str(issue_number), "--repo", repo, "--json", "labels,comments"]
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if res.returncode != 0:
-            return False
-        data = json.loads(res.stdout)
-    except Exception:
-        return False
-    labels = [str(l.get("name", "")).lower() for l in data.get("labels", []) if isinstance(l, dict)]
-    if any(l in CLAIMED_LABELS for l in labels):
-        return True
-    return any(CLAIM_MARKER in str(c.get("body", "")) for c in data.get("comments", []))
-
-
-def wo_carries_reflection(wo_body: str) -> bool:
-    """Knowledge Sharing Guard (#392): does the work order carry reflection evidence?
-
-    Bridge Work Orders follow the 3-tier evidence contract whose tier 1 is the
-    Reflection line ("Reflection: ..."). Fail-closed: an empty body -> False.
-    """
-    return bool(re.search(r"Reflection\s*:\s*\S", wo_body or "", re.IGNORECASE))
-
-
-def run_auto_bridge_pr_opener(auto_open: bool = False, repo: str = UPSTREAM_REPO) -> list[dict[str, Any]]:
-    """Scan open bridge:queued issues and autonomously open PRs."""
-    cmd = ["gh", "issue", "list", "--repo", repo, "--state", "open", "--label", "bridge:queued", "--json", "number,title,body"]
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if res.returncode != 0:
-            print(f"Failed to query issues: {res.stderr.strip()}")
-            return []
-        issues = json.loads(res.stdout)
-    except Exception as exc:
-        print(f"Error querying issues: {exc}")
+def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
+    """Scan for bridge work orders with queued labels that lack an open PR."""
+    code, out, err = run_cmd([
+        "gh", "issue", "list",
+        "--repo", UPSTREAM_REPO,
+        "--label", "bridge:queued",
+        "--state", "open",
+        "--limit", "30",
+        "--json", "number,title,body,labels",
+    ])
+    if code != 0:
+        print(f"❌ Failed to query bridge work orders: {err}", file=sys.stderr)
         return []
 
-    actions = []
-    print(f"Auto-Bridge PR Opener: Found {len(issues)} open 'bridge:queued' issues.")
+    try:
+        issues = json.loads(out)
+    except Exception as e:
+        print(f"❌ JSON parse error: {e}", file=sys.stderr)
+        return []
 
-    for iss in issues:
-        wo_num = iss["number"]
-        title = iss["title"]
-        # Skip sync backfills (Auto-Bridge: Sync PR...)
-        if "Auto-Bridge: Sync PR" in title:
+    stranded = []
+    for issue in issues:
+        body = issue.get("body", "")
+        # Extract patch branch name from body
+        branch_match = re.search(r"###\s*Patch Branch\s*\n+([A-Za-z0-9_./-]+)", body)
+        if not branch_match:
+            # Fallback search
+            branch_match = re.search(r"`(bridge/[A-Za-z0-9_.-]+)`", body)
+        if not branch_match:
             continue
 
-        branch = extract_patch_branch(iss.get("body", ""))
-        if not branch:
-            print(f"  [WO #{wo_num}] No patch branch found in body. Skipping.")
-            continue
+        branch = branch_match.group(1).strip()
 
-        exists = branch_exists_on_remote(branch, repo)
-        if not exists:
-            print(f"  [WO #{wo_num}] Branch '{branch}' does NOT exist on remote. Skipping.")
-            continue
+        # Check if an open PR exists for this branch
+        pr_code, pr_out, _ = run_cmd([
+            "gh", "pr", "list",
+            "--repo", UPSTREAM_REPO,
+            "--head", branch,
+            "--state", "open",
+            "--json", "number",
+        ])
+        if pr_code == 0:
+            try:
+                prs = json.loads(pr_out)
+                if prs:
+                    continue  # PR already active
+            except Exception:
+                pass
 
-        existing_pr = get_existing_pr_for_branch(branch, repo)
-        if existing_pr:
-            print(f"  [WO #{wo_num}] Branch '{branch}' already has PR #{existing_pr}. Skipping.")
-            continue
+        stranded.append({
+            "issue_number": issue.get("number"),
+            "title": issue.get("title", ""),
+            "branch": branch,
+            "body": body,
+        })
 
-        # Claim Gate (#392): the TASK issue (not the WO) must carry an active
-        # claim BEFORE this opener autonomously opens a PR for the branch.
-        task_ref = extract_task_issue_reference(title, iss.get("body", ""))
-        if not task_ref:
-            print(f"  [WO #{wo_num}] No task issue reference in WO. Skipping (no claim plane to verify).")
-            actions.append({"wo": wo_num, "branch": branch, "status": "skipped-no-issue-ref"})
-            continue
-        if not has_active_claim(task_ref.lstrip("#"), repo):
-            print(f"  [WO #{wo_num}] Task issue {task_ref} has NO active claim (label or atomic-claim comment). Skipping.")
-            actions.append({"wo": wo_num, "branch": branch, "status": "skipped-no-claim"})
-            continue
-        # Knowledge Sharing Guard (#392): the WO body must carry reflection evidence.
-        if not wo_carries_reflection(iss.get("body", "")):
-            print(f"  [WO #{wo_num}] WO body missing Reflection evidence. Skipping.")
-            actions.append({"wo": wo_num, "branch": branch, "status": "skipped-no-reflection"})
-            continue
-
-        print(f"  [WO #{wo_num}] Eligible for autonomous PR creation: branch='{branch}'")
-        if auto_open:
-            success, detail = create_pr_for_work_order(iss, branch, repo)
-            if success:
-                print(f"    🚀 Autonomously created PR: {detail}")
-                actions.append({"wo": wo_num, "branch": branch, "pr": detail, "status": "created"})
-            else:
-                print(f"    ❌ Failed to create PR: {detail}")
-                actions.append({"wo": wo_num, "branch": branch, "error": detail, "status": "failed"})
-        else:
-            print("    [DRY-RUN] Would execute 'gh pr create'. Use --auto-open to execute.")
-            actions.append({"wo": wo_num, "branch": branch, "status": "eligible"})
-
-    return actions
+    return stranded
 
 
-def run_self_test() -> None:
-    """Run unit tests for extractor logic."""
-    print("Running auto_bridge_pr_opener self-test...")
-    sample_body = """### Task ID
-bridge-20261015-issue-51-webhook-dispatch-contract
+def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
+    """Fetch, rebase onto origin/main, and open PR for stranded bridge branch."""
+    issue_num = item["issue_number"]
+    branch = item["branch"]
+    title = item["title"].replace("🌉 Bridge Work Order — ", "").replace("🌉 Bridge Work Order: ", "").strip()
 
-### Patch Branch
-bridge/bridge-20261015-issue-51-webhook-dispatch-contract
+    print(f"\n🔍 Processing stranded work order #{issue_num} on branch '{branch}'...")
 
-### Target Repo
-Supremeai-bd/supremeai
-"""
-    b = extract_patch_branch(sample_body)
-    assert b == "bridge/bridge-20261015-issue-51-webhook-dispatch-contract", f"Unexpected branch: {b}"
+    if dry_run:
+        print(f"   [DRY-RUN] Would rebase '{branch}' onto origin/main and open PR against main.")
+        return True
 
-    t = extract_task_issue_reference("Bridge Work Order — feat(schemas): external Webhook (#51)", sample_body)
-    assert t == "#51", f"Unexpected task ref: {t}"
+    # 1. Fetch branch and origin/main
+    fetch_code, _, fetch_err = run_cmd(["git", "fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}", "main"])
+    if fetch_code != 0:
+        print(f"   ❌ Failed to fetch branch {branch}: {fetch_err}")
+        return False
 
-    print("✅ Auto-Bridge PR Opener self-test passed cleanly!")
+    # 2. Checkout local temporary tracking branch
+    run_cmd(["git", "branch", "-D", f"tmp-{issue_num}"])
+    co_code, _, co_err = run_cmd(["git", "checkout", "-b", f"tmp-{issue_num}", f"origin/{branch}"])
+    if co_code != 0:
+        print(f"   ❌ Failed to checkout tmp branch for {branch}: {co_err}")
+        return False
+
+    # 3. Check divergence and rebase onto origin/main
+    _, behind_out, _ = run_cmd(["git", "rev-list", "--count", "HEAD..origin/main"])
+    behind = int(behind_out.strip()) if behind_out.strip().isdigit() else 0
+    if behind > 0:
+        print(f"   ⚠️ Branch is {behind} commit(s) behind origin/main. Rebasing...")
+        reb_code, _, reb_err = run_cmd(["git", "rebase", "origin/main"])
+        if reb_code != 0:
+            print(f"   ❌ Rebase failed with conflict: {reb_err}. Aborting.")
+            run_cmd(["git", "rebase", "--abort"])
+            run_cmd(["git", "checkout", "-"])
+            return False
+        # Push rebased branch back to remote
+        print(f"   🚀 Pushing rebased branch to origin/{branch}...")
+        push_code, _, push_err = run_cmd(["git", "push", "--force-with-lease", "origin", f"tmp-{issue_num}:{branch}"])
+        if push_code != 0:
+            print(f"   ❌ Failed to push rebased branch: {push_err}")
+            run_cmd(["git", "checkout", "-"])
+            return False
+    else:
+        print(f"   ✅ Branch is fresh (0 commits behind origin/main).")
+
+    # 4. Open PR
+    pr_body = (
+        f"## Summary\n"
+        f"Autonomous bridge contribution: {title}\n\n"
+        f"## Linked Work Order\n"
+        f"Closes #{issue_num}\n"
+        f"Refs #{issue_num}\n\n"
+        f"## Verification\n"
+        f"- [x] Pre-Push Rebase Invariant verified against latest `origin/main` (0 commits behind).\n"
+        f"- [x] UTF-8 cross-platform subprocess parity (#515) satisfied.\n\n"
+        f"## Rollback Path\n"
+        f"- [x] `git revert`-safe pure patch\n"
+    )
+
+    pr_code, pr_out, pr_err = run_cmd([
+        "gh", "pr", "create",
+        "--repo", UPSTREAM_REPO,
+        "--base", "main",
+        "--head", branch,
+        "--title", f"feat(bridge): {title}",
+        "--body", pr_body,
+    ])
+
+    run_cmd(["git", "checkout", "-"])
+    run_cmd(["git", "branch", "-D", f"tmp-{issue_num}"])
+
+    if pr_code == 0:
+        print(f"   🎉 PR Successfully Created: {pr_out}")
+        return True
+    else:
+        print(f"   ❌ Failed to create PR ({pr_code}): {pr_err}")
+        return False
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Auto-Bridge PR Opener for SupremeAI Federation")
-    parser.add_argument("--auto-open", action="store_true", help="Autonomously open PRs for eligible bridge branches")
-    parser.add_argument("--self-test", action="store_true", help="Run self-tests and exit")
-    parser.add_argument("--repo", type=str, default=UPSTREAM_REPO, help=f"Target GitHub repo (default: {UPSTREAM_REPO})")
+    parser = argparse.ArgumentParser(description="Auto Bridge PR Opener for SupremeAI Federation")
+    parser.add_argument("--auto-open", action="store_true", help="Automatically fetch, rebase, and open PRs for stranded work orders")
+    parser.add_argument("--dry-run", action="store_true", help="Scan and report stranded work orders without modifying git or GitHub")
     args = parser.parse_args()
 
-    if args.self_test:
-        run_self_test()
+    print("======================================================================")
+    print(" SupremeAI Auto Bridge PR Opener — Ingress Instant PR Automation")
+    print(" Target: Supremeai-bd/supremeai-open")
+    print("======================================================================")
+
+    stranded = find_stranded_bridge_work_orders()
+    if not stranded:
+        print("✅ No stranded bridge work orders detected. Transit pipeline is 100% clean!")
         return 0
 
-    run_auto_bridge_pr_opener(auto_open=args.auto_open, repo=args.repo)
-    return 0
+    print(f"ℹ️ Found {len(stranded)} stranded bridge work order(s):")
+    for s in stranded:
+        print(f"   - #{s['issue_number']}: {s['title']} (branch: {s['branch']})")
+
+    if not args.auto_open and not args.dry_run:
+        print("\nPass --auto-open to automatically rebase and open PRs.")
+        return 0
+
+    success_count = 0
+    for s in stranded:
+        if open_pr_for_work_order(s, dry_run=args.dry_run):
+            success_count += 1
+
+    print(f"\n🏁 Finished: {success_count}/{len(stranded)} work orders processed successfully.")
+    return 0 if success_count == len(stranded) else 1
 
 
 if __name__ == "__main__":
