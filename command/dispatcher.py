@@ -145,6 +145,42 @@ class MiniRedis:
         self.username = parsed.username
         self.is_ssl = parsed.scheme == "rediss"
 
+    def _recv_reply(self, sock) -> str:
+        """Read one complete RESP reply and return its semantic string.
+
+        Fixes the truncated-read defect: a single recv() could return only a
+        bulk reply's length prefix (e.g. b'$5') or a coalesced fragment of the
+        previous command's reply, so GET returned garbage.
+        """
+        buf = b""
+        while CRLF not in buf:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+        if not buf:
+            return ""
+        line, _, rest = buf.partition(CRLF)
+        prefix = line[:1]
+        if prefix in (b"+", b"-", b":"):
+            return parse_resp_line(line)
+        if prefix == b"$":
+            try:
+                n = int(line[1:])
+            except ValueError:
+                return parse_resp_line(line)
+            if n < 0:
+                return ""  # RESP null bulk
+            payload = rest
+            while len(payload) < n + len(CRLF):
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                payload += chunk
+            return payload[:n].decode("utf-8", errors="replace")
+        # multi-bulk arrays are outside the SET/GET/DEL surface used here
+        return parse_resp_line(line)
+
     def _command(self, *args: bytes) -> str:
         raw_sock = socket.create_connection((self.host, self.port), timeout=self.timeout_s)
         try:
@@ -165,10 +201,10 @@ class MiniRedis:
                     if auth_resp.startswith(b"-"):
                         raise DispatcherError("Redis AUTH failed: %s" % parse_resp_line(auth_resp.split(CRLF)[0]))
                 sock.sendall(encode_resp(*args))
-                data = sock.recv(4096)
+                data = self._recv_reply(sock)
             if not data:
                 raise DispatcherError("empty response from redis")
-            return parse_resp_line(data.split(CRLF)[0])
+            return data
         except Exception:
             try:
                 raw_sock.close()

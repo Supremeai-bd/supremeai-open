@@ -1,173 +1,62 @@
-import assert from "node:assert/strict";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { RequestContextStore } from "./src/policy/auth.context.js";
-import { toolAccessError } from "./src/policy/mcp-access.js";
-import {
-  executeGeminiFunctionCall,
-  geminiAdapterInfo,
-  listGeminiTools,
-  sanitizeForGeminiSchema,
-  type GeminiAdapterContext,
-} from "./src/adapters/gemini/gemini.adapter.js";
-
 /**
- * #2590 — Gemini Function Calling Adapter contract tests (Universal 3rd Pillar).
+ * AI delegation contract tests (issue #643 — zero-credential control plane).
  *
- * বাংলা মন্তব্য:
- * যাচাই হয় যে /gemini adapter —
- *   ১. MCP tool list-কে Gemini functionDeclarations-এ নির্ভুল রূপান্তর করে
- *      (নাম sanitize + schema subset)
- *   ২. Stateless function-call execution কাজ করে (InMemoryTransport pair)
- *   ৩. RBAC default-deny gate-কে সম্মান করে (viewer → safe tool ok,
- *      restricted tool denied; admin → allowed; কোনো context → denied)
- *   ৪. Unknown tool ও malformed args-এ fail-closed আচরণ করে
+ * বাংলা মন্তব্য: এই ফাইলটি আগে Gemini adapter-এর key-pool আচরণ পরীক্ষা করত।
+ * #643 অনুযায়ী control plane থেকে সরাসরি LLM provider key pool সরানো হয়েছে —
+ * ফাইলের নাম ও npm script (test:gemini-adapter) অপরিবর্তিত রাখা হয়েছে, কিন্তু
+ * চুক্তিটি এখন উল্টো: tower-এ কোনো provider key থাকবে না, প্রতিটি AI পৃষ্ঠ
+ * সৎভাবে delegation জানাবে, এবং কোনো পাবলিক টুল সরাসরি inference করবে না।
+ *
+ * Run: npm run test:gemini-adapter   (wired into test:unit)
  */
+import assert from "node:assert/strict";
 
-/** টেস্ট serverFactory — index.ts-এর createMcpServer-এর RBAC-wrapped ছোট সংস্করণ। */
-async function testServerFactory(): Promise<McpServer> {
-  const server = new McpServer({ name: "tower-test", version: "1.0.0" });
-  const originalTool = server.tool.bind(server);
-  (server as unknown as { tool: unknown }).tool = (name: string, ...args: unknown[]) => {
-    const sanitizedName = name.replace(/\./g, "_");
-    let handlerIndex = -1;
-    for (let i = args.length - 1; i >= 0; i--) {
-      if (typeof args[i] === "function") { handlerIndex = i; break; }
-    }
-    if (handlerIndex >= 0) {
-      const originalHandler = args[handlerIndex] as (toolArgs: unknown, extra: unknown) => unknown;
-      args[handlerIndex] = async (toolArgs: unknown) => {
-        // index.ts-এর মতোই কেন্দ্রীয় default-deny RBAC gate (#695)।
-        const denial = toolAccessError(sanitizedName);
-        if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
-        return originalHandler(toolArgs, {});
-      };
-    }
-    return (originalTool as unknown as (n: string, ...a: unknown[]) => unknown)(sanitizedName, ...args);
-  };
+import { listProviders, testProvider, getOrInitPool, AI_DELEGATION_NOTICE } from "./src/adapters/ai/index.js";
+import { analyzeWithAI, listConfiguredAnalysisProviders, ANALYSIS_DELEGATION_NOTICE } from "./src/adapters/ai/analyze.js";
+import { AIKeyPool, KEY_POOL_RETIRED_NOTICE } from "./src/adapters/ai/key-pool.js";
 
-  // নাম দেখেই পরিচিত: safe/public টুল বনাম restricted (secret-class) টুল।
-  server.tool(
-    "system.health",
-    "Tower health probe",
-    {},
-    async () => ({ content: [{ type: "text", text: "healthy" }] }),
-  );
-  server.tool(
-    "admin.secret_tool",
-    "Secret-class tool (admin only)",
-    {},
-    async () => ({ content: [{ type: "text", text: "TOP-SECRET" }] }),
-  );
-  server.tool(
-    "echo.with_schema",
-    "Echo tool with a nested schema",
-    { payload: z.object({ value: z.string() }) },
-    async (toolArgs: unknown) => ({ content: [{ type: "text", text: JSON.stringify(toolArgs) }] }),
-  );
-  return server;
-}
+// ── 1. Provider listing is permanently empty (no keys in control plane) ────
+const providers = listProviders() as Array<{ provider: string; keyCount: number }>;
+assert.ok(Array.isArray(providers), "listProviders returns an array");
+assert.equal(providers.length, 0, "control plane must hold ZERO direct LLM provider pools (#643 AC)");
 
-const ctx: GeminiAdapterContext = {
-  serverName: "tower-test",
-  serverVersion: "1.0.0",
-  serverFactory: testServerFactory,
-};
+// ── 2. Key pool is a retired tombstone: no storage, honest failures ────────
+const pool = new AIKeyPool(["ignored-fake-key-1", "ignored-fake-key-2"]); // deliberately NOT secret-shaped (bridge scan families)
+assert.equal(pool.length, 0, "AIKeyPool must not retain any keys (constructor args ignored)");
+let nextKeyErr: unknown;
+try { pool.getNextKey(); } catch (e) { nextKeyErr = e; }
+assert.ok(nextKeyErr instanceof Error && nextKeyErr.message === KEY_POOL_RETIRED_NOTICE,
+  "getNextKey fails honestly with the retirement notice");
+let execErr: unknown;
+try { await pool.execute(async () => "used-a-key", () => false); } catch (e) { execErr = e; }
+assert.ok(execErr instanceof Error && execErr.message === KEY_POOL_RETIRED_NOTICE,
+  "execute must never run an operation with a key");
 
-// ─── ১. Schema sanitize: unsupported keys ফেলে, nested recursively প্রযোজ্য ───
-assert.deepEqual(
-  sanitizeForGeminiSchema({ type: "object", additionalProperties: false, $schema: "x", properties: { a: { type: "string" } } }),
-  { type: "object", properties: { a: { type: "string" } } },
-);
-assert.deepEqual(
-  sanitizeForGeminiSchema({ type: "string", enum: ["a", "b"], exclusiveMinimum: 1 }),
-  { type: "object", properties: {} }, // root object নয় → Gemini-safe fallback
-);
-assert.deepEqual(
-  sanitizeForGeminiSchema(null),
-  { type: "object", properties: {} },
-);
-assert.deepEqual(
-  sanitizeForGeminiSchema({ type: "object", properties: { list: { type: "array", items: { type: "number" } } } }),
-  { type: "object", properties: { list: { type: "array", items: { type: "number" } } } },
-);
+// ── 3. getOrInitPool back-compat: always null ───────────────────────────────
+assert.equal(getOrInitPool("gemini"), null, "no pool is ever initialized for any provider");
 
-// ─── ২. Adapter info manifest: ৩-পিলার সম্পূর্ণ ───
-const info = geminiAdapterInfo(ctx);
-assert.equal((info as { adapter?: string }).adapter, "gemini-function-calling");
-const pillars = (info as { pillars?: Record<string, string> }).pillars ?? {};
-assert.ok(pillars["mcp"] && pillars["sse"] && pillars["gemini"], "all 3 pillars must be documented");
+// ── 4. testProvider reports honest delegation, never calls a network ───────
+const test = await testProvider("gemini");
+assert.equal(test.ok, false, "provider test cannot pass — no keys exist");
+assert.equal(test.delegated, true, "delegation flag is explicit (no silent zero-key mode)");
+assert.match(test.error, /#643/, "error carries the governing issue marker");
 
-// ─── ৩. listGeminiTools: sanitized নাম + Gemini-format parameters ───
-{
-  const manifest = await listGeminiTools(ctx);
-  assert.ok(manifest.toolCount >= 3, `expected ≥3 tools, got ${manifest.toolCount}`);
-  const names = manifest.functionDeclarations.map((d) => d.name);
-  assert.ok(names.includes("system_health"), "dot-sanitized name must be listed");
-  assert.ok(!names.some((n) => n.includes(".")), "no dots allowed in Gemini function names");
-  for (const declaration of manifest.functionDeclarations) {
-    assert.equal(typeof declaration.description, "string");
-    assert.equal(declaration.parameters.type, "object");
-    assert.ok(!("additionalProperties" in declaration.parameters), "unsupported keys must be stripped");
-  }
-  const echo = manifest.functionDeclarations.find((d) => d.name === "echo_with_schema");
-  assert.ok(echo, "echo_with_schema missing from manifest");
-  assert.ok(echo!.parameters.properties && typeof echo!.parameters.properties === "object");
-}
+// ── 5. analyzeWithAI delegates without any provider call ───────────────────
+const analysis = await analyzeWithAI("review", "some content", "auto");
+assert.equal(analysis.provider, "none");
+assert.equal(analysis.attempts, 0, "zero attempts — no provider call happened");
+assert.equal(analysis.usedFallback, false);
+assert.match(analysis.content, /delegated/, "analysis content states the delegation contract");
 
-// ─── ৪. Safe tool execution (viewer role) — stateless POST /gemini path ───
-{
-  const result = await RequestContextStore.run(
-    { role: "viewer", accessMode: "viewer", authenticated: true, tenantBound: false, scopes: ["health:read"] },
-    async () => executeGeminiFunctionCall(ctx, "system_health", {}),
-  );
-  assert.equal(result.ok, true);
-  assert.equal(result.tool, "system_health");
-  assert.equal(result.content, "healthy");
-}
+// ── 6. Configured analysis provider list is empty ──────────────────────────
+assert.deepEqual(listConfiguredAnalysisProviders(), [], "no analysis providers are configured in the tower");
 
-// ─── ৫. RBAC default-deny: viewer → restricted tool denied; admin → allowed ───
-{
-  const denied = await RequestContextStore.run(
-    { role: "viewer", accessMode: "viewer", authenticated: true, tenantBound: false, scopes: [] },
-    async () => executeGeminiFunctionCall(ctx, "admin_secret_tool", {}),
-  );
-  assert.equal(denied.ok, false, "viewer must NOT execute a secret-class tool");
-  assert.ok(String(denied.error).includes("Forbidden"), `expected RBAC denial, got: ${denied.error}`);
+// ── 7. env.ai namespace is gone from the env schema ────────────────────────
+const { env } = await import("./src/lib/env.js");
+assert.equal((env as Record<string, unknown>).ai, undefined, "env.ai key-pool namespace must be removed (#643 AC: no master keys required)");
 
-  const allowed = await RequestContextStore.run(
-    { role: "admin", accessMode: "admin", authenticated: true, tenantBound: false, scopes: ["*"] },
-    async () => executeGeminiFunctionCall(ctx, "admin_secret_tool", {}),
-  );
-  assert.equal(allowed.ok, true, "admin must execute the secret-class tool");
-  assert.equal(allowed.content, "TOP-SECRET");
-}
+// ── 8. Delegation notices are stable strings (machine-readable contracts) ──
+assert.match(AI_DELEGATION_NOTICE, /#643/);
+assert.match(ANALYSIS_DELEGATION_NOTICE, /#643/);
 
-// ─── ৬. No request context at all → fail-closed (default-deny) ───
-{
-  const result = await executeGeminiFunctionCall(ctx, "admin_secret_tool", {});
-  assert.equal(result.ok, false, "no-context call must be denied by the RBAC gate");
-}
-
-// ─── ৭. Args pass-through: nested payload অক্ষত পৌঁছায় (admin — echo টুল restricted-class) ───
-{
-  const result = await RequestContextStore.run(
-    { role: "admin", accessMode: "admin", authenticated: true, tenantBound: false, scopes: ["*"] },
-    async () => executeGeminiFunctionCall(ctx, "echo_with_schema", { payload: { value: "bangla" } }),
-  );
-  assert.equal(result.ok, true);
-  const echoed = JSON.parse(String(result.content));
-  assert.equal(echoed.payload.value, "bangla");
-}
-
-// ─── ৮. Unknown tool → fail-closed logical error (SDK isError path; HTTP 200 + ok:false) ───
-{
-  const result = await RequestContextStore.run(
-    { role: "admin", accessMode: "admin", authenticated: true, tenantBound: false, scopes: ["*"] },
-    async () => executeGeminiFunctionCall(ctx, "nonexistent_tool", {}),
-  );
-  assert.equal(result.ok, false, "unknown tool must NOT report success");
-  assert.ok(/not found/i.test(String(result.error)), `expected not-found error, got: ${result.error}`);
-}
-
-console.log("✅ test_gemini_adapter: ৮/৮ contract test পাস — Gemini 3rd pillar adapter verified (#2590)");
+console.log("ALL AI-DELEGATION CONTRACT TESTS PASSED (#643) — 8/8 sections: zero keys, honest delegation");

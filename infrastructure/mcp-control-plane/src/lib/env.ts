@@ -252,25 +252,11 @@ export const env = {
     get projectId(): string { return optional("GCP_PROJECT_ID", "supremeai-a"); },
   },
 
-  // ── AI Providers (comma-separated multi-key pools)
-  ai: {
-    // Model identifiers are intentionally configuration-only. Runtime discovery or
-    // provider configuration supplies the selected model; no model is hardcoded.
-    get geminiModel(): string { return optional("MCP_GEMINI_MODEL"); },
-    get groqModel(): string { return optional("MCP_GROQ_MODEL"); },
-    get openrouterModel(): string { return optional("MCP_OPENROUTER_MODEL"); },
-    get githubModel(): string { return optional("MCP_GITHUB_MODEL"); },
-    get mistralModel(): string { return optional("MCP_MISTRAL_MODEL"); },
-    get geminiKeys(): string[] { return multiKey("GEMINI_API_KEY"); },
-    get groqKeys(): string[] { return multiKey("GROQ_API_KEY"); },
-    get openrouterKeys(): string[] { return multiKey("OPENROUTER_API_KEY"); },
-    get openaiKeys(): string[] { return multiKey("OPENAI_API_KEY"); },
-    get openaiModel(): string { return optional("MCP_OPENAI_MODEL", "gpt-4o-mini"); },
-    get anthropicKeys(): string[] { return multiKey("ANTHROPIC_API_KEY"); },
-    get anthropicModel(): string { return optional("MCP_ANTHROPIC_MODEL", "claude-3-5-haiku-20241022"); },
-    get githubModelsKeys(): string[] { return multiKey("GITHUB_MODELS_API_KEY"); },
-    get mistralKey(): string { return optional("MISTRAL_API_KEY"); },
-  },
+  // #643: direct LLM provider key pools (Gemini/Groq/OpenRouter/OpenAI/
+  // Anthropic/GitHub Models/Mistral) were REMOVED from the zero-credential
+  // control plane. AI analysis is delegated to the external agent caller
+  // context (or Core API) — the tower must not require or store provider
+  // master keys. See adapters/ai/index.ts (delegation stub).
 
   // ── Kaggle (6-account pool)
   kaggle: {

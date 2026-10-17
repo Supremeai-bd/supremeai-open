@@ -239,7 +239,9 @@ export async function sseRead(
     while (frames.length < maxFrames && !done) {
       const chunk = await reader.read();
       done = chunk.done;
-      buffer += decoder.decode(chunk.value ?? { length: 0 }, { stream: !chunk.done });
+      if (chunk.value) {
+        buffer += decoder.decode(chunk.value, { stream: !chunk.done });
+      }
       let idx: number;
       while (frames.length < maxFrames && (idx = buffer.indexOf("\n\n")) !== -1) {
         const rawFrame = buffer.slice(0, idx);

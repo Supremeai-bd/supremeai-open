@@ -18,7 +18,7 @@ python bot.py --self-test
 #    → mode: LangChain StructuredTool
 
 # 3) Optional: run against the live Tower (network + credential)
-export SUPREMAI_TOKEN=...           # Tower credential — header-only, never in URLs
+export SUPREMEAI_API_KEY=...           # Tower credential — header-only, never in URLs
 python bot.py --live --base-url https://supremeai-mcp-tower.onrender.com
 ```
 
@@ -64,7 +64,7 @@ python bot.py --live --base-url https://supremeai-mcp-tower.onrender.com
 | `description` | tool description (agent-visible doc) |
 | `inputSchema.properties` | pydantic args model fields (`create_model`, types mapped string/integer/number/boolean) |
 | `tools/call` result `{content, isError}` | `ainvoke({...}) → {"ok", "invocation_id", "result", "error"}` |
-| transport/auth | `Authorization: Bearer $SUPREMAI_TOKEN` header — **never** in URLs |
+| transport/auth | `Authorization: Bearer $SUPREMEAI_API_KEY` header — **never** in URLs |
 
 ## Honest limitations
 

@@ -5,7 +5,13 @@ deduplication logic, and payload handling without network calls.
 """
 
 import json
+import sys
 import unittest
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from scripts.ci.federation_ci_watchdog import (
     FEDERATION_REPOS,
