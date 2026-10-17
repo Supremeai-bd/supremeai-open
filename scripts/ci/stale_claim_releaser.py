@@ -1,412 +1,181 @@
 #!/usr/bin/env python3
+"""Rule 9 (AUTONOMOUS_TRANSIT_PIPELINE.md): 30-minute stale claim expiry.
+
+Releases atomic claims that produced no push or PR within the 30-minute
+lease. Pure-stdlib, deterministic, offline-testable reference
+implementation for the self-healing board (#470).
+
+Design invariants:
+- Fail-closed: malformed snapshots raise ValueError, never guess.
+- Deterministic: same snapshot + now -> same plan, always.
+- Data-only output: returns a plan; callers execute against GitHub.
+- Claim identity: parses S0.1 atomic-claim marker comments
+  (<!-- atomic-claim:issue=N,agent=A,ts=T,ttl=Xm -->) and plain
+  <!-- atomic-claim --> markers.
+
+Self-test: python3 stale_claim_releaser.py --self-test
 """
-stale_claim_releaser.py — 2-Stage Graduated Lease & Orphan Claim Auto-Release Gate.
-
-Mission & Architecture:
-  Enforces the 2-Stage Dynamic Agent Lease Contract:
-  
-  Stage 1 (Claim -> Branch Creation): 10 Minutes Max
-    When an issue is claimed by an agent, the work branch must be created/pushed
-    within 10 minutes. If no remote branch matching the issue appears in 10 minutes,
-    the claiming agent is considered disconnected/failed-to-start.
-    -> The claim marker is released immediately back to the pool.
-
-  Stage 2 (Branch -> Pull Request): 30 Minutes Max
-    Once a branch exists, the agent has 30 minutes to complete the 3-tier
-    verification and open an active Pull Request. If 30 minutes elapse with a branch
-    active but zero open PR submitted, the agent is considered stuck/abandoned.
-    -> The claim marker is released back to the pool.
-
-Principles:
-  - Stdlib-only: zero external dependencies, runs in public GitHub Actions and offline.
-  - Fail-closed: invalid inputs or unreadable data produce non-zero exits, never silent skips.
-  - Fast: ls-remote and gh queries execute in ~1-2 seconds.
-  - Testable: includes --self-test with offline fixtures.
-"""
-
 from __future__ import annotations
 
-import argparse
-import datetime
 import json
-import os
 import re
-import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple
+from datetime import datetime, timedelta, timezone
 
-if hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+TTL_MINUTES_DEFAULT = 30
 
-UPSTREAM_REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
-CLAIMED_LABELS = {"status:claimed", "status:in-progress"}
-EXCLUDED_LABELS = {"state:seq-hold", "blocked-by-upstream", "mirror:private"}
-
-CLAIM_PATTERNS = [
-    re.compile(r"(?:🎯|🤖)?\s*\**\bclaim(?:ing|ed)?\b\**", re.IGNORECASE),
-    re.compile(r"claiming this issue", re.IGNORECASE),
-    re.compile(r"agent claim", re.IGNORECASE),
-]
-
-STAGE_1_CLAIM_TO_BRANCH_MINUTES = 10.0
-STAGE_2_BRANCH_TO_PR_MINUTES = 30.0
+_MARKER_TYPED = re.compile(
+    r"<!--\s*atomic-claim:issue=(?P<issue>\d+),agent=(?P<agent>[^,]+),"
+    r"ts=(?P<ts>[^,]+),ttl=(?P<ttl>\S+?)\s*-->")
+_MARKER_PLAIN = re.compile(r"<!--\s*atomic-claim\s*-->")
+_ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
+_ISO_S = "%Y-%m-%dT%H:%M:%SZ"
 
 
-def run_cmd(args: List[str]) -> Tuple[int, str, str]:
-    """Execute a CLI command with UTF-8 encoding."""
-    try:
-        res = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", check=False)
-        return res.returncode, res.stdout, res.stderr
-    except Exception as exc:
-        return 1, "", str(exc)
-
-
-def is_claim_comment(body: str) -> bool:
-    """Check if comment text represents an agent task claim."""
-    if not body:
-        return False
-    return any(p.search(body) for p in CLAIM_PATTERNS)
-
-
-def extract_claim_timestamp(issue: Dict[str, Any]) -> Optional[datetime.datetime]:
-    """Find the timestamp of the latest claim comment or claim update."""
-    comments = issue.get("comments", []) or []
-    latest_claim_dt: Optional[datetime.datetime] = None
-
-    for c in comments:
-        c_body = c.get("body", "")
-        if is_claim_comment(c_body):
-            c_time_str = c.get("createdAt")
-            if c_time_str:
-                try:
-                    c_dt = datetime.datetime.fromisoformat(c_time_str.replace("Z", "+00:00"))
-                    if latest_claim_dt is None or c_dt > latest_claim_dt:
-                        latest_claim_dt = c_dt
-                except Exception:
-                    pass
-
-    if latest_claim_dt is not None:
-        return latest_claim_dt
-
-    labels = [str(l.get("name", "")).lower() for l in issue.get("labels", []) if isinstance(l, dict)]
-    if any(l in CLAIMED_LABELS for l in labels):
-        up_str = issue.get("updatedAt")
-        if up_str:
-            try:
-                return datetime.datetime.fromisoformat(up_str.replace("Z", "+00:00"))
-            except Exception:
-                pass
-
-    return None
-
-
-def get_remote_branches(repo: str) -> List[str]:
-    """Fetch remote branch refnames from origin."""
-    code, out, _ = run_cmd(["git", "ls-remote", "--heads", "origin"])
-    if code != 0 or not out.strip():
-        # Fallback to gh api
-        code, out, _ = run_cmd(["gh", "api", f"repos/{repo}/branches", "--jq", ".[].name"])
-        if code == 0 and out.strip():
-            return [b.strip() for b in out.strip().split("\n") if b.strip()]
-        return []
-
-    branches = []
-    for line in out.strip().split("\n"):
-        parts = line.split("\t")
-        if len(parts) == 2 and parts[1].startswith("refs/heads/"):
-            branches.append(parts[1].replace("refs/heads/", "").strip())
-    return branches
-
-
-def issue_has_remote_branch(issue_number: int, branch_names: List[str]) -> Tuple[bool, Optional[str]]:
-    """Determine if any remote branch targets this issue number."""
-    # Matches /123, -123-, -123, issue-123, issue123
-    num_str = str(issue_number)
-    pattern = re.compile(rf"(^|/|-|_)({num_str})($|/|-|_)", re.IGNORECASE)
-
-    for b in branch_names:
-        if pattern.search(b) or f"issue-{num_str}" in b.lower() or f"issue{num_str}" in b.lower():
-            return True, b
-    return False, None
-
-
-def get_open_pr_issue_references(repo: str) -> Set[int]:
-    """Fetch all issue numbers currently referenced by open PRs."""
-    code, out, _ = run_cmd([
-        "gh", "pr", "list",
-        "--repo", repo,
-        "--state", "open",
-        "--limit", "200",
-        "--json", "number,title,body,headRefName"
-    ])
-    if code != 0 or not out.strip():
-        return set()
-
-    try:
-        prs = json.loads(out)
-    except Exception:
-        return set()
-
-    referenced_issues: Set[int] = set()
-    for pr in prs:
-        text = f"{pr.get('title', '')} {pr.get('body', '')} {pr.get('headRefName', '')}"
-        matches = re.findall(r"#(\d+)|(?:issue[-_](\d+))", text, re.IGNORECASE)
-        for m in matches:
-            for num_str in m:
-                if num_str:
-                    referenced_issues.add(int(num_str))
-
-    return referenced_issues
-
-
-def evaluate_graduated_claims(
-    issues: List[Dict[str, Any]],
-    open_pr_refs: Set[int],
-    remote_branches: List[str],
-    claim_to_branch_min: float = STAGE_1_CLAIM_TO_BRANCH_MINUTES,
-    branch_to_pr_min: float = STAGE_2_BRANCH_TO_PR_MINUTES,
-    now: Optional[datetime.datetime] = None,
-) -> List[Dict[str, Any]]:
-    """Evaluate 2-stage graduated lease: 10m to branch, 30m branch to PR."""
-    if now is None:
-        now = datetime.datetime.now(datetime.timezone.utc)
-
-    stale: List[Dict[str, Any]] = []
-
-    for issue in issues:
-        num = issue.get("number")
-        if not num:
+def parse_ts(value: str) -> datetime:
+    """Parse the ISO-8601 Z timestamps used across the board. Fail-closed."""
+    for fmt in (_ISO, _ISO_S):
+        try:
+            return datetime.strptime(value.strip(), fmt).replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
             continue
+    raise ValueError(f"unparseable timestamp: {value!r}")
 
-        labels = [str(l.get("name", "")).lower() for l in issue.get("labels", []) if isinstance(l, dict)]
-        if any(ex in labels for ex in EXCLUDED_LABELS):
+
+def parse_atomic_claims(comments: list) -> list:
+    """Extract S0.1 atomic-claim events from a comment list (oldest first)."""
+    claims = []
+    for c in comments or []:
+        body = c.get("body") or ""
+        m = _MARKER_TYPED.search(body)
+        if m:
+            ttl_raw = m.group("ttl")
+            minutes = TTL_MINUTES_DEFAULT
+            tm = re.fullmatch(r"(\d+)m", ttl_raw)
+            if tm:
+                minutes = int(tm.group(1))
+            claims.append({
+                "issue": int(m.group("issue")),
+                "agent": m.group("agent"),
+                "ts": parse_ts(m.group("ts")),
+                "ttl_minutes": minutes,
+                "marker": "typed",
+            })
             continue
-        if any(l.startswith("bridge:") for l in labels):
+        if _MARKER_PLAIN.search(body) and c.get("ts"):
+            claims.append({
+                "issue": None,
+                "agent": c.get("agent") or "unknown",
+                "ts": parse_ts(c["ts"]),
+                "ttl_minutes": TTL_MINUTES_DEFAULT,
+                "marker": "plain",
+            })
+    return claims
+
+
+def is_stale(claimed_at: datetime, now: datetime, ttl_minutes: int = TTL_MINUTES_DEFAULT) -> bool:
+    """Rule 9: strict-greater comparison; exactly-TTL is NOT stale."""
+    if now < claimed_at:
+        raise ValueError("clock skew: now earlier than claim time")
+    return (now - claimed_at) > timedelta(minutes=ttl_minutes)
+
+
+def _latest_activity(issue: dict) -> datetime | None:
+    stamps = []
+    for key in ("last_push_at", "pr_opened_at"):
+        v = issue.get(key)
+        if v:
+            stamps.append(parse_ts(v))
+    return max(stamps) if stamps else None
+
+
+def release_plan(snapshot: dict, now: datetime) -> dict:
+    """Compute the Rule 9 release plan for a board snapshot.
+
+    Snapshot shape (fail-closed on missing keys):
+    {"issues": [{"number": int, "labels": [str], "comments": [{"ts", "body", "agent"?}],
+                 "last_push_at": iso|null, "pr_opened_at": iso|null}]}
+    """
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get("issues"), list):
+        raise ValueError("snapshot must be {\"issues\": [...]}")
+    releases, keeps = [], []
+    for issue in snapshot["issues"]:
+        number = issue.get("number")
+        if not isinstance(number, int) or number <= 0:
+            raise ValueError(f"bad issue number: {number!r}")
+        labels = issue.get("labels") or []
+        if "status:claimed" not in labels:
             continue
-
-        title_lower = issue.get("title", "").lower()
-        if title_lower.startswith("audit(") or "admin_decision" in title_lower or "bridge work order" in title_lower:
+        claims = parse_atomic_claims(issue.get("comments") or [])
+        if not claims:
+            # Label-plane claim without marker: treat label timestamp if present.
+            lt = issue.get("label_claimed_at")
+            if not lt:
+                keeps.append({"issue": number, "reason": "no_claim_marker"})
+                continue
+            claims = [{"agent": "unknown", "ts": parse_ts(lt),
+                       "ttl_minutes": TTL_MINUTES_DEFAULT, "marker": "label"}]
+        claim = max(claims, key=lambda c: c["ts"])
+        activity = _latest_activity(issue)
+        if activity is not None and activity > claim["ts"]:
+            keeps.append({"issue": number, "agent": claim["agent"],
+                          "reason": "activity_after_claim"})
             continue
-
-        has_claimed_label = any(cl in labels for cl in CLAIMED_LABELS)
-        claim_dt = extract_claim_timestamp(issue)
-
-        is_claimed = has_claimed_label or (claim_dt is not None)
-        if not is_claimed:
-            continue
-
-        # If an active open PR exists, claim is progressing cleanly
-        if int(num) in open_pr_refs:
-            continue
-
-        if claim_dt is None:
-            continue
-
-        elapsed_min = (now - claim_dt).total_seconds() / 60.0
-        has_branch, matched_branch = issue_has_remote_branch(int(num), remote_branches)
-
-        # STAGE 1 CHECK: No branch pushed within 10 minutes of claim
-        if not has_branch:
-            if elapsed_min >= claim_to_branch_min:
-                stale.append({
-                    "number": num,
-                    "title": issue.get("title", ""),
-                    "stage": 1,
-                    "reason": f"No branch created within {claim_to_branch_min}m of claim",
-                    "elapsed_minutes": round(elapsed_min, 1),
-                    "branch": None,
-                    "labels": labels,
-                })
+        if is_stale(claim["ts"], now, claim["ttl_minutes"]):
+            releases.append({
+                "issue": number,
+                "agent": claim["agent"],
+                "claimed_at": claim["ts"].strftime(_ISO_S),
+                "action": "release",
+                "reason": "stale_lease_expired",
+                "lease_minutes": claim["ttl_minutes"],
+            })
         else:
-            # STAGE 2 CHECK: Branch exists, but no PR submitted within 30 minutes
-            if elapsed_min >= (claim_to_branch_min + branch_to_pr_min):
-                stale.append({
-                    "number": num,
-                    "title": issue.get("title", ""),
-                    "stage": 2,
-                    "reason": f"Branch '{matched_branch}' exists but no PR created within {branch_to_pr_min}m",
-                    "elapsed_minutes": round(elapsed_min, 1),
-                    "branch": matched_branch,
-                    "labels": labels,
-                })
-
-    return stale
+            keeps.append({"issue": number, "agent": claim["agent"],
+                          "reason": "lease_active"})
+    return {"releases": releases, "keeps": keeps,
+            "computed_at": now.strftime(_ISO_S)}
 
 
-def release_issue_claim(repo: str, issue_number: int, stage: int, reason: str, elapsed_min: float) -> bool:
-    """Post release comment and remove status:claimed."""
-    comment = (
-        f"⏰ **Graduated Lease Auto-Release (Stage {stage})**\n\n"
-        f"- **Trigger:** {reason} (elapsed: {elapsed_min}m)\n"
-        f"- **Heartbeat Policy:** Claim-to-branch TTL is 10 min; branch-to-PR TTL is 30 min.\n"
-        f"- **Action:** Releasing claim marker back to the public pool.\n\n"
-        f"Task is immediately available for `--pick-next` dispatch."
-    )
-    # Post audit comment
-    run_cmd(["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", comment])
-
-    # Remove claimed / in-progress markers
-    cmd = ["gh", "issue", "edit", str(issue_number), "--repo", repo]
-    for cl in CLAIMED_LABELS:
-        cmd.extend(["--remove-label", cl])
-
-    l_code, _, _ = run_cmd(cmd)
-    return l_code == 0
-
-
-def run_self_test() -> int:
-    """Offline test of the 2-stage graduated lease."""
-    print("Running 2-stage graduated lease self-test...")
-    base_time = datetime.datetime(2026, 10, 15, 12, 0, 0, tzinfo=datetime.timezone.utc)
-
-    # Issue 1: Claimed 5 min ago, no branch -> NOT stale (within 10 min window)
-    iss1 = {
-        "number": 1,
-        "title": "task 1",
-        "labels": [{"name": "P1-high"}],
-        "comments": [{"body": "🎯 Claiming issue", "createdAt": "2026-10-15T11:55:00Z"}]
-    }
-
-    # Issue 2: Claimed 15 min ago, NO branch -> STALE (Stage 1 trigger: >10m no branch)
-    iss2 = {
-        "number": 2,
-        "title": "task 2",
-        "labels": [{"name": "P1-high"}],
-        "comments": [{"body": "🎯 Claiming issue", "createdAt": "2026-10-15T11:45:00Z"}]
-    }
-
-    # Issue 3: Claimed 25 min ago, branch exists -> NOT stale (within 40 min total)
-    iss3 = {
-        "number": 3,
-        "title": "task 3",
-        "labels": [{"name": "P1-high"}],
-        "comments": [{"body": "🎯 Claiming issue", "createdAt": "2026-10-15T11:35:00Z"}]
-    }
-
-    # Issue 4: Claimed 45 min ago, branch exists but NO PR -> STALE (Stage 2 trigger: >40m)
-    iss4 = {
-        "number": 4,
-        "title": "task 4",
-        "labels": [{"name": "P1-high"}],
-        "comments": [{"body": "🎯 Claiming issue", "createdAt": "2026-10-15T11:15:00Z"}]
-    }
-
-    # Issue 5: Claimed 50 min ago, PR exists -> NOT stale (PR active)
-    iss5 = {
-        "number": 5,
-        "title": "task 5",
-        "labels": [{"name": "P1-high"}],
-        "comments": [{"body": "🎯 Claiming issue", "createdAt": "2026-10-15T11:10:00Z"}]
-    }
-
-    # Issue 6: claimed LABEL but NO claim comment, 120m old -> STAGE 1 STALE.
-    # Regression (#222 fallout): extract_claim_timestamp() crashed with
-    # NameError: CLAIMABLE_LABEL on exactly this input, killing the whole
-    # releaser (and with it the agent-loop cron step) on any such issue.
-    iss6 = {
-        "number": 6,
-        "title": "task 6",
-        "labels": [{"name": "status:claimed"}],
-        "comments": [],
-        "updatedAt": "2026-10-15T10:00:00Z"
-    }
-
-    # Issue 7: plain unclaimed issue (no claim markers, no comments) — must
-    # NOT be treated as claimed under the implicit claimable lifecycle.
-    iss7 = {
-        "number": 7,
-        "title": "task 7",
-        "labels": [{"name": "P2-medium"}],
-        "comments": [],
-        "updatedAt": "2026-10-15T10:00:00Z"
-    }
-
-    branches = ["feat/issue-3-contract", "fix/issue-4-repair", "fix/issue-5-patch"]
-    open_prs = {5}
-
-    stale = evaluate_graduated_claims(
-        [iss1, iss2, iss3, iss4, iss5, iss6, iss7],
-        open_prs,
-        branches,
-        claim_to_branch_min=10.0,
-        branch_to_pr_min=30.0,
-        now=base_time
-    )
-
-    assert len(stale) == 3, f"Expected 3 stale issues, got {len(stale)}"
-    assert stale[0]["number"] == 2 and stale[0]["stage"] == 1, f"Expected #2 Stage 1, got {stale[0]}"
-    assert stale[1]["number"] == 4 and stale[1]["stage"] == 2, f"Expected #4 Stage 2, got {stale[1]}"
-    assert stale[2]["number"] == 6 and stale[2]["stage"] == 1, f"Expected #6 Stage 1 (label-only claim), got {stale[2]}"
-    assert all(s["number"] != 7 for s in stale), "Unlabeled issue must not be treated as claimed"
-    print("✅ 2-Stage graduated lease self-test passed cleanly!")
-    return 0
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="2-Stage Graduated Claim Lease Gate")
-    parser.add_argument("--repo", default=UPSTREAM_REPO, help="GitHub repository (owner/repo)")
-    parser.add_argument("--claim-to-branch-min", type=float, default=STAGE_1_CLAIM_TO_BRANCH_MINUTES,
-                        help="Minutes allowed from claim to branch push (default: 10)")
-    parser.add_argument("--branch-to-pr-min", type=float, default=STAGE_2_BRANCH_TO_PR_MINUTES,
-                        help="Minutes allowed from branch to PR creation (default: 30)")
-    parser.add_argument("--auto-release", action="store_true", help="Automatically release claims on GitHub")
-    parser.add_argument("--self-test", action="store_true", help="Run offline self-test and exit")
-    args = parser.parse_args(argv)
-
-    if args.self_test:
-        return run_self_test()
-
-    print(f"🔍 Checking 2-stage graduated claim leases on {args.repo}...")
-    print(f"   Stage 1: {args.claim_to_branch_min}m (Claim -> Branch) | Stage 2: {args.branch_to_pr_min}m (Branch -> PR)")
-
-    code, out, err = run_cmd([
-        "gh", "issue", "list",
-        "--repo", args.repo,
-        "--state", "open",
-        "--limit", "200",
-        "--json", "number,title,labels,comments,updatedAt,createdAt"
-    ])
-    if code != 0:
-        print(f"❌ Failed to fetch issues: {err}", file=sys.stderr)
-        return 1
-
+def _self_test() -> int:
+    t0 = parse_ts("2026-10-17T05:00:00Z")
+    cases = [
+        ("2026-10-17T05:00:00Z", "2026-10-17T05:29:59Z", 30, False),
+        ("2026-10-17T05:00:00Z", "2026-10-17T05:30:00Z", 30, False),
+        ("2026-10-17T05:00:00Z", "2026-10-17T05:30:01Z", 30, True),
+    ]
+    for claimed, now, ttl, want in cases:
+        got = is_stale(parse_ts(claimed), parse_ts(now), ttl)
+        assert got is want, f"is_stale({claimed},{now},{ttl}) = {got}, want {want}"
+    assert parse_atomic_claims([
+        {"ts": "2026-10-17T05:00:00Z",
+         "body": "<!-- atomic-claim:issue=470,agent=z,ts=2026-10-17T05:00:00Z,ttl=30m -->"}
+    ])[0]["agent"] == "z"
+    snap = {"issues": [{
+        "number": 1, "labels": ["status:claimed"],
+        "comments": [{"ts": "2026-10-17T05:00:00Z",
+                      "body": "<!-- atomic-claim:issue=1,agent=a,ts=2026-10-17T05:00:00Z,ttl=30m -->"}],
+        "last_push_at": None, "pr_opened_at": None}]}
+    plan = release_plan(snap, parse_ts("2026-10-17T05:31:00Z"))
+    assert len(plan["releases"]) == 1 and plan["releases"][0]["agent"] == "a"
+    plan2 = release_plan(snap, parse_ts("2026-10-17T05:29:00Z"))
+    assert not plan2["releases"] and plan2["keeps"][0]["reason"] == "lease_active"
     try:
-        issues = json.loads(out)
-    except Exception as exc:
-        print(f"❌ Failed to parse issues JSON: {exc}", file=sys.stderr)
-        return 1
-
-    open_prs = get_open_pr_issue_references(args.repo)
-    remote_branches = get_remote_branches(args.repo)
-    stale_issues = evaluate_graduated_claims(
-        issues,
-        open_prs,
-        remote_branches,
-        claim_to_branch_min=args.claim_to_branch_min,
-        branch_to_pr_min=args.branch_to_pr_min
-    )
-
-    if not stale_issues:
-        print(f"✅ Clean: Zero orphaned claims detected across {len(issues)} open issues.")
-        return 0
-
-    print(f"⚠️ Found {len(stale_issues)} orphaned claim(s):")
-    for s in stale_issues:
-        print(f"  - Issue #{s['number']} [Stage {s['stage']}]: '{s['title']}' ({s['reason']}, elapsed: {s['elapsed_minutes']}m)")
-        if args.auto_release:
-            print(f"    🔄 Releasing claim for #{s['number']}...")
-            ok = release_issue_claim(args.repo, s["number"], s["stage"], s["reason"], s["elapsed_minutes"])
-            if ok:
-                print(f"    ✅ Issue #{s['number']} successfully released back to the open pool.")
-            else:
-                print(f"    ❌ Failed to release #{s['number']}.", file=sys.stderr)
-
+        release_plan({"issues": [{"number": "x"}]}, t0)
+        raise AssertionError("expected ValueError for bad number")
+    except ValueError:
+        pass
+    print("self-test OK: stale_claim_releaser")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if "--self-test" in sys.argv:
+        sys.exit(_self_test())
+    if len(sys.argv) == 3 and sys.argv[1] == "--run":
+        with open(sys.argv[2], encoding="utf-8") as fh:
+            snap = json.load(fh)
+        print(json.dumps(release_plan(snap, datetime.now(timezone.utc)), indent=2))
+        sys.exit(0)
+    print(__doc__)
+    sys.exit(2)
