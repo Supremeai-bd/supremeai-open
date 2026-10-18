@@ -19,6 +19,8 @@ from scripts.ci.federation_ci_watchdog import (
     build_issue_labels,
     build_issue_title,
     build_mirror_marker,
+    find_mirror_in_items,
+    is_fresh_run,
     repo_short_name,
 )
 
@@ -60,9 +62,41 @@ class TestFederationCiWatchdog(unittest.TestCase):
         labels = build_issue_labels("Supremeai-bd/supremeai-studio")
         self.assertIn("status:unclaimed", labels)
         self.assertIn("P0-critical", labels)
+        # S09 label-bridge: status:runway is LABEL_PRIORITY[0] -> ci-fixer.
+        # Without it the mirrored issue matched no matrix trigger and the
+        # loop silently fell through to coder — ci-fixer could never fire.
+        self.assertIn("status:runway", labels)
         self.assertIn("handoff:coder", labels)
         self.assertIn("area:ci", labels)
         self.assertIn("repo:studio", labels)
+
+    def test_find_mirror_in_items_excludes_prs_and_finds_real_mirror(self):
+        marker = build_mirror_marker("Supremeai-bd/supremeai-api", 999)
+        items = [
+            # A PR carrying the marker text in its body must be IGNORED —
+            # /issues mixes PRs into the list; mirrors live only on issues.
+            {"number": 900, "pull_request": {"url": "x"}, "body": f"noise {marker}"},
+            {"number": 901, "body": f"contract\n{marker}\nend"},
+            {"number": 902, "body": "no marker here"},
+            {"number": 903, "body": None},
+        ]
+        self.assertEqual(find_mirror_in_items(items, "Supremeai-bd/supremeai-api", 999), 901)
+        self.assertIsNone(find_mirror_in_items(items, "Supremeai-bd/supremeai-api", 404))
+        self.assertIsNone(find_mirror_in_items([], "Supremeai-bd/supremeai-api", 999))
+        self.assertIsNone(find_mirror_in_items(None, "Supremeai-bd/supremeai-api", 999))
+
+    def test_is_fresh_run_recency_gate(self):
+        from datetime import datetime, timezone
+        now = datetime(2026, 10, 18, 12, 0, 0, tzinfo=timezone.utc)
+        # Fresh: inside the 24h window.
+        self.assertTrue(is_fresh_run("2026-10-18T11:59:59Z", now, 24))
+        self.assertTrue(is_fresh_run("2026-10-17T12:00:00Z", now, 24))  # boundary
+        # Stale: week-old dead runs must not resurface as fresh P0 incidents.
+        self.assertFalse(is_fresh_run("2026-10-11T12:00:00Z", now, 24))
+        # Fail-closed: missing/malformed timestamps are never fresh.
+        self.assertFalse(is_fresh_run("", now, 24))
+        self.assertFalse(is_fresh_run("garbage", now, 24))
+        self.assertFalse(is_fresh_run("2026-10-18T11:00:00Z", now, -1))
 
     def test_issue_body_contract(self):
         body = build_issue_body(

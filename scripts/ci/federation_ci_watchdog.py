@@ -22,6 +22,7 @@ import subprocess
 import sys
 import urllib.request
 import urllib.error
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -122,10 +123,48 @@ def build_issue_labels(repo: str) -> List[str]:
     return [
         "status:unclaimed",
         "P0-critical",
+        # S09 (#489) label-bridge: `status:runway` is LABEL_PRIORITY[0] in
+        # scripts/agents/role_trigger_matrix.py, so the continuous loop's
+        # deterministic dispatch routes every mirrored CI failure to the
+        # ci-fixer role (the old `handoff:coder` label matched no trigger and
+        # silently fell through to the coder fallback).
+        "status:runway",
         "handoff:coder",
         "area:ci",
         f"repo:{short_repo}",
     ]
+
+
+def find_mirror_in_items(items: List[Dict[str, Any]], repo: str, run_id: int | str) -> Optional[int]:
+    """Pure scan: find the OPEN issue carrying this run's mirror marker.
+
+    The /issues list endpoint mixes pull requests into its items; PRs can
+    never carry a mirror marker, and with ~700 mixed items per week the old
+    fixed 50-item window missed older mirrors (duplicate issues every poll).
+    """
+    needle = f"{repo}/actions/runs/{run_id}"
+    for item in items or []:
+        if item.get("pull_request"):
+            continue  # PRs share the issue numbering plane; never a mirror
+        if needle in (item.get("body") or ""):
+            return int(item["number"])
+    return None
+
+
+def is_fresh_run(created_at: str, now_utc: datetime, max_age_hours: int) -> bool:
+    """Pure: True only if the failed run is younger than max_age_hours.
+
+    `--poll` used to mirror the 3 most recent failed runs regardless of age,
+    so a week-old dead run resurfaced as a fresh P0 issue on every tick.
+    Fail-closed: missing or malformed timestamps are never 'fresh'.
+    """
+    if not created_at or max_age_hours < 0:
+        return False
+    try:
+        ts = datetime.strptime(created_at.replace("Z", "+0000"), "%Y-%m-%dT%H:%M:%S%z")
+    except ValueError:
+        return False
+    return (now_utc - ts) <= timedelta(hours=max_age_hours)
 
 
 def get_default_token() -> str:
@@ -177,20 +216,25 @@ def gh_api(
 
 
 def check_existing_mirror(repo: str, run_id: int | str, token: Optional[str] = None) -> Optional[int]:
-    """Check if an open issue on supremeai-open already carries this mirror run marker."""
-    marker = build_mirror_marker(repo, run_id)
-    # Search open issues for the marker
-    code, res = gh_api(
-        f"repos/{OPEN_REPO}/issues?state=all&per_page=50",
-        token=token,
-    )
-    if code != 200 or not isinstance(res, list):
-        return None
+    """Check if an OPEN issue on supremeai-open already carries this run's marker.
 
-    for issue in res:
-        body = issue.get("body") or ""
-        if marker in body:
-            return int(issue["number"])
+    Paginates up to 3 pages of 100 OPEN items (PRs excluded inside
+    find_mirror_in_items). A CLOSED mirror means the failure was fixed - a
+    re-listed failed run after that is a genuinely new event and SHOULD get
+    a new issue, so only the open plane participates in deduplication.
+    """
+    for page in (1, 2, 3):
+        code, res = gh_api(
+            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
+            token=token,
+        )
+        if code != 200 or not isinstance(res, list):
+            return None
+        found = find_mirror_in_items(res, repo, run_id)
+        if found is not None:
+            return found
+        if len(res) < 100:
+            break
     return None
 
 
@@ -231,15 +275,27 @@ def mirror_failure(
         return False
 
 
-def poll_federation_failures(token: Optional[str] = None, limit_per_repo: int = 3) -> int:
-    """Audit all 12 federation repositories for recent failed runs."""
+def poll_federation_failures(
+    token: Optional[str] = None,
+    limit_per_repo: int = 3,
+    max_age_hours: int = 24,
+) -> Tuple[int, int]:
+    """Audit all 12 federation repositories for RECENT failed runs.
+
+    Returns (mirrored_count, failed_mirror_count) so callers can exit
+    non-zero when mirroring itself fails (the old poll always returned 0,
+    hiding its own breakage from any scheduler).
+    """
     mirrored_count = 0
+    failed_count = 0
+    now_utc = datetime.now(timezone.utc)
     print(f"🔍 [watchdog] Auditing {len(FEDERATION_REPOS)} federation repositories for CI failures...")
 
     for repo in FEDERATION_REPOS:
         code, resp = gh_api(f"repos/{repo}/actions/runs?status=failure&per_page={limit_per_repo}", token=token)
         if code != 200 or not isinstance(resp, dict):
             print(f"  [skip] {repo}: could not fetch runs (HTTP {code})")
+            failed_count += 1
             continue
 
         runs = resp.get("workflow_runs", [])
@@ -257,6 +313,10 @@ def poll_federation_failures(token: Optional[str] = None, limit_per_repo: int = 
             if not run_id:
                 continue
 
+            if not is_fresh_run(r.get("created_at", ""), now_utc, max_age_hours):
+                print(f"  [skip-stale] {repo} run {run_id}: older than {max_age_hours}h - not a current incident")
+                continue
+
             success = mirror_failure(
                 repo=repo,
                 workflow_name=workflow_name,
@@ -268,8 +328,10 @@ def poll_federation_failures(token: Optional[str] = None, limit_per_repo: int = 
             )
             if success:
                 mirrored_count += 1
+            else:
+                failed_count += 1
 
-    return mirrored_count
+    return mirrored_count, failed_count
 
 
 def self_test() -> int:
@@ -314,10 +376,27 @@ def self_test() -> int:
     labels = build_issue_labels("Supremeai-bd/supremeai-command")
     assert "status:unclaimed" in labels
     assert "P0-critical" in labels
+    assert "status:runway" in labels  # S09 label-bridge -> ci-fixer dispatch
     assert "area:ci" in labels
     assert "repo:command" in labels
 
-    print("✅ [self-test] All 4 contract assertions passed!")
+    # 5. Dedup scan: PRs are excluded, real mirror issues are found
+    fake_items = [
+        {"number": 700, "pull_request": {"url": "x"}, "body": f"<!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/{123456} -->"},
+        {"number": 701, "body": f"prefix <!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/{123456} --> suffix"},
+        {"number": 702, "body": "no marker"},
+    ]
+    assert find_mirror_in_items(fake_items, "Supremeai-bd/supremeai-command", 123456) == 701
+    assert find_mirror_in_items(fake_items, "Supremeai-bd/supremeai-command", 111111) is None
+
+    # 6. Recency gate: fresh/stale/malformed boundaries
+    now = datetime(2026, 10, 18, 12, 0, 0, tzinfo=timezone.utc)
+    assert is_fresh_run("2026-10-18T11:00:00Z", now, 24) is True
+    assert is_fresh_run("2026-10-16T11:00:00Z", now, 24) is False
+    assert is_fresh_run("", now, 24) is False
+    assert is_fresh_run("not-a-date", now, 24) is False
+
+    print("✅ [self-test] All 6 contract assertion groups passed!")
     return 0
 
 
@@ -325,6 +404,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Federation-wide CI Failure Watchdog")
     parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
     parser.add_argument("--poll", action="store_true", help="Poll all 12 federation repositories for recent failures")
+    parser.add_argument("--max-age-hours", type=int, default=24, help="Ignore failed runs older than this many hours (poll mode)")
     parser.add_argument("--payload", type=str, help="JSON payload string or path to JSON file for event-driven mirror")
     parser.add_argument("--repo", type=str, help="Repository name (e.g. Supremeai-bd/supremeai-command)")
     parser.add_argument("--workflow", type=str, default="CI Workflow", help="Workflow name")
@@ -373,8 +453,8 @@ def main() -> int:
         return 0 if success else 1
 
     if args.poll:
-        poll_federation_failures(token=token)
-        return 0
+        _mirrored, _failed = poll_federation_failures(token=token, max_age_hours=args.max_age_hours)
+        return 1 if _failed else 0
 
     parser.print_help()
     return 1

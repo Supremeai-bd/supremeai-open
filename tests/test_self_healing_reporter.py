@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-tests/test_self_healing_reporter.py — WO #488 verification battery.
+tests/test_self_healing_reporter.py — WO #488 verification battery (S09-resynced).
 
-Tier 1: the loop's classify_task_role maps CI-failure issues to ci-fixer
-        with 100% determinism; priority ladder ranks healing issues above
-        backlog features.
+Tier 1: the loop's classify_task_role routes CI-failure issues to ci-fixer
+        with 100% determinism — now via the S09 label plane (status:runway),
+        exactly the label the watchdog mirror and the healing reporter emit;
+        priority ladder ranks healing issues above backlog features.
 Tier 2: healing payload generation conforms to the WO issue contract and
         dedup fingerprints are deterministic and collision-free.
-Tier 3: zero regression — the loop module still imports and classifies
-        non-CI work exactly as before (coder default, planner/auditor maps).
+Tier 3: zero regression — the loop module still imports and dispatches
+        deterministically: unrouted keyword-only signals fall back to coder
+        (fail-closed), trigger labels route exactly, substring labels never
+        trigger.
 
 Runner: plain stdlib unittest, no pytest dependency.
   python3 tests/test_self_healing_reporter.py
@@ -52,14 +55,17 @@ LOOP = _load_loop_module()
 
 
 CI_FAILURE_FIXTURES = [
+    # Mirrored/healing CI-failure issues carry `status:runway` — the S09
+    # LABEL_PRIORITY[0] trigger that deterministically routes to ci-fixer
+    # (watchdog mirror + self-healing reporter both emit it now).
     ("fix(Supremeai-bd/supremeai-open): [ci-failure] Heal PR #480 checks (Stale-Base Guard)",
-     ["bridge:queued", "P0-critical", "repo:Supremeai-bd/supremeai-open", "area:ci"]),
+     ["bridge:queued", "P0-critical", "status:runway", "repo:Supremeai-bd/supremeai-open", "area:ci"]),
     ("fix(Supremeai-bd/supremeai-infra): [ci-failure] Heal PR #12 checks (unit)",
-     ["bridge:queued", "P1-high", "repo:Supremeai-bd/supremeai-infra", "area:ci"]),
+     ["bridge:queued", "P1-high", "status:runway", "repo:Supremeai-bd/supremeai-infra", "area:ci"]),
     ("fix(repo): [ci-failure] Heal PR #7 checks (matrix, lint)",
-     ["bridge:queued", "P0-critical", "repo:repo", "area:ci"]),
-    ("ci pipeline red on main", ["area:ci"]),
-    ("workflow action failure blocks merge", ["bug", "area:ci"]),
+     ["bridge:queued", "P0-critical", "status:runway", "repo:repo", "area:ci"]),
+    ("ci pipeline red on main", ["status:runway", "area:ci"]),
+    ("workflow action failure blocks merge", ["status:runway", "bug", "area:ci"]),
 ]
 
 
@@ -109,7 +115,7 @@ class Tier2PayloadAndDedup(unittest.TestCase):
             "log_snippet": "error: Knowledge Sharing Guard: missing summary\n",
         })
         self.assertEqual(issue["labels"],
-                         ["bridge:queued", "P1-high",
+                         ["bridge:queued", "P1-high", "status:runway",
                           "repo:Supremeai-bd/supremeai-open", "area:ci"])
         for needle in ("feat/dashboard-r2", "deadbee", "Knowledge Sharing Guard",
                        "healing-fp:", "landing.yml auto-merges"):
@@ -135,17 +141,32 @@ class Tier2PayloadAndDedup(unittest.TestCase):
 
 
 class Tier3ZeroRegression(unittest.TestCase):
-    def test_loop_module_healthy_and_defaults_intact(self):
+    def test_loop_module_healthy_and_dispatch_intact(self):
         self.assertTrue(callable(LOOP.classify_task_role))
+        # Fail-closed fallback: keyword-only titles/labels can no longer
+        # invent a role (#489 deprecates keyword matching) — they route to
+        # the preserved coder default, deterministically.
         self.assertEqual(LOOP.classify_task_role(
             "feat: smart context selector", ["enhancement", "P1-high"], "body"),
             "coder")
         self.assertEqual(LOOP.classify_task_role(
             "audit readiness report", ["documentation"], "parity drift"),
-            "auditor")
+            "coder")
         self.assertEqual(LOOP.classify_task_role(
             "plan architecture rfc", ["documentation"], "adr contract"),
-            "planner")
+            "coder")
+
+    def test_label_plane_routes_exactly_and_never_by_substring(self):
+        # Positive trigger-label routes (S09 LABEL_PRIORITY).
+        self.assertEqual(LOOP.classify_task_role("x", ["status:runway"], ""), "ci-fixer")
+        self.assertEqual(LOOP.classify_task_role("x", ["gate:pre-landing"], ""), "task-auditor")
+        self.assertEqual(LOOP.classify_task_role("x", ["status:claimed"], ""), "coder")
+        # Substring-immune: a label merely CONTAINING a trigger never fires.
+        self.assertEqual(LOOP.classify_task_role("x", ["xstatus:runwayx"], ""), "coder")
+        # Priority: runway outranks claimed when both are present.
+        self.assertEqual(
+            LOOP.classify_task_role("x", ["status:claimed", "status:runway"], ""),
+            "ci-fixer")
 
     def test_reporter_module_import_is_pure(self):
         self.assertTrue(hasattr(shr, "build_healing_issue"))

@@ -30,6 +30,14 @@ import time
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from role_trigger_matrix import (  # S09 (#489): deterministic role trigger matrix
+    DECISION_DISPATCH,
+    DispatchSignal,
+    dispatch,
+    dispatch_from_labels,
+)
+
 # Configure UTF-8 for cross-platform stability
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -168,6 +176,14 @@ ROLES: dict[str, str] = {
     "browser-qa": "End-to-end integration & UI flow specialist",
     "planner": "Architecture, contracts, and ADR specification specialist",
     "watcher": "Telemetry, heartbeat health, and ecosystem drift specialist",
+    # S09 (#489): Deterministic Role Trigger Matrix — contracts live in
+    # scripts/agents/role_trigger_matrix.py (single source of truth).
+    "task-auditor": "Pre-landing compliance, boundary & ledger auditor",
+    "ecosystem-scout": "Global tech radar & strategic critic (read-only)",
+    "federation-auditor": "11-satellite parity & drift auditor (read-only)",
+    "human-eye": "PR styling & aesthetic director (issue-only)",
+    "rules-breaker": "Red-team chaos engineer (tests/adversarial/ only)",
+    "platform-guardian": "External AI provider sentry & failover toggle",
 }
 
 
@@ -293,21 +309,19 @@ def build_task_contract(
 
 
 def classify_task_role(title: str, labels: list[str], body: str) -> str:
-    """Intelligently map issue context to one of the 7 specialist roles."""
-    combined = f"{title} {' '.join(labels)} {body}".lower()
-    if any(k in combined for k in ["sec", "security", "secret", "gitleaks", "credential", "vulnerability"]):
-        return "security-breaker"
-    if any(k in combined for k in ["ci", "workflow", "action", "pipeline", "matrix"]):
-        return "ci-fixer"
-    if any(k in combined for k in ["audit", "review", "parity", "drift", "readiness"]):
-        return "auditor"
-    if any(k in combined for k in ["plan", "adr", "architecture", "rfc", "contract"]):
-        return "planner"
-    if any(k in combined for k in ["browser", "e2e", "ui", "frontend", "playwright"]):
-        return "browser-qa"
-    if any(k in combined for k in ["telemetry", "heartbeat", "health", "watcher", "monitor"]):
-        return "watcher"
-    return "coder"
+    """DEPRECATED free-text matcher (#489) — deterministic label-plane dispatch.
+
+    Issue #489 deprecates keyword matching in titles/bodies. ``title`` and
+    ``body`` are retained for call-site compatibility but are NEVER
+    inspected: dispatch is an exact-match lookup on the structured label
+    plane via scripts/agents/role_trigger_matrix.py (fail-closed). The
+    legacy contract of falling through to "coder" is preserved for unrouted
+    signals so existing call sites and prompts keep working unchanged.
+    """
+    decision = dispatch_from_labels(frozenset(labels))
+    if decision.decision != DECISION_DISPATCH or decision.role_id is None:
+        return "coder"
+    return decision.role_id
 
 
 def build_agent_prompt(task: dict[str, Any], role: str, contract: dict[str, Any]) -> str:
@@ -1335,6 +1349,34 @@ def print_cron_entry(minutes: int) -> None:
     print(f"{cron_expression(minutes)} cd {REPO_ROOT} && python3 scripts/agents/continuous_agent_loop.py --schedule {minutes} >> .agent_loop_schedule.log 2>&1")
 
 
+def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
+    """Empty-board role dispatch (S09 #489 + owner policy: issue 0 → auditor).
+
+    In scheduled mode the tick itself IS the canonical schedule event
+    ``event:schedule.ecosystem_scan``; the S09 matrix routes it to the
+    ecosystem-scout (auditor family, read-only weapons). Manual one-shot
+    runs carry no schedule event, so the fail-closed matrix DENYs — no role
+    is ever invented for an unroutable signal.
+
+    Returns 0 when a role was dispatched (healthy idle tick), 1 otherwise.
+    """
+    if not schedule_minutes or schedule_minutes <= 0:
+        log("⚠️", "[Role Dispatch] Board empty — a manual run carries no schedule event; "
+                  "matrix DENY (fail-closed). Auditor dispatch fires on --schedule ticks.")
+        return 1
+    decision = dispatch(DispatchSignal(
+        event_type="event:schedule.ecosystem_scan",
+        payload={"schedule_kind": "cron", "schedule_expr": cron_expression(schedule_minutes)},
+    ))
+    if decision.decision == DECISION_DISPATCH and decision.role_id:
+        log("🌱", f"[Role Dispatch] Board empty → {decision.role_id} (auditor family) dispatched "
+                  f"via S09 matrix (event:schedule.ecosystem_scan, schedule={cron_expression(schedule_minutes)}). "
+                  f"Run the ecosystem escort: health sweep + board sweep + scout report.")
+        return 0
+    log("⚠️", f"[Role Dispatch] Board empty; matrix DENY ({decision.reason}) — fail-closed.")
+    return 1
+
+
 def _run_one_scheduled_tick(args: argparse.Namespace, exclude: set[str] | list[str] | None = None) -> tuple[int, str | None]:
     """One scheduled dispatch — reuses upstream's own single-cycle paths."""
     if args.verify_only:
@@ -1344,8 +1386,12 @@ def _run_one_scheduled_tick(args: argparse.Namespace, exclude: set[str] | list[s
     if args.pick_next:
         issue_id = pick_next_issue(exclude=exclude)
         if not issue_id:
-            log("❌", "No eligible open issues found on board this tick!")
-            return 1, None
+            log("⚠️", "No eligible open issues found on board this tick!")
+            # Owner policy + S09: an empty board on a scheduled tick is the
+            # canonical ecosystem_scan event → ecosystem-scout (auditor).
+            # A dispatched escort is a HEALTHY idle tick, not a failure.
+            rc = dispatch_idle_audit(args.schedule)
+            return (0 if rc == 0 else 1), None
         log("🎯", f"Auto-selected highest priority Issue #{issue_id}")
     rc = run_cycle(args, issue_id)
     return rc, issue_id
@@ -1563,7 +1609,8 @@ def main() -> int:
     if args.pick_next:
         issue_to_run = pick_next_issue()
         if not issue_to_run:
-            log("❌", "No eligible open issues found on board!")
+            log("⚠️", "No eligible open issues found on board!")
+            dispatch_idle_audit(getattr(args, "schedule", None))
             return 1
         log("🎯", f"Auto-selected highest priority Issue #{issue_to_run}")
 
