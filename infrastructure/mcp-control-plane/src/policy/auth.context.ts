@@ -58,6 +58,15 @@ export interface RequestContext {
   /** Audit-safe credential fingerprint (never the raw credential). */
   credentialId?: string;
   /**
+   * #621 (queue isolation): why an unverified fallback session exists
+   * ("anonymous" or a slot-denial reason). Undefined = the caller presented
+   * a VERIFIED credential (env key or registry client — slot-verification
+   * Path A). Queue partitioning keys on this honest evidence, NOT on the
+   * RBAC `authenticated` flag, because pre-production URL guests carry
+   * authenticated:true by doctrine (TEMPORARY viewerFallback comment).
+   */
+  fallbackReason?: string;
+  /**
    * Tool Exposure Policy: the client's curated tool-surface profile. Absent
    * or undefined = full RBAC surface (no discovery filtering beyond RBAC).
    * Derived from the registry client record at every transport entry point.

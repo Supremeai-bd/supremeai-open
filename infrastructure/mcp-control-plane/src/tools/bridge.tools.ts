@@ -633,6 +633,33 @@ function isOpenIssue(raw: RawIssue): boolean {
   return typeof raw.state !== "string" || raw.state.toLowerCase() === "open";
 }
 
+/**
+ * #621 (queue isolation, acceptance criterion 1): public-open partition
+ * predicate. Unverified callers see ONLY repo:open work orders plus
+ * repo-unlabeled ones (agent-orchestration style); private-plane tickets
+ * (repo:infrastructure, repo:api, repo:studio, repo:monorepo, ...) can never
+ * leak into the unauthenticated view. Matches the documented queueScope
+ * contract advertised by bridge_guide.
+ */
+export function isPublicQueueItem(labels: readonly string[] | undefined | null): boolean {
+  const list = Array.isArray(labels) ? labels : [];
+  const hasRepoLabel = list.some((l) => typeof l === "string" && l.startsWith("repo:"));
+  return !hasRepoLabel || list.includes("repo:open");
+}
+
+/**
+ * #621: queue-scope resolution for one request context. Verified evidence =
+ * a context WITHOUT fallbackReason (env-key / registry Path A) or no context
+ * at all (internal call paths, tests). Guest and slot-denial sessions carry
+ * fallbackReason from slot-verification and get the public-open partition.
+ * The RBAC `authenticated` flag is deliberately NOT used here: pre-production
+ * URL guests carry authenticated:true by doctrine (TEMPORARY viewerFallback).
+ */
+export function queueScopeForContext(ctx?: { fallbackReason?: string } | null): "public-open" | "all-open" {
+  const reason = ctx?.fallbackReason;
+  return typeof reason === "string" && reason.length > 0 ? "public-open" : "all-open";
+}
+
 /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
 export function queueFromIssues(rawIssues: unknown, limit = 20) {
   const items = Array.isArray(rawIssues) ? rawIssues : [];
@@ -707,18 +734,24 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           };
         }
         const queued = queueFromIssues(res.data, limit ?? 20);
-        // Expose all active open issues so agents discover claimable federation work
-        const anonymous = RequestContextStore.get()?.authenticated !== true;
-        const workOrders = queued;
+        // #621 queue isolation: unverified (fallback) sessions only see the
+        // public-open partition — private-plane tickets cannot leak into the
+        // anonymous view. Verified sessions and internal paths see all open
+        // orders. Honest evidence (fallbackReason), not the RBAC flag, drives
+        // the split because pre-production guests are authenticated:true.
+        const queueScope = queueScopeForContext(RequestContextStore.get());
+        const workOrders =
+          queueScope === "public-open" ? queued.filter((item) => isPublicQueueItem(item.labels)) : queued;
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
               repo,
               label: appliedLabel,
-              scope: "all-open",
+              scope: queueScope,
               authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
-              callerAuthenticated: !anonymous,
+              callerAuthenticated: RequestContextStore.get()?.authenticated === true,
+              callerVerified: queueScope === "all-open",
               count: workOrders.length,
               workOrders,
               nextStep: "Call bridge.work_order with a number, then follow bridge.guide.",
