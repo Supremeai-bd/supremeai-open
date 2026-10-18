@@ -65,7 +65,10 @@ def priority_for_failure(blocked_merge: bool) -> str:
 
 
 def healing_labels(repo: str, priority: str) -> list[str]:
-    return ["bridge:queued", priority, f"repo:{repo}", "area:ci"]
+    # `status:runway` (S09 LABEL_PRIORITY[0]) makes the continuous loop's
+    # deterministic dispatch route every healing issue to the ci-fixer role;
+    # a healing issue IS a jammed merge-runway item by definition.
+    return ["bridge:queued", priority, "status:runway", f"repo:{repo}", "area:ci"]
 
 
 def dedup_fingerprint(repo: str, pr_number: int) -> str:
