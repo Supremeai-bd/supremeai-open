@@ -622,8 +622,6 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
     lastActivityMs: number;
     /** #48: slot binding re-verified live on every session request. */
     slot?: { slotId: string; credentialId?: string };
-    /** #621: honest unverified-fallback evidence propagated from SlotSession. */
-    fallbackReason?: string;
   }
   const httpSessions = new Map<string, HttpSessionEntry>();
 
@@ -1463,7 +1461,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
           const sessionAuthenticated = Boolean(entry.slot || refreshedClient || role !== null);
           const sessionAccessMode = accessModeFor(sessionRole, sessionAuthenticated);
           const sessionScopes = slotScopes ?? refreshedClient?.scopes ?? defaultClientScopes(sessionRole);
-          await RequestContextStore.run({ role: sessionRole, accessMode: sessionAccessMode, authenticated: sessionAuthenticated, tenantBound: Boolean(refreshedClient?.id || entry.slot), clientId: refreshedClient?.id ?? entry.slot?.slotId, scopes: sessionScopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin, tenantId, slotId: entry.slot?.slotId, slotVerified: Boolean(entry.slot), credentialId: entry.slot?.credentialId, fallbackReason: entry.fallbackReason }, async () => {
+          await RequestContextStore.run({ role: sessionRole, accessMode: sessionAccessMode, authenticated: sessionAuthenticated, tenantBound: Boolean(refreshedClient?.id || entry.slot), clientId: refreshedClient?.id ?? entry.slot?.slotId, scopes: sessionScopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin, tenantId, slotId: entry.slot?.slotId, slotVerified: Boolean(entry.slot), credentialId: entry.slot?.credentialId }, async () => {
             await entry.transport.handleRequest(req, res, parsedBody);
           });
           return;
@@ -1539,14 +1537,14 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
           try { writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "MCP session could not be established" }, id: null }); } catch {}
           return;
         }
-        await RequestContextStore.run({ role: initRole, accessMode: initAccessMode, authenticated: initAuthenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes: initScopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin, tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId, fallbackReason: session.fallbackReason }, async () => {
+        await RequestContextStore.run({ role: initRole, accessMode: initAccessMode, authenticated: initAuthenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes: initScopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin, tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
           await httpTransport.handleRequest(req, res, parsedBody);
         });
         // The SDK assigns the session id DURING the initialize handshake; only
         // register the entry if the handshake actually established one (and
         // did not already tear the session down).
         if (httpTransport.sessionId && !dropped) {
-          httpSessions.set(httpTransport.sessionId, { transport: httpTransport, server: sessionServer, client: effectiveClient, lastActivityMs: Date.now(), slot: slotBinding, fallbackReason: session.fallbackReason });
+          httpSessions.set(httpTransport.sessionId, { transport: httpTransport, server: sessionServer, client: effectiveClient, lastActivityMs: Date.now(), slot: slotBinding });
         }
       });
       return;
@@ -1868,7 +1866,7 @@ async function main(): Promise<void> {
     // identities survive redeploys/restarts without manual re-registration.
     await initClientRegistry();
 
-    // #2596: টাস্ক-কিউ রেজিস্���্রিও একই সারিতে হাইড্রেট — tower restart-এ
+    // #2596: টাস্ক-কিউ রেজিস্ট্রিও একই সারিতে হাইড্রেট — tower restart-এ
     // চালু লিজ হারাবে না; সাথে প্রথম সিঙ্ক এগিয়ে ছোড়া (non-blocking)।
     await initTaskRegistry();
 
