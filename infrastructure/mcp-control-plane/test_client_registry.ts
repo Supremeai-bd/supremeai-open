@@ -111,9 +111,10 @@ assert.equal(repoAccessFor("agent"), "read-write");
 assert.equal(repoAccessFor("admin"), "read-write");
 assert.equal(repoAccessFor("supremeadmin"), "read-write");
 
-// 6a. restricted_viewer: satellite repo allowed, core repo BLOCKED.
-const satUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
+// 6a. restricted_viewer: satellite repo allowed, core repo BLOCKED, supremeai-api cloaked.
+const satUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-browser";
 const coreUrl = "https://api.github.com/repos/Supremeai-bd/supremeai";
+const cloakedApiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
 const rvScopes = defaultClientScopes("restricted_viewer");
 let deny = RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () =>
   assertRepoReadAccess("github.read_file", "gh-sat", satUrl));
@@ -121,6 +122,9 @@ assert.equal(deny, null, `satellite read should pass for restricted_viewer: ${de
 deny = RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () =>
   assertRepoReadAccess("github.read_file", "gh-core", coreUrl));
 assert.ok(deny && deny.includes("satellite"), "core repo must be blocked for restricted_viewer");
+const denyCloaked = RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () =>
+  assertRepoReadAccess("github.read_file", "gh-sat", cloakedApiUrl));
+assert.ok(denyCloaked && denyCloaked.includes("Repository not found: 'supremeai-api'"), "supremeai-api must be cloaked into ghost mode for restricted_viewer");
 
 // 6b. repo_viewer: satellite repos readable with scope; core repo blocked (admin-only).
 deny = RequestContextStore.run({ role: "repo_viewer", scopes: defaultClientScopes("repo_viewer") }, () =>

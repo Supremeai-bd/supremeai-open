@@ -67,6 +67,8 @@ const discoveredOrgRepos = new Set<string>(CANONICAL_FEDERATION_REPOS);
  */
 export function registerDiscoveredOrgRepo(repoName: string): void {
   const normalized = repoName.trim().toLowerCase();
+  // Ghost Cloaking: supremeai-api is never tracked or exposed in regular repo lists
+  if (normalized === "supremeai-api") return;
   if (normalized && !discoveredOrgRepos.has(normalized)) {
     discoveredOrgRepos.add(normalized);
   }

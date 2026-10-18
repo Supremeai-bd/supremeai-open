@@ -101,6 +101,11 @@ RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
 
   const denyCmd = assertRepoReadAccess("github.read_file", "supremeai-command", cmdUrl);
   assert.equal(denyCmd, null, "Agent must be permitted to read satellite repo supremeai-command");
+
+  // Ghost Cloaking verification: supremeai-api is completely air-gapped from regular agents
+  const apiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
+  const denyApi = assertRepoReadAccess("github.read_file", "supremeai-api", apiUrl);
+  assert.equal(denyApi, "Repository not found: 'supremeai-api'.", "Agent must receive Repository not found for cloaked supremeai-api");
 });
 
 // 5a.1 Admin & Supremeadmin authority (Rank >= 4) — can access core repo and all satellites
@@ -110,6 +115,10 @@ RequestContextStore.run({ role: "admin", scopes: ["tools:execute"] }, () => {
 
   const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
   assert.equal(denySkills, null, "Admin must be permitted to read satellite repo");
+
+  const apiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
+  const denyApiAdmin = assertRepoReadAccess("github.read_file", "supremeai-api", apiUrl);
+  assert.equal(denyApiAdmin, null, "Admin must be permitted to read cloaked repo");
 });
 
 RequestContextStore.run({ role: "supremeadmin", scopes: ["tools:execute"] }, () => {
