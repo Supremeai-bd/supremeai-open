@@ -13,9 +13,7 @@ export interface ServiceDescriptor {
 }
 
 export const serviceDescriptors: Array<Pick<ServiceDescriptor, "provider" | "circle" | "requiredEnv">> = [
-  { provider: "gemini", circle: "ai", requiredEnv: ["GEMINI_API_KEY"] },
-  { provider: "groq", circle: "ai", requiredEnv: ["GROQ_API_KEY"] },
-  { provider: "openrouter", circle: "ai", requiredEnv: ["OPENROUTER_API_KEY"] },
+  { provider: "gateway", circle: "ai", requiredEnv: ["SUPREMEAI_API_KEY"] },
   { provider: "render", circle: "infrastructure", requiredEnv: ["RENDER_API_KEY"] },
   { provider: "cloudflare", circle: "infrastructure", requiredEnv: ["CLOUDFLARE_API_TOKEN"] },
   { provider: "redis", circle: "infrastructure", requiredEnv: ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"] },

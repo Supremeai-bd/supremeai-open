@@ -14,7 +14,6 @@ import { buildAccountRegistry } from "../registry/account.registry.js";
  * উর্ধ্বতন স্তর আগের মতোই read/write (টাস্ক স্কোপের মধ্যে)।
  */
 export const SATELLITE_REPOS: ReadonlySet<string> = new Set([
-  "supremeai-api",
   "supremeai-open",
   "supremeai-sdk",
   "supremeai-archive",
@@ -66,6 +65,11 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
   const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(accountRepoUrl);
   const fullName = match ? `${match[1]}/${match[2].replace(/\.git$/, "")}` : accountId;
   const shortName = fullName.split("/").pop() ?? fullName;
+  // Ghost Cloaking Policy: 'supremeai-api' is completely air-gapped from regular agents.
+  // Non-admin callers receive 'Repository not found' (stealth, zero-knowledge).
+  if (shortName === "supremeai-api" && roleRank(store.role) < 4) {
+    return `Repository not found: '${shortName}'.`;
+  }
   // কোর মোনোরিপো সার্বভৌম সিকিউরিটি: 'supremeai' শুধুমাত্র admin ও supremeadmin রোলের জন্য উন্মুক্ত।
   if (shortName === "supremeai" && roleRank(store.role) < 4) {
     return `Forbidden: core monorepo 'supremeai' is strictly restricted to admin and supremeadmin roles; non-admin roles are limited to satellite repos (current role: '${store.role}').`;
