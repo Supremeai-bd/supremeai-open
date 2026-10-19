@@ -51,7 +51,7 @@ ALLOWLIST: dict[str, str] = {
     "scripts/ci/satellite_board_guard.py": "covered by test_satellite_board_guard",
     "scripts/ci/self_healing_reporter.py": "covered by test_self_healing_pipeline",
     "scripts/ci/stale_claim_releaser.py": "covered by test_ci_guards",
-    "scripts/ci/test_parity_guard.py": "self-guard, meta",
+    "scripts/ci/run_all_guards.py": "guard dispatcher, meta",
     "scripts/ci/vendored_tree_guard.py": "covered by test_ci_guards",
     "scripts/ci/federation_ci_watchdog.py": "covered by test_ci_guards",
 }
