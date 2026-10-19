@@ -35,6 +35,7 @@ from .provider_chain import (
     AttemptFn,
     AttemptResult,
     ProviderChainExhausted,
+    _default_attempt,
     execute_chain,
 )
 from .rate_limit import SlidingWindowLimiter
