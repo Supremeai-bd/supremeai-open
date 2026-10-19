@@ -14,7 +14,7 @@ import { getWorkerStatus } from "../adapters/cloudflare/index.js";
 import { auditSecrets } from "../adapters/infisical/index.js";
 import { checkStripe, checkVercel, checkFirecrawl, checkKaggle, checkQdrant } from "../adapters/misc/index.js";
 import { testProvider, listProviders } from "../adapters/ai/index.js";
-import { checkTelegram, checkWhatsApp } from "../adapters/notify/index.js";
+import { checkTelegram } from "../adapters/notify/index.js";
 
 export interface SweepReport {
   timestamp: string;
@@ -115,7 +115,6 @@ export class HealthEngine {
       "kaggle": () => checkKaggle(),
       "qdrant": () => checkQdrant(),
       "telegram": () => checkTelegram(),
-      "whatsapp": () => checkWhatsApp(),
     };
 
     // Dynamically add AI providers

@@ -22,7 +22,6 @@ export const serviceDescriptors: Array<Pick<ServiceDescriptor, "provider" | "cir
   { provider: "infisical", circle: "security", requiredEnv: ["INFISICAL_PROJECT_ID"] },
   { provider: "github", circle: "integration", requiredEnv: ["GITHUB_TOKEN"] },
   { provider: "telegram", circle: "integration", requiredEnv: ["TELEGRAM_BOT_TOKEN"] },
-  { provider: "whatsapp", circle: "integration", requiredEnv: ["WHATSAPP_ACCESS_TOKEN"] },
   { provider: "stripe", circle: "integration", requiredEnv: ["STRIPE_SECRET_KEY"] },
 ];
 

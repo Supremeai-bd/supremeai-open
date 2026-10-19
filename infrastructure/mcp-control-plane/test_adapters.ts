@@ -88,13 +88,10 @@ async function main() {
 
   console.log("\n=== Testing Notify Adapter ===");
   try {
-    const { checkTelegram, checkDiscord } = await import("./src/adapters/notify/index.js");
+    const { checkTelegram } = await import("./src/adapters/notify/index.js");
     try {
       console.log("[Notify] Telegram:", await checkTelegram());
     } catch(e) { console.error("[Notify] Telegram Error:", (e as Error).message); }
-    try {
-      console.log("[Notify] Discord:", await checkDiscord());
-    } catch(e) { console.error("[Notify] Discord Error:", (e as Error).message); }
   } catch (e) {
     console.error("[Notify] Import Error:", (e as Error).message);
   }

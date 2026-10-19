@@ -307,16 +307,6 @@ export function buildAccountRegistry(): ProviderAccount[] {
       apiKeyRef: "TELEGRAM_BOT_TOKEN",
       available: isAvailable("TELEGRAM_BOT_TOKEN"),
     },
-    {
-      id: "whatsapp-primary",
-      provider: "whatsapp",
-      displayName: "WhatsApp Alerts Bot",
-      role: "alerts",
-      environment: "production",
-      capabilities: ["health", "notify"],
-      apiKeyRef: "WHATSAPP_ACCESS_TOKEN",
-      available: isAvailable("WHATSAPP_ACCESS_TOKEN") || isAvailable("WHATSAPP_PHONE_NUMBER_ID") || isAvailable("WHATSAPP_WEBHOOK_URL"),
-    },
   ];
 }
 
