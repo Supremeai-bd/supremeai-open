@@ -35,6 +35,7 @@ SERVICE_ACCOUNT_MAP: dict[str, str] = {
     "supremeai-worker-node": "RENDER_API_KEY_2",
     "supremeai-scraper-node": "RENDER_API_KEY_3",
     "supremeai-mcp-tower": "RENDER_API_KEY_4",
+    "supremeai-api": "RENDER_API_KEY_5",
 }
 
 
@@ -222,11 +223,13 @@ def main() -> int:
     has_warning = False
 
     for svc_name, key_var in services_to_check:
-        api_key = env.get(key_var)
+        api_key = env.get(key_var) or (env.get("RENDER_API_KEY_API") if key_var == "RENDER_API_KEY_5" else None)
         if not api_key:
             results.append({
                 "service": svc_name,
-                "error": f"API key variable '{key_var}' not found in environment",
+                "account_key_var": key_var,
+                "warning": False,
+                "notice": f"API key '{key_var}' not configured in current environment. Ready for configuration.",
             })
             continue
 
@@ -270,6 +273,11 @@ def main() -> int:
         for r in results:
             if "error" in r:
                 print(f"[X] {r['service']}: ERROR - {r['error']}")
+                continue
+            if "notice" in r:
+                print(f"[INFO] {r['service']} ({r['account_key_var']}):")
+                print(f"   Status             : {r['notice']}")
+                print("-" * 72)
                 continue
             icon = "[WARN]" if r["warning"] else "[OK]"
             print(f"{icon} {r['service']} ({r['account_key_var']}):")

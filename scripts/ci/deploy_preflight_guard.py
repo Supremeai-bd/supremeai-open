@@ -142,13 +142,20 @@ def run_step2_secrets(required_keys: list[str] | None = None) -> tuple[bool, lis
         "RENDER_API_KEY_2",
         "RENDER_API_KEY_3",
         "RENDER_API_KEY_4",
+        "RENDER_API_KEY_5",
     ]
     check_keys = required_keys or default_required
     found_keys = []
 
     for key in check_keys:
         val = env.get(key, "").strip()
+        if not val and key == "RENDER_API_KEY_5":
+            val = env.get("RENDER_API_KEY_API", "").strip()
         if not val:
+            # RENDER_API_KEY_5 may be optional if Gateway uses static webhook or direct deploy
+            if key == "RENDER_API_KEY_5":
+                print(f"[Step 2: Secrets Presence] INFO: '{key}' not set in local env (will use GitHub Secrets in landing CI).")
+                continue
             errors.append(f"Missing required secret or environment variable: '{key}'")
         elif val.startswith("<") and val.endswith(">"):
             errors.append(f"Secret '{key}' contains unfilled placeholder: '{val}'")

@@ -445,6 +445,7 @@ jobs:
           RENDER_API_KEY_2: ${{ secrets.RENDER_API_KEY_2 }}
           RENDER_API_KEY_3: ${{ secrets.RENDER_API_KEY_3 }}
           RENDER_API_KEY_4: ${{ secrets.RENDER_API_KEY_4 }}
+          RENDER_API_KEY_5: ${{ secrets.RENDER_API_KEY_5 || secrets.RENDER_API_KEY_API }}
           BRIDGE_DISPATCH_TOKEN: ${{ secrets.BRIDGE_DISPATCH_TOKEN }}
         run: |
           echo "Running Step 2 (Secrets & Tokens Presence) and Step 3 (Render Account Quota <450m)..."
