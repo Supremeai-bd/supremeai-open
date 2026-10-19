@@ -1,6 +1,7 @@
-import { buildAccountRegistry, ProviderAccount } from "./account.registry.js";
+import { buildAccountRegistry, getAccountsForRole, ProviderAccount } from "./account.registry.js";
 import { Capability } from "./capability.registry.js";
 import { ProviderName } from "./provider.registry.js";
+import { RequestContextStore, type UserRole } from "../policy/auth.context.js";
 
 export interface Resource {
   id: string; // The fully qualified ID, e.g. "render/render-primary"
@@ -14,10 +15,13 @@ export interface Resource {
 }
 
 /**
- * Discovers and builds the active resource list based on available accounts.
+ * Discovers and builds the active resource list based on available accounts,
+ * filtered by the caller's role (core monorepo and org monitor restricted to admin).
  */
-export async function listResources(): Promise<Resource[]> {
-  const accounts = buildAccountRegistry();
+export async function listResources(role?: UserRole): Promise<Resource[]> {
+  const store = RequestContextStore.get();
+  const effectiveRole = role ?? store?.role;
+  const accounts = getAccountsForRole(effectiveRole);
   const resources: Resource[] = [];
 
   for (const account of accounts) {

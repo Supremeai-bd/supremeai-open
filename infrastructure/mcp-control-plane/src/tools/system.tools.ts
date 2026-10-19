@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { buildAccountRegistry, ProviderAccount } from "../registry/account.registry.js";
+import { buildAccountRegistry, getAccountsForRole, ProviderAccount } from "../registry/account.registry.js";
 import { listResources, getResourceStatus } from "../registry/resource.registry.js";
 import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
@@ -412,7 +412,8 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "Ping all backend services and report their HTTP health status",
     {},
     async () => {
-      const registry = buildAccountRegistry();
+      const store = RequestContextStore.get();
+      const registry = getAccountsForRole(store?.role);
 
       // Probe every registry row with bounded concurrency (8 workers) to avoid
       // saturating container socket pools and inflating probe latencies.

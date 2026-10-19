@@ -1,17 +1,17 @@
 import { env } from "../../lib/env.js";
 import { httpRequest } from "../../lib/http.js";
-import { AIKeyPool } from "../ai/key-pool.js";
+import { SimpleKeyPool } from "../../lib/key-pool.js";
 
 /**
  * Firecrawl — web scraping для документации, гайдов, стиль-гайдов.
  * https://api.firecrawl.dev/v1/scrape
  */
 
-let firecrawlPoolInstance: AIKeyPool | undefined;
-function firecrawlPool(): AIKeyPool {
+let firecrawlPoolInstance: SimpleKeyPool | undefined;
+function firecrawlPool(): SimpleKeyPool {
   const keys = env.firecrawl.apiKeys;
   if (!firecrawlPoolInstance || (firecrawlPoolInstance.length === 0 && keys.length > 0)) {
-    firecrawlPoolInstance = new AIKeyPool(keys);
+    firecrawlPoolInstance = new SimpleKeyPool(keys);
   }
   return firecrawlPoolInstance;
 }

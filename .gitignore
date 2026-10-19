@@ -10,3 +10,6 @@ bun.lock
 *.snapshot.txt
 *_dump.txt
 C?Users*
+node_modules/
+dist/
+.wrangler/
