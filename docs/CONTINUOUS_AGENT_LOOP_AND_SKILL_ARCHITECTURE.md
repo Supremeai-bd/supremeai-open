@@ -171,7 +171,21 @@ python scripts/agents/check_loop_contract_parity.py
 
 ---
 
-## 9. Immediate Next Actions
+## 11. Implementation Status (updated)
+
+Implemented so far:
+- `scripts/agents/agent_cadence.json` — role-cadence config (ecosystem-scout 12h, auditor 12h, human-eye/rules-breaker/platform-guardian 24h; merged auditor aliases).
+- `continuous_agent_loop.py` — `load_cadence_config`, `canonical_role`, `load/save_last_run_store`, `role_is_due`, `due_roles`, `mark_role_run`, `create_full_project_audit_issue`.
+- Empty-board branch now creates a scoped full-project audit issue before dispatching the idle auditor (both scheduled tick and manual pick-next).
+- Cadence gating in `dispatch_idle_audit`: only dispatches roles whose per-role window elapsed; otherwise healthy skip (no duplicate audit spam). `last_run` recorded on dispatch.
+- Pilot skill extracted: `skills/agent-cadence-dispatcher/` (SKILL.md + scripts/dispatch.py) wrapping the cadence helpers; parity test `skills/tests/test_agent_cadence_skill.py`.
+- Controller-side evidence verifier: `scripts/ci/controller_evidence_verify.py` (git diff scope, SHA-256 digests, controller-run tests; fail-closed). Tests: `tests/test_controller_evidence.py` (10 passed).
+- Learning feedback loop: `scripts/agents/learning_feedback.py` (record verified solutions to JSONL, promote to skill draft). Tests: `tests/test_learning_feedback.py` (6 passed).
+- Tests: `tests/test_agent_cadence.py` (11 passed) + `skills/tests/test_agent_cadence_skill.py` (3 passed) + `tests/test_controller_evidence.py` (10 passed) + `tests/test_learning_feedback.py` (6 passed) + existing suites green.
+
+Pending (next iterations):
+- Auto-execution bridge (MCP) for task envelopes — requires MCP Tower integration; design documented in AGENTS.md §2 (Pathway 1/3). Implementation deferred to a dedicated task.
+
 
 1. Test & commit the pending audit remediation (current uncommitted diff).
 2. Build agent-capability + skill inventory (one markdown/json).

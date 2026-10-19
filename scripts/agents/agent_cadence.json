@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "cadences_hours": {
+    "ecosystem-scout": 12,
+    "auditor": 12,
+    "human-eye": 24,
+    "rules-breaker": 24,
+    "platform-guardian": 24
+  },
+  "merged_roles": {
+    "federation-auditor": "auditor",
+    "task-auditor": "auditor"
+  },
+  "notes": "Role-based cadence. Per-role last_run stored separately. P0/P1 issues preempt scheduled audits."
+}
