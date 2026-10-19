@@ -51,8 +51,7 @@ class CommandConfig:
             )
         if not hmac_secret or len(hmac_secret) < MIN_HMAC_SECRET_LEN:
             errors.append(
-                "COMMAND_HMAC_SECRET must be at least %d characters"
-                % MIN_HMAC_SECRET_LEN
+                f"COMMAND_HMAC_SECRET must be at least {MIN_HMAC_SECRET_LEN} characters"
             )
         if errors:
             raise CommandConfigError("; ".join(errors))
@@ -88,7 +87,7 @@ class CommandConfig:
 
     @property
     def telegram_api_base(self) -> str:
-        return "https://api.telegram.org/bot%s" % self.telegram_bot_token
+        return f"https://api.telegram.org/bot{self.telegram_bot_token}"
 
     def is_superadmin(self, chat_id: str) -> bool:
         """RBAC: only the configured superadmin chat id may trigger actions."""
@@ -96,15 +95,7 @@ class CommandConfig:
 
     def __repr__(self) -> str:  # secrets never render — vault doctrine
         return (
-            "CommandConfig(superadmin_chat_id=%s, redis_url=%s, tower_mcp_url=%s, "
-            "webhook=%s:%d, telegram_bot_token=%s, hmac_secret=%s)"
-            % (
-                self.superadmin_chat_id,
-                self.redis_url,
-                self.tower_mcp_url,
-                self.webhook_bind_host,
-                self.webhook_port,
-                REDACTED,
-                REDACTED,
-            )
+            f"CommandConfig(superadmin_chat_id={self.superadmin_chat_id}, redis_url={self.redis_url}, "
+            f"tower_mcp_url={self.tower_mcp_url}, webhook={self.webhook_bind_host}:{self.webhook_port}, "
+            f"telegram_bot_token={REDACTED}, hmac_secret={REDACTED})"
         )

@@ -9,8 +9,11 @@ real embedding model via the store's score() hook.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -100,3 +103,161 @@ class MemoryStore:
         if namespace:
             return sum(1 for x in self._items if x.namespace == namespace)
         return len(self._items)
+
+
+class QdrantMemoryStore(MemoryStore):
+    """Vector-backed memory store connecting to Qdrant REST API.
+
+    Maintains full compatibility with MemoryStore interface while forwarding
+    upserts and searches to Qdrant. Degrades gracefully to in-memory fallback
+    if Qdrant is unreachable.
+    """
+
+    def __init__(
+        self,
+        qdrant_url: str,
+        api_key: str | None = None,
+        collection: str = "supremeai_memory",
+        vector_size: int = 128,
+        timeout_s: float = 5.0,
+    ) -> None:
+        super().__init__()
+        self.qdrant_url = qdrant_url.rstrip("/")
+        self.api_key = api_key
+        self.collection = collection
+        self.vector_size = vector_size
+        self.timeout_s = timeout_s
+        self._collection_ensured = False
+
+    def _headers(self) -> dict[str, str]:
+        h = {"Content-Type": "application/json"}
+        if self.api_key:
+            h["api-key"] = self.api_key
+        return h
+
+    def _ensure_collection(self) -> None:
+        if self._collection_ensured:
+            return
+        import json
+        import urllib.request
+
+        payload = json.dumps(
+            {"vectors": {"size": self.vector_size, "distance": "Cosine"}}
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.qdrant_url}/collections/{self.collection}",
+            data=payload,
+            headers=self._headers(),
+            method="PUT",
+        )
+        with contextlib.suppress(Exception), urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+            if resp.status in (200, 201):
+                self._collection_ensured = True
+        self._collection_ensured = True
+
+    def _embed(self, text: str) -> list[float]:
+        """Deterministic embedding vector (dimension vector_size)."""
+        import hashlib
+        import math
+
+        vec = [0.0] * self.vector_size
+        for word in re.findall(r"\w+", text.lower()):
+            idx = int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16) % self.vector_size
+            vec[idx] += 1.0
+        norm = math.sqrt(sum(v * v for v in vec))
+        return [v / norm for v in vec] if norm > 0 else vec
+
+    def store(
+        self,
+        *,
+        text: str,
+        namespace: str = "default",
+        item_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemoryItem:
+        item = super().store(
+            text=text, namespace=namespace, item_id=item_id, metadata=metadata
+        )
+        import json
+
+        self._ensure_collection()
+        point_id = item.id.replace("mem-", "")
+        if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", point_id, re.IGNORECASE):
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, item.id))
+
+        point = {
+            "id": point_id,
+            "vector": self._embed(text),
+            "payload": {
+                "id": item.id,
+                "namespace": namespace,
+                "text": text,
+                "metadata": item.metadata,
+                "created": item.created,
+            },
+        }
+        payload = json.dumps({"points": [point]}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.qdrant_url}/collections/{self.collection}/points?wait=true",
+            data=payload,
+            headers=self._headers(),
+            method="PUT",
+        )
+        with contextlib.suppress(Exception), urllib.request.urlopen(req, timeout=self.timeout_s):
+            pass
+        return item
+
+    def search(
+        self,
+        *,
+        query: str,
+        top_k: int = 5,
+        namespace: str | None = None,
+        threshold: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        import json
+
+        search_filter = None
+        if namespace:
+            search_filter = {
+                "must": [{"key": "namespace", "match": {"value": namespace}}]
+            }
+        body: dict[str, Any] = {
+            "vector": self._embed(query),
+            "limit": top_k,
+            "with_payload": True,
+        }
+        if search_filter:
+            body["filter"] = search_filter
+        if threshold > 0.0:
+            body["score_threshold"] = threshold
+
+        payload = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.qdrant_url}/collections/{self.collection}/points/search",
+            data=payload,
+            headers=self._headers(),
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                results = []
+                for hit in data.get("result", []):
+                    p = hit.get("payload", {})
+                    results.append(
+                        {
+                            "id": p.get("id", str(hit.get("id"))),
+                            "score": round(float(hit.get("score", 0.0)), 4),
+                            "text": p.get("text", ""),
+                            "namespace": p.get("namespace", "default"),
+                            "metadata": p.get("metadata", {}),
+                            "created": p.get("created", 0.0),
+                        }
+                    )
+                return results
+        except (urllib.error.URLError, OSError, ValueError):
+            return super().search(
+                query=query, top_k=top_k, namespace=namespace, threshold=threshold
+            )
+

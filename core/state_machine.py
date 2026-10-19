@@ -7,6 +7,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import ClassVar
 
 
 class AgentState(str, Enum):
@@ -37,7 +38,7 @@ class AgentStateMachine:
     Maintains an immutable audit ledger of transitions.
     """
 
-    ALLOWED_TRANSITIONS: dict[AgentState, set[AgentState]] = {
+    ALLOWED_TRANSITIONS: ClassVar[dict[AgentState, set[AgentState]]] = {
         AgentState.IDLE: {AgentState.PLANNING, AgentState.CLAIMED},
         AgentState.PLANNING: {AgentState.CLAIMED, AgentState.IDLE, AgentState.REJECTED},
         AgentState.CLAIMED: {

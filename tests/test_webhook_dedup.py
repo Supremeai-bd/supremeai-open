@@ -16,7 +16,9 @@ from command.webhook_ingress import (
 
 
 def _ingress(on_valid, dedup=None, task_factory=None):
-    return WebhookIngress("h" * 32, on_valid=on_valid, dedup=dedup, task_factory=task_factory)
+    return WebhookIngress(
+        "h" * 32, on_valid=on_valid, dedup=dedup, task_factory=task_factory
+    )
 
 
 def test_dedup_drops_duplicate():

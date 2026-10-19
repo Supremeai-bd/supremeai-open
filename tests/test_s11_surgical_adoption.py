@@ -300,6 +300,7 @@ class CliSmoke(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 timeout=60,
+                check=False,
             )
         finally:
             Path(path).unlink(missing_ok=True)
@@ -319,6 +320,7 @@ class CliSmoke(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=60,
+            check=False,
         )
         self.assertEqual(clean.returncode, 0)
         dirty = subprocess.run(
@@ -331,6 +333,7 @@ class CliSmoke(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=60,
+            check=False,
         )
         self.assertEqual(dirty.returncode, 2)
 

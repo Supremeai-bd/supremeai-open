@@ -664,9 +664,9 @@ def _needs_encoding_kwarg(call: ast.Call) -> bool:
     func = call.func
     if _open_family(call) is not None:
         return not _mode_is_binary(call)
-    if isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text"):
-        return True
-    return False
+    return bool(
+        isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text")
+    )
 
 
 def _insert_kwarg(source: str, call: ast.Call, kw_text: str) -> str | None:
@@ -759,7 +759,7 @@ def _parse_records(raw: str) -> list[SourceRecord]:
     if isinstance(data, Mapping):
         data = data.get("files", [])
     if not isinstance(data, list):
-        raise ValueError("expected a JSON list of {path, content}")
+        raise ValueError("expected a JSON list of {path, content}")  # noqa: TRY004
     records = []
     for item in data:
         if not isinstance(item, Mapping) or "path" not in item or "content" not in item:

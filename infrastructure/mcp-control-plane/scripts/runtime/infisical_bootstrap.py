@@ -58,7 +58,7 @@ def load_secrets() -> dict[str, str]:
             if ws.get("id") == workspace_id or ws.get("slug") == workspace_id:
                 workspace_id = ws.get("id")
                 break
-    except Exception as error:
+    except (urllib.error.URLError, OSError, TimeoutError, ValueError, KeyError) as error:
         print(f"Unable to resolve Infisical workspace: {error}", file=sys.stderr)
 
     query = urllib.parse.urlencode(
@@ -82,7 +82,7 @@ def main() -> int:
         return 2
     try:
         os.environ.update(load_secrets())
-    except Exception as exc:
+    except (RuntimeError, OSError, TimeoutError, ConnectionError, ValueError, KeyError) as exc:
         print(f"Infisical bootstrap failed: {exc}", file=sys.stderr)
         return 1
     os.execvp(sys.argv[1], sys.argv[1:])

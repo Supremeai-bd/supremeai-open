@@ -4,8 +4,10 @@
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
+import * as http from "node:http";
 import * as path from "node:path";
 import { McpBridge } from "../mcp_bridge";
+import { MODEL_TIERS, modelToTier, tierToModel } from "../models";
 
 async function runTests(): Promise<void> {
   console.log("=== SupremeAI VS Code Extension Tests ===");
@@ -67,8 +69,67 @@ async function runTests(): Promise<void> {
   assert.strictEqual(tsconfig.compilerOptions?.strict, true, "TypeScript strict must be true");
   console.log("  ✓ tsconfig.json enforces strict mode");
 
+  // 5. Model Tiers Resolution
+  console.log("\n5. Model Tiers & Resolution Contract");
+  assert.strictEqual(MODEL_TIERS.length, 4, "Should have 4 model tiers");
+  assert.strictEqual(tierToModel("fast"), "llama-3.1-8b-instant");
+  assert.strictEqual(tierToModel("balanced"), "gpt-4o-mini");
+  assert.strictEqual(tierToModel("pro"), "claude-sonnet-4-5");
+  assert.strictEqual(tierToModel("auto"), "auto");
+  assert.strictEqual(modelToTier("gpt-4o-mini"), "balanced");
+  assert.strictEqual(modelToTier("claude-sonnet-4-5"), "pro");
+  assert.strictEqual(modelToTier("unknown-model"), "auto");
+  console.log("  ✓ tierToModel and modelToTier resolve accurately across all tiers");
+
+  // 6. Gateway Chat Completion Mock
+  console.log("\n6. Gateway Chat Protocol Mock");
+  const mockServer = http.createServer((req, res) => {
+    let rawBody = "";
+    req.on("data", (chunk) => {
+      rawBody += chunk;
+    });
+    req.on("end", () => {
+      assert.strictEqual(req.method, "POST");
+      assert.strictEqual(req.url, "/v1/chat/completions");
+      assert.strictEqual(req.headers["x-supremeai-key"], "test-key-123");
+      const parsed = JSON.parse(rawBody);
+      assert.strictEqual(parsed.model, "gpt-4o-mini");
+      assert.strictEqual(parsed.messages[0].content, "ping");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { role: "assistant", content: "pong" } }],
+        })
+      );
+    });
+  });
+
+  await new Promise<void>((resolve) => mockServer.listen(0, "127.0.0.1", resolve));
+  const port = (mockServer.address() as { port: number }).port;
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-SupremeAI-Key": "test-key-123",
+      },
+      body: JSON.stringify({
+        model: tierToModel("balanced"),
+        messages: [{ role: "user", content: "ping" }],
+        stream: false,
+      }),
+    });
+    assert.strictEqual(res.status, 200);
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    assert.strictEqual(data.choices?.[0]?.message?.content, "pong");
+    console.log("  ✓ Chat completions wire protocol and model tier dispatch verified");
+  } finally {
+    mockServer.close();
+  }
+
   console.log("\n=========================================");
-  console.log("ALL 8 EXTENSION FOUNDATION TESTS PASSED!");
+  console.log("ALL EXTENSION & CHAT PROTOCOL TESTS PASSED!");
 }
 
 runTests().catch((err) => {

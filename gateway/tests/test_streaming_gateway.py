@@ -456,7 +456,7 @@ def test_rate_limit_reset_epoch_matches_window():
         json={"messages": [{"role": "user", "content": "x"}]},
     )
     reset = int(r.headers["x-ratelimit-reset"])
-    now = (
+    (
         int(
             asyncio.get_event_loop_policy()
             .new_event_loop()

@@ -380,7 +380,7 @@ class RollingSchedule(unittest.TestCase):
             srt.active_slot(epoch + _dt.timedelta(minutes=110 + 45)).satellite, "skills"
         )
         self.assertEqual(
-            srt.active_slot(_dt.datetime(1970, 1, 1, 0, 30)).satellite, "api"
+            srt.active_slot(_dt.datetime(1970, 1, 1, 0, 30)).satellite, "api"  # noqa: DTZ001
         )  # naive=UTC
 
     def test_29_slot_type_and_bounds_enforced(self):
@@ -481,7 +481,7 @@ class PrePushRebaseGuard(unittest.TestCase):
                 ("git rev-list", (0, "0\n", "")),
             ]
         )
-        fresh, behind, detail = cal.pre_push_rebase_guard()
+        fresh, behind, _detail = cal.pre_push_rebase_guard()
         self.assertTrue(fresh)
         self.assertEqual(behind, 0)
 
@@ -528,7 +528,7 @@ class PrePushRebaseGuard(unittest.TestCase):
                 ("git fetch", (128, "", "network down")),
             ]
         )
-        fresh, behind, detail = cal.pre_push_rebase_guard()
+        fresh, _behind, detail = cal.pre_push_rebase_guard()
         self.assertFalse(fresh)
         self.assertIn("fetch", detail)
 

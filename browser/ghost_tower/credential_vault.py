@@ -7,6 +7,7 @@ Used for fully automated, hands-free login recovery.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -16,11 +17,9 @@ from typing import Any
 from cryptography.fernet import Fernet
 
 if sys.platform == "win32":
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 VAULT_DIR = Path(os.path.expanduser(r"~\.supremeai_vault"))
 VAULT_FILE = VAULT_DIR / "credentials.enc.json"
@@ -35,11 +34,19 @@ def get_or_create_master_key() -> bytes:
 
     VAULT_DIR.mkdir(parents=True, exist_ok=True)
     if KEY_FILE.exists():
+        try:
+            os.chmod(KEY_FILE, 0o600)
+        except OSError:
+            pass
         return KEY_FILE.read_bytes().strip()
 
     # Generate new key
     new_key = Fernet.generate_key()
     KEY_FILE.write_bytes(new_key)
+    try:
+        os.chmod(KEY_FILE, 0o600)
+    except OSError:
+        pass
     print(f"[KEY] [VAULT] New Master Key generated and secured at: {KEY_FILE}")
     print(
         f"[INFO] You can also set this in your environment: CREDENTIAL_MASTER_KEY={new_key.decode()}"
@@ -153,7 +160,7 @@ class CredentialVault:
         try:
             with open(VAULT_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             return {}
 
     def _write_raw_store(self, data: dict[str, Any]):

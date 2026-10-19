@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
+from typing import ClassVar
 
 __all__ = ["ContentPruner", "PrunedContent", "link_density"]
 
@@ -111,7 +112,7 @@ class _Block:
 class _Harvester(HTMLParser):
     """Collect candidate blocks: paragraphs, headings, list items, pre."""
 
-    _BLOCK_TAGS = {
+    _BLOCK_TAGS: ClassVar[set[str]] = {
         "p",
         "h1",
         "h2",

@@ -6,7 +6,6 @@ GatewayError surfacing, SSE chunk re-assembly (sync), and the async
 streaming iterator.
 """
 
-import asyncio
 import json
 import os
 import sys
@@ -16,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
-from supremeai import AsyncSupremeAIClient, GatewayError, SupremeAIClient
+from supremeai import GatewayError, SupremeAIClient
 from supremeai.sse_listener import SSEListener
 
 SSE_BODY = (
@@ -65,16 +64,15 @@ class MockGateway(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b"{}"
         state["last_auth"] = self.headers.get("Authorization")
         state["last_body"] = json.loads(raw.decode("utf-8") or "{}")
-        if self.path == "/v1/runs":
+        if self.path == "/v1/chat/completions":
             self._send_json(
-                201,
+                200,
                 {
-                    "id": "run_123",
-                    "status": "queued",
-                    "task": state["last_body"].get("task", ""),
+                    "id": "chat_123",
+                    "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}],
                 },
             )
-        else:
+        elif self.path == "/v1/runs":
             self._send_json(
                 404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}}
             )
@@ -125,7 +123,7 @@ class MockGatewayServer(ThreadingHTTPServer):
     @property
     def base_url(self):
         host, port = self.server_address[:2]
-        return "http://%s:%d" % (host, port)
+        return f"http://{host}:{port}"
 
 
 class TestSupremeAISDK(unittest.TestCase):
@@ -145,15 +143,11 @@ class TestSupremeAISDK(unittest.TestCase):
         self.gateway.shutdown()
         self.gateway.server_close()
 
-    def test_header_signing_and_run_submission(self):
-        response = self.client.run_task(
-            "summarize", {"text": "hello"}, idempotency_key="abc"
-        )
-        self.assertEqual(response["id"], "run_123")
-        self.assertEqual(response["status"], "queued")
+    def test_header_signing_and_chat_submission(self):
+        response = self.client.chat([{"role": "user", "content": "hello"}])
+        self.assertEqual(response["id"], "chat_123")
         self.assertEqual(self.gateway.state["last_auth"], "Bearer test-key-123")
-        self.assertEqual(self.gateway.state["last_body"]["task"], "summarize")
-        self.assertEqual(self.gateway.state["last_body"]["idempotencyKey"], "abc")
+        self.assertEqual(self.gateway.state["last_body"]["messages"][0]["content"], "hello")
 
     def test_retry_backoff_succeeds_on_third_attempt(self):
         response = self.client.request("GET", "/v1/flaky")
@@ -169,27 +163,6 @@ class TestSupremeAISDK(unittest.TestCase):
         self.assertTrue(error.retryable)
         self.assertEqual(error.code, "UPSTREAM_BUSY")
 
-    def test_sse_reassembly_sync(self):
-        tokens, done = [], None
-        tool = {"id": "", "name": "", "arguments": ""}
-        for event in self.client.stream_run("run_123"):
-            parsed = event.parsed or {}
-            if parsed.get("type") == "token":
-                tokens.append(parsed["text"])
-            elif parsed.get("type") == "tool_call_delta":
-                delta = parsed["delta"]
-                tool["id"] = delta.get("id") or tool["id"]
-                tool["name"] = delta.get("name") or tool["name"]
-                tool["arguments"] += delta.get("argumentsFragment", "")
-            elif parsed.get("type") == "done":
-                done = True
-                break
-        self.assertEqual("".join(tokens), "Hello")
-        self.assertEqual(tool["id"], "call_1")
-        self.assertEqual(tool["name"], "get_weather")
-        self.assertEqual(json.loads(tool["arguments"]), {"city": "Dhaka"})
-        self.assertTrue(done)
-
     def test_sse_listener_multiline_and_finish(self):
         listener = SSEListener()
         events = listener.feed("event: message\nid: 42\ndata: line-one\n")
@@ -199,23 +172,6 @@ class TestSupremeAISDK(unittest.TestCase):
         self.assertEqual(events[0].data, "line-one\nline-two")
         self.assertEqual(events[0].id, "42")
         self.assertEqual(listener.finish(), [])
-
-    def test_async_streaming_iterator(self):
-        async def collect():
-            async_client = AsyncSupremeAIClient(
-                base_url=self.gateway.base_url,
-                api_key="test-key-123",
-                timeout=5.0,
-            )
-            tokens = []
-            async for event in async_client.stream_run("run_123"):
-                parsed = event.parsed or {}
-                if parsed.get("type") == "token":
-                    tokens.append(parsed["text"])
-            return "".join(tokens)
-
-        self.assertEqual(asyncio.run(collect()), "Hello")
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

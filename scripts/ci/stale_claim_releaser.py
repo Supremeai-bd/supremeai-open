@@ -105,7 +105,7 @@ def release_plan(snapshot: dict, now: datetime) -> dict:
                  "last_push_at": iso|null, "pr_opened_at": iso|null}]}
     """
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get("issues"), list):
-        raise ValueError('snapshot must be {"issues": [...]}')
+        raise ValueError('snapshot must be {"issues": [...]}')  # noqa: TRY004
     releases, keeps = [], []
     for issue in snapshot["issues"]:
         number = issue.get("number")

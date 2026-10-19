@@ -8,23 +8,23 @@ Supports automated 2FA verification via pyotp (Authenticator App).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import sys
 from typing import Any
 
 if sys.platform == "win32":
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 try:
     import pyotp
 except ImportError:
     pyotp = None
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 
 from .credential_vault import CredentialVault
@@ -127,10 +127,8 @@ async def handle_google_flow(
 
         # E. Check for Phone Prompt 2FA ("Tap Yes" / Device Challenge)
         page_text = ""
-        try:
+        with contextlib.suppress(Exception):
             page_text = await page.inner_text("body")
-        except Exception:
-            pass
 
         if any(
             phrase in page_text
@@ -296,7 +294,7 @@ async def auto_login_via_google_sso(
         )
         await asyncio.sleep(2)
         return success
-    except Exception:
+    except (asyncio.TimeoutError, PlaywrightError, OSError, RuntimeError):
         # Redirect in same window
         await asyncio.sleep(2)
         if "accounts.google.com" in page.url:

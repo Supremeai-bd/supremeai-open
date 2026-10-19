@@ -95,12 +95,12 @@ class CookieBridge:
         """Import cookie dicts (browser-export shape) for one allowlisted domain."""
         d = self._guard(domain)
         if not isinstance(cookies, list):
-            raise ValueError("cookies must be a list of dicts")
+            raise ValueError("cookies must be a list of dicts")  # noqa: TRY004
         bucket = self._cookies.setdefault(d, {})
         accepted = 0
         for raw in cookies:
             if not isinstance(raw, dict):
-                raise ValueError("each cookie must be a dict")
+                raise ValueError("each cookie must be a dict")  # noqa: TRY004
             name = str(raw.get("name", "")).strip()
             value = str(raw.get("value", ""))
             if not name:

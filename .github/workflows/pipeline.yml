@@ -594,6 +594,33 @@ jobs:
         working-directory: infrastructure/mcp-control-plane
 
   # ---------------------------------------------------------------------------
+  # 📦 SDK — TypeScript client typecheck + tests
+  # ---------------------------------------------------------------------------
+  sdk-typescript:
+    name: SDK TypeScript Verification (typecheck + tests)
+    needs: boundary_sanitization_guard
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Typecheck SDK
+        run: npm run typecheck
+        working-directory: sdk/typescript
+
+      - name: Test SDK
+        run: npm test
+        working-directory: sdk/typescript
+
+  # ---------------------------------------------------------------------------
   # 🤖 Agent loop — cron reconciliation + event-driven intake (#69).
   # Runs ONLY on schedule/workflow_dispatch so a webhook-triggered dispatch
   # never burns matrix minutes. One cycle per tick; the concurrency group

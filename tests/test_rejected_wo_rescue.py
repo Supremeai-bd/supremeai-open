@@ -253,6 +253,7 @@ class TestSelfTestAndCLI(unittest.TestCase):
             text=True,
             encoding="utf-8",
             timeout=60,
+            check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("ALL PASS", proc.stdout)
@@ -275,6 +276,7 @@ class TestSelfTestAndCLI(unittest.TestCase):
                 text=True,
                 encoding="utf-8",
                 timeout=60,
+                check=False,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             payload = json.loads(proc.stdout)
@@ -294,6 +296,7 @@ class TestSelfTestAndCLI(unittest.TestCase):
                 text=True,
                 encoding="utf-8",
                 timeout=60,
+                check=False,
             )
             self.assertEqual(proc.returncode, 2)
         finally:
@@ -312,6 +315,7 @@ class TestSelfTestAndCLI(unittest.TestCase):
             text=True,
             encoding="utf-8",
             timeout=60,
+            check=False,
         )
         self.assertEqual(proc.returncode, 3)
 

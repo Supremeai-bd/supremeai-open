@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline contract tests for the Universal Federation Dispatch Engine core."""
+
 from __future__ import annotations
 
 import json
@@ -36,7 +37,9 @@ class RoutingTests(unittest.TestCase):
     def test_monorepo_split_out(self):
         plan = fd.plan_dispatch(["vscode/a.ts", "scripts/agents/loop.py"])
         self.assertIn("scripts/agents/loop.py", plan.monorepo_paths)
-        self.assertTrue(all("scripts/agents/loop.py" not in t.files for t in plan.targets))
+        self.assertTrue(
+            all("scripts/agents/loop.py" not in t.files for t in plan.targets)
+        )
 
     def test_unrouted_quarantined(self):
         plan = fd.plan_dispatch(["README.md"])
@@ -53,8 +56,10 @@ class RoutingTests(unittest.TestCase):
 class DeterminismTests(unittest.TestCase):
     def test_sorted_targets(self):
         plan = fd.plan_dispatch(["skills/z.md", "vscode/a.ts", "browser/b.ts"])
-        self.assertEqual([t.satellite for t in plan.targets],
-                         sorted(t.satellite for t in plan.targets))
+        self.assertEqual(
+            [t.satellite for t in plan.targets],
+            sorted(t.satellite for t in plan.targets),
+        )
 
     def test_dedup_within_target(self):
         plan = fd.plan_dispatch(["vscode/a.ts", "vscode/a.ts", "vscode/b.ts"])
@@ -70,8 +75,14 @@ class DeterminismTests(unittest.TestCase):
 class SSOTTests(unittest.TestCase):
     def test_matrix_reused_from_batcher(self):
         import hourly_satellite_batcher as hb
-        for p in ("vscode/x.ts", "gateway/x.py", "infrastructure/mcp-control-plane/y.ts",
-                  "scripts/agents/loop.py", "README.md"):
+
+        for p in (
+            "vscode/x.ts",
+            "gateway/x.py",
+            "infrastructure/mcp-control-plane/y.ts",
+            "scripts/agents/loop.py",
+            "README.md",
+        ):
             self.assertEqual(fd.route_path(p), hb.route_path(p))
 
 
@@ -83,6 +94,7 @@ class TraceabilityTests(unittest.TestCase):
 
     def test_render_workflow_yaml_parses(self):
         import yaml
+
         parsed = yaml.safe_load(fd.render_workflow_yaml())
         self.assertIsInstance(parsed, dict)
         self.assertIn("jobs", parsed)

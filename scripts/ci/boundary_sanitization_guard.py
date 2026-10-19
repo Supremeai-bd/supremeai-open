@@ -47,6 +47,7 @@ APPROVING A NEW PUBLIC SURFACE
 from __future__ import annotations
 
 import argparse
+import contextlib
 import re
 import subprocess
 import sys
@@ -55,11 +56,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 # ---------------------------------------------------------------------------
 # Approved public surface registry (SSOT — see module docstring)
@@ -226,9 +225,7 @@ def _value_is_concrete(value: str) -> bool:
     stripped = value.strip().strip("\"'")
     if not stripped:
         return False
-    if _PLACEHOLDER_VALUE.match(stripped):
-        return False
-    return True
+    return not _PLACEHOLDER_VALUE.match(stripped)
 
 
 def _check_pem(lines: Sequence[str], header_idx: int) -> bool:
@@ -323,6 +320,7 @@ def _git_tracked_files(repo_root: Path) -> list[str]:
             cwd=str(repo_root),
             capture_output=True,
             timeout=60,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(f"git ls-files failed: {exc}") from exc
@@ -401,6 +399,7 @@ def cmd_base_head(repo_root: Path, base: str, head: str) -> int:
             cwd=str(repo_root),
             capture_output=True,
             timeout=30,
+            check=False,
         )
         if probe.returncode != 0:
             raise RuntimeError(f"--base/--head revision not resolvable: {rev!r}")
@@ -409,6 +408,7 @@ def cmd_base_head(repo_root: Path, base: str, head: str) -> int:
         cwd=str(repo_root),
         capture_output=True,
         timeout=60,
+        check=False,
     )
     if proc.returncode != 0:
         raise RuntimeError(

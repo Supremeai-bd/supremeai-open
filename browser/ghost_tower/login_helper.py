@@ -6,6 +6,7 @@ lock conflicts with your running Google Chrome browser.
 """
 
 import asyncio
+import contextlib
 import os
 
 from playwright.async_api import async_playwright
@@ -51,7 +52,7 @@ async def main():
                 break
 
             url = page.url
-            try:
+            with contextlib.suppress(Exception):
                 sign_in = await page.query_selector(
                     'a[href*="accounts.google.com"], button:has-text("Sign in")'
                 )
@@ -69,8 +70,6 @@ async def main():
                     )
                     await asyncio.sleep(3)
                     break
-            except Exception:
-                pass
 
         await context.close()
 

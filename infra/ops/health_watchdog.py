@@ -88,7 +88,7 @@ class FederationWatchdog:
         except urllib.error.HTTPError as e:
             elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000.0
             return (False, e.code, elapsed, str(e.reason))
-        except Exception as e:
+        except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError) as e:
             elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000.0
             return (False, 0, elapsed, str(e))
 

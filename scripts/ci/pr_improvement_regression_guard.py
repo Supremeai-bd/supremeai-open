@@ -83,12 +83,8 @@ def is_test_file(path: str) -> bool:
     name = path.rsplit("/", 1)[-1]
     return (
         path.startswith(("tests/", "test/", "spec/"))
-        or name.startswith("test_")
-        or name.endswith("_test.ts")
-        or name.endswith(".test.ts")
-        or name.endswith("_test.js")
-        or name.endswith(".test.js")
-        or name.startswith("test")
+        or name.startswith(("test_", "test"))
+        or name.endswith(("_test.ts", ".test.ts", "_test.js", ".test.js"))
     )
 
 
@@ -215,11 +211,12 @@ def _check_churn(changed_files: list[dict], violations: list[dict]) -> int:
         for a in add:
             matched = False
             for i, r in enumerate(rem):
-                if not used[i]:
-                    if r == a or r.strip() == a.strip() or _is_pure_rename(r, a):
-                        used[i] = True
-                        matched = True
-                        break
+                if not used[i] and (
+                    r == a or r.strip() == a.strip() or _is_pure_rename(r, a)
+                ):
+                    used[i] = True
+                    matched = True
+                    break
             if not matched:
                 semantic_here += 1
         semantic_here += sum(1 for u in used if not u)
@@ -362,23 +359,23 @@ def _check_backward_compat(
 def evaluate(request: dict) -> dict:
     """Deterministic evaluation. Fail-closed on malformed input."""
     if not isinstance(request, dict):
-        raise ValueError("request must be an object")
+        raise ValueError("request must be an object")  # noqa: TRY004
     changed_files = request.get("changed_files")
     if not isinstance(changed_files, list):
-        raise ValueError("changed_files must be a list")
+        raise ValueError("changed_files must be a list")  # noqa: TRY004
     for cf in changed_files:
         if not isinstance(cf, dict) or not isinstance(cf.get("path"), str):
-            raise ValueError("each changed file needs a string path")
+            raise ValueError("each changed file needs a string path")  # noqa: TRY004
         if not isinstance(cf.get("added", []), list) or not isinstance(
             cf.get("removed", []), list
         ):
-            raise ValueError("added/removed must be line lists")
+            raise ValueError("added/removed must be line lists")  # noqa: TRY004
     declared = request.get("declared_files")
     if not isinstance(declared, list):
-        raise ValueError("declared_files must be a list")
+        raise ValueError("declared_files must be a list")  # noqa: TRY004
     migration_notes = request.get("migration_notes") or []
     if not isinstance(migration_notes, list):
-        raise ValueError("migration_notes must be a list")
+        raise ValueError("migration_notes must be a list")  # noqa: TRY004
     fixed_claim = request.get("fixed_failing_tests")
     if fixed_claim is not None and not isinstance(fixed_claim, list):
         raise ValueError("fixed_failing_tests must be a list of test ids")

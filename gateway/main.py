@@ -31,7 +31,7 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from .config import GatewayConfig
+from .config import ConfigError, GatewayConfig
 from .provider_chain import (
     AttemptFn,
     AttemptResult,
@@ -235,7 +235,7 @@ async def relay_stream(
                 yield sse_frame(SSE_DONE_EVENT, "[DONE]")
                 return
             continue  # provider failed before any chunk → next endpoint
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError, TimeoutError, ConnectionError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             if not opened:
                 continue  # pre-first-chunk failure → failover to next endpoint
             yield sse_frame(
@@ -296,13 +296,51 @@ def create_app(
     capability_router=None,
 ) -> FastAPI:
     """Build the gateway. Every collaborator is injectable for offline tests."""
-    limiter = limiter or SlidingWindowLimiter(
-        config.rate_limit_window_s, config.rate_limit_max_requests
-    )
-    if memory_store is None:
-        from .memory import MemoryStore
+    if limiter is None:
+        import os
 
-        memory_store = MemoryStore()
+        redis_url = os.environ.get("REDIS_URL") or os.environ.get("SUPREMEAI_REDIS_URL")
+        if redis_url:
+            try:
+                from .rate_limit import RedisSlidingWindowLimiter
+
+                limiter = RedisSlidingWindowLimiter(
+                    config.rate_limit_window_s,
+                    config.rate_limit_max_requests,
+                    redis_url=redis_url,
+                )
+            except (ImportError, ModuleNotFoundError, OSError, RuntimeError):
+                from .rate_limit import SlidingWindowLimiter
+
+                limiter = SlidingWindowLimiter(
+                    config.rate_limit_window_s, config.rate_limit_max_requests
+                )
+        else:
+            from .rate_limit import SlidingWindowLimiter
+
+            limiter = SlidingWindowLimiter(
+                config.rate_limit_window_s, config.rate_limit_max_requests
+            )
+    if memory_store is None:
+        import os as _os
+
+        qdrant_url = _os.environ.get("QDRANT_URL") or _os.environ.get("SUPREMEAI_QDRANT_URL")
+        if qdrant_url:
+            try:
+                from .memory import QdrantMemoryStore
+
+                memory_store = QdrantMemoryStore(
+                    qdrant_url=qdrant_url,
+                    api_key=_os.environ.get("QDRANT_API_KEY"),
+                )
+            except (ImportError, ModuleNotFoundError, OSError, RuntimeError):
+                from .memory import MemoryStore
+
+                memory_store = MemoryStore()
+        else:
+            from .memory import MemoryStore
+
+            memory_store = MemoryStore()
     if stealth_webhook_fn is None:
         from .stealth_webhook import forward_stealth_webhook as _fwd
 
@@ -376,7 +414,7 @@ def create_app(
 
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
             return error_response(
                 400,
                 err_type="invalid_request_error",
@@ -420,7 +458,7 @@ def create_app(
         if resolved_chain is None:
             try:
                 chain = config.chain_for(model if isinstance(model, str) else "auto")
-            except Exception:
+            except (ConfigError, KeyError, ValueError):
                 return error_response(
                     400,
                     err_type="invalid_request_error",
@@ -486,7 +524,11 @@ def create_app(
         if cap_name is not None and alias is not None and capability_router is not None:
             status = getattr(result, "status", 200)
             if status < 400:
-                capability_router.record_success(cap_name, alias, latency_ms=getattr(result, "latency_ms", 0.0) or 0.0)
+                capability_router.record_success(
+                    cap_name,
+                    alias,
+                    latency_ms=getattr(result, "latency_ms", 0.0) or 0.0,
+                )
             else:
                 capability_router.record_failure(cap_name, alias)
         served_model = f"{result.endpoint.provider}/{result.endpoint.model}"
@@ -521,7 +563,7 @@ def create_app(
             return err
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
             return error_response(
                 400,
                 err_type="invalid_request_error",
@@ -546,7 +588,7 @@ def create_app(
         async def run_provider_slot(provider_name: str):
             try:
                 chain = config.chain_for("auto")
-            except Exception as exc:
+            except (ConfigError, KeyError, ValueError) as exc:
                 return {"provider": provider_name, "status": 503, "error": str(exc)}
             endpoint = None
             for ep in chain:
@@ -561,12 +603,12 @@ def create_app(
                 }
             try:
                 res = await (attempt_fn or _default_attempt)(endpoint, payload)
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError, TimeoutError, ConnectionError) as exc:
                 return {"provider": provider_name, "status": 0, "error": str(exc)[:200]}
             parsed = None
             try:
                 parsed = json.loads(res.body) if res.body else None
-            except Exception:
+            except (json.JSONDecodeError, ValueError, TypeError):
                 parsed = None
             return {
                 "provider": provider_name,
@@ -631,7 +673,7 @@ def create_app(
         request.state.rate_decision = decision
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
             return error_response(
                 400,
                 err_type="invalid_request_error",
@@ -702,7 +744,7 @@ def create_app(
         request.state.rate_decision = decision
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
             return error_response(
                 400,
                 err_type="invalid_request_error",

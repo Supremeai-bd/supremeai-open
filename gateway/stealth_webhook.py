@@ -14,6 +14,7 @@ create_app so tests can stub it deterministically.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import ssl
 import time
@@ -64,7 +65,7 @@ async def forward_stealth_webhook(
         else:
             opener = asyncio.open_connection(host, port)
         reader, writer = await asyncio.wait_for(opener, timeout=timeout)
-    except Exception:
+    except (OSError, asyncio.TimeoutError, ssl.SSLError):
         return 0, None, int((time.monotonic() - started) * 1000)
 
     try:
@@ -112,11 +113,9 @@ async def forward_stealth_webhook(
             except (json.JSONDecodeError, UnicodeDecodeError):
                 parsed = None
         return status, parsed, int((time.monotonic() - started) * 1000)
-    except Exception:
+    except (OSError, asyncio.TimeoutError, ssl.SSLError, ValueError):
         return 0, None, int((time.monotonic() - started) * 1000)
     finally:
         writer.close()
-        try:
+        with contextlib.suppress(Exception):
             await writer.wait_closed()
-        except Exception:
-            pass

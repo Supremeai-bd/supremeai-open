@@ -13,6 +13,8 @@ No method here performs I/O at import time; `close()` is idempotent.
 
 from __future__ import annotations
 
+from typing_extensions import Self
+
 from .config import BrowserProfile, get_profile
 
 __all__ = [
@@ -74,12 +76,7 @@ class BrowserSessionManager:
         if not endpoint or not isinstance(endpoint, str):
             raise ValueError("cdp endpoint must be a non-empty string")
         lowered = endpoint.lower()
-        if not (
-            lowered.startswith("ws://")
-            or lowered.startswith("wss://")
-            or lowered.startswith("http://")
-            or lowered.startswith("https://")
-        ):
+        if not (lowered.startswith(("ws://", "wss://", "http://", "https://"))):
             raise ValueError(
                 "cdp endpoint must use ws://, wss://, http:// or https:// scheme"
             )
@@ -113,7 +110,7 @@ class BrowserSessionManager:
         self._session_started = False
 
     # -- context manager ----------------------------------------------------
-    def __enter__(self) -> BrowserSessionManager:
+    def __enter__(self) -> Self:
         return self.start()
 
     def __exit__(self, exc_type, exc, tb) -> None:

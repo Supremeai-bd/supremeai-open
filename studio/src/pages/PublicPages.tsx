@@ -74,7 +74,7 @@ export function PublicHeader() {
 export function PublicLayout({ children }: { children: React.ReactNode }) { return <div className="min-h-screen bg-[#0d0f12] text-slate-100">{children}</div>; }
 
 type Message = { role: 'user' | 'assistant'; text: string };
-function responseFor(input: string) { const text = input.toLowerCase(); if (text.includes('plan') || text.includes('build')) return 'I can help turn that idea into a practical plan. Start with the outcome, then add the context and constraints that matter.'; if (text.includes('research')) return 'I can help structure the research, compare the important signals, and turn the findings into a clear next step.'; if (text.includes('file') || text.includes('document')) return 'That is a great use for SupremeAI. Sign in when you want to bring files into the conversation and keep source context attached.'; return 'I can help you think that through. Ask me to plan, explain, summarize, research, or turn an idea into your next action.'; }
+function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
 
 async function callLiveAI(prompt: string, modelName: string): Promise<string> {
   try {
@@ -119,3 +119,49 @@ async function callLiveAI(prompt: string, modelName: string): Promise<string> {
 }
 
 function AssistantAvatar({ muted = false }: { muted?: boolean }) { return <span aria-hidden="true" className={`mt-1 flex size-6 shrink-0 items-center justify-center rounded-lg font-mono text-[10px] font-bold text-cyan-300 ${muted ? 'bg-cyan-300/[0.06]' : 'bg-cyan-300/10 shadow-[0_0_16px_rgba(103,232,249,0.15)]'}`}>S</span>; }
+
+export function GuestChat() {
+  const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string }[]>([]);
+  const [input, setInput] = React.useState('');
+  const [model, setModel] = React.useState(models[0]?.name ?? 'Supreme Auto');
+  const [busy, setBusy] = React.useState(false);
+  const listRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => { listRef.current?.scrollTo(0, listRef.current.scrollHeight); }, [messages]);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput('');
+    setMessages((m) => [...m, { role: 'user', text }]);
+    setBusy(true);
+    try {
+      const reply = await callLiveAI(text, model);
+      setMessages((m) => [...m, { role: 'assistant', text: reply }]);
+    } catch {
+      setMessages((m) => [...m, { role: 'assistant', text: responseFor(text) }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <section className="mx-auto flex w-full max-w-3xl flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+    <div className="flex items-center gap-2">
+      <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+        {models.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
+      </select>
+    </div>
+    <div ref={listRef} className="flex max-h-96 flex-col gap-2 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
+      {messages.length === 0 && <p className="text-sm text-slate-500">Ask SupremeAI anything to get started.</p>}
+      {messages.map((m, i) => <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        {m.role === 'assistant' && <AssistantAvatar />}
+        <div className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${m.role === 'user' ? 'bg-cyan-300 text-slate-950' : 'bg-white/[0.04] text-slate-200'}`}>{m.text}</div>
+      </div>)}
+      {busy && <div className="flex gap-2"><AssistantAvatar muted /><div className="text-sm italic text-slate-400">Thinking…</div></div>}
+    </div>
+    <div className="flex gap-2">
+      <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={2} placeholder="Ask SupremeAI…" className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-300/40" />
+      <button type="button" onClick={send} disabled={busy || !input.trim()} className="rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:opacity-50">Send</button>
+    </div>
+  </section>;
+}

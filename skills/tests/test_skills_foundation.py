@@ -56,8 +56,7 @@ def make_skill(root: Path, name: str = "packme") -> Path:
     skill_dir = root / name
     (skill_dir / "scripts").mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: %s\nversion: 0.1.0\ndescription: pack test\nentry: scripts/go.py\n---\nbody\n"
-        % name,
+        f"---\nname: {name}\nversion: 0.1.0\ndescription: pack test\nentry: scripts/go.py\n---\nbody\n",
         encoding="utf-8",
     )
     (skill_dir / "scripts" / "go.py").write_text(

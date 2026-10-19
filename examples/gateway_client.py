@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
@@ -93,10 +94,8 @@ def chat(
                 return json.load(resp)
         except urllib.error.HTTPError as exc:
             body = ""
-            try:
+            with contextlib.suppress(Exception):
                 body = exc.read().decode()[:200]
-            except Exception:  # noqa: BLE001 — বাংলা: বডি-পড়া ব্যর্থ হলেও error-শ্রেণি দরকার
-                pass
             code = exc.code
             if code == 401:
                 raise GatewayAuthError(f"invalid key: {body}", 401) from exc

@@ -196,7 +196,7 @@ def self_test() -> int:
     assert "Gate: FAIL" in report
     assert "DRIFT" in report and "MISSING" in report
 
-    ok_rows = run_check(
+    run_check(
         lambda repo, path, timeout=15: (
             ("OK", b"same\n") if path == "x" else fake_fetch(repo, path)
         )

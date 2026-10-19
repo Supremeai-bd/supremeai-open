@@ -9,18 +9,18 @@ gemini.google.com, waits for the response, and extracts the answer with ZERO API
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import sys
 
 from playwright.async_api import BrowserContext, Page, async_playwright
+from playwright.async_api import Error as PlaywrightError
 
 if sys.platform == "win32":
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 logger = logging.getLogger("ghost_tower.gemini_web")
 USER_DATA_DIR = os.path.expanduser(r"~\.gemini_isolated_session")
@@ -89,12 +89,10 @@ class GeminiWebEngine:
         ).all()
         has_visible_signin = False
         for btn in sign_in_btns:
-            try:
+            with contextlib.suppress(Exception):
                 if await btn.is_visible():
                     has_visible_signin = True
                     break
-            except Exception:
-                pass
 
         has_chat_input = (
             await self.page.query_selector(
@@ -143,7 +141,7 @@ class GeminiWebEngine:
                     from auto_login import auto_login_gemini
 
                     auto_success = await auto_login_gemini(self.page)
-                except Exception as login_err:
+                except (ImportError, ModuleNotFoundError, PlaywrightError, OSError, RuntimeError) as login_err:
                     logger.warning(f"Auto-login attempt encountered: {login_err}")
                     auto_success = False
 
@@ -160,7 +158,7 @@ class GeminiWebEngine:
             )
             try:
                 await self.page.wait_for_selector(input_selector, timeout=10000)
-            except Exception:
+            except (PlaywrightError, asyncio.TimeoutError, OSError):
                 await self.page.click("rich-textarea, .input-area", timeout=5000)
 
             input_elem = await self.page.query_selector(input_selector)
@@ -173,7 +171,7 @@ class GeminiWebEngine:
             # Fast synthetic fill (<100ms) with typing fallback
             try:
                 await input_elem.fill(prompt)
-            except Exception:
+            except (PlaywrightError, OSError):
                 await self.page.keyboard.type(prompt, delay=5)
             await asyncio.sleep(0.2)
 

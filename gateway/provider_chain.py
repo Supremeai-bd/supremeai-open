@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import ssl
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+import httpx
 
 from .config import Endpoint
 
@@ -56,13 +57,21 @@ class AttemptResult:
 AttemptFn = Callable[[Endpoint, bytes], Awaitable[AttemptResult]]
 
 
-async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
-    """One honest HTTP/1.1 round-trip over stdlib asyncio streams.
 
-    Provider credentials are injected by the operator via
-    ``SUPREMEAI_PROVIDER_KEY_<PROVIDER>`` env vars — never logged, never in
-    URLs (MCP_CONNECT §5 etiquette applies provider-side too).
-    """
+def _http_client() -> httpx.AsyncClient:
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None:
+        _HTTP_CLIENT = httpx.AsyncClient(
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            timeout=30.0,
+        )
+    return _HTTP_CLIENT
+
+
+_HTTP_CLIENT: httpx.AsyncClient | None = None
+
+async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+    """One HTTP round-trip via httpx with connection pooling."""
     import os
 
     api_base = os.environ.get(f"SUPREMEAI_PROVIDER_BASE_{endpoint.provider.upper()}")
@@ -73,62 +82,26 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
         )
 
     url = api_base.rstrip("/") + "/v1/chat/completions"
-    rest = url.split("://", 1)[1]
-    host_port, _, path = rest.partition("/")
-    host, _, port_s = host_port.partition(":")
-    secure = url.startswith("https")
-    port = int(port_s) if port_s else (443 if secure else 80)
     started = time.monotonic()
-    if secure:
-        opener = asyncio.open_connection(host, port, ssl=ssl.create_default_context())
-    else:
-        opener = asyncio.open_connection(host, port)
-    reader, writer = await asyncio.wait_for(opener, timeout=30.0)
-    try:
-        body = json.dumps(
-            {
-                "model": endpoint.model,
-                "messages": json.loads(payload).get("messages", []),
-                "stream": False,
-            }
-        ).encode()
-        head = (
-            f"POST /{path} HTTP/1.1\r\n"
-            f"Host: {host_port}\r\n"
-            "Content-Type: application/json\r\n"
-            f"Authorization: Bearer {api_key}\r\n"
-            f"Content-Length: {len(body)}\r\n"
-            "Connection: close\r\n\r\n"
-        )
-        writer.write(head.encode("latin-1") + body)
-        await writer.drain()
-        status_line = (await reader.readline()).decode("latin-1")
-        status = (
-            int(status_line.split(" ")[1]) if len(status_line.split(" ")) > 1 else 0
-        )
-        headers: dict[str, str] = {}
-        while True:
-            line = (await reader.readline()).decode("latin-1")
-            if line in ("\r\n", "\n", ""):
-                break
-            k, _, v = line.partition(":")
-            headers[k.strip().lower()] = v.strip()
-        resp_body = b""
-        if "content-length" in headers:
-            resp_body = await reader.readexactly(int(headers["content-length"]))
-        return AttemptResult(
-            endpoint=endpoint,
-            status=status,
-            headers=headers,
-            body=resp_body,
-            latency_ms=int((time.monotonic() - started) * 1000),
-        )
-    finally:
-        writer.close()
-        try:
-            await writer.wait_closed()
-        except Exception:
-            pass
+    body = {
+        "model": endpoint.model,
+        "messages": json.loads(payload).get("messages", []),
+        "stream": False,
+    }
+    client = _http_client()
+    resp = await client.post(
+        url,
+        json=body,
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30.0,
+    )
+    return AttemptResult(
+        endpoint=endpoint,
+        status=resp.status_code,
+        headers={k.lower(): v for k, v in resp.headers.items()},
+        body=resp.content,
+        latency_ms=int((time.monotonic() - started) * 1000),
+    )
 
 
 @dataclass(slots=True)
@@ -157,11 +130,10 @@ async def execute_chain(
     """
     attempt = attempt_fn or _default_attempt
     ledger = ChainLedger()
-    last: AttemptResult | None = None
     for idx, endpoint in enumerate(chain):
         try:
             result = await attempt(endpoint, payload)
-        except Exception as exc:  # transport-level failure — honest ledger entry
+        except (RuntimeError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:  # transport-level failure — honest ledger entry
             ledger.record(
                 index=idx,
                 provider=endpoint.provider,
@@ -169,7 +141,6 @@ async def execute_chain(
                 outcome="transport_error",
                 detail=str(exc)[:200],
             )
-            last = None
             continue
         ledger.record(
             index=idx,
@@ -181,7 +152,6 @@ async def execute_chain(
         )
         if result.status < 400:
             return result
-        last = result
         if result.status not in FAILOVER_STATUS and result.status not in (401, 403):
             # Non-retryable, non-auth provider error (e.g. 400 bad request
             # shaped by the gateway itself): honest 4xx passthrough.

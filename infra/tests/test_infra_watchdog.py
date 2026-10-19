@@ -29,7 +29,7 @@ class TestInfraWatchdog(unittest.TestCase):
         watchdog = FederationWatchdog(probe_fn=mock_probe)
 
         statuses = watchdog.probe_all()
-        for name, status in statuses.items():
+        for status in statuses.values():
             self.assertTrue(status.healthy)
             self.assertEqual(status.status_code, 200)
             self.assertEqual(status.consecutive_failures, 0)

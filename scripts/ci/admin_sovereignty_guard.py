@@ -65,11 +65,11 @@ class Decision:
 
 def _normalized(labels: Sequence[str] | None) -> set[str]:
     if not isinstance(labels, (list, tuple, set, frozenset)):
-        raise ValueError("labels must be a list of strings")
+        raise ValueError("labels must be a list of strings")  # noqa: TRY004
     out = set()
     for label in labels:
         if not isinstance(label, str):
-            raise ValueError("labels must be a list of strings")
+            raise ValueError("labels must be a list of strings")  # noqa: TRY004
         out.add(label.strip().lower())
     return out
 

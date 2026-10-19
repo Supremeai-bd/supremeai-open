@@ -70,6 +70,7 @@ class SkillSandbox:
                     timeout=timeout_s or self.timeout_s,
                     cwd=str(workdir),
                     env=env,
+                    check=False,
                 )
                 return SandboxResult(
                     script=script,

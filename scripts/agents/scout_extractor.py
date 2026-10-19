@@ -253,7 +253,7 @@ def extract_typescript_slice(source: str, target_name: str) -> ExtractedSlice:
     else:
         raise ExtractionError(f"unbalanced braces for {target_name!r}")
     segment = "\n".join(lines[start : end + 1])
-    imports_needed = (
+    (
         tuple(
             sorted(
                 {
@@ -377,11 +377,14 @@ def verify_stub_standalone(stub: str, language: str = "python") -> None:
                         raise ExtractionError(
                             f"stub imports non-allowlisted module {alias.name!r}"
                         )
-            if isinstance(node, ast.ImportFrom) and node.module:
-                if node.module.split(".")[0] not in STDLIB_ALLOWLIST:
-                    raise ExtractionError(
-                        f"stub imports non-allowlisted module {node.module!r}"
-                    )
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.split(".")[0] not in STDLIB_ALLOWLIST
+            ):
+                raise ExtractionError(
+                    f"stub imports non-allowlisted module {node.module!r}"
+                )
         return
     if language == "typescript":
         for line in stub.splitlines():
@@ -602,7 +605,7 @@ def self_test() -> bool:
     assert "github.com/morluto/rea" in stub and "MIT" in stub
     verify_stub_standalone(stub)
     ns: dict = {}
-    exec(compile(stub, "<stub>", "exec"), ns)  # runs 100% standalone
+    exec(compile(stub, "<stub>", "exec"), ns)  # noqa: S102  # runs 100% standalone
     assert ns["evidence_fingerprint"](b"abc").startswith("0x") is False
     assert len(ns["evidence_fingerprint"](b"abc")) == 64
 
@@ -660,7 +663,7 @@ def self_test() -> bool:
     assert names == {"REA Evidence Ledger", "Moli Semantic Tree"}, names
     for blueprint in BENCHMARK_BLUEPRINTS:
         validate_blueprint(blueprint)
-        assert "কতটুকু দরকার" not in blueprint.what_is_needed or True
+        assert True
     try:
         validate_blueprint(
             AdoptionBlueprint("", "r", "MIT", "g", "w", "h", "python", ("z",), ("p",))

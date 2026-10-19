@@ -224,7 +224,7 @@ def main(argv: list[str]) -> int:
     ad.issues[456] = {"state": "open", "labels": ["status:unclaimed"]}
     t0 = datetime(2026, 10, 17, 2, 40, 52, tzinfo=timezone.utc)
     t_mid = t0 + timedelta(minutes=10)
-    t_late = t0 + timedelta(minutes=TTL_MINUTES + 1)
+    t0 + timedelta(minutes=TTL_MINUTES + 1)
     print("t0      claim   ->", work_claim(ad, 456, "zai-agent", t0))
     print("t+10m   reclaim ->", work_claim(ad, 456, "zai-agent", t_mid), "(idempotent)")
     try:

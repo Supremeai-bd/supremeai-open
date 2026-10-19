@@ -7,7 +7,7 @@
  * fragments).
  */
 
-import type { StreamEvent, ToolCallDelta } from './types/generated';
+import type { StreamEvent, ToolCallDelta } from './types/generated.ts';
 
 export interface AssembledToolCall {
   index: number;

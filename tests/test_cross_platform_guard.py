@@ -10,7 +10,6 @@ repr() so this suite stays clean under the guard's own scan.
 from __future__ import annotations
 
 import json
-import subprocess  # noqa: F401  (imported to prove import-parity; never called)
 import sys
 import unittest
 from pathlib import Path
@@ -250,7 +249,7 @@ class TestR6AntiSwallow(unittest.TestCase):
 
 class TestParseFailClosed(unittest.TestCase):
     def test_syntax_error_is_violation(self):
-        violations, bad = guard.scan_source("broken.py", "def broken(:\n")
+        _violations, bad = guard.scan_source("broken.py", "def broken(:\n")
         self.assertIsNotNone(bad)
         records = [guard.SourceRecord("broken.py", "def broken(:\n")]
         found = guard.scan_records(records)
@@ -364,6 +363,7 @@ def subprocess_run_guard(*cli_args: str):
         text=True,
         encoding="utf-8",
         timeout=60,
+        check=False,
     )
 
 

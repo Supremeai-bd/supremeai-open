@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import ClassVar
 
 
 class ContextStage(str, Enum):
@@ -28,7 +29,7 @@ class ContextSynthesizer:
     Enforces the token diet contract across task lifecycles to prevent prompt bloat.
     """
 
-    STAGE_BUDGETS: dict[ContextStage, BudgetLimits] = {
+    STAGE_BUDGETS: ClassVar[dict[ContextStage, BudgetLimits]] = {
         ContextStage.STAGE1_DISCOVERY: BudgetLimits(
             max_tokens=1000, allow_source_code=False, allow_full_diff=False
         ),

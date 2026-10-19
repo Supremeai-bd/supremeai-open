@@ -134,7 +134,7 @@ def is_ci_failure_issue(title: str, labels: list[str]) -> bool:
 
 def _run(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         return p.returncode, p.stdout, p.stderr
     except FileNotFoundError:
         return 127, "", f"executable not found: {cmd[0]}"
@@ -144,7 +144,7 @@ def _run(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
 
 def collect_failing_prs(repo: str = DEFAULT_REPO) -> tuple[list[dict], str]:
     """Return (failing_prs, mode). mode in {gh, gh-missing}. Never raises."""
-    code, out, err = _run(["gh", "--version"])
+    code, out, _err = _run(["gh", "--version"])
     if code == 127:
         return [], "gh-missing"
     code, out, _ = _run(

@@ -21,6 +21,7 @@ This loop operates as the "Lazy Team Leader":
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -40,11 +41,9 @@ from role_trigger_matrix import (  # S09 (#489): deterministic role trigger matr
 
 # Configure UTF-8 for cross-platform stability
 if hasattr(sys.stdout, "reconfigure"):
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
@@ -214,9 +213,9 @@ def run_cmd(
         p = subprocess.run(
             cmd,
             cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=timeout,
+            check=False,
         )
         stdout = p.stdout.decode("utf-8", errors="replace").strip()
         stderr = p.stderr.decode("utf-8", errors="replace").strip()
@@ -664,7 +663,7 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
     if code == 0 and out.strip():
         try:
             issues = json.loads(out)
-        except Exception as parse_err:
+        except (json.JSONDecodeError, ValueError) as parse_err:
             # Malformed payload must not masquerade as an empty board.
             log(
                 "⚠️",
@@ -690,7 +689,7 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
                         for i in raw_data
                         if isinstance(i, dict) and "pull_request" not in i
                     ]
-        except Exception as http_err:
+        except (urllib.error.URLError, OSError, TimeoutError, ValueError, json.JSONDecodeError, UnicodeDecodeError) as http_err:
             log(
                 "⚠️",
                 f"[Board Fetch] gh unavailable ({err or out or f'code {code}'}) and HTTP fallback error: {http_err}",
@@ -727,9 +726,7 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
             tier = 4  # unlabeled sorts last
             for marker, rank in PRIORITY_MAP:
                 if any(
-                    name == marker
-                    or name.startswith(marker + "-")
-                    or name.startswith(marker + " ")
+                    name == marker or name.startswith((marker + "-", marker + " "))
                     for name in names
                 ):
                     tier = rank
@@ -745,7 +742,7 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
         sorted_issues = sorted(candidates, key=priority_key)
         if sorted_issues:
             return str(sorted_issues[0].get("number"))
-    except Exception as exc:
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
         # Selection failure must also stay diagnosable (never looks like an empty board).
         log("⚠️", f"[Board Fetch] selection failed: {exc}")
     return None
@@ -811,7 +808,7 @@ def step_1_understand(
                 ]
             )
             if pr_code == 0 and pr_out.strip():
-                try:
+                with contextlib.suppress(json.JSONDecodeError, TypeError, KeyError):
                     open_prs = json.loads(pr_out)
                     for pr in open_prs:
                         pr_head = pr.get("headRefName", "")
@@ -830,8 +827,6 @@ def step_1_understand(
                                 "[Fail-Closed Gate] Duplicate PR work rejected. Coordinate or review existing PR first.",
                             )
                             return None
-                except Exception:
-                    pass
 
             labels_list = (
                 [l.get("name", "") for l in data.get("labels", [])]
@@ -849,7 +844,7 @@ def step_1_understand(
                 "state": state,
                 "labels": labels_list,
             }
-        except Exception as e:
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
             log(
                 "❌",
                 f"[Fail-Closed Gate] Failed to parse issue JSON for #{issue_id}: {e}",
@@ -882,13 +877,11 @@ def step_1_understand(
         ]
     )
     if code == 0 and out.strip() != "[]":
-        try:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
             issues = json.loads(out)
             log("📋", "Recent Open Issues:")
             for it in issues:
                 print(f"   #{it.get('number')}: {it.get('title')}")
-        except Exception:
-            pass
 
     return {
         "id": "adhoc",
@@ -1194,7 +1187,7 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
             log("✅", f"Already on active branch '{target_branch}'")
             return target_branch
 
-        checkout_code, _, checkout_err = run_cmd(["git", "checkout", target_branch])
+        checkout_code, _, _checkout_err = run_cmd(["git", "checkout", target_branch])
         if checkout_code != 0:
             target_branch = f"contributor/issue-{issue_num}-{int(time.time())}"
             log("🌿", f"Switching to isolated session branch '{target_branch}'")
@@ -1287,7 +1280,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
         try:
             with open(jf, "r", encoding="utf-8") as f:
                 json.load(f)
-        except Exception as e:
+        except (json.JSONDecodeError, ValueError, OSError) as e:
             json_errors.append(f"{jf.name}: {e}")
     if json_errors:
         log("❌", f"Invalid JSON in {len(json_errors)} files: {json_errors[0]}")
@@ -1354,7 +1347,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
             try:
                 with open(yf, "r", encoding="utf-8") as f:
                     yaml.safe_load(f)
-            except Exception as e:
+            except (yaml.YAMLError, OSError, UnicodeDecodeError, ValueError) as e:
                 yaml_errors.append(f"{yf.name}: {e}")
         if yaml_errors:
             log("❌", f"Invalid YAML in {len(yaml_errors)} files: {yaml_errors[0]}")
@@ -1478,8 +1471,8 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                         path_violations.append(
                             f"{target.relative_to(REPO_ROOT)}:{line_idx}"
                         )
-            except Exception:
-                pass
+            except OSError:
+                continue
 
         if path_violations:
             log(
@@ -1503,7 +1496,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                 "files_scanned": len(scan_targets),
             }
         )
-    except Exception as e:
+    except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError) as e:
         log("❌", f"Self-test verification failed: {e}")
         return False, evidence
 
@@ -1784,15 +1777,13 @@ def step_8_return() -> None:
         ]
     )
     if code == 0 and out.strip() != "[]":
-        try:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
             prs = json.loads(out)
             log("📋", "Active Open PRs on upstream board:")
             for p in prs:
                 print(
                     f"   #{p.get('number')} ({p.get('headRefName')}): {p.get('title')}"
                 )
-        except Exception:
-            pass
     print("----------------------------------------------------------------------")
     print(f"Cycle completed successfully. Ready for next task in {UPSTREAM_REPO}.")
     print("----------------------------------------------------------------------")

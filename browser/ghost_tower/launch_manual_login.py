@@ -15,7 +15,9 @@ def main():
     os.makedirs(profile_dir, exist_ok=True)
 
     edge_candidates = [
-        os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+        os.path.expandvars(
+            r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
+        ),
         os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
         os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
     ]

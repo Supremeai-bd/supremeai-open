@@ -109,7 +109,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
             try:
                 with file_path.open("r", encoding="utf-8") as jf:
                     json.load(jf)
-            except Exception as e:
+            except (json.JSONDecodeError, OSError) as e:
                 errors.append(
                     f"JSON Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}"
                 )
@@ -120,7 +120,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
             try:
                 with file_path.open("r", encoding="utf-8") as yf:
                     yaml.safe_load(yf)
-            except Exception as e:
+            except (yaml.YAMLError, OSError) as e:
                 errors.append(
                     f"YAML Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}"
                 )
@@ -246,7 +246,7 @@ def run_step3_quota(
         )
 
         return not eval_res["warning"], eval_res
-    except Exception as e:
+    except (RuntimeError, ValueError, OSError, KeyError) as e:
         print(f"[Step 3: Quota Guard] Quota check failed: {e}")
         return True, {"service": target, "error": str(e)}
 
@@ -340,7 +340,7 @@ def main() -> int:
 
     # Step 3: Quota
     if run_all or args.step3_quota:
-        s3_pass, s3_data = run_step3_quota(
+        _s3_pass, s3_data = run_step3_quota(
             target_service=args.service, threshold=args.threshold
         )
         results["step3_quota"] = s3_data

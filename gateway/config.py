@@ -96,7 +96,7 @@ class GatewayConfig:
                     for idx, ep in enumerate(endpoints):
                         if ep.model == model:
                             # Reorder: requested model first, then the rest.
-                            reordered = (ep,) + endpoints[:idx] + endpoints[idx + 1:]
+                            reordered = (ep,) + endpoints[:idx] + endpoints[idx + 1 :]
                             return reordered
             if name is None:
                 raise ConfigError(f"no routing chain configured for model '{model}'")

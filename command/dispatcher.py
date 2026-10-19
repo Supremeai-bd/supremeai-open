@@ -16,6 +16,7 @@ MiniRedis (kill-switch persistence)
 
 from __future__ import annotations
 
+import contextlib
 import json
 import socket
 import ssl
@@ -56,17 +57,17 @@ class TowerDispatcher:
             with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
                 body = resp.read().decode("utf-8")
                 if resp.status != 200:
-                    raise DispatcherError("tower HTTP %d" % resp.status)
+                    raise DispatcherError(f"tower HTTP {resp.status}")
         except urllib.error.HTTPError as exc:
-            raise DispatcherError("tower HTTP %d" % exc.code) from exc
+            raise DispatcherError(f"tower HTTP {exc.code}") from exc
         except urllib.error.URLError as exc:
-            raise DispatcherError("tower unreachable: %s" % exc.reason) from exc
+            raise DispatcherError(f"tower unreachable: {exc.reason}") from exc
         try:
             data = json.loads(body)
         except ValueError as exc:
             raise DispatcherError("tower returned malformed JSON") from exc
         if data.get("error"):
-            raise DispatcherError("tower RPC error: %s" % data["error"])
+            raise DispatcherError(f"tower RPC error: {data['error']}")
         return data.get("result", {})
 
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> str:
@@ -87,12 +88,12 @@ class TowerDispatcher:
                 "bridge_list_work_orders", {"label": "bridge:queued"}
             )
         except DispatcherError as exc:
-            queue = "(queue unavailable: %s)" % exc
+            queue = f"(queue unavailable: {exc})"
+        tools_summary = ", ".join(names[:6]) + ("…" if len(names) > 6 else "")
         lines = [
             "🏰 Control Tower: reachable",
-            "🧰 tools: %d (%s)"
-            % (len(names), ", ".join(names[:6]) + ("…" if len(names) > 6 else "")),
-            "🌉 queued work orders: %s" % (queue or "?"),
+            f"🧰 tools: {len(names)} ({tools_summary})",
+            f"🌉 queued work orders: {queue or '?'}",
         ]
         return "\n".join(lines)
 
@@ -206,19 +207,16 @@ class MiniRedis:
                     auth_resp = sock.recv(4096)
                     if auth_resp.startswith(b"-"):
                         raise DispatcherError(
-                            "Redis AUTH failed: %s"
-                            % parse_resp_line(auth_resp.split(CRLF)[0])
+                            f"Redis AUTH failed: {parse_resp_line(auth_resp.split(CRLF)[0])}"
                         )
                 sock.sendall(encode_resp(*args))
                 data = self._recv_reply(sock)
             if not data:
                 raise DispatcherError("empty response from redis")
             return data
-        except Exception:
-            try:
+        except (OSError, DispatcherError):
+            with contextlib.suppress(OSError):
                 raw_sock.close()
-            except Exception:
-                pass
             raise
 
     def set_ex(self, key: str, value: str, ttl_s: int) -> str:
@@ -256,7 +254,7 @@ class KillSwitch:
 
     def arm(self, reason: str = "superadmin /stop") -> str:
         reply = self.redis.set_ex(KILL_SWITCH_KEY, reason, self.ttl_s)
-        return "🛑 kill-switch ARMED (persistent %ss, redis: %s)" % (self.ttl_s, reply)
+        return f"🛑 kill-switch ARMED (persistent {self.ttl_s}s, redis: {reply})"
 
     def armed(self) -> bool:
         return self.redis.get(KILL_SWITCH_KEY) is not None

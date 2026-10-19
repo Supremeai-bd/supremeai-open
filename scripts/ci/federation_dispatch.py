@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Universal Federation Dispatch Engine core (offline, testable)."""
+
 from __future__ import annotations
 
 import argparse
@@ -49,7 +50,10 @@ class DispatchPlan:
     def to_dict(self):
         return {
             "source_sha": self.source_sha,
-            "targets": [{"satellite": t.satellite, "repo": t.repo, "files": list(t.files)} for t in self.targets],
+            "targets": [
+                {"satellite": t.satellite, "repo": t.repo, "files": list(t.files)}
+                for t in self.targets
+            ],
             "monorepo_paths": self.monorepo_paths,
             "unrouted": [{"path": p, "reason": r} for p, r in self.unrouted],
         }
@@ -88,15 +92,21 @@ def plan_dispatch(paths, source_sha=""):
             grouped[target].append(path)
             seen[target].add(path)
     for satellite in sorted(grouped):
-        plan.targets.append(SatelliteDispatch(satellite, SATELLITE_REPOS[satellite], tuple(grouped[satellite])))
+        plan.targets.append(
+            SatelliteDispatch(
+                satellite, SATELLITE_REPOS[satellite], tuple(grouped[satellite])
+            )
+        )
     return plan
 
 
 def self_test():
     checks = []
+
     def check(name, ok):
         checks.append((name, ok))
         print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+
     check("12 satellites", len(SATELLITE_REPOS) == 12)
     check("vscode route", route_path("vscode/x.ts") == "vscode")
     check("mcp route", route_path("infrastructure/mcp-control-plane/src/x.ts") == "mcp")
@@ -104,51 +114,79 @@ def self_test():
     check("unrouted", route_path("README.md") is None)
     plan = plan_dispatch(["vscode/a.ts", "skills/b.md", "gateway/c.py"])
     repos = {t.repo for t in plan.targets}
-    check("multi-domain split 3", len(plan.targets) == 3 and "Supremeai-bd/supremeai-vscode" in repos and "Supremeai-bd/supremeai-skills" in repos and "Supremeai-bd/supremeai-api" in repos)
+    check(
+        "multi-domain split 3",
+        len(plan.targets) == 3
+        and "Supremeai-bd/supremeai-vscode" in repos
+        and "Supremeai-bd/supremeai-skills" in repos
+        and "Supremeai-bd/supremeai-api" in repos,
+    )
     vt = next(t for t in plan.targets if t.satellite == "vscode")
     check("vscode files", vt.files == ("vscode/a.ts",))
     plan2 = plan_dispatch(["vscode/a.ts", "scripts/agents/loop.py", "README.md"])
-    check("monorepo split out", "scripts/agents/loop.py" in plan2.monorepo_paths and all("scripts/agents/loop.py" not in t.files for t in plan2.targets))
+    check(
+        "monorepo split out",
+        "scripts/agents/loop.py" in plan2.monorepo_paths
+        and all("scripts/agents/loop.py" not in t.files for t in plan2.targets),
+    )
     check("unrouted quarantined", any(p == "README.md" for p, _ in plan2.unrouted))
     try:
-        plan_dispatch("not-a-list"); invalid_ok = False
+        plan_dispatch("not-a-list")
+        invalid_ok = False
     except DispatchError:
         invalid_ok = True
     check("non-list fails closed", invalid_ok)
     try:
-        plan_dispatch(["", "   "]); bad_ok = False
+        plan_dispatch(["", "   "])
+        bad_ok = False
     except DispatchError:
         bad_ok = True
     check("blank path fails closed", bad_ok)
     plan3 = plan_dispatch(["skills/z.md", "vscode/a.ts", "browser/b.ts"])
-    check("sorted targets", [t.satellite for t in plan3.targets] == sorted(t.satellite for t in plan3.targets))
+    check(
+        "sorted targets",
+        [t.satellite for t in plan3.targets]
+        == sorted(t.satellite for t in plan3.targets),
+    )
     plan4 = plan_dispatch(["vscode/a.ts", "vscode/a.ts", "vscode/b.ts"])
     vt4 = next(t for t in plan4.targets if t.satellite == "vscode")
     check("dedup", vt4.files == ("vscode/a.ts", "vscode/b.ts"))
     # 9. workflow appendix is valid YAML
     try:
         import yaml
+
         parsed = yaml.safe_load(render_workflow_yaml())
         yaml_ok = isinstance(parsed, dict) and "jobs" in parsed
-    except Exception:  # noqa: BLE001
+    except (ImportError, ModuleNotFoundError):
+        yaml_ok = False
+    except (yaml.YAMLError, OSError, ValueError, UnicodeDecodeError, TypeError, RuntimeError):
         yaml_ok = False
     check("workflow appendix parses as YAML", yaml_ok)
 
     # 10. source_sha traceability
     p = plan_dispatch(["vscode/a.ts"], source_sha="a" * 40)
-    check("source_sha propagated", p.source_sha == "a" * 40 and p.to_dict()["source_sha"] == "a" * 40)
+    check(
+        "source_sha propagated",
+        p.source_sha == "a" * 40 and p.to_dict()["source_sha"] == "a" * 40,
+    )
     ok = all(p for _, p in checks)
-    print(f"self-test: {sum(1 for _, p in checks if p)}/{len(checks)} checks {'PASS' if ok else 'FAIL'}")
+    print(
+        f"self-test: {sum(1 for _, p in checks if p)}/{len(checks)} checks {'PASS' if ok else 'FAIL'}"
+    )
     return ok
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Universal Federation Dispatch Engine core")
+    parser = argparse.ArgumentParser(
+        description="Universal Federation Dispatch Engine core"
+    )
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--paths", nargs="*")
     parser.add_argument("--paths-file")
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--source-sha", default="", help="source commit SHA for traceability")
+    parser.add_argument(
+        "--source-sha", default="", help="source commit SHA for traceability"
+    )
     args = parser.parse_args(argv)
     if args.self_test:
         return 0 if self_test() else 1

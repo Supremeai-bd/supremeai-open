@@ -104,6 +104,7 @@ class PackageManager:
             capture_output=True,
             text=True,
             timeout=120,
+            check=False,
         )
         if result.returncode != 0:
             shutil.rmtree(staging, ignore_errors=True)

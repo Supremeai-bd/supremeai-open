@@ -64,7 +64,9 @@ class EventPipeline:
         max_retries: int = 3,
     ) -> None:
         self._dedup = dedup if dedup is not None else InMemoryDedupStore()
-        self._permission_ok = permission_ok if permission_ok is not None else (lambda e: True)
+        self._permission_ok = (
+            permission_ok if permission_ok is not None else (lambda e: True)
+        )
         self._handler = handler if handler is not None else (lambda e, t: True)
         self._notifier = notifier
         self._clock = clock
@@ -83,10 +85,14 @@ class EventPipeline:
         event_id = str(raw.get("id") or raw.get("event_id") or self._hash(raw))
         kind = str(raw.get("kind") or raw.get("type") or raw.get("event") or "unknown")
         payload = raw.get("payload") if isinstance(raw.get("payload"), dict) else raw
-        return Event(event_id=event_id, kind=kind, payload=payload, received_at=self._clock())
+        return Event(
+            event_id=event_id, kind=kind, payload=payload, received_at=self._clock()
+        )
 
     def _hash(self, raw: Any) -> str:
-        return hashlib.sha256(json.dumps(raw, sort_keys=True, default=str).encode()).hexdigest()[:16]
+        return hashlib.sha256(
+            json.dumps(raw, sort_keys=True, default=str).encode()
+        ).hexdigest()[:16]
 
     def submit(self, raw: Any) -> DurableTask | None:
         event = self.normalize(raw)
@@ -118,7 +124,7 @@ class EventPipeline:
             task.state = "running"
             try:
                 ok = bool(self._handler(event, task))
-            except Exception as exc:  # noqa: BLE001 - record and retry
+            except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError) as exc:
                 ok = False
                 task.last_error = str(exc)
             if ok:

@@ -176,7 +176,7 @@ def _line_of(raw: str, pointer: str) -> int | None:
         return None
     pos = 0
     for seg in [s for s in pointer.split("/") if s != ""]:
-        token = '"%s"' % seg.replace("~1", "/").replace("~0", "~")
+        token = '"{}"'.format(seg.replace("~1", "/").replace("~0", "~"))
         found = raw.find(token, pos)
         if found < 0:
             return None
@@ -458,11 +458,10 @@ class SchemaValidator:
                             f"oneOf: {results.count(True)} of {len(results)} branches matched, exactly 1 required",
                         )
                     )
-        if "not" in schema:
+        if "not" in schema and self._probe(value, schema["not"], depth):
             # `not` means: the value must NOT validate against the embedded
             # schema. _probe returns True when it does — that is the violation.
-            if self._probe(value, schema["not"], depth):
-                self.errors.append((pointer, "value matches `not` schema"))
+            self.errors.append((pointer, "value matches `not` schema"))
         if "if" in schema:
             # _probe returns True when the value validates against the `if`
             # schema — i.e. the condition MATCHES (Draft 2020-12 §10.2.4).
@@ -1081,7 +1080,7 @@ def main(argv: list[str] | None = None) -> int:
         if not d.is_dir():
             print(f"ERROR {d}: directory does not exist")
             return 1
-        code, findings = _validate_dir(d)
+        _code, findings = _validate_dir(d)
 
     errors = [f for f in findings if f.severity == "ERROR"]
     warnings = [f for f in findings if f.severity == "WARNING"]

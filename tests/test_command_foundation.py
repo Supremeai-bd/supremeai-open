@@ -14,12 +14,15 @@ import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from command.config import CommandConfig, CommandConfigError
     from command.dispatcher import (
         DispatcherError,
+        KillSwitchUnavailable,
         MiniRedis,
         TowerDispatcher,
         encode_resp,
@@ -186,7 +189,7 @@ def test_webhook_end_to_end_local_socket():
             "utf-8"
         )
         req = urllib.request.Request(
-            "http://127.0.0.1:%d/dispatch" % server.server_address[1],
+            f"http://127.0.0.1:{server.server_address[1]}/dispatch",
             data=body,
             headers={
                 "Content-Type": "application/json",
@@ -241,7 +244,7 @@ def test_dispatcher_rpc_payload_shape_and_result_parsing():
     thread.start()
     try:
         d = TowerDispatcher("https://dummy.invalid", timeout_s=5)
-        d.base_url = "http://127.0.0.1:%d/mcp" % server.server_address[1]
+        d.base_url = f"http://127.0.0.1:{server.server_address[1]}/mcp"
         out = d.call_tool("bridge_list_work_orders", {"label": "bridge:queued"})
         assert out == "ok:3"
         body = captured["body"]
@@ -283,16 +286,12 @@ def test_resp_encoding_shape():
 
 
 def test_miniredis_requires_url_fail_closed():
-    try:
+    with pytest.raises(KillSwitchUnavailable) as exc_info:
         MiniRedis(None)
-        raise AssertionError("expected KillSwitchUnavailable")
-    except Exception as exc:
-        assert "REDIS_URL" in str(exc)
-    try:
+    assert "REDIS_URL" in str(exc_info.value)
+
+    with pytest.raises(KillSwitchUnavailable):
         MiniRedis("https://not-redis.example")
-        raise AssertionError("expected KillSwitchUnavailable for bad scheme")
-    except Exception:
-        pass
 
 
 def test_config_boot_smoke_contract():

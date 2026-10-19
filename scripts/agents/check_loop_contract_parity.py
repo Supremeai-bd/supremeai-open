@@ -20,16 +20,15 @@ makes the drift machine-visible:
 Exit codes: 0 = parity held · 1 = drift detected · 2 = guard environment error.
 """
 
+import contextlib
 import re
 import sys
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 try:
     import yaml
@@ -59,7 +58,9 @@ def main() -> int:
     contrib = CONTRIB.read_text(encoding="utf-8")
 
     # 1. Evidence tier count: code emission vs SPEC §4 SSOT row.
-    emitted = sorted({int(n) for n in re.findall(r'\{\s*["\']tier["\']:\s*(\d+),', code)})
+    emitted = sorted(
+        {int(n) for n in re.findall(r'\{\s*["\']tier["\']:\s*(\d+),', code)}
+    )
     declared = None
     if not emitted:
         failures.append("no evidence tier emissions found in the loop code")

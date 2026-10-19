@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import ClassVar
 
 
 class AgentRole(str, Enum):
@@ -29,7 +30,7 @@ class DecisionEngine:
     and operational boundaries.
     """
 
-    CRITICAL_CORE_PATTERNS = {
+    CRITICAL_CORE_PATTERNS: ClassVar[set[str]] = {
         "core/",
         "security/",
         "auth/",
@@ -37,9 +38,9 @@ class DecisionEngine:
         ".github/workflows/",
     }
 
-    DOCS_PATTERNS = {"docs/", ".md", "README", "AGENTS"}
+    DOCS_PATTERNS: ClassVar[set[str]] = {"docs/", ".md", "README", "AGENTS"}
 
-    TEST_PATTERNS = {"test", "tests/", "_test.py", ".test.ts"}
+    TEST_PATTERNS: ClassVar[set[str]] = {"test", "tests/", "_test.py", ".test.ts"}
 
     @classmethod
     def classify_task(cls, title: str, scope_paths: list[str]) -> TaskClassification:

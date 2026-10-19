@@ -42,7 +42,7 @@ def send_telegram(text: str) -> None:
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         logger.warning("Telegram not configured; skipping alert: %s", text)
         return
-    url = "https://api.telegram.org/bot%s/sendMessage" % TELEGRAM_TOKEN
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
     try:
         req = urllib.request.Request(
@@ -53,7 +53,7 @@ def send_telegram(text: str) -> None:
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
             logger.info("Telegram alert sent (HTTP %s)", resp.status)
-    except Exception as exc:  # noqa: BLE001
+    except (urllib.error.URLError, OSError, TimeoutError, ValueError) as exc:
         logger.error("Telegram alert failed: %s", exc)
 
 
@@ -62,15 +62,15 @@ async def run_once() -> bool:
         result = await export_and_sync()
         logger.info("Sync OK: %s", result)
         if result.get("expired"):
+            ai_cookies = result.get("ai_cookies", 0)
             send_telegram(
-                "⚠️ SupremeAI cookie sync: AI fleet session appears EXPIRED (%d AI cookies). Re-login required."
-                % result.get("ai_cookies", 0)
+                f"⚠️ SupremeAI cookie sync: AI fleet session appears EXPIRED ({ai_cookies} AI cookies). Re-login required."
             )
             return False
         return True
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, RuntimeError, ValueError, TimeoutError, ConnectionError) as exc:
         logger.error("Sync FAILED: %s", exc)
-        send_telegram("🚨 SupremeAI cookie sync FAILED: %s" % str(exc)[:300])
+        send_telegram(f"🚨 SupremeAI cookie sync FAILED: {str(exc)[:300]}")
         return False
 
 

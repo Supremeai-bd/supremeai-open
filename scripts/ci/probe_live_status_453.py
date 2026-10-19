@@ -93,7 +93,7 @@ def _fetch(
             ),
             "error": f"HTTP {e.code}",
         }
-    except Exception as e:  # noqa: BLE001 — probe must never crash
+    except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError) as e:
         return {
             "ok": False,
             "status": None,
@@ -205,7 +205,7 @@ def run_probe(gateway_url: str, cors_origins: list[str], timeout: int) -> dict:
             # Gateway down / non-JSON: status + reachability still recorded.
             if not res.get("ok") or res.get("status") != 200:
                 report["failures"].append(
-                    f"GET {path}: {'HTTP %s' % res.get('status') if res.get('status') else res.get('error')}"
+                    f"GET {path}: {'HTTP {}'.format(res.get('status')) if res.get('status') else res.get('error')}"
                     " (want 200 with JSON payload)"
                 )
             if body_json is None and res.get("ok"):
