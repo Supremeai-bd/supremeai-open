@@ -251,11 +251,16 @@ def create_app(
     limiter: SlidingWindowLimiter | None = None,
     attempt_fn: AttemptFn | None = None,
     stream_fn=None,
+    stealth_webhook_fn=None,
 ) -> FastAPI:
     """Build the gateway. Every collaborator is injectable for offline tests."""
     limiter = limiter or SlidingWindowLimiter(
         config.rate_limit_window_s, config.rate_limit_max_requests
     )
+    if stealth_webhook_fn is None:
+        from .stealth_webhook import forward_stealth_webhook as _fwd
+        async def stealth_webhook_fn(url, secret, body, timeout=10.0):
+            return await _fwd(url, secret, body, timeout)
     app = FastAPI(title="SupremeAI API", version=GATEWAY_VERSION, docs_url=None, redoc_url=None)
 
     # ---- health (no auth, OpenAPI security: []) ----
@@ -344,7 +349,7 @@ def create_app(
                 # Default stdlib transport relays the non-stream completion as
                 # a single chunk — honest, no fabricated deltas.
                 async def default_stream(endpoint, pl):
-                    res = await (attempt_fn or _noop_attempt)(endpoint, pl)
+                    res = await (attempt_fn or _default_attempt)(endpoint, pl)
                     if res.status >= 400:
                         yield {"type": "error", "status": res.status,
                                "message": f"provider HTTP {res.status}"}
@@ -390,6 +395,82 @@ def create_app(
         return attach_rate_headers(request, JSONResponse(out))
 
     # ---- provider exhaustion → 502 with redacted ledger ----
+    # ---- /v1/consensus : parallel Priority-1 (stealth web) + Priority-2 (API squad) ----
+    @app.post("/v1/consensus")
+    async def multi_model_consensus(request: Request) -> Response:
+        if (err := authenticate(request, config)) is not None:
+            return err
+        if (err := await gate(request, "chat")) is not None:
+            return err
+        try:
+            body = await request.json()
+        except Exception:
+            return error_response(
+                400, err_type="invalid_request_error", code="malformed_json",
+                message="Request body is not valid JSON.",
+            )
+        if not isinstance(body, dict):
+            return error_response(
+                400, err_type="invalid_request_error", code="invalid_body",
+                message="Request body must be a JSON object.",
+            )
+
+        import os as _os
+        stealth_url = _os.environ.get("STEALTH_WEBHOOK_URL", "")
+        stealth_secret = _os.environ.get("STEALTH_WEBHOOK_SECRET")
+        stealth_timeout = float(_os.environ.get("STEALTH_WEBHOOK_TIMEOUT", "10"))
+        payload = json.dumps(body).encode()
+
+        async def run_provider_slot(provider_name: str):
+            try:
+                chain = config.chain_for("auto")
+            except Exception as exc:
+                return {"provider": provider_name, "status": 503, "error": str(exc)}
+            endpoint = None
+            for ep in chain:
+                if ep.provider == provider_name:
+                    endpoint = ep
+                    break
+            if endpoint is None and chain:
+                endpoint = chain[0]
+            if endpoint is None:
+                return {"provider": provider_name, "status": 503, "error": "no endpoint"}
+            try:
+                res = await (attempt_fn or _default_attempt)(endpoint, payload)
+            except Exception as exc:
+                return {"provider": provider_name, "status": 0, "error": str(exc)[:200]}
+            parsed = None
+            try:
+                parsed = json.loads(res.body) if res.body else None
+            except Exception:
+                parsed = None
+            return {"provider": provider_name, "slot": f"{endpoint.provider}/{endpoint.model}",
+                    "status": res.status, "response": parsed}
+
+        tasks = []
+        if stealth_url:
+            async def _stealth():
+                status, parsed, latency = await stealth_webhook_fn(stealth_url, stealth_secret, payload, stealth_timeout)
+                return {"provider": "stealth-web", "status": status, "latency_ms": latency, "response": parsed}
+            tasks.append(_stealth())
+        tasks.append(run_provider_slot("groq"))
+        tasks.append(run_provider_slot("gemini"))
+
+        import asyncio as _asyncio
+        results = await _asyncio.gather(*tasks, return_exceptions=True)
+        safe = []
+        for r in results:
+            if isinstance(r, Exception):
+                safe.append({"provider": "unknown", "status": 0, "error": str(r)[:200]})
+            else:
+                safe.append(r)
+        return attach_rate_headers(request, JSONResponse({
+            "status": "success",
+            "timestamp": int(time.time()),
+            "consensus_count": len([r for r in safe if not (isinstance(r, dict) and r.get("status", 0) >= 400)]),
+            "responses": safe,
+        }))
+
     @app.exception_handler(ProviderChainExhausted)
     async def chain_exhausted_handler(request: Request, exc: ProviderChainExhausted):
         return error_response(
