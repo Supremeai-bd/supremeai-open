@@ -16,9 +16,7 @@ export type ProviderName =
   | "qdrant"
   | "vercel"
   | "firecrawl"
-  | "telegram"
-  | "discord"
-  | "whatsapp";
+  | "telegram";
 
 export interface ProviderDefinition {
   name: ProviderName;
@@ -104,18 +102,6 @@ export const PROVIDERS: Record<ProviderName, ProviderDefinition> = {
     name: "telegram",
     displayName: "Telegram",
     description: "Messaging and alerts",
-    authType: "api_key",
-  },
-  discord: {
-    name: "discord",
-    displayName: "Discord",
-    description: "Messaging webhooks",
-    authType: "api_key",
-  },
-  whatsapp: {
-    name: "whatsapp",
-    displayName: "WhatsApp",
-    description: "Messaging and alerts via WhatsApp Cloud API or Webhook Gateway",
     authType: "api_key",
   },
 };

@@ -281,35 +281,6 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
     }
   }
 
-  // ── WhatsApp: Meta Graph API / Webhook health probe ──
-  if (svc.provider === "whatsapp") {
-    const maskedUrl = "https://graph.facebook.com/whatsapp";
-    const { whatsappAccessToken, whatsappPhoneNumberId, whatsappWebhookUrl } = env.notify;
-    if (!whatsappAccessToken && !whatsappWebhookUrl) {
-      return { ...base, url: maskedUrl, status: "unconfigured", httpStatus: null, latencyMs: null, error: "WHATSAPP_ACCESS_TOKEN or WHATSAPP_WEBHOOK_URL missing in tower env" };
-    }
-    try {
-      if (whatsappPhoneNumberId && whatsappAccessToken) {
-        const res = await httpRequest<{ id?: string }>(`https://graph.facebook.com/v20.0/${whatsappPhoneNumberId}`, {
-          timeoutMs: 6000,
-          retries: 0,
-          headers: { Authorization: `Bearer ${whatsappAccessToken}` },
-        });
-        const ok = Boolean(res.data?.id);
-        return { ...base, url: maskedUrl, status: ok ? "healthy" : "degraded", httpStatus: res.status, latencyMs: res.latencyMs, ...(ok ? {} : { error: "Meta API rejected phone number or token" }) };
-      }
-      if (whatsappWebhookUrl) {
-        const out = await probeHttp(whatsappWebhookUrl);
-        if (out === "unreachable") return { ...base, url: "webhook://whatsapp", status: "unreachable", httpStatus: null, latencyMs: null, error: "webhook unreachable" };
-        if (out === "degraded") return { ...base, url: "webhook://whatsapp", status: "degraded", httpStatus: null, latencyMs: null, error: "webhook returned non-2xx" };
-        return { ...base, url: "webhook://whatsapp", status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
-      }
-      return { ...base, url: maskedUrl, status: "degraded", httpStatus: null, latencyMs: null, error: "WHATSAPP_PHONE_NUMBER_ID missing for Meta Cloud API" };
-    } catch (err) {
-      return { ...base, url: maskedUrl, status: "unreachable", httpStatus: null, latencyMs: null, error: (err as Error).message };
-    }
-  }
-
   // ── HTTP services (render et al.): explicit path → /health → /api/v1/health ──
   if (!svc.url) {
     return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, error: `no probeable URL for provider '${svc.provider}'` };
