@@ -293,6 +293,7 @@ def create_app(
     stream_fn=None,
     stealth_webhook_fn=None,
     memory_store=None,
+    capability_router=None,
 ) -> FastAPI:
     """Build the gateway. Every collaborator is injectable for offline tests."""
     limiter = limiter or SlidingWindowLimiter(
@@ -393,17 +394,45 @@ def create_app(
         model = body.get("model", "auto")
         wants_stream = bool(body.get("stream", False))
 
-        try:
-            chain = config.chain_for(model if isinstance(model, str) else "auto")
-        except Exception:
-            return error_response(
-                400,
-                err_type="invalid_request_error",
-                code="unknown_model",
-                message=f"No routing chain configured for model '{model}'.",
-            )
+        # Capability routing: model="capability:<name>" (or a registered
+        # capability name used directly) resolves through the injected
+        # CapabilityRouter instead of a static chain. Falls back to the
+        # configured chain_for resolution otherwise (fail-closed).
+        resolved_chain = None
+        resolved_alias = None
+        resolved_cap = None
+        if isinstance(model, str) and capability_router is not None:
+            cap_name = model.removeprefix("capability:")
+            caps = getattr(capability_router, "capabilities", list)()
+            if cap_name and (model.startswith("capability:") or cap_name in caps):
+                selection = capability_router.select(cap_name)
+                if selection.account is not None:
+                    from .config import Endpoint
+
+                    resolved_chain = (
+                        Endpoint(
+                            provider=selection.account.provider,
+                            model=selection.account.model,
+                        ),
+                    )
+                    resolved_alias = selection.account.alias
+                    resolved_cap = cap_name
+        if resolved_chain is None:
+            try:
+                chain = config.chain_for(model if isinstance(model, str) else "auto")
+            except Exception:
+                return error_response(
+                    400,
+                    err_type="invalid_request_error",
+                    code="unknown_model",
+                    message=f"No routing chain configured for model '{model}'.",
+                )
+        else:
+            chain = resolved_chain
 
         payload = json.dumps({"messages": messages, "stream": wants_stream}).encode()
+        request.state.capability_alias = resolved_alias
+        request.state.capability_name = resolved_cap
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
 
         if wants_stream:
@@ -452,6 +481,14 @@ def create_app(
             )
 
         result = await execute_chain(chain, payload, attempt_fn=attempt_fn)
+        cap_name = getattr(request.state, "capability_name", None)
+        alias = getattr(request.state, "capability_alias", None)
+        if cap_name is not None and alias is not None and capability_router is not None:
+            status = getattr(result, "status", 200)
+            if status < 400:
+                capability_router.record_success(cap_name, alias, latency_ms=getattr(result, "latency_ms", 0.0) or 0.0)
+            else:
+                capability_router.record_failure(cap_name, alias)
         served_model = f"{result.endpoint.provider}/{result.endpoint.model}"
         try:
             parsed = parse_completion_response(result)

@@ -21,7 +21,13 @@ class ManifestError(ValueError):
 
 @dataclass
 class CapabilityDescriptor:
-    """Normalized capability metadata (stage-1/2 payload: no body)."""
+    """Normalized capability metadata (stage-1/2 payload: no body).
+
+    Extended contract fields (proposal section 6) are optional with safe
+    defaults so legacy manifests keep parsing. They describe governance,
+    preconditions, stop conditions, idempotency guidance, evidence and
+    memory policy, and ownership without changing the core identity.
+    """
 
     name: str
     version: str
@@ -30,6 +36,14 @@ class CapabilityDescriptor:
     entry: str | None = None
     source_format: str = "skill-md"  # or "cursor-plugin"
     source_path: str | None = None
+    permission_level: str = "read"  # read | write | deploy | restart | secret
+    preconditions: list[str] = field(default_factory=list)
+    stop_conditions: list[str] = field(default_factory=list)
+    idempotency: str = ""
+    evidence_requirements: list[str] = field(default_factory=list)
+    memory_policy: str = "read"  # none | read | write
+    owner: str = ""
+    verification_required: bool = True
 
     def validate(self) -> None:
         if not NAME_RE.match(self.name):
@@ -38,6 +52,20 @@ class CapabilityDescriptor:
             raise ManifestError(f"skill {self.name}: missing version")
         if not self.description:
             raise ManifestError(f"skill {self.name}: missing description")
+        if self.permission_level not in {
+            "read",
+            "write",
+            "deploy",
+            "restart",
+            "secret",
+        }:
+            raise ManifestError(
+                f"skill {self.name}: invalid permission_level {self.permission_level!r}"
+            )
+        if self.memory_policy not in {"none", "read", "write"}:
+            raise ManifestError(
+                f"skill {self.name}: invalid memory_policy {self.memory_policy!r}"
+            )
 
     def summary(self) -> dict[str, Any]:
         """Lightweight boot-index payload (progressive disclosure, stage 1)."""
@@ -47,6 +75,9 @@ class CapabilityDescriptor:
             "description": self.description,
             "triggers": list(self.triggers),
             "source_format": self.source_format,
+            "permission_level": self.permission_level,
+            "owner": self.owner,
+            "verification_required": self.verification_required,
         }
 
 
@@ -60,6 +91,30 @@ def _parse_scalar(value: str) -> Any:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
         return value[1:-1]
     return value
+
+
+def _as_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return []
+        if value.startswith("[") and value.endswith("]"):
+            inner = value[1:-1].strip()
+            if not inner:
+                return []
+            return [item.strip().strip("'\"") for item in inner.split(",")]
+        return [value]
+    return []
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
 
 
 def parse_frontmatter(text: str) -> dict[str, Any]:
@@ -97,6 +152,14 @@ def parse_skill_md(text: str, source_path: str | None = None) -> tuple:
         entry=str(data["entry"]) if data.get("entry") else None,
         source_format="skill-md",
         source_path=source_path,
+        permission_level=str(data.get("permission_level", "read")),
+        preconditions=_as_list(data.get("preconditions", [])),
+        stop_conditions=_as_list(data.get("stop_conditions", [])),
+        idempotency=str(data.get("idempotency", "")),
+        evidence_requirements=_as_list(data.get("evidence_requirements", [])),
+        memory_policy=str(data.get("memory_policy", "read")),
+        owner=str(data.get("owner", "")),
+        verification_required=_as_bool(data.get("verification_required", True)),
     )
     descriptor.validate()
     return descriptor, body
@@ -131,6 +194,14 @@ def parse_cursor_plugin(json_text: str, source_path: str | None = None) -> tuple
         entry=str(data.get("entry")) if data.get("entry") else None,
         source_format="cursor-plugin",
         source_path=source_path,
+        permission_level=str(data.get("permission_level", "read")),
+        preconditions=_as_list(data.get("preconditions", [])),
+        stop_conditions=_as_list(data.get("stop_conditions", [])),
+        idempotency=str(data.get("idempotency", "")),
+        evidence_requirements=_as_list(data.get("evidence_requirements", [])),
+        memory_policy=str(data.get("memory_policy", "read")),
+        owner=str(data.get("owner", "")),
+        verification_required=_as_bool(data.get("verification_required", True)),
     )
     descriptor.validate()
     notes = str(data.get("instructions", "")).strip()

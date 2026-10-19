@@ -59,7 +59,7 @@ def main() -> int:
     contrib = CONTRIB.read_text(encoding="utf-8")
 
     # 1. Evidence tier count: code emission vs SPEC §4 SSOT row.
-    emitted = sorted({int(n) for n in re.findall(r'\{"tier": (\d+),', code)})
+    emitted = sorted({int(n) for n in re.findall(r'\{\s*["\']tier["\']:\s*(\d+),', code)})
     declared = None
     if not emitted:
         failures.append("no evidence tier emissions found in the loop code")

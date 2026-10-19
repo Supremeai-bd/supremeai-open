@@ -15,6 +15,7 @@ import hmac
 import json
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Protocol
 
 MIN_SECRET_LEN = 16
 MAX_BODY_BYTES = 64 * 1024
@@ -37,16 +38,41 @@ def verify_hmac(secret: str, body: bytes, signature_header: str | None) -> bool:
     return hmac.compare_digest(expected, provided)
 
 
+class DedupStore(Protocol):
+    def contains(self, key: str) -> bool: ...
+
+    def add(self, key: str) -> None: ...
+
+
+class InMemoryDedupStore:
+    def __init__(self) -> None:
+        self._keys: set[str] = set()
+
+    def contains(self, key: str) -> bool:
+        return key in self._keys
+
+    def add(self, key: str) -> None:
+        self._keys.add(key)
+
+
 class WebhookIngress:
     """Auth + parse layer, fully unit-testable without opening a socket."""
 
-    def __init__(self, hmac_secret: str, on_valid: Callable[[str], str]) -> None:
+    def __init__(
+        self,
+        hmac_secret: str,
+        on_valid: Callable[[str], str],
+        dedup: DedupStore | None = None,
+        task_factory: Callable[[str], str] | None = None,
+    ) -> None:
         if not hmac_secret or len(hmac_secret) < MIN_SECRET_LEN:
             raise ValueError(
                 f"webhook HMAC secret missing or shorter than {MIN_SECRET_LEN} chars"
             )
         self.hmac_secret = hmac_secret
         self._on_valid = on_valid
+        self._dedup = dedup
+        self._task_factory = task_factory
 
     def handle(
         self, method: str, path: str, body: bytes, signature: str | None
@@ -68,6 +94,18 @@ class WebhookIngress:
             issue_url = payload
         if not issue_url:
             return 400, "missing issue_url"
+
+        # Dedup: identical issue_url within the store's window is a duplicate
+        # delivery (GitHub retries) -> idempotent 202, no re-dispatch.
+        if self._dedup is not None and self._dedup.contains(issue_url):
+            return 202, "duplicate delivery (deduped)"
+        if self._dedup is not None:
+            self._dedup.add(issue_url)
+
+        # Optional durable task lease hook (core/state_machine integration).
+        if self._task_factory is not None:
+            self._task_factory(issue_url)
+
         result = self._on_valid(issue_url)
         return 202, result
 
