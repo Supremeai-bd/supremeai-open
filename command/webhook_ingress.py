@@ -13,8 +13,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable, Optional, Tuple
 
 MIN_SECRET_LEN = 16
 MAX_BODY_BYTES = 64 * 1024
@@ -23,10 +23,10 @@ MAX_BODY_BYTES = 64 * 1024
 def compute_signature(secret: str, body: bytes) -> str:
     """Return the canonical `sha256=<hex>` signature for a request body."""
     digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    return "sha256=%s" % digest
+    return f"sha256={digest}"
 
 
-def verify_hmac(secret: str, body: bytes, signature_header: Optional[str]) -> bool:
+def verify_hmac(secret: str, body: bytes, signature_header: str | None) -> bool:
     """Constant-time HMAC verification; anything unusual is a rejection."""
     if not secret or signature_header is None:
         return False
@@ -43,12 +43,14 @@ class WebhookIngress:
     def __init__(self, hmac_secret: str, on_valid: Callable[[str], str]) -> None:
         if not hmac_secret or len(hmac_secret) < MIN_SECRET_LEN:
             raise ValueError(
-                "webhook HMAC secret missing or shorter than %d chars" % MIN_SECRET_LEN
+                f"webhook HMAC secret missing or shorter than {MIN_SECRET_LEN} chars"
             )
         self.hmac_secret = hmac_secret
         self._on_valid = on_valid
 
-    def handle(self, method: str, path: str, body: bytes, signature: Optional[str]) -> Tuple[int, str]:
+    def handle(
+        self, method: str, path: str, body: bytes, signature: str | None
+    ) -> tuple[int, str]:
         if method != "POST" or path.rstrip("/") != "/dispatch":
             return 404, "not found"
         if not verify_hmac(self.hmac_secret, body, signature):
@@ -70,11 +72,13 @@ class WebhookIngress:
         return 202, result
 
 
-def make_http_server(ingress: WebhookIngress, bind_port: int = 0) -> ThreadingHTTPServer:
+def make_http_server(
+    ingress: WebhookIngress, bind_port: int = 0, bind_host: str = "127.0.0.1"
+) -> ThreadingHTTPServer:
     """Build (not start) a ThreadingHTTPServer around the ingress logic."""
 
     class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802 - stdlib API
+        def do_POST(self) -> None:
             length = int(self.headers.get("Content-Length", "0") or "0")
             body = self.rfile.read(length) if length else b""
             status, message = ingress.handle(
@@ -90,7 +94,7 @@ def make_http_server(ingress: WebhookIngress, bind_port: int = 0) -> ThreadingHT
         def log_message(self, fmt: str, *args: object) -> None:  # silence access log
             return
 
-    return ThreadingHTTPServer(("0.0.0.0", bind_port), Handler)
+    return ThreadingHTTPServer((bind_host, bind_port), Handler)
 
 
 def serve(ingress: WebhookIngress, port: int) -> None:  # pragma: no cover - runtime

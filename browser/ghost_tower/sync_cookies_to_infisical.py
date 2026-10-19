@@ -11,25 +11,27 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import gzip
 import json
 import logging
 import os
-import sys
-import urllib.request
 import urllib.parse
-import gzip
+import urllib.request
 from pathlib import Path
+
 from playwright.async_api import async_playwright
 
-from .credential_vault import CredentialVault, get_or_create_master_key
+from .credential_vault import CredentialVault
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("infisical_sync")
 
 INFISICAL_API = os.getenv("INFISICAL_API", "https://app.infisical.com")
-CLIENT_ID = os.getenv("INFISICAL_CLIENT_ID", "9f2363cf-3cec-43f6-b155-a8625de19250")
+CLIENT_ID = os.getenv("INFISICAL_CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("INFISICAL_CLIENT_SECRET", "")
-WORKSPACE_ID = os.getenv("INFISICAL_PROJECT_ID", "92aa20c4-aef5-4e33-82bd-efb06058aaf0")
+WORKSPACE_ID = os.getenv("INFISICAL_PROJECT_ID", "")
 ENVIRONMENT = os.getenv("INFISICAL_ENV", "prod")
 
 
@@ -39,12 +41,16 @@ VAULT_DIR = Path(os.path.expanduser(r"~\.supremeai_vault"))
 
 def infisical_login() -> str:
     """Authenticates using Universal Auth Machine Identity to get access token."""
+    if not CLIENT_ID or not CLIENT_SECRET or not WORKSPACE_ID:
+        raise RuntimeError(
+            "INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET / INFISICAL_PROJECT_ID must be set"
+        )
     url = f"{INFISICAL_API}/api/v1/auth/universal-auth/login"
     payload = {"clientId": CLIENT_ID, "clientSecret": CLIENT_SECRET}
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
+        headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read().decode("utf-8"))
@@ -61,17 +67,22 @@ def set_infisical_secret(token: str, key: str, value: str):
         "secretPath": "/",
         "secretComment": "Sovereign AI Fleet Auth Cookies SSOT",
     }
-    
+
     # Try POST first (create), fallback to PATCH (update) if already exists
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        method="POST"
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            logger.info(f"✅ Infisical secret '{key}' created successfully (HTTP {resp.status}).")
+            logger.info(
+                f"✅ Infisical secret '{key}' created successfully (HTTP {resp.status})."
+            )
             return
     except urllib.error.HTTPError as e:
         if e.code in (400, 404, 409):
@@ -79,21 +90,25 @@ def set_infisical_secret(token: str, key: str, value: str):
             patch_req = urllib.request.Request(
                 url,
                 data=json.dumps(payload).encode("utf-8"),
-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                method="PATCH"
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                method="PATCH",
             )
             try:
                 with urllib.request.urlopen(patch_req, timeout=15) as presp:
-                    logger.info(f"✅ Infisical secret '{key}' updated successfully (HTTP {presp.status}).")
+                    logger.info(
+                        f"✅ Infisical secret '{key}' updated successfully (HTTP {presp.status})."
+                    )
                     return
             except Exception as pe:
                 logger.error(f"Failed to patch secret '{key}': {pe}")
                 raise
         else:
-            err_body = e.read().decode('utf-8', errors='ignore')
+            err_body = e.read().decode("utf-8", errors="ignore")
             logger.error(f"Infisical HTTPError {e.code}: {err_body}")
             raise
-
 
 
 async def export_and_sync() -> dict:
@@ -108,7 +123,7 @@ async def export_and_sync() -> dict:
             user_data_dir=USER_DATA_DIR,
             channel="msedge",
             headless=True,
-            args=["--no-first-run", "--disable-blink-features=AutomationControlled"]
+            args=["--no-first-run", "--disable-blink-features=AutomationControlled"],
         )
         cookies = await ctx.cookies()
         await ctx.close()
@@ -117,11 +132,25 @@ async def export_and_sync() -> dict:
     logger.info(f"Successfully extracted {total} active cookies across all domains.")
 
     # Filter to AI-relevant domains for optimal size and security
-    ai_keywords = ["google", "chatgpt", "openai", "perplexity", "grok", "x.ai", "mistral"]
-    ai_cookies = [c for c in cookies if any(k in c.get("domain", "").lower() for k in ai_keywords)]
-    logger.info(f"Found {len(ai_cookies)} AI Fleet session cookies (Gemini, ChatGPT, Grok, Perplexity, Mistral).")
+    ai_keywords = [
+        "google",
+        "chatgpt",
+        "openai",
+        "perplexity",
+        "grok",
+        "x.ai",
+        "mistral",
+    ]
+    ai_cookies = [
+        c for c in cookies if any(k in c.get("domain", "").lower() for k in ai_keywords)
+    ]
+    logger.info(
+        f"Found {len(ai_cookies)} AI Fleet session cookies (Gemini, ChatGPT, Grok, Perplexity, Mistral)."
+    )
     if len(ai_cookies) < 5:
-        raise RuntimeError("AI fleet session appears expired: only %d AI cookies found" % len(ai_cookies))
+        raise RuntimeError(
+            f"AI fleet session appears expired: only {len(ai_cookies)} AI cookies found"
+        )
 
     raw_json = json.dumps(ai_cookies, indent=2)
 
@@ -137,7 +166,9 @@ async def export_and_sync() -> dict:
     # Compress with gzip + base64 for token-efficient storage in Infisical
     compressed = gzip.compress(raw_json.encode("utf-8"))
     b64_compressed = base64.b64encode(compressed).decode("utf-8")
-    logger.info(f"Compressed cookie payload: {len(raw_json)} bytes -> {len(b64_compressed)} chars (Base64+gzip).")
+    logger.info(
+        f"Compressed cookie payload: {len(raw_json)} bytes -> {len(b64_compressed)} chars (Base64+gzip)."
+    )
 
     # 3. Authenticate with Infisical
     logger.info("Authenticating with Infisical Cloud Production Vault...")
@@ -147,7 +178,7 @@ async def export_and_sync() -> dict:
     # 4. Upload to Infisical
     # A. Compressed Base64 format (ready for immediate headless injection in cloud runners)
     set_infisical_secret(token, "AI_FLEET_COOKIES_GZIP_B64", b64_compressed)
-    
+
     # B. AES-256 Encrypted format
     set_infisical_secret(token, "AI_FLEET_COOKIES_ENC", enc_payload)
 
@@ -158,7 +189,6 @@ async def export_and_sync() -> dict:
     print("   - Keys Synced: AI_FLEET_COOKIES_GZIP_B64, AI_FLEET_COOKIES_ENC")
     print("   All cloud microservices can now use these sessions 24/7!")
     print("=================================================================")
-
 
     return {
         "success": True,

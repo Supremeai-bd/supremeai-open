@@ -28,6 +28,7 @@ Reference routing_policy.json format (documented, deterministic)::
 Secrets: api_keys values are loaded from the environment in production
 (``SUPREMEAI_API_KEY_<NAME>``); this module never logs key material.
 """
+
 from __future__ import annotations
 
 import json
@@ -79,10 +80,26 @@ class GatewayConfig:
         """Resolve the ordered chain for a requested model id.
 
         ``auto`` (OpenAPI default) resolves the configured default chain.
+        A bare model name (e.g. ``gpt-4o-mini``) resolves to the first
+        configured chain that contains an endpoint with that model, so
+        clients can request a specific model without a dedicated chain name.
         Unknown model names are rejected here — routing never invents chains
         (fail-closed default per task-router doctrine).
         """
-        name = self.default_chain if model == "auto" else model
+        if model == "auto":
+            name = self.default_chain
+        else:
+            name = model if model in self.chains else None
+            if name is None:
+                # Resolve a bare model name to a chain prioritising that model.
+                for endpoints in self.chains.values():
+                    for idx, ep in enumerate(endpoints):
+                        if ep.model == model:
+                            # Reorder: requested model first, then the rest.
+                            reordered = (ep,) + endpoints[:idx] + endpoints[idx + 1:]
+                            return reordered
+            if name is None:
+                raise ConfigError(f"no routing chain configured for model '{model}'")
         chain = self.chains.get(name)
         if chain is None:
             raise ConfigError(f"no routing chain configured for model '{model}'")
@@ -96,20 +113,27 @@ def _require(condition: bool, message: str) -> None:
 
 def _parse_endpoint(raw: Any, where: str) -> Endpoint:
     _require(isinstance(raw, dict), f"{where}: endpoint must be an object")
-    _require(set(raw) == {"provider", "model"}, f"{where}: endpoint must have exactly provider+model")
+    _require(
+        set(raw) == {"provider", "model"},
+        f"{where}: endpoint must have exactly provider+model",
+    )
     provider, model = raw["provider"], raw["model"]
     _require(
         isinstance(provider, str) and provider in ALLOWED_PROVIDERS,
         f"{where}: provider '{provider}' not in closed enum {sorted(ALLOWED_PROVIDERS)}",
     )
     _require(
-        isinstance(model, str) and 0 < len(model) <= 128 and not any(c in model for c in " \t\r\n"),
+        isinstance(model, str)
+        and 0 < len(model) <= 128
+        and not any(c in model for c in " \t\r\n"),
         f"{where}: invalid model name",
     )
     return Endpoint(provider=provider, model=model)
 
 
-def parse_routing_policy(raw: Any, *, env: dict[str, str] | None = None) -> GatewayConfig:
+def parse_routing_policy(
+    raw: Any, *, env: dict[str, str] | None = None
+) -> GatewayConfig:
     """Validate a routing policy dict fail-closed; returns the frozen config."""
     _require(isinstance(raw, dict), "routing policy must be a JSON object")
     _require(
@@ -118,11 +142,19 @@ def parse_routing_policy(raw: Any, *, env: dict[str, str] | None = None) -> Gate
     )
 
     chains_raw = raw.get("chains")
-    _require(isinstance(chains_raw, dict) and chains_raw, "chains: non-empty object required")
+    _require(
+        isinstance(chains_raw, dict) and chains_raw, "chains: non-empty object required"
+    )
     chains: dict[str, tuple[Endpoint, ...]] = {}
     for name, chain_raw in chains_raw.items():
-        _require(isinstance(name, str) and 0 < len(name) <= 64, f"chains: invalid chain name {name!r}")
-        _require(isinstance(chain_raw, list) and chain_raw, f"chains.{name}: non-empty ordered list required")
+        _require(
+            isinstance(name, str) and 0 < len(name) <= 64,
+            f"chains: invalid chain name {name!r}",
+        )
+        _require(
+            isinstance(chain_raw, list) and chain_raw,
+            f"chains.{name}: non-empty ordered list required",
+        )
         endpoints = tuple(
             _parse_endpoint(e, f"chains.{name}[{i}]") for i, e in enumerate(chain_raw)
         )
@@ -138,11 +170,15 @@ def parse_routing_policy(raw: Any, *, env: dict[str, str] | None = None) -> Gate
     _require(isinstance(rl, dict), "rate_limit must be an object")
     window, max_req = rl.get("window_seconds"), rl.get("max_requests")
     _require(
-        isinstance(window, int) and not isinstance(window, bool) and 0 < window <= 86400,
+        isinstance(window, int)
+        and not isinstance(window, bool)
+        and 0 < window <= 86400,
         "rate_limit.window_seconds must be an integer in (0, 86400]",
     )
     _require(
-        isinstance(max_req, int) and not isinstance(max_req, bool) and 0 < max_req <= 100_000,
+        isinstance(max_req, int)
+        and not isinstance(max_req, bool)
+        and 0 < max_req <= 100_000,
         "rate_limit.max_requests must be an integer in (0, 100000]",
     )
 
@@ -154,14 +190,20 @@ def parse_routing_policy(raw: Any, *, env: dict[str, str] | None = None) -> Gate
         # NOTE: ids deliberately avoid OpenAI/GitHub-shaped credential prefixes
         # bridge secret scan never mistakes reference ids for live credentials.
         _require(
-            isinstance(key_id, str) and key_id.startswith("supremeai-key-") and len(key_id) >= 20,
+            isinstance(key_id, str)
+            and key_id.startswith("supremeai-key-")
+            and len(key_id) >= 20,
             "api_keys: key ids must look like supremeai-key-<id> (>=20 chars)",
         )
-        _require(isinstance(meta, dict) and set(meta) == {"owner", "scopes"},
-                 f"api_keys entry {key_id[:14]}…: must have exactly owner+scopes")
+        _require(
+            isinstance(meta, dict) and set(meta) == {"owner", "scopes"},
+            f"api_keys entry {key_id[:14]}…: must have exactly owner+scopes",
+        )
         scopes_raw = meta["scopes"]
         _require(
-            isinstance(scopes_raw, list) and scopes_raw and set(scopes_raw) <= set(ALLOWED_SCOPES),
+            isinstance(scopes_raw, list)
+            and scopes_raw
+            and set(scopes_raw) <= set(ALLOWED_SCOPES),
             f"api_keys entry {key_id[:14]}…: scopes must be a non-empty subset of {sorted(ALLOWED_SCOPES)}",
         )
         # Secret material: in production the VALUE rides the environment; a
@@ -171,7 +213,9 @@ def parse_routing_policy(raw: Any, *, env: dict[str, str] | None = None) -> Gate
             env.get(env_name) is not None,
             f"api_keys entry {key_id[:14]}…: env {env_name} missing — refuse to boot without key material",
         )
-        api_keys[key_id] = ApiKeyRecord(owner=str(meta["owner"]), scopes=frozenset(scopes_raw))
+        api_keys[key_id] = ApiKeyRecord(
+            owner=str(meta["owner"]), scopes=frozenset(scopes_raw)
+        )
 
     return GatewayConfig(
         chains=chains,
@@ -182,7 +226,9 @@ def parse_routing_policy(raw: Any, *, env: dict[str, str] | None = None) -> Gate
     )
 
 
-def load_config(path: str | Path | None = None, *, env: dict[str, str] | None = None) -> GatewayConfig:
+def load_config(
+    path: str | Path | None = None, *, env: dict[str, str] | None = None
+) -> GatewayConfig:
     """Load + validate routing_policy.json (default path: gateway/routing_policy.json)."""
     p = Path(path) if path else Path(__file__).resolve().parent / "routing_policy.json"
     _require(p.is_file(), f"routing policy file not found: {p}")

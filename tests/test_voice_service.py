@@ -12,12 +12,13 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from typing import AsyncIterator, List
+from collections.abc import AsyncIterator
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from command.services.voice_service import (  # noqa: E402
+    from command.config import CommandConfig
+    from command.services.voice_service import (
         DEFAULT_VOICE,
         VOICE_CATALOG,
         VoiceRequest,
@@ -27,17 +28,17 @@ try:
         VoiceSynthesisError,
         validate_request,
     )
-    from command.telegram_bot import (  # noqa: E402
+    from command.telegram_bot import (
         CommandRouter,
         TelegramUpdate,
         VoiceOutcome,
         build_voice_status_summary,
         sync_voice_synthesizer,
     )
-    from command.utils.audio_cache import AudioCache, AudioCacheError  # noqa: E402
-    from command.config import CommandConfig  # noqa: E402
+    from command.utils.audio_cache import AudioCache, AudioCacheError
 except ImportError:  # satellite layout (supremeai-command: src/ package)
-    from src.services.voice_service import (  # noqa: E402
+    from src.config import CommandConfig
+    from src.services.voice_service import (
         DEFAULT_VOICE,
         VOICE_CATALOG,
         VoiceRequest,
@@ -47,15 +48,14 @@ except ImportError:  # satellite layout (supremeai-command: src/ package)
         VoiceSynthesisError,
         validate_request,
     )
-    from src.telegram_bot import (  # noqa: E402
+    from src.telegram_bot import (
         CommandRouter,
         TelegramUpdate,
         VoiceOutcome,
         build_voice_status_summary,
         sync_voice_synthesizer,
     )
-    from src.utils.audio_cache import AudioCache, AudioCacheError  # noqa: E402
-    from src.config import CommandConfig  # noqa: E402
+    from src.utils.audio_cache import AudioCache, AudioCacheError
 
 
 # ---------------------------------------------------------------------------
@@ -79,8 +79,8 @@ class FakeClock:
 class FakeSynthesizer:
     """Deterministic offline stand-in for the edge-tts leased stream."""
 
-    def __init__(self, fail: Optional[Exception] = None, chunk_size: int = 4) -> None:
-        self.calls: List[VoiceRequest] = []
+    def __init__(self, fail: Exception | None = None, chunk_size: int = 4) -> None:
+        self.calls: list[VoiceRequest] = []
         self.fail = fail
         self.chunk_size = chunk_size
 
@@ -88,7 +88,9 @@ class FakeSynthesizer:
         self.calls.append(request)
         if self.fail is not None:
             raise self.fail
-        payload = ("voice:%s|rate:%s|pitch:%s|" % (request.voice, request.rate, request.pitch)).encode("utf-8") * 3
+        payload = (
+            f"voice:{request.voice}|rate:{request.rate}|pitch:{request.pitch}|"
+        ).encode() * 3
         for i in range(0, len(payload), self.chunk_size):
             yield payload[i : i + self.chunk_size]
 
@@ -153,13 +155,13 @@ def test_validate_rejects_malformed_rate_and_pitch():
     for bad_rate in ("ten%", "+10", "10%", "++10%"):
         try:
             validate_request("x", rate=bad_rate)
-            raise AssertionError("rate %r must be rejected" % bad_rate)
+            raise AssertionError(f"rate {bad_rate!r} must be rejected")
         except VoiceRequestError:
             pass
     for bad_pitch in ("+5hz", "5Hz", "+Hz", "+5"):
         try:
             validate_request("x", pitch=bad_pitch)
-            raise AssertionError("pitch %r must be rejected" % bad_pitch)
+            raise AssertionError(f"pitch {bad_pitch!r} must be rejected")
         except VoiceRequestError:
             pass
 
@@ -189,9 +191,18 @@ def test_default_voice_is_bd_pradeep():
 
 
 def test_cache_key_is_deterministic_and_input_sensitive():
-    k1 = AudioCache.key_for("সিস্টেম সম্পূর্ণ স্বাভাবিক আছে", voice="bn-BD-PradeepNeural", rate="+0%", pitch="+0Hz")
-    k2 = AudioCache.key_for("সিস্টেম সম্পূর্ণ স্বাভাবিক আছে", voice="bn-BD-PradeepNeural", rate="+0%", pitch="+0Hz")
-    k3 = AudioCache.key_for("সিস্টেম সম্পূর্ণ স্বাভাবিক আছে", voice="bn-BD-NabanitaNeural", rate="+0%", pitch="+0Hz")
+    k1 = AudioCache.key_for(
+        "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে", voice="bn-BD-PradeepNeural", rate="+0%", pitch="+0Hz"
+    )
+    k2 = AudioCache.key_for(
+        "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে", voice="bn-BD-PradeepNeural", rate="+0%", pitch="+0Hz"
+    )
+    k3 = AudioCache.key_for(
+        "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে",
+        voice="bn-BD-NabanitaNeural",
+        rate="+0%",
+        pitch="+0Hz",
+    )
     assert k1 == k2 and k1 != k3
     assert len(k1) == 64  # sha256 hex
     k4 = AudioCache.key_for("ab", "c")  # field-boundary guard
@@ -224,7 +235,7 @@ def test_cache_ttl_expiry_via_injected_clock():
 def test_cache_lru_eviction_respects_max_entries():
     cache = AudioCache(max_entries=2)
     for i in range(4):
-        cache.put(cache.key_for("phrase-%d" % i), b"x" * (i + 1))
+        cache.put(cache.key_for(f"phrase-{i}"), b"x" * (i + 1))
     stats = cache.stats()
     assert stats["entries"] == 2  # only the 2 most recent survive
     assert cache.get(cache.key_for("phrase-0")) is None
@@ -248,7 +259,7 @@ def test_cache_rejects_bad_backend_and_empty_payload():
     for kwargs in ({"backend": "disk"}, {"max_entries": 0}, {"ttl_s": 0}):
         try:
             AudioCache(**kwargs)
-            raise AssertionError("AudioCache(%s) must be rejected" % kwargs)
+            raise AssertionError(f"AudioCache({kwargs}) must be rejected")
         except AudioCacheError:
             pass
     cache = AudioCache()
@@ -286,7 +297,7 @@ def test_service_streams_chunks_in_order():
     fake = FakeSynthesizer(chunk_size=5)
     service = VoiceService(synthesizer=fake)
     request = validate_request("stream me")
-    chunks: List[bytes] = []
+    chunks: list[bytes] = []
 
     async def consume():
         async for chunk in service.stream(request):
@@ -336,7 +347,11 @@ def test_service_rejects_non_voice_request():
 def test_service_passes_rate_pitch_through_to_synthesizer():
     fake = FakeSynthesizer()
     service = VoiceService(synthesizer=fake)
-    run(service.synthesize(validate_request("x", voice="nabanita", rate="-5%", pitch="+7Hz")))
+    run(
+        service.synthesize(
+            validate_request("x", voice="nabanita", rate="-5%", pitch="+7Hz")
+        )
+    )
     sent = fake.calls[0]
     assert sent.voice == "bn-BD-NabanitaNeural"
     assert sent.rate == "-5%" and sent.pitch == "+7Hz"
@@ -394,11 +409,15 @@ def test_router_voice_failure_degrades_to_text():
     router = make_router(synthesize_voice=failing)
     reply = router.route(TelegramUpdate("424242", "/voice শুনুন"))
     assert reply.voice_audio is None
-    assert "voice synthesis failed" in reply.text and "service unavailable" in reply.text
+    assert (
+        "voice synthesis failed" in reply.text and "service unavailable" in reply.text
+    )
 
 
 def test_router_voice_toggle_gates_status_voice_notes():
-    outcome = VoiceOutcome(audio=b"AUDIO", voice_used="bn-BD-PradeepNeural", size_bytes=5)
+    outcome = VoiceOutcome(
+        audio=b"AUDIO", voice_used="bn-BD-PradeepNeural", size_bytes=5
+    )
     seen = []
 
     def spy(text):
@@ -438,7 +457,9 @@ def test_router_status_voice_without_synthesizer_warns_loudly():
 def test_build_voice_status_summary_is_deterministic():
     healthy = build_voice_status_summary("🏰 Control Tower: reachable\nBridge: 1")
     down = build_voice_status_summary("🏰 Control Tower: unreachable")
-    assert healthy == build_voice_status_summary("🏰 Control Tower: reachable\nBridge: 1")
+    assert healthy == build_voice_status_summary(
+        "🏰 Control Tower: reachable\nBridge: 1"
+    )
     assert healthy != down
     assert "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে" in healthy
     assert "পৌঁছানো যাচ্ছে না" in down
