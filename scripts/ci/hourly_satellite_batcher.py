@@ -77,6 +77,7 @@ ROUTING_MATRIX: Final = (
     ("examples/sdk-", "sdk"),
     ("studio/", "studio"),
     ("api/", "api"),
+    ("gateway/", "api"),
     ("core/", "core"),
     ("command/", "command"),
     ("skills/", "skills"),
@@ -330,7 +331,6 @@ def plan_batches(
     grouped: dict[str, dict] = {}
     unrouted: list[tuple[str, str]] = []
     monorepo: list[str] = []
-    seen_files: dict[str, set[str]] = {}
 
     for commit in commits:
         if not isinstance(commit, LandedCommit):
