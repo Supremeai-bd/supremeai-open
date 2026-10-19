@@ -14,6 +14,18 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { z } from "zod";
 import { env } from "./lib/env.js";
+import {
+  mcpRateBuckets,
+  toolIdentityRateBuckets,
+  mcpRateLimitConfig,
+  consumeSlidingWindow,
+  consumeMcpRateLimit,
+  toolRateLimitIdentity,
+  consumeToolRateLimit,
+  toolPayloadError,
+  ToolExecutionTimeoutError,
+  truncateToolResult,
+} from "./lib/mcp_rate_limit.js";
 import { registerAllTools } from "./tools/index.js";
 import { RequestContextStore, type UserRole } from "./policy/auth.context.js";
 import { getServiceDescriptors } from "./service-circles.js";
@@ -73,156 +85,6 @@ function requestPath(req: IncomingMessage): string {
 // In-memory sliding window: MCP_RATE_LIMIT_MAX requests per client IP per
 // MCP_RATE_LIMIT_WINDOW_MS (defaults: 60 requests / 60 000 ms). Exceeding the
 // budget returns 429 with a Retry-After header.
-// #686: the same sliding-window implementation is REUSED by the per-(identity,
-// tool) rate limiter below — one bucket-table primitive, two tables.
-const mcpRateBuckets = new Map<string, number[]>();
-const toolIdentityRateBuckets = new Map<string, number[]>();
-
-function mcpRateLimitConfig(): { max: number; windowMs: number } {
-  // #109: reads through the validated env SSOT — a garbage value throws
-  // (validateRuntimeKnobs at boot) instead of silently becoming NaN/60.
-  return { max: env.runtime.mcpRateLimitMax, windowMs: env.runtime.mcpRateLimitWindowMs };
-}
-
-/**
- * Shared sliding-window consume primitive (#695, reused by #686).
- * `buckets` maps key → list of ms timestamps inside the current window.
- * Buckets are pruned lazily on each consume; the table itself is capped so
- * abandoned keys cannot grow memory without bound.
- */
-function consumeSlidingWindow(buckets: Map<string, number[]>, key: string, max: number, windowMs: number): { allowed: boolean; retryAfterMs: number } {
-  const now = Date.now();
-  const cutoff = now - windowMs;
-  let stamps = buckets.get(key);
-  if (!stamps) { stamps = []; buckets.set(key, stamps); }
-  while (stamps.length > 0 && stamps[0] <= cutoff) stamps.shift();
-  // Memory guard: drop stale buckets if the table grows unboundedly.
-  if (buckets.size > 10_000) {
-    for (const [bucketKey, bucketStamps] of buckets) {
-      if (bucketStamps.length === 0 || bucketStamps[bucketStamps.length - 1] <= cutoff) {
-        buckets.delete(bucketKey);
-      }
-    }
-  }
-  if (stamps.length >= max) {
-    const retryAfterMs = stamps.length > 0 ? Math.max(1, (stamps[0] ?? now) + windowMs - now) : windowMs;
-    return { allowed: false, retryAfterMs };
-  }
-  stamps.push(now);
-  return { allowed: true, retryAfterMs: 0 };
-}
-
-function consumeMcpRateLimit(key: string): { allowed: boolean; retryAfterMs: number } {
-  const { max, windowMs } = mcpRateLimitConfig();
-  return consumeSlidingWindow(mcpRateBuckets, key, max, windowMs);
-}
-
-// ── Per-tool execution governance (#686) ─────────────────────────────────────
-// Applied inside the same server.tool wrapper as the #695 RBAC gate, in order:
-// RBAC → per-(identity,tool) rate limit → input payload validation →
-// timeout-guarded execution → output truncation.
-//
-//  1. Input payload cap — MCP_TOOL_PAYLOAD_MAX_BYTES (default 256 KB): a tool
-//     call whose serialized `arguments` exceeds the cap is rejected with a
-//     structured isError response, and `arguments` must be a JSON object.
-//  2. Output truncation — MCP_TOOL_RESULT_MAX_BYTES (default 512 KB): results
-//     above the cap are cut with an explicit "...[truncated N bytes]" marker
-//     plus a metadata field instead of silently streaming huge payloads.
-//  3. Hard execution timeout — MCP_TOOL_TIMEOUT_MS (default 30 000 ms): the
-//     handler races the clock; the loser keeps running orphaned but the caller
-//     gets a structured isError response immediately.
-//  4. Per-(identity, tool) rate limit — MCP_TOOL_RATE_LIMIT_MAX calls per
-//     MCP_TOOL_RATE_LIMIT_WINDOW_MS (defaults: 20 / 60 000 ms), keyed by
-//     `<tenant>|<principal>||<tool>`. The per-IP limiter above only bounds the
-//     transport; this bounds actual executions per caller per tool.
-// #686 knob defaults now live in lib/env.ts (`env.runtime.*`, #109) —
-// validated positiveInt getters; garbage values fail loudly at boot.
-
-/**
- * Rate-limit identity for the per-(identity, tool) limiter: the tenant plus the
- * client id (registered MCP clients) or the resolved role (env-key callers).
- * Anonymous public_viewer callers share one "viewer|anon" identity — they can
- * only reach the two public-safe tools, and the per-IP limiter still bounds
- * per-source volume (noted residual in the #686 PR).
- */
-function toolRateLimitIdentity(): string {
-  const store = RequestContextStore.get();
-  if (!store) return "uncontexted";
-  const principal = store.clientId ?? store.role ?? "anon";
-  return `${store.tenantId ?? "default"}|${principal}`;
-}
-
-function consumeToolRateLimit(toolName: string): { allowed: boolean; retryAfterMs: number } {
-  const { max, windowMs } = { max: env.runtime.toolRateLimitMax, windowMs: env.runtime.toolRateLimitWindowMs };
-  return consumeSlidingWindow(toolIdentityRateBuckets, `${toolRateLimitIdentity()}||${toolName}`, max, windowMs);
-}
-
-/**
- * Input payload validation (#686 item 1). `toolArgs` is the parsed
- * CallToolRequest `params.arguments` as handed to the registered callback.
- * Returns null when the payload is acceptable, or a human-readable denial.
- */
-function toolPayloadError(toolName: string, toolArgs: unknown): string | null {
-  if (toolArgs === undefined || toolArgs === null) return null; // absent arguments
-  if (typeof toolArgs !== "object" || Array.isArray(toolArgs)) {
-    return `Invalid arguments for tool '${toolName}': arguments must be a JSON object.`;
-  }
-  let serialized: string;
-  try {
-    serialized = JSON.stringify(toolArgs) ?? "";
-  } catch {
-    return `Invalid arguments for tool '${toolName}': arguments are not JSON-serializable.`;
-  }
-  const maxBytes = env.runtime.toolPayloadMaxBytes;
-  const byteLength = Buffer.byteLength(serialized, "utf8");
-  if (byteLength > maxBytes) {
-    return `Payload too large for tool '${toolName}': ${byteLength} bytes exceeds the ${maxBytes}-byte limit (MCP_TOOL_PAYLOAD_MAX_BYTES).`;
-  }
-  return null;
-}
-
-/** Error sentinel for the #686 execution-timeout race. */
-class ToolExecutionTimeoutError extends Error {
-  constructor(toolName: string, timeoutMs: number) {
-    super(`Tool '${toolName}' execution timed out after ${timeoutMs}ms`);
-    this.name = "ToolExecutionTimeoutError";
-  }
-}
-
-/**
- * Output truncation (#686 item 2). Oversized results are replaced by a single
- * text item holding the byte-clipped serialization, an explicit
- * "...[truncated N bytes]" marker and a `metadata` field; results within the
- * cap (or that cannot be serialized) pass through untouched.
- */
-function truncateToolResult(toolName: string, result: unknown): unknown {
-  if (result === null || typeof result !== "object") return result;
-  let serialized: string | undefined;
-  try {
-    serialized = JSON.stringify(result);
-  } catch {
-    return result; // non-serializable results pass through unchanged
-  }
-  if (serialized === undefined) return result;
-  const originalBytes = Buffer.byteLength(serialized, "utf8");
-  const maxBytes = env.runtime.toolResultMaxBytes;
-  if (originalBytes <= maxBytes) return result;
-  const clipped = Buffer.from(serialized, "utf8").subarray(0, maxBytes).toString("utf8");
-  const truncatedBytes = originalBytes - maxBytes;
-  const wasError = (result as { isError?: unknown }).isError === true;
-  return {
-    content: [{ type: "text", text: `${clipped}\n...[truncated ${truncatedBytes} bytes]` }],
-    isError: wasError,
-    metadata: {
-      truncated: true,
-      tool: toolName,
-      originalBytes,
-      maxBytes,
-      truncatedBytes,
-    },
-  };
-}
-
 function writeJson(res: ServerResponse, status: number, payload: unknown, extraHeaders: Record<string, string> = {}): void {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
