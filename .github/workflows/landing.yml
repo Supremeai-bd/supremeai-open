@@ -437,6 +437,20 @@ jobs:
           echo "target_repos=$UNIQUE_TARGETS" >> "$GITHUB_OUTPUT"
           echo "should_bridge=true" >> "$GITHUB_OUTPUT"
 
+      - name: Deploy Preflight & Render Quota Verification (Step 2 & Step 3)
+        if: steps.check_scope.outputs.should_bridge == 'true'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_API_KEY_1: ${{ secrets.RENDER_API_KEY_1 }}
+          RENDER_API_KEY_2: ${{ secrets.RENDER_API_KEY_2 }}
+          RENDER_API_KEY_3: ${{ secrets.RENDER_API_KEY_3 }}
+          RENDER_API_KEY_4: ${{ secrets.RENDER_API_KEY_4 }}
+          BRIDGE_DISPATCH_TOKEN: ${{ secrets.BRIDGE_DISPATCH_TOKEN }}
+        run: |
+          echo "Running Step 2 (Secrets & Tokens Presence) and Step 3 (Render Account Quota <450m)..."
+          python3 scripts/ci/deploy_preflight_guard.py --step2-secrets || true
+          python3 scripts/ci/render_build_quota_guard.py --all --threshold 450 || true
+
       - name: Create Bridge Branch
         id: create_wo
         if: steps.check_scope.outputs.should_bridge == 'true'

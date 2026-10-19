@@ -449,12 +449,34 @@ jobs:
           fi
 
   # ---------------------------------------------------------------------------
+  # ⚡ Step 1: Fast Lint & Syntax Preflight (<10s, fail-fast across all domains)
+  # ---------------------------------------------------------------------------
+  fast-lint-syntax-preflight:
+    name: "⚡ Step 1: Fast Lint & Syntax Preflight (<10s)"
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PyYAML
+        run: pip install pyyaml
+      - name: Run Fast Lint & Syntax Guard
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/deploy_preflight_guard.py --step1-syntax
+
+  # ---------------------------------------------------------------------------
   # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after
   # the shift-left diet because all four versions are proven here first.
   # ---------------------------------------------------------------------------
   test-matrix:
     name: Python ${{ matrix.python-version }} Matrix Smoke & Contract Validation
-    needs: [boundary_sanitization_guard, loop_contract_parity_guard]
+    needs: [fast-lint-syntax-preflight, boundary_sanitization_guard, loop_contract_parity_guard]
     if: |
       always() &&
       ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
