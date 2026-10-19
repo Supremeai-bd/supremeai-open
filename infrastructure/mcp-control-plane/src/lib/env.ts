@@ -118,7 +118,7 @@ export const env = {
   get backendUrl(): string { return optional("SUPREMEAI_BACKEND_URL"); },
   get backendServiceToken(): string { return optional("SUPREMEAI_BACKEND_SERVICE_TOKEN"); },
 
-  // ── Render (4 accounts)
+  // ── Render (5 accounts)
   render: {
     primary: {
       get apiKey(): string { return optional("RENDER_API_KEY_1", optional("RENDER_API_KEY")); },
@@ -142,6 +142,11 @@ export const env = {
       get apiKey(): string { return optional("RENDER_API_KEY_4", optional("RENDER_API_KEY")); },
       get serviceId(): string { return optional("RENDER_MCP_SVC_ID"); },
       get url(): string { return optional("RENDER_MCP_URL"); },
+    },
+    api: {
+      get apiKey(): string { return optional("RENDER_API_KEY_5", optional("RENDER_API_KEY_API")); },
+      get serviceId(): string { return optional("RENDER_API_SVC_ID", "srv-dbappass728c7396p580"); },
+      get url(): string { return optional("RENDER_API_URL", "https://supremeai-api-ulw0.onrender.com"); },
     },
   },
 
