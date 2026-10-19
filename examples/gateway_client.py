@@ -17,7 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
-DEFAULT_BASE_URL = os.getenv("SUPREMEAI_GATEWAY_URL", "https://supremeai-api.onrender.com")
+DEFAULT_BASE_URL = os.getenv("SUPREMEAI_GATEWAY_URL", "https://supremeai-api-ulw0.onrender.com")
 RETRY_BACKOFF_S = 2.0
 
 

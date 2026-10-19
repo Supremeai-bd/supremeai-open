@@ -5,6 +5,12 @@
 > **Control:** Admin/System controls **WHERE, WHAT, ACCESS, LIMITS, STOPPING and major architectural decisions**.  
 > **Canonical Rules:** [`AGENT_RULES.md`](./AGENT_RULES.md) · **Admin Work Budget:** ≤ 0.01% (Zero-Admin)
 
+> [!NOTE]
+> **Orientation for New AI Agents (Directory Mapping & Single Door):**  
+> This repo (`supremeai-open`) contains mirror folders (`core/`, `command/`, `studio/`, `infrastructure/`, etc.). These are **NOT legacy duplicates**; they are the public transit surfaces for the 12 satellite repositories.  
+> - **Never push directly to satellites:** Satellites enforce a strict 0 Issues / 0 PRs policy ([`FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)).  
+> - **Code right here:** Make your edits inside this repository in the respective domain directory. Once your PR merges into `supremeai-open:main`, `landing.yml` automatically dispatches the commit to the target satellite repo.
+
 ---
 
 ## 1. Visual Task Architecture (Federation Flow at a Glance)

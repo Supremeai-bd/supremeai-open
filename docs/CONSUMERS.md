@@ -8,7 +8,7 @@
 
 ## §০. 5-minute Quickstart (copy-paste)
 
-**Base URL:** `https://supremeai-api.onrender.com` — stable OpenAI-compatible surface.
+**Base URL:** `https://supremeai-api-ulw0.onrender.com` — stable OpenAI-compatible surface.
 Contract SSOT: [`api-schemas/gateway.openapi.yaml`](../api-schemas/gateway.openapi.yaml).
 
 > **Live status (সৎ-নোট):** এই লেখার সময় Render deployment সব route-এ
@@ -21,7 +21,7 @@ Contract SSOT: [`api-schemas/gateway.openapi.yaml`](../api-schemas/gateway.opena
 
 ```bash
 # shell: export SUPREMEAI_API_KEY=... (কখনো কোড/git/log-এ হার্ডকোড নয়)
-curl -sS https://supremeai-api.onrender.com/v1/chat/completions \
+curl -sS https://supremeai-api-ulw0.onrender.com/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-SupremeAI-Key: $SUPREMEAI_API_KEY" \
   -d '{"model":"auto","messages":[{"role":"user","content":"ping"}]}'
@@ -38,7 +38,7 @@ import os
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://supremeai-api.onrender.com/v1",
+    base_url="https://supremeai-api-ulw0.onrender.com/v1",
     api_key=os.environ["SUPREMEAI_API_KEY"],
     default_headers={"X-SupremeAI-Key": os.environ["SUPREMEAI_API_KEY"]},
 )
@@ -73,7 +73,7 @@ Zero-dependency পথ (SDK ছাড়া): §৪-র `examples/gateway_client
 
 ```typescript
 // Node 18+ বা যেকোনো fetch runtime; কোনো dependency নেই
-const base = "https://supremeai-api.onrender.com";
+const base = "https://supremeai-api-ulw0.onrender.com";
 const key = process.env.SUPREMEAI_API_KEY!;
 
 // এক কল (non-streaming)
@@ -129,7 +129,7 @@ defaultHeaders: { "X-SupremeAI-Key": key } })` — বাকি সব §০.২
 ### §০.৪ Models তালিকা
 
 ```bash
-curl -sS https://supremeai-api.onrender.com/v1/models \
+curl -sS https://supremeai-api-ulw0.onrender.com/v1/models \
   -H "X-SupremeAI-Key: $SUPREMEAI_API_KEY"
 ```
 
@@ -180,7 +180,7 @@ header   : X-SupremeAI-Key: <SUPREMEAI_API_KEY>
 secret   : vault-ফিড env — কখনো কোড/git/log-এ নয় (monolith SECRETS_MODEL চুক্তি)
 ```
 
-- `GATEWAY_URL` ডিফল্ট `https://supremeai-api.onrender.com` (Render live হলে)
+- `GATEWAY_URL` ডিফল্ট `https://supremeai-api-ulw0.onrender.com` (Render live হলে)
 - মডেল `"auto"` দিন — provider নির্বাচন gateway-র কাজ; নির্দিষ্ট মডেলও চলে
   (`/v1/models`-এ সক্রিয় তালিকা — §০.৪)
 
