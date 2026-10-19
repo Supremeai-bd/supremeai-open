@@ -181,6 +181,7 @@ Implemented so far:
 - Pilot skill extracted: `skills/agent-cadence-dispatcher/` (SKILL.md + scripts/dispatch.py) wrapping the cadence helpers; parity test `skills/tests/test_agent_cadence_skill.py`.
 - Controller-side evidence verifier: `scripts/ci/controller_evidence_verify.py` (git diff scope, SHA-256 digests, controller-run tests; fail-closed). Tests: `tests/test_controller_evidence.py` (10 passed).
 - Learning feedback loop: `scripts/agents/learning_feedback.py` (record verified solutions to JSONL, promote to skill draft). Tests: `tests/test_learning_feedback.py` (6 passed).
+- Execution bridge: `scripts/agents/execution_bridge.py` (validate task envelope, dry-run dispatch record, --execute fail-closed until MCP wired). Tests: `tests/test_execution_bridge.py` (12 passed).
 - Tests: `tests/test_agent_cadence.py` (11 passed) + `skills/tests/test_agent_cadence_skill.py` (3 passed) + `tests/test_controller_evidence.py` (10 passed) + `tests/test_learning_feedback.py` (6 passed) + existing suites green.
 
 Pending (next iterations):
