@@ -174,6 +174,20 @@ export function buildAccountRegistry(): ProviderAccount[] {
       // render.* tool failed even though a valid key was provisioned.
       available: isAvailable("RENDER_API_KEY_4") || isAvailable("RENDER_API_KEY"),
     },
+    {
+      id: "render-api",
+      provider: "render",
+      displayName: "Render API (Gateway Shield)",
+      role: "gateway-api",
+      environment: "production",
+      capabilities: ["health", "logs", "deploy", "restart", "env_vars"],
+      apiKeyRef: "RENDER_API_KEY_5",
+      apiKeyRefs: ["RENDER_API_KEY_API"],
+      url: env.render.api.url,
+      serviceId: env.render.api.serviceId,
+      healthPath: "/healthz",
+      available: isAvailable("RENDER_API_KEY_5") || isAvailable("RENDER_API_KEY_API"),
+    },
 
     // ── GitHub — SupremeAI Primary (Supremeai-bd/supremeai) ────────
     // Note: SaifulHaqueNiloy/supremeai and the pre-migration personal e-commerce namespace
