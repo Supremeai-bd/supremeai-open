@@ -155,7 +155,7 @@ RequestContextStore.run({ role: "repo_viewer", scopes: audScopes }, () => {
   assert.equal(denySkills, null, "repo_viewer must read satellite repo");
 });
 
-// 5d. Guest viewer authority — blocked from all repos (default-deny)
+// 5d. Guest viewer authority — blocked from all repos except public docs
 const guestScopes = defaultClientScopes("viewer");
 RequestContextStore.run({ role: "viewer", scopes: guestScopes }, () => {
   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
@@ -164,5 +164,34 @@ RequestContextStore.run({ role: "viewer", scopes: guestScopes }, () => {
   const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
   assert.ok(denySkills && denySkills.includes("no repository read access"));
 });
+
+// 5e. Organization-level resource access: admin/supremeadmin allowed, agent blocked
+const orgUrl = "https://api.github.com/orgs/Supremeai-bd";
+RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
+  const denyOrg = assertRepoReadAccess("github.workflow_runs", "github-org-supremeai-bd", orgUrl);
+  assert.ok(denyOrg && denyOrg.includes("organization-level resources are strictly restricted to admin"), "agent must be blocked from org-level resources");
+});
+
+RequestContextStore.run({ role: "admin", scopes: ["tools:execute"] }, () => {
+  const denyOrg = assertRepoReadAccess("github.workflow_runs", "github-org-supremeai-bd", orgUrl);
+  assert.equal(denyOrg, null, "admin must be allowed to access org-level resources");
+});
+
+// 6. Role-aware account registry filtering verification (getAccountsForRole)
+import { getAccountsForRole } from "./src/registry/account.registry.js";
+
+const adminAccs = getAccountsForRole("admin");
+assert.ok(adminAccs.some((a) => a.id === "github-primary"), "admin must see github-primary");
+assert.ok(adminAccs.some((a) => a.id === "github-org-supremeai-bd"), "admin must see github-org-supremeai-bd");
+
+const agentAccs = getAccountsForRole("agent");
+assert.ok(!agentAccs.some((a) => a.id === "github-primary"), "agent must NOT see github-primary");
+assert.ok(!agentAccs.some((a) => a.id === "github-org-supremeai-bd"), "agent must NOT see github-org-supremeai-bd");
+assert.ok(agentAccs.some((a) => a.id.includes("supremeai-open")), "agent must see supremeai-open");
+
+const viewerAccs = getAccountsForRole("viewer");
+const viewerGhAccs = viewerAccs.filter((a) => a.provider === "github");
+assert.equal(viewerGhAccs.length, 1, "viewer must only see 1 GitHub account (supremeai-open)");
+assert.ok(viewerGhAccs[0].id.includes("supremeai-open"), "viewer GitHub account must be supremeai-open");
 
 console.log("All hybrid repo access & organization discovery tests passed successfully!");

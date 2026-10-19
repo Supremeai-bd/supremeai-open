@@ -22,7 +22,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * import tree, so the `.env` file is available to every module body that
  * reads process.env at import time (client-registry.ts, tenant.registry.ts).
  */
-dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+const candidateEnvPaths = [
+  path.resolve(__dirname, "../../../../.env"),
+  path.resolve(__dirname, "../../../.env"),
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(process.cwd(), "../../.env"),
+];
+for (const envPath of candidateEnvPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 
 function required(name: string): string {
   const v = process.env[name];

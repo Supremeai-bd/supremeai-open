@@ -1,6 +1,6 @@
 import { env } from "../../lib/env.js";
 import { httpRequest, bearerAuth } from "../../lib/http.js";
-import { AIKeyPool } from "../ai/key-pool.js";
+import { SimpleKeyPool } from "../../lib/key-pool.js";
 
 export async function checkStripe(): Promise<unknown> {
   const { secretKey } = env.stripe;
@@ -55,11 +55,11 @@ export async function checkVercel(): Promise<unknown> {
   };
 }
 
-let firecrawlPoolInstance: AIKeyPool | undefined;
-function firecrawlPool(): AIKeyPool {
+let firecrawlPoolInstance: SimpleKeyPool | undefined;
+function firecrawlPool(): SimpleKeyPool {
   const keys = env.firecrawl.apiKeys;
   if (!firecrawlPoolInstance || (firecrawlPoolInstance.length === 0 && keys.length > 0)) {
-    firecrawlPoolInstance = new AIKeyPool(keys);
+    firecrawlPoolInstance = new SimpleKeyPool(keys);
   }
   return firecrawlPoolInstance;
 }
@@ -99,16 +99,12 @@ export async function checkFirecrawl(): Promise<unknown> {
 }
 
 // Lazy singleton: env.kaggle.tokens must be read AFTER the Infisical secrets
-// pull (main() -> pullSecretsIntoProcessEnv). A module-level
-// `new AIKeyPool(env.kaggle.tokens)` snapshots an EMPTY pool because this
-// module is imported before the pull runs — leaving kaggle permanently
-// "not configured" in production even though the tokens are in env.
-// Re-creates once if the first snapshot was taken too early (self-heal).
-let kagglePoolInstance: AIKeyPool | undefined;
-function kagglePool(): AIKeyPool {
+// pull (main() -> pullSecretsIntoProcessEnv).
+let kagglePoolInstance: SimpleKeyPool | undefined;
+function kagglePool(): SimpleKeyPool {
   const tokens = env.kaggle.tokens;
   if (!kagglePoolInstance || (kagglePoolInstance.length === 0 && tokens.length > 0)) {
-    kagglePoolInstance = new AIKeyPool(tokens);
+    kagglePoolInstance = new SimpleKeyPool(tokens);
   }
   return kagglePoolInstance;
 }

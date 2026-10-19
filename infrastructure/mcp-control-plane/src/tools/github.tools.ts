@@ -65,6 +65,12 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
   const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(accountRepoUrl);
   const fullName = match ? `${match[1]}/${match[2].replace(/\.git$/, "")}` : accountId;
   const shortName = fullName.split("/").pop() ?? fullName;
+
+  // Organization-level access restriction: only admin and supremeadmin can query org-wide resources
+  if ((shortName.startsWith("github-org-") || accountRepoUrl.includes("/orgs/")) && roleRank(store.role) < 4) {
+    return `Forbidden: organization-level resources are strictly restricted to admin and supremeadmin roles (current role: '${store.role}').`;
+  }
+
   // Ghost Cloaking Policy: 'supremeai-api' is completely air-gapped from regular agents.
   // Non-admin callers receive 'Repository not found' (stealth, zero-knowledge).
   if (shortName === "supremeai-api" && roleRank(store.role) < 4) {

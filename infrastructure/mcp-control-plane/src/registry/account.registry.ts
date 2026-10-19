@@ -2,6 +2,7 @@ import { env } from "../lib/env.js";
 import { getActiveRedisAccount } from "../lib/redis_chain.js";
 import { ProviderName } from "./provider.registry.js";
 import { Capability } from "./capability.registry.js";
+import { roleRank, type UserRole } from "../policy/auth.context.js";
 
 export interface ProviderAccount {
   id: string;
@@ -67,8 +68,8 @@ const discoveredOrgRepos = new Set<string>(CANONICAL_FEDERATION_REPOS);
  */
 export function registerDiscoveredOrgRepo(repoName: string): void {
   const normalized = repoName.trim().toLowerCase();
-  // Ghost Cloaking: supremeai-api is never tracked or exposed in regular repo lists
-  if (normalized === "supremeai-api") return;
+  // Ghost Cloaking & Core Isolation: supremeai-api and supremeai are never exposed as generic satellites
+  if (normalized === "supremeai-api" || normalized === "supremeai") return;
   if (normalized && !discoveredOrgRepos.has(normalized)) {
     discoveredOrgRepos.add(normalized);
   }
@@ -236,7 +237,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
       return {
         id: "redis-primary",
         provider: "redis" as const,
-        displayName: label === "primary" ? "Upstash Redis (Cache + Queue)" : `Upstash Redis (Cache + Queue [auto-rotated: ${label}])`,
+        displayName: label === "primary" ? "Upstash Redis (Multi-Account Chain: 5 accounts)" : `Upstash Redis (Multi-Account Chain: 5 accounts [auto-rotated: ${label}])`,
         role: "cache",
         environment: "production" as const,
         capabilities: ["health", "metrics", "storage"] as const,
@@ -251,52 +252,18 @@ export function buildAccountRegistry(): ProviderAccount[] {
     {
       id: "cloudflare-primary",
       provider: "cloudflare",
-      displayName: "Cloudflare Primary (DNS + Workers + Edge)",
+      displayName: "Cloudflare Edge Mesh (Federation Pool: 5 accounts)",
       role: "edge",
       environment: "production",
       capabilities: ["health", "metrics", "logs"],
       apiKeyRef: "CLOUDFLARE_API_TOKEN",
-      available: isAvailable("CLOUDFLARE_API_TOKEN") || isAvailable("CLOUDFLARE_GLOBAL_API_KEY"),
-    },
-    {
-      id: "cloudflare-secondary",
-      provider: "cloudflare",
-      displayName: "Cloudflare Secondary (Edge Failover)",
-      role: "edge-secondary",
-      environment: "production",
-      capabilities: ["health", "metrics", "logs"],
-      apiKeyRef: "CLOUDFLARE_SECONDARY_GLOBAL_API_KEY",
-      available: isAvailable("CLOUDFLARE_SECONDARY_GLOBAL_API_KEY"),
-    },
-    {
-      id: "cloudflare-tertiary",
-      provider: "cloudflare",
-      displayName: "Cloudflare Tertiary (Edge Failover)",
-      role: "edge-tertiary",
-      environment: "production",
-      capabilities: ["health", "metrics", "logs"],
-      apiKeyRef: "CLOUDFLARE_TERTIARY_GLOBAL_API_KEY",
-      available: isAvailable("CLOUDFLARE_TERTIARY_GLOBAL_API_KEY"),
-    },
-    {
-      id: "cloudflare-quaternary",
-      provider: "cloudflare",
-      displayName: "Cloudflare Quaternary (Edge Failover)",
-      role: "edge-quaternary",
-      environment: "production",
-      capabilities: ["health", "metrics", "logs"],
-      apiKeyRef: "CLOUDFLARE_QUATERNARY_GLOBAL_API_KEY",
-      available: isAvailable("CLOUDFLARE_QUATERNARY_GLOBAL_API_KEY"),
-    },
-    {
-      id: "cloudflare-quinary",
-      provider: "cloudflare",
-      displayName: "Cloudflare Quinary (Edge Failover)",
-      role: "edge-quinary",
-      environment: "production",
-      capabilities: ["health", "metrics", "logs"],
-      apiKeyRef: "CLOUDFLARE_QUINARY_GLOBAL_API_KEY",
-      available: isAvailable("CLOUDFLARE_QUINARY_GLOBAL_API_KEY"),
+      available:
+        isAvailable("CLOUDFLARE_API_TOKEN") ||
+        isAvailable("CLOUDFLARE_GLOBAL_API_KEY") ||
+        isAvailable("CLOUDFLARE_SECONDARY_GLOBAL_API_KEY") ||
+        isAvailable("CLOUDFLARE_TERTIARY_GLOBAL_API_KEY") ||
+        isAvailable("CLOUDFLARE_QUATERNARY_GLOBAL_API_KEY") ||
+        isAvailable("CLOUDFLARE_QUINARY_GLOBAL_API_KEY"),
     },
 
     // ── Infisical ─────────────────────────────────────────
@@ -362,4 +329,43 @@ export function buildAccountRegistry(): ProviderAccount[] {
       available: isAvailable("WHATSAPP_ACCESS_TOKEN") || isAvailable("WHATSAPP_PHONE_NUMBER_ID") || isAvailable("WHATSAPP_WEBHOOK_URL"),
     },
   ];
+}
+
+/**
+ * Role-aware repository & account filter:
+ * - Admin & supremeadmin (rank >= 4): see all accounts (core monorepo, org monitor, satellites).
+ * - Agent / repo_viewer / restricted_viewer (rank 1..3): see only satellite / federation accounts;
+ *   core monorepo ('supremeai'), API gateway ('supremeai-api'), and org monitor are excluded.
+ * - Viewer / guest (rank 0): only see public-safe accounts ('supremeai-open' for GitHub).
+ */
+export function getAccountsForRole(role?: UserRole): ProviderAccount[] {
+  const allAccounts = buildAccountRegistry();
+  const rank = roleRank(role);
+
+  if (rank >= 4) {
+    return allAccounts;
+  }
+
+  return allAccounts.filter((account) => {
+    if (account.provider !== "github") {
+      return true;
+    }
+    // Organization monitor: admin-only
+    if (account.id === "github-org-supremeai-bd" || account.role === "organization") {
+      return false;
+    }
+    // Core monorepo: admin-only
+    if (account.id === "github-primary" || account.url?.endsWith("/supremeai")) {
+      return false;
+    }
+    // Cloaked repo: admin-only
+    if (account.id.includes("supremeai-api") || account.url?.endsWith("/supremeai-api")) {
+      return false;
+    }
+    // Guest viewer: only public repo supremeai-open
+    if (rank === 0) {
+      return account.id.includes("supremeai-open") || account.url?.endsWith("/supremeai-open");
+    }
+    return true;
+  });
 }
