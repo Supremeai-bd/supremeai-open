@@ -9,7 +9,6 @@ import { registerSupabaseTools } from "./supabase.tools.js";
 import { registerRedisTools } from "./redis.tools.js";
 import { registerCloudflareTools } from "./cloudflare.tools.js";
 import { registerInfisicalTools } from "./infisical.tools.js";
-import { registerFirebaseTools } from "./firebase.tools.js";
 import { registerAITools } from "./ai.tools.js";
 import { registerNotifyTools } from "./notify.tools.js";
 import { registerMiscTools } from "./misc.tools.js";
@@ -71,7 +70,6 @@ export async function registerAllTools(
   await registerRedisTools(server);
   await registerCloudflareTools(server);
   await registerInfisicalTools(server);
-  await registerFirebaseTools(server);
   await registerAITools(server);
   await registerNotifyTools(server);
   await registerMiscTools(server);

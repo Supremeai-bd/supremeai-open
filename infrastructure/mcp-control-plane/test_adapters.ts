@@ -5,7 +5,6 @@ import { getHealth, getAuthUsers } from "./src/adapters/supabase/index.js";
 import { pingRedis, getRedisStats } from "./src/adapters/redis/index.js";
 import { getWorkerStatus, getAnalytics } from "./src/adapters/cloudflare/index.js";
 import { auditSecrets, getSyncStatus } from "./src/adapters/infisical/index.js";
-import { getAuthStatus, getHostingStatus } from "./src/adapters/firebase/index.js";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { config } from "dotenv";
@@ -73,13 +72,6 @@ async function main() {
     console.error("[Infisical] Error:", (e as Error).message);
   }
 
-  console.log("\n=== Testing Firebase Adapter ===");
-  try {
-    const authStatus = await getAuthStatus();
-    console.log(`[Firebase] Auth Status:`, authStatus);
-  } catch (e) {
-    console.error("[Firebase] Error:", (e as Error).message);
-  }
 
   console.log("\n=== Testing AI Adapter ===");
   try {

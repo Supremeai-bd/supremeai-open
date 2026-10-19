@@ -17,6 +17,11 @@ process.env.UPSTASH_REDIS_SECONDARY_REST_URL = "https://secondary.upstash.io";
 process.env.UPSTASH_REDIS_SECONDARY_REST_TOKEN = "t2";
 process.env.UPSTASH_REDIS_TERTIARY_REST_URL = "https://tertiary.upstash.io";
 process.env.UPSTASH_REDIS_TERTIARY_REST_TOKEN = "t3";
+delete process.env.UPSTASH_REDIS_QUATERNARY_REST_URL;
+delete process.env.UPSTASH_REDIS_QUATERNARY_REST_TOKEN;
+delete process.env.UPSTASH_REDIS_QUINARY_REST_URL;
+delete process.env.UPSTASH_REDIS_QUINARY_REST_TOKEN;
+delete process.env.REDIS_URL;
 
 // 1. Initial State: primary is active
 assert.equal(getActiveRedisAccount().label, "primary");
