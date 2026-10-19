@@ -41,8 +41,8 @@ export class DependencyGraph {
 // Global Static Dependency Graph
 export const globalDependencyGraph = new DependencyGraph({
   dependencies: {
-    "mcp-control-plane": ["render", "github", "supabase", "redis", "cloudflare", "infisical", "firebase", "ai-providers", "notify"],
-    "frontend": ["firebase-auth", "supabase-db", "vercel"],
+    "mcp-control-plane": ["render", "github", "supabase", "redis", "cloudflare", "infisical", "ai-providers", "notify"],
+    "frontend": ["supabase-auth", "supabase-db", "vercel"],
     "backend": ["supabase-db", "redis", "render"],
     "ping-worker": ["cloudflare"]
   }

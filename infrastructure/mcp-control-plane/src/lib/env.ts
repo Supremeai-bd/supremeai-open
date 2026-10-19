@@ -257,12 +257,6 @@ export const env = {
     },
   },
 
-  // ── Firebase (SA key loaded from Infisical at runtime — not from file)
-  firebase: {
-    get serviceAccountJson(): string { return optional("FIREBASE_SERVICE_ACCOUNT_JSON"); },
-    get projectId(): string { return optional("GCP_PROJECT_ID", "supremeai-a"); },
-  },
-
   // #643: direct LLM provider key pools (Gemini/Groq/OpenRouter/OpenAI/
   // Anthropic/GitHub Models/Mistral) were REMOVED from the zero-credential
   // control plane. AI analysis is delegated to the external agent caller

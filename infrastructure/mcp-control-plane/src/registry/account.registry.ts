@@ -278,17 +278,6 @@ export function buildAccountRegistry(): ProviderAccount[] {
       available: isAvailable("INFISICAL_CLIENT_SECRET"),
     },
 
-    // ── Firebase ──────────────────────────────────────────
-    {
-      id: "firebase-primary",
-      provider: "firebase",
-      displayName: "Firebase (Auth + Storage)",
-      role: "auth-storage",
-      environment: "production",
-      capabilities: ["health", "auth", "storage"],
-      apiKeyRef: "FIREBASE_SERVICE_ACCOUNT_JSON",
-      available: isAvailable("FIREBASE_SERVICE_ACCOUNT_JSON"),
-    },
 
     // #643: direct LLM provider pools (gemini/groq/openrouter/mistral) were
     // REMOVED from the zero-credential control plane — AI analysis is delegated

@@ -20,7 +20,6 @@ export const serviceDescriptors: Array<Pick<ServiceDescriptor, "provider" | "cir
   { provider: "supabase", circle: "data", requiredEnv: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] },
   { provider: "qdrant", circle: "data", requiredEnv: ["QDRANT_URL"] },
   { provider: "infisical", circle: "security", requiredEnv: ["INFISICAL_PROJECT_ID"] },
-  { provider: "firebase", circle: "security", requiredEnv: ["FIREBASE_SERVICE_ACCOUNT_JSON"] },
   { provider: "github", circle: "integration", requiredEnv: ["GITHUB_TOKEN"] },
   { provider: "telegram", circle: "integration", requiredEnv: ["TELEGRAM_BOT_TOKEN"] },
   { provider: "whatsapp", circle: "integration", requiredEnv: ["WHATSAPP_ACCESS_TOKEN"] },

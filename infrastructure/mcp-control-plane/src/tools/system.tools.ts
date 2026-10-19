@@ -253,25 +253,6 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
     return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
   }
 
-  // ── Firebase: service-account JSON config validation (no public unauth probe exists) ──
-  if (svc.provider === "firebase") {
-    const url = "config://firebase-service-account";
-    try {
-      const parsed = JSON.parse(env.firebase.serviceAccountJson || "null") as { project_id?: string; client_email?: string } | null;
-      const ok = Boolean(parsed?.project_id && parsed?.client_email);
-      return {
-        ...base,
-        url,
-        status: ok ? "healthy" : "degraded",
-        httpStatus: null,
-        latencyMs: null,
-        ...(ok ? {} : { error: "service account JSON missing project_id/client_email or unparseable" }),
-      };
-    } catch {
-      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, error: "FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON" };
-    }
-  }
-
   // ── Kaggle: pool config + authenticated competitions list (first token) ──
   if (svc.provider === "kaggle") {
     const url = "https://www.kaggle.com/api/v1/competitions/list";

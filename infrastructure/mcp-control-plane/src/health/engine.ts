@@ -12,7 +12,6 @@ import { getHealth as getSupabaseHealth } from "../adapters/supabase/index.js";
 import { pingRedis } from "../adapters/redis/index.js";
 import { getWorkerStatus } from "../adapters/cloudflare/index.js";
 import { auditSecrets } from "../adapters/infisical/index.js";
-import { getAuthStatus } from "../adapters/firebase/index.js";
 import { checkStripe, checkVercel, checkFirecrawl, checkKaggle, checkQdrant } from "../adapters/misc/index.js";
 import { testProvider, listProviders } from "../adapters/ai/index.js";
 import { checkTelegram, checkWhatsApp } from "../adapters/notify/index.js";
@@ -110,7 +109,6 @@ export class HealthEngine {
       "redis": () => pingRedis(),
       "cloudflare": () => getWorkerStatus(),
       "infisical": () => auditSecrets(),
-      "firebase": () => getAuthStatus(),
       "stripe": () => checkStripe(),
       "vercel": () => checkVercel(),
       "firecrawl": () => checkFirecrawl(),

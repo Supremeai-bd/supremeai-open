@@ -10,7 +10,6 @@ export type ProviderName =
   | "redis"
   | "cloudflare"
   | "infisical"
-  | "firebase"
   | "ai"
   | "kaggle"
   | "stripe"
@@ -63,12 +62,6 @@ export const PROVIDERS: Record<ProviderName, ProviderDefinition> = {
     name: "infisical",
     displayName: "Infisical",
     description: "Secret Management Platform",
-    authType: "service_account",
-  },
-  firebase: {
-    name: "firebase",
-    displayName: "Firebase",
-    description: "Google Firebase Auth and Storage",
     authType: "service_account",
   },
   ai: {
