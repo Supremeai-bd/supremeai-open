@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Continuous Autonomous Agent Loop — Lazy Team Leader & Safety Dispatcher.
+"""Continuous Autonomous Agent Loop â€” Lazy Team Leader & Safety Dispatcher.
 
 Target: External and autonomous agents contributing to SupremeAI Open Foundation
 Repository: Supremeai-bd/supremeai-open
@@ -13,7 +13,7 @@ This loop operates as the "Lazy Team Leader":
   - Classifies the task and selects the specialized agent role (Coder, Auditor, CI Fixer, etc.).
   - Builds a contract-bound, scoped prompt with strict file boundaries.
   - Executes isolated branch and workspace setup.
-  - Enforces strict multi-tier automated safety gates (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4).
+  - Enforces strict multi-tier automated safety gates (tier-count SSOT: docs/AGENT_LOOP_SPEC.md Â§4).
   - Records dynamic, verified test evidence in PRs.
   - Performs fresh-board checks before looping to the next task.
 """
@@ -25,7 +25,6 @@ import contextlib
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -45,8 +44,13 @@ if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
+from loop_common import (  # shared primitives (extracted)
+    REPO_ROOT,
+    UPSTREAM_REPO,
+    log,
+    run_cmd,
+)
+
 AGENTS_MD_PATH = REPO_ROOT / "AGENTS.md"
 AGENT_RULES_PATH = REPO_ROOT / "AGENT_RULES.md"
 
@@ -82,8 +86,8 @@ ENVELOPE_VERSION = 1  # task-envelope-v1 (#63)
 # #67 parity marker: BOTH copies of this program (public supremeai-open and
 # the private Supremeai-bd/supremeai mirror) MUST print this exact string as
 # the final stdout line of `--verify-only`. Copies that disagree on flag
-# behaviour must not claim the same CONTRACT_VERSION — bump both sides
-# together (see docs/AGENT_LOOP_SPEC.md §4b).
+# behaviour must not claim the same CONTRACT_VERSION â€” bump both sides
+# together (see docs/AGENT_LOOP_SPEC.md Â§4b).
 CONTRACT_VERSION = "agent-loop-contract/1"
 
 # --- Constitution Freshness Invariant (#567) --------------------------------
@@ -113,7 +117,7 @@ def mandatory_invariant_checklist() -> list[dict[str, str]]:
     return [
         {
             "id": "zero-admin-budget",
-            "rule": "Admin work budget <= 0.01% — prefer clarifying prompts and "
+            "rule": "Admin work budget <= 0.01% â€” prefer clarifying prompts and "
             "permanent system learning over one-time manual fixes.",
         },
         {
@@ -124,12 +128,12 @@ def mandatory_invariant_checklist() -> list[dict[str, str]]:
         {
             "id": "reflection-evidence",
             "rule": "PR body must carry '## Reflection Evidence' with '- **why:**' and "
-            "'- **alternatives_rejected:**' — missing fields fail the bridge/CI gates.",
+            "'- **alternatives_rejected:**' â€” missing fields fail the bridge/CI gates.",
         },
         {
             "id": "p7-cohesive-sizing",
             "rule": "Cohesive domain slice (Rule P7 / #522): one primary repo, "
-            "<= 30 files, <= 200 KB diff — no cross-domain thrashing.",
+            "<= 30 files, <= 200 KB diff â€” no cross-domain thrashing.",
         },
         {
             "id": "boundary-guard",
@@ -153,7 +157,7 @@ def diff_rule_freshness(
     list of diverged paths (in RULE_FRESHNESS_FILES order). Semantics:
     * identical SHAs (including both-absent) -> fresh;
     * present-vs-absent on either side -> diverged (never crash on partial
-      dictionaries — missing keys are treated as absent).
+      dictionaries â€” missing keys are treated as absent).
     """
     diverged: list[str] = []
     for path in RULE_FRESHNESS_FILES:
@@ -186,7 +190,7 @@ ROLES: dict[str, str] = {
     "browser-qa": "End-to-end integration & UI flow specialist",
     "planner": "Architecture, contracts, and ADR specification specialist",
     "watcher": "Telemetry, heartbeat health, and ecosystem drift specialist",
-    # S09 (#489): Deterministic Role Trigger Matrix — contracts live in
+    # S09 (#489): Deterministic Role Trigger Matrix â€” contracts live in
     # scripts/agents/role_trigger_matrix.py (single source of truth).
     "task-auditor": "Pre-landing compliance, boundary & ledger auditor",
     "ecosystem-scout": "Global tech radar & strategic critic (read-only)",
@@ -197,49 +201,8 @@ ROLES: dict[str, str] = {
 }
 
 
-def log(icon: str, msg: str) -> None:
-    print(f"{icon} {msg}")
+# log() and run_cmd() are provided by loop_common (imported above).
 
-
-def run_cmd(
-    cmd: list[str], cwd: Path = REPO_ROOT, check: bool = False, timeout: int = 300
-) -> tuple[int, str, str]:
-    """Execute command safely and return (returncode, stdout, stderr).
-
-    Returns exit code 127 fail-honestly when binary is not found, preventing
-    unhandled FileNotFoundError on zero-credential environments without gh/git.
-    """
-    try:
-        p = subprocess.run(
-            cmd,
-            cwd=cwd,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
-        stdout = p.stdout.decode("utf-8", errors="replace").strip()
-        stderr = p.stderr.decode("utf-8", errors="replace").strip()
-        if check and p.returncode != 0:
-            raise RuntimeError(
-                f"Command failed ({p.returncode}): {' '.join(cmd)}\n{stderr}"
-            )
-        return p.returncode, stdout, stderr
-    except FileNotFoundError as exc:
-        binary = cmd[0] if cmd else "unknown"
-        err = f"Binary not found: '{binary}'. Please install it or proceed in zero-credential offline mode."
-        if check:
-            raise RuntimeError(err) from exc
-        return 127, "", err
-    except subprocess.TimeoutExpired:
-        err = f"Command timed out after {timeout}s: {' '.join(cmd)}"
-        if check:
-            raise RuntimeError(err)
-        return 124, "", err
-    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        err = f"Execution error for {' '.join(cmd)}: {exc}"
-        if check:
-            raise RuntimeError(err) from exc
-        return 1, "", err
 
 
 def build_task_contract(
@@ -262,7 +225,7 @@ def build_task_contract(
     stop_conditions: list[str] | None = None,
     output_format: str = "structured",
 ) -> dict[str, Any]:
-    """Standard Task Contract builder adhering to AGENT_RULES.md §7."""
+    """Standard Task Contract builder adhering to AGENT_RULES.md Â§7."""
     task_type_upper = task_type.upper()
     if task_type_upper not in VALID_TASK_TYPES:
         raise ValueError(
@@ -281,7 +244,7 @@ def build_task_contract(
             f"Invalid admin_gate_status: '{admin_gate_status}'. Must be one of: {sorted(VALID_ADMIN_GATE_STATUSES)}"
         )
 
-    # #63 fail-closed gate: arbitrary/invented group names are rejected here —
+    # #63 fail-closed gate: arbitrary/invented group names are rejected here â€”
     # invalid contracts can no longer travel downstream to private CI.
     if group not in VALID_GROUPS:
         raise ValueError(
@@ -324,7 +287,7 @@ def build_task_contract(
 
 
 def classify_task_role(title: str, labels: list[str], body: str) -> str:
-    """DEPRECATED free-text matcher (#489) — deterministic label-plane dispatch.
+    """DEPRECATED free-text matcher (#489) â€” deterministic label-plane dispatch.
 
     Issue #489 deprecates keyword matching in titles/bodies. ``title`` and
     ``body`` are retained for call-site compatibility but are NEVER
@@ -347,7 +310,7 @@ def build_agent_prompt(
     touching_files = tc.get("scope", {}).get("touching_files", [])
     forbidden_paths = tc.get("scope", {}).get("forbidden_paths", [])
 
-    return f"""### 🤖 SupremeAI Task Assignment: {role.upper()}
+    return f"""### ðŸ¤– SupremeAI Task Assignment: {role.upper()}
 You are assigned as the **{role.upper()}** specialist by the SupremeAI Continuous Loop Team Leader.
 
 **1. Mission Objective:**
@@ -375,7 +338,7 @@ Issue #{task.get("id")}: {task.get("title")}
 def resolve_group(explicit: str | None, task: dict[str, Any] | None = None) -> str:
     """Deterministic group resolution (#63): --group flag > issue body/label scan > canonical default.
 
-    Fail-closed: an unknown explicit group raises ValueError — agents cannot
+    Fail-closed: an unknown explicit group raises ValueError â€” agents cannot
     invent arbitrary group names outside the VALID_GROUPS registry.
     """
     if explicit:
@@ -407,9 +370,9 @@ def build_pr_body(
 
     One builder, two renderings of the SAME skeleton (same sections, same
     order):
-      - ``build_pr_body(task, contract)`` — the envelope's ``submission.pr_body_template``
+      - ``build_pr_body(task, contract)`` â€” the envelope's ``submission.pr_body_template``
         (four static section headers; no contract snippet, no evidence block).
-      - ``build_pr_body(task, contract, evidence)`` — the exact body
+      - ``build_pr_body(task, contract, evidence)`` â€” the exact body
         ``--auto-pr`` submits via ``gh pr create --body`` (adds the Task
         Contract YAML snippet and the Dynamic Test Evidence block between
         Type of Change and Rollback Path).
@@ -417,11 +380,11 @@ def build_pr_body(
     Closing-keyword doctrine (U8, #219, #220): the Merge Gate overrides the
     squash commit subject, so ``Closes #N`` must ride in the PR body (and in
     the branch commit message) to survive into the final squash commit
-    message — ``Refs #N`` alone can never auto-close the linked issue.
+    message â€” ``Refs #N`` alone can never auto-close the linked issue.
     """
     tc = (contract or {}).get("task_contract", {})
     issue_ref = tc.get("issue") or task.get("id")
-    # Emit `Closes #N` only for a real board issue — "adhoc" tasks carry no
+    # Emit `Closes #N` only for a real board issue â€” "adhoc" tasks carry no
     # closing intent (no board issue exists to close).
     closing_line = (
         f"Closes #{issue_ref}\n"
@@ -454,7 +417,7 @@ task_contract:
     if evidence is not None:
         evidence_lines = []
         for ev in evidence or []:
-            status_icon = "✅" if ev.get("passed") else "❌"
+            status_icon = "âœ…" if ev.get("passed") else "âŒ"
             extra = f" ({ev.get('count')} files verified)" if "count" in ev else ""
             verdict = "PASS" if ev.get("passed") else "FAIL"
             if not ev.get("passed") and ev.get("reason"):
@@ -469,15 +432,15 @@ task_contract:
         evidence_content = (
             "\n".join(evidence_lines)
             if evidence_lines
-            else "- ✅ All verification tiers passed."
+            else "- âœ… All verification tiers passed."
         )
         evidence_block = f"""
-## Dynamic Test Evidence (verification tiers — SSOT: docs/AGENT_LOOP_SPEC.md §4)
+## Dynamic Test Evidence (verification tiers â€” SSOT: docs/AGENT_LOOP_SPEC.md Â§4)
 {evidence_content}
 """
 
     # Reflection Evidence (#392): placeholder rendering when no payload rides
-    # (template consumers must fill it — the guard rejects unfilled bodies);
+    # (template consumers must fill it â€” the guard rejects unfilled bodies);
     # verbatim rendering of the recorded rationale when one does.
     reflection_block = ""
     if reflection is not None:
@@ -489,7 +452,7 @@ task_contract:
         ]
         if not alts:
             alts = [
-                "Direct implementation of the issue's stated deliverables — no competing approach was viable to reject."
+                "Direct implementation of the issue's stated deliverables â€” no competing approach was viable to reject."
             ]
         alt_lines = "\n".join(f"  - {a}" for a in alts)
         reflection_block = f"""
@@ -513,7 +476,7 @@ Autonomous contribution for issue #{issue_ref}: {task.get("title")}.
 {closing_line}Refs #{issue_ref}
 
 ## Type of Change
-- [x] `feat` / `fix` / `docs` — Open contributor change
+- [x] `feat` / `fix` / `docs` â€” Open contributor change
 {contract_yaml_snippet}{evidence_block}{reflection_block}
 ## Rollback Path
 - [x] `git revert`-safe (no private state dependencies)
@@ -562,13 +525,13 @@ def build_task_envelope(
             "specialist_prompt": build_agent_prompt(task, role, contract),
             "submission": {
                 "pathway": "bridge_submit_patch | pull_request",
-                "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
+                "reference": "AGENTS.md Â§2.1 Pathway 1 + Â§8 (bridge_submit_patch)",
                 "base_branch": "main",
                 "pr_title_prefix": "feat(open):",
                 "issue_reference_required": True,
                 "branch_convention": (
                     "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|"
-                    "hotfix|release|copilot|agent)/<slug> — enforced by pipeline.yml"
+                    "hotfix|release|copilot|agent)/<slug> â€” enforced by pipeline.yml"
                 ),
                 "pr_body_template": pr_body_template,
             },
@@ -577,7 +540,7 @@ def build_task_envelope(
 
 
 def emit_task_envelope(args: argparse.Namespace) -> int:
-    """Emit the Single Deterministic Task Envelope (#63) — read-only, fail-closed."""
+    """Emit the Single Deterministic Task Envelope (#63) â€” read-only, fail-closed."""
     issue_id = args.issue
     task: dict[str, Any] | None = None
     if issue_id:
@@ -594,7 +557,7 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
         }
     else:
         log(
-            "❌",
+            "âŒ",
             "[Fail-Closed Gate] --task-envelope requires --issue <number> (or --allow-adhoc for offline testing).",
         )
         return 1
@@ -602,7 +565,7 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
     try:
         group = resolve_group(args.group, task)
     except ValueError as exc:
-        log("❌", f"[Group Registry Fail-Closed Gate] {exc}")
+        log("âŒ", f"[Group Registry Fail-Closed Gate] {exc}")
         return 2
 
     try:
@@ -618,7 +581,7 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
             else [],
         )
     except ValueError as exc:
-        log("❌", f"[Task Contract Fail-Closed Gate] {exc}")
+        log("âŒ", f"[Task Contract Fail-Closed Gate] {exc}")
         return 2
 
     role = args.role or classify_task_role(
@@ -638,9 +601,9 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
         private-mirror exclusion marker.
       - Whole-board scope: pagination limit high enough that truncation cannot
         starve old issues (verified: board regularly holds 35+ open issues).
-      - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose in
+      - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) â€” prose in
         titles can no longer outrank a real priority label; age (lowest issue
-        number) breaks ties per AGENT_RULES.md §5.
+        number) breaks ties per AGENT_RULES.md Â§5.
       - exclude: issue numbers already dispatched in this session. Prevents
         session-local re-picks while GitHub search API index updates.
     """
@@ -666,8 +629,8 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
         except (json.JSONDecodeError, ValueError) as parse_err:
             # Malformed payload must not masquerade as an empty board.
             log(
-                "⚠️",
-                f"[Board Fetch] gh output unparseable ({parse_err}) — attempting public API fallback.",
+                "âš ï¸",
+                f"[Board Fetch] gh output unparseable ({parse_err}) â€” attempting public API fallback.",
             )
     if not issues:
         # Fallback to public GitHub API via urllib if gh is not installed or fails
@@ -691,7 +654,7 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
                     ]
         except (urllib.error.URLError, OSError, TimeoutError, ValueError, json.JSONDecodeError, UnicodeDecodeError) as http_err:
             log(
-                "⚠️",
+                "âš ï¸",
                 f"[Board Fetch] gh unavailable ({err or out or f'code {code}'}) and HTTP fallback error: {http_err}",
             )
             return None
@@ -718,7 +681,7 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
             names = label_names(item)
             return not (EXCLUDED_LABELS & set(names))
 
-        # Explicit priority map — LABELS ONLY (title prose must not influence).
+        # Explicit priority map â€” LABELS ONLY (title prose must not influence).
         PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
 
         def priority_key(item: dict[str, Any]) -> tuple[int, int]:
@@ -744,7 +707,7 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
             return str(sorted_issues[0].get("number"))
     except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
         # Selection failure must also stay diagnosable (never looks like an empty board).
-        log("⚠️", f"[Board Fetch] selection failed: {exc}")
+        log("âš ï¸", f"[Board Fetch] selection failed: {exc}")
     return None
 
 
@@ -758,7 +721,7 @@ def step_1_understand(
     issue_id: str | None = None, allow_adhoc: bool = False
 ) -> dict[str, Any] | None:
     """Step 1: Fetch and validate task contract / issue context fail-closed."""
-    log("📖", "[Step 1/8: Understand] Loading task contract...")
+    log("ðŸ“–", "[Step 1/8: Understand] Loading task contract...")
 
     if issue_id:
         code, out, err = run_cmd(
@@ -775,11 +738,11 @@ def step_1_understand(
         )
         if code != 0:
             log(
-                "❌",
+                "âŒ",
                 f"[Fail-Closed Gate] Could not fetch issue #{issue_id} from {UPSTREAM_REPO}: {err or out}",
             )
             log(
-                "❌",
+                "âŒ",
                 "Cannot verify issue validity or acceptance criteria. Aborting task.",
             )
             return None
@@ -788,7 +751,7 @@ def step_1_understand(
             state = data.get("state", "OPEN").upper()
             if state == "CLOSED":
                 log(
-                    "❌",
+                    "âŒ",
                     f"[Fail-Closed Gate] Issue #{data.get('number')} is CLOSED. Autonomous work on closed tasks is rejected.",
                 )
                 return None
@@ -819,11 +782,11 @@ def step_1_understand(
                             or f"task-{issue_id}" in pr_head
                         ):
                             log(
-                                "⚠️",
+                                "âš ï¸",
                                 f"Existing open PR found for issue #{issue_id}: PR #{pr.get('number')} ({pr_head}).",
                             )
                             log(
-                                "❌",
+                                "âŒ",
                                 "[Fail-Closed Gate] Duplicate PR work rejected. Coordinate or review existing PR first.",
                             )
                             return None
@@ -834,7 +797,7 @@ def step_1_understand(
                 else []
             )
             log(
-                "✅",
+                "âœ…",
                 f"Loaded Issue #{data.get('number')} ({state}): {data.get('title')}",
             )
             return {
@@ -846,23 +809,23 @@ def step_1_understand(
             }
         except (json.JSONDecodeError, ValueError, KeyError) as e:
             log(
-                "❌",
+                "âŒ",
                 f"[Fail-Closed Gate] Failed to parse issue JSON for #{issue_id}: {e}",
             )
             return None
 
     if not allow_adhoc:
         log(
-            "❌",
+            "âŒ",
             "[Fail-Closed Gate] No --issue specified! Multi-agent mode requires a specific issue contract.",
         )
         log(
-            "ℹ️",
+            "â„¹ï¸",
             "Please provide --issue <number>, use --pick-next, or pass --allow-adhoc explicitly for local offline testing.",
         )
         return None
 
-    log("ℹ️", f"Checking active issues on {UPSTREAM_REPO}...")
+    log("â„¹ï¸", f"Checking active issues on {UPSTREAM_REPO}...")
     code, out, _ = run_cmd(
         [
             "gh",
@@ -879,7 +842,7 @@ def step_1_understand(
     if code == 0 and out.strip() != "[]":
         with contextlib.suppress(json.JSONDecodeError, TypeError):
             issues = json.loads(out)
-            log("📋", "Recent Open Issues:")
+            log("ðŸ“‹", "Recent Open Issues:")
             for it in issues:
                 print(f"   #{it.get('number')}: {it.get('title')}")
 
@@ -899,7 +862,7 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
     before any rule is loaded, so agents never execute against stale caches:
 
     * offline escape hatch (--offline / SUPREMEAI_OFFLINE): skips every git
-      call — verifies local file presence only (explicit stale-context risk);
+      call â€” verifies local file presence only (explicit stale-context risk);
     * online: `git fetch origin main`, then per-file worktree blob SHA
       (`git hash-object`) vs origin blob SHA (`git rev-parse`);
     * fail-closed matrix: git missing, fetch failure, unverifiable worktree
@@ -908,37 +871,37 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
       `git checkout origin/main -- <path>` for diverged files only; a failed
       checkout fails closed;
     * report-only (auto_sync=False, boot smoke): drift is reported, the
-      result stays True, and the tree is NEVER mutated — governance PRs
+      result stays True, and the tree is NEVER mutated â€” governance PRs
       intentionally carry constitution changes;
     * prints the active rule version and the mandatory invariant checklist.
     """
-    log("⚖️", "[Step 2/8: Rules] Constitution freshness gate (issue #567)...")
+    log("âš–ï¸", "[Step 2/8: Rules] Constitution freshness gate (issue #567)...")
     repo_root = REPO_ROOT
 
     # Local presence is mandatory in BOTH modes (offline cannot heal absence).
     missing_local = [p for p in RULE_FRESHNESS_FILES if not (repo_root / p).exists()]
     if missing_local:
-        log("❌", f"[Rules Gate] Missing local constitution file(s): {missing_local}")
-        log("❌", "Refusing to load rules from an incomplete constitution.")
+        log("âŒ", f"[Rules Gate] Missing local constitution file(s): {missing_local}")
+        log("âŒ", "Refusing to load rules from an incomplete constitution.")
         return False
 
     if _offline_requested(offline):
         log(
-            "⚠️",
-            "[Rules Gate] OFFLINE mode requested — freshness NOT verified "
+            "âš ï¸",
+            "[Rules Gate] OFFLINE mode requested â€” freshness NOT verified "
             "against origin/main (explicit stale-context risk).",
         )
         _print_rule_version_and_checklist()
-        log("✅", "Local constitution files present. Rules loaded (offline).")
+        log("âœ…", "Local constitution files present. Rules loaded (offline).")
         return True
 
     code, _, err = run_cmd(["git", "fetch", "origin", "main"], cwd=repo_root)
     if code != 0:
         log(
-            "❌",
+            "âŒ",
             f"[Rules Gate] Cannot verify freshness: git fetch failed ({err or f'code {code}'}).",
         )
-        log("❌", "Fail-closed: refusing to load rules from an unverifiable state.")
+        log("âŒ", "Fail-closed: refusing to load rules from an unverifiable state.")
         return False
 
     local_shas: dict[str, str | None] = {}
@@ -949,10 +912,10 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
         )
         if h_code != 0:
             log(
-                "❌",
+                "âŒ",
                 f"[Rules Gate] Unverifiable worktree blob for {path}: {h_err or f'code {h_code}'}.",
             )
-            log("❌", "Fail-closed: refusing to load rules from an unverifiable state.")
+            log("âŒ", "Fail-closed: refusing to load rules from an unverifiable state.")
             return False
         local_shas[path] = h_out.strip() or None
         r_code, r_out, _ = run_cmd(
@@ -961,22 +924,22 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
         )
         if r_code != 0:
             log(
-                "❌",
+                "âŒ",
                 f"[Rules Gate] origin/main does not contain {path}. "
                 "Origin-side constitution deletion must never be auto-synced.",
             )
-            log("❌", "Fail-closed: escalate to an ADMIN_DECISION issue.")
+            log("âŒ", "Fail-closed: escalate to an ADMIN_DECISION issue.")
             return False
         remote_shas[path] = r_out.strip() or None
 
     diverged = diff_rule_freshness(local_shas, remote_shas)
 
     if not diverged:
-        log("✅", "Constitution fresh: all rule files match origin/main.")
+        log("âœ…", "Constitution fresh: all rule files match origin/main.")
     elif auto_sync:
         log(
-            "⚠️",
-            f"[Rules Gate] Constitution drift detected: {diverged} — auto-syncing from origin/main...",
+            "âš ï¸",
+            f"[Rules Gate] Constitution drift detected: {diverged} â€” auto-syncing from origin/main...",
         )
         for path in diverged:
             c_code, _, c_err = run_cmd(
@@ -984,59 +947,59 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
             )
             if c_code != 0:
                 log(
-                    "❌", f"[Rules Gate] Auto-sync checkout failed for {path}: {c_err}."
+                    "âŒ", f"[Rules Gate] Auto-sync checkout failed for {path}: {c_err}."
                 )
                 log(
-                    "❌",
+                    "âŒ",
                     "Fail-closed: refusing to load rules from a diverged constitution.",
                 )
                 return False
-        log("✅", f"Constitution auto-synced from origin/main: {diverged}")
+        log("âœ…", f"Constitution auto-synced from origin/main: {diverged}")
     else:
-        log("⚠️", f"[Rules Gate] Constitution drift DETECTED (report-only): {diverged}")
+        log("âš ï¸", f"[Rules Gate] Constitution drift DETECTED (report-only): {diverged}")
         log(
-            "ℹ️",
+            "â„¹ï¸",
             "Report-only mode: the tree is never mutated here (governance PRs "
             "intentionally carry constitution changes).",
         )
 
     _print_rule_version_and_checklist()
-    log("✅", "Rules loaded. Zero-Admin & Scope rules active.")
+    log("âœ…", "Rules loaded. Zero-Admin & Scope rules active.")
     return True
 
 
 def _print_rule_version_and_checklist() -> None:
     """Print the active rule version and the mandatory invariant checklist."""
-    log("📘", f"Active rule version: {CONTRACT_VERSION}")
+    log("ðŸ“˜", f"Active rule version: {CONTRACT_VERSION}")
     for entry in mandatory_invariant_checklist():
-        log("   •", f"[{entry['id']}] {entry['rule']}")
+        log("   â€¢", f"[{entry['id']}] {entry['rule']}")
 
 
 def step_3_inspect_state(force: bool = False) -> dict[str, str]:
     """Step 3: Inspect local git status, branch, and active remote."""
-    log("🔍", "[Step 3/8: Inspect State] Checking git repository status...")
+    log("ðŸ”", "[Step 3/8: Inspect State] Checking git repository status...")
     _, status, _ = run_cmd(["git", "status", "--porcelain"])
     _, branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
 
     dirty = bool(status.strip())
     if dirty:
-        log("⚠️", f"Current branch: {branch} (uncommitted changes: YES)")
+        log("âš ï¸", f"Current branch: {branch} (uncommitted changes: YES)")
         if not force:
             log(
-                "❌",
+                "âŒ",
                 "[Fail-Closed Workspace Isolation] Working tree has uncommitted modifications!",
             )
             log(
-                "❌",
+                "âŒ",
                 "Running multi-agent loop on a dirty workspace risks cross-contaminating agent sessions.",
             )
             log(
-                "ℹ️",
+                "â„¹ï¸",
                 "Commit or stash uncommitted changes before continuing, or run with --force.",
             )
             return {"branch": branch, "dirty": "True", "clean": "False"}
     else:
-        log("ℹ️", f"Current branch: {branch} (uncommitted changes: NO)")
+        log("â„¹ï¸", f"Current branch: {branch} (uncommitted changes: NO)")
     return {"branch": branch, "dirty": str(dirty), "clean": str(not dirty)}
 
 
@@ -1049,8 +1012,8 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
     state aborts branch creation.
 
     Returns (synced, behind, detail):
-      synced=True  → safe to proceed with branch creation;
-      synced=False → branch creation MUST NOT proceed (detail explains why).
+      synced=True  â†’ safe to proceed with branch creation;
+      synced=False â†’ branch creation MUST NOT proceed (detail explains why).
     """
     fetch_code, _, fetch_err = run_cmd(
         ["git", "fetch", f"https://github.com/{UPSTREAM_REPO}.git", "main"],
@@ -1074,7 +1037,7 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
     if behind <= 0:
         return True, 0, "fresh work-start base (0 commits behind upstream main)"
     log(
-        "🔄",
+        "ðŸ”„",
         f"[Start-of-Work Rebase] Local is {behind} commit(s) behind upstream main. Rebasing before branch creation...",
     )
     rebase_code, _, rebase_err = run_cmd(["git", "rebase", "FETCH_HEAD"], check=False)
@@ -1083,28 +1046,28 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
         return (
             False,
             behind,
-            f"start-of-work rebase onto upstream main failed — aborted, branch blocked: {rebase_err or 'conflict'}",
+            f"start-of-work rebase onto upstream main failed â€” aborted, branch blocked: {rebase_err or 'conflict'}",
         )
     return (
         True,
         behind,
-        f"rebased onto upstream main (+{behind} commit(s)) — fresh start",
+        f"rebased onto upstream main (+{behind} commit(s)) â€” fresh start",
     )
 
 
 def step_4_branch(task: dict[str, Any]) -> str | None:
     """Step 4: Atomic Claim -> Branch Creation Contract (No claim -> no branch, #430)."""
-    # 🔒 GATE 0: START-OF-WORK REBASE GUARD (Dual-Rebase Mandate: start & pre-push)
+    # ðŸ”’ GATE 0: START-OF-WORK REBASE GUARD (Dual-Rebase Mandate: start & pre-push)
     synced, behind, sync_detail = pre_work_rebase_guard()
     if not synced:
         log(
-            "❌",
+            "âŒ",
             f"[Fail-Closed Gate] Start-of-work rebase guard blocked branch creation: {sync_detail}",
         )
         return None
     if behind > 0:
         log(
-            "✅",
+            "âœ…",
             f"[Start-of-Work Rebase] Branch point aligned with latest upstream main ({sync_detail}).",
         )
 
@@ -1115,11 +1078,11 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
         else f"contributor/work-{int(time.time())}"
     )
 
-    # 🔒 GATE 1: NO CLAIM -> NO BRANCH (AGENTS.md Step 4 / #430)
+    # ðŸ”’ GATE 1: NO CLAIM -> NO BRANCH (AGENTS.md Step 4 / #430)
     # The agent must verify and acquire an atomic claim on GitHub BEFORE creating or checking out any branch.
     if issue_num != "adhoc":
         log(
-            "🔒",
+            "ðŸ”’",
             f"[Step 4/8: Claim Gate] Acquiring atomic claim on Issue #{issue_num} BEFORE branch creation...",
         )
         edit_code, _, edit_err = run_cmd(
@@ -1136,21 +1099,21 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
         )
         if edit_code != 0:
             log(
-                "❌",
+                "âŒ",
                 f"[Claim Gate Rejection] Failed to add status:claimed on Issue #{issue_num}: {edit_err}",
             )
             log(
-                "❌",
+                "âŒ",
                 "Contract violation: No claim -> no branch. Aborting branch creation.",
             )
             return None
 
         claim_comment = (
             "<!-- atomic-claim -->\n"
-            f"🎯 **Claimed** — autonomous agent loop for issue #{issue_num}.\n"
+            f"ðŸŽ¯ **Claimed** â€” autonomous agent loop for issue #{issue_num}.\n"
             f"- **branch:** `{target_branch}`\n"
             f"- **claimed (UTC):** {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
-            "- **contract:** AGENTS.md Step 4 — no claim, no branch; no branch, no push (#430)."
+            "- **contract:** AGENTS.md Step 4 â€” no claim, no branch; no branch, no push (#430)."
         )
         comm_code, _, comm_err = run_cmd(
             [
@@ -1166,61 +1129,61 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
         )
         if comm_code != 0:
             log(
-                "❌",
+                "âŒ",
                 f"[Claim Gate Rejection] Failed to post atomic-claim comment on Issue #{issue_num}: {comm_err}",
             )
             log(
-                "❌",
+                "âŒ",
                 "Contract violation: No claim -> no branch. Aborting branch creation.",
             )
             return None
         log(
-            "✅",
+            "âœ…",
             f"Atomic claim successfully secured on Issue #{issue_num} (No claim -> no branch verified)",
         )
 
-    log("🌿", f"[Step 4/8: Branch] Ensuring branch '{target_branch}'...")
+    log("ðŸŒ¿", f"[Step 4/8: Branch] Ensuring branch '{target_branch}'...")
     code, _, _ = run_cmd(["git", "rev-parse", "--verify", target_branch])
     if code == 0:
         _, curr_branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
         if curr_branch == target_branch:
-            log("✅", f"Already on active branch '{target_branch}'")
+            log("âœ…", f"Already on active branch '{target_branch}'")
             return target_branch
 
         checkout_code, _, _checkout_err = run_cmd(["git", "checkout", target_branch])
         if checkout_code != 0:
             target_branch = f"contributor/issue-{issue_num}-{int(time.time())}"
-            log("🌿", f"Switching to isolated session branch '{target_branch}'")
+            log("ðŸŒ¿", f"Switching to isolated session branch '{target_branch}'")
             create_code, _, create_err = run_cmd(
                 ["git", "checkout", "-b", target_branch]
             )
             if create_code != 0:
                 log(
-                    "❌",
+                    "âŒ",
                     f"Failed to create isolated branch '{target_branch}': {create_err}",
                 )
                 return None
     else:
         create_code, _, create_err = run_cmd(["git", "checkout", "-b", target_branch])
         if create_code != 0:
-            log("❌", f"Failed to create branch '{target_branch}': {create_err}")
+            log("âŒ", f"Failed to create branch '{target_branch}': {create_err}")
             return None
 
     _, active_branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
     if active_branch != target_branch:
         log(
-            "❌",
+            "âŒ",
             f"Branch checkout verification failed! Expected '{target_branch}', got '{active_branch}'.",
         )
         return None
 
-    log("✅", f"Active on verified branch '{target_branch}'")
+    log("âœ…", f"Active on verified branch '{target_branch}'")
     return target_branch
 
 
 def step_5_work_notice(role: str, prompt: str) -> None:
     """Step 5: Scope boundary guidance and specialized prompt dispatch."""
-    log("🔨", f"[Step 5/8: Work] Dispatch Phase (Role: {role.upper()})")
+    log("ðŸ”¨", f"[Step 5/8: Work] Dispatch Phase (Role: {role.upper()})")
     print("----------------------------------------------------------------------")
     print(f"Role: {role} ({ROLES.get(role, '')})")
     print("Specialist Agent Prompt Prepared.")
@@ -1232,8 +1195,8 @@ def step_5_work_notice(role: str, prompt: str) -> None:
 def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
     """Step 6: Run the verification tiers and collect dynamic evidence."""
     log(
-        "🧪",
-        "[Step 6/8: Verify] Running the verification contract (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4)...",
+        "ðŸ§ª",
+        "[Step 6/8: Verify] Running the verification contract (tier-count SSOT: docs/AGENT_LOOP_SPEC.md Â§4)...",
     )
     evidence: list[dict[str, Any]] = []
 
@@ -1249,7 +1212,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
         if code != 0:
             py_errors.append(f"{py.name}: {err}")
     if py_errors:
-        log("❌", f"Python syntax errors in {len(py_errors)} files: {py_errors[0]}")
+        log("âŒ", f"Python syntax errors in {len(py_errors)} files: {py_errors[0]}")
         evidence.append(
             {
                 "tier": 1,
@@ -1283,7 +1246,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
         except (json.JSONDecodeError, ValueError, OSError) as e:
             json_errors.append(f"{jf.name}: {e}")
     if json_errors:
-        log("❌", f"Invalid JSON in {len(json_errors)} files: {json_errors[0]}")
+        log("âŒ", f"Invalid JSON in {len(json_errors)} files: {json_errors[0]}")
         evidence.append(
             {
                 "tier": 2,
@@ -1307,7 +1270,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
     # stdlib-only drop-in CLI (deterministic 0/1 exit contract). Guarded on
     # both the script and the target dir so sparse trees without api-schemas/
     # are honestly skipped instead of false-failing; reuses tier 2 on purpose
-    # (no new tier — tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4 stays 1..8).
+    # (no new tier â€” tier-count SSOT: docs/AGENT_LOOP_SPEC.md Â§4 stays 1..8).
     schema_cli = REPO_ROOT / "scripts" / "validate_schemas.py"
     schema_dir = REPO_ROOT / "api-schemas"
     if schema_cli.is_file() and schema_dir.is_dir():
@@ -1317,7 +1280,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                 0
             ][:200]
             log(
-                "❌",
+                "âŒ",
                 f"api-schemas deep validation failed (exit {v_code}): {first_line}",
             )
             evidence.append(
@@ -1350,7 +1313,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
             except (yaml.YAMLError, OSError, UnicodeDecodeError, ValueError) as e:
                 yaml_errors.append(f"{yf.name}: {e}")
         if yaml_errors:
-            log("❌", f"Invalid YAML in {len(yaml_errors)} files: {yaml_errors[0]}")
+            log("âŒ", f"Invalid YAML in {len(yaml_errors)} files: {yaml_errors[0]}")
             evidence.append(
                 {
                     "tier": 3,
@@ -1416,7 +1379,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                 }
             )
 
-        # Tier 6 (#63): group registry fail-closed guard — invented group names rejected
+        # Tier 6 (#63): group registry fail-closed guard â€” invented group names rejected
         try:
             build_task_contract("group-guard-test", group="not-a-canonical-group")
             evidence.append(
@@ -1432,7 +1395,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                 }
             )
 
-        # Tier 7 (#63): envelope determinism — identical inputs produce byte-identical contracts
+        # Tier 7 (#63): envelope determinism â€” identical inputs produce byte-identical contracts
         _c1 = build_task_contract("env-test", issue="0", group=DEFAULT_GROUP)
         _c2 = build_task_contract("env-test", issue="0", group=DEFAULT_GROUP)
         if json.dumps(_c1, sort_keys=True) != json.dumps(_c2, sort_keys=True):
@@ -1476,7 +1439,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
 
         if path_violations:
             log(
-                "❌",
+                "âŒ",
                 f"Hardcoded machine paths detected in source: {path_violations[:3]}",
             )
             evidence.append(
@@ -1497,12 +1460,12 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
             }
         )
     except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError) as e:
-        log("❌", f"Self-test verification failed: {e}")
+        log("âŒ", f"Self-test verification failed: {e}")
         return False, evidence
 
     tier_count = len({e["tier"] for e in evidence})
     log(
-        "✅",
+        "âœ…",
         f"{tier_count}-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.",
     )
     return True, evidence
@@ -1511,7 +1474,7 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
 def pre_push_rebase_and_verify(
     branch: str, remote: str = "origin"
 ) -> tuple[bool, str, list[dict[str, Any]] | None]:
-    """Pre-Push Rebase Invariant (#514, docs/INGRESS_SECURITY_POLICY.md §2).
+    """Pre-Push Rebase Invariant (#514, docs/INGRESS_SECURITY_POLICY.md Â§2).
 
     1. Measures divergence against remote/main (git rev-list --count HEAD..remote/main).
     2. If behind > 0, fetches remote and rebases onto remote/main.
@@ -1520,11 +1483,11 @@ def pre_push_rebase_and_verify(
        newly landed commits on main did not introduce logical regressions.
     """
     log(
-        "🔄", f"[Pre-Push Invariant] Checking branch freshness against {remote}/main..."
+        "ðŸ”„", f"[Pre-Push Invariant] Checking branch freshness against {remote}/main..."
     )
     fetch_code, _, fetch_err = run_cmd(["git", "fetch", remote, "main"], check=False)
     if fetch_code != 0:
-        log("⚠️", f"Warning: git fetch {remote} main exited {fetch_code}: {fetch_err}")
+        log("âš ï¸", f"Warning: git fetch {remote} main exited {fetch_code}: {fetch_err}")
 
     # Check how many commits HEAD is behind remote/main
     behind_code, behind_out, _ = run_cmd(
@@ -1536,7 +1499,7 @@ def pre_push_rebase_and_verify(
 
     if behind > 0:
         log(
-            "⚠️",
+            "âš ï¸",
             f"Branch '{branch}' is {behind} commit(s) behind {remote}/main! Auto-rebasing onto latest main...",
         )
         rebase_code, _, rebase_err = run_cmd(
@@ -1544,14 +1507,14 @@ def pre_push_rebase_and_verify(
         )
         if rebase_code != 0:
             log(
-                "❌",
+                "âŒ",
                 f"Rebase failed with conflicts: {rebase_err}. Aborting rebase to preserve workspace...",
             )
             run_cmd(["git", "rebase", "--abort"], check=False)
             return False, f"Rebase conflict against {remote}/main ({rebase_err})", None
 
         log(
-            "🧪",
+            "ðŸ§ª",
             "Rebase successful! Re-running Step 6 verification tiers on newly rebased tree...",
         )
         passed, re_evidence = step_6_verify()
@@ -1561,15 +1524,15 @@ def pre_push_rebase_and_verify(
                 "Verification failed on rebased tree against latest main commits",
                 None,
             )
-        log("✅", "Post-rebase verification tiers passed cleanly!")
+        log("âœ…", "Post-rebase verification tiers passed cleanly!")
         return True, f"Rebased past {behind} commits and verified", re_evidence
 
-    log("✅", f"Branch '{branch}' is 100% fresh with {remote}/main (0 commits behind).")
+    log("âœ…", f"Branch '{branch}' is 100% fresh with {remote}/main (0 commits behind).")
     return True, "Fresh base verified", None
 
 
 def push_branch_to_fork(fork_owner: str, branch: str) -> tuple[bool, str]:
-    """Pathway 2 (AGENTS.md §2.1): ensure the fork exists and push the session branch.
+    """Pathway 2 (AGENTS.md Â§2.1): ensure the fork exists and push the session branch.
 
     Idempotent: `gh repo fork` is a no-op when the fork already exists; the push
     is force-with-lease safe for a session-scoped contributor branch.
@@ -1609,15 +1572,15 @@ def push_branch_direct(remote: str, branch: str) -> tuple[bool, str]:
 def pre_push_rebase_guard() -> tuple[bool, int, str]:
     """#514 Pre-Push Rebase Invariant (Anti-Stale-Base Mandate).
 
-    Fetch ➔ Measure Behind ➔ Rebase — the caller MUST re-run the Step 6
+    Fetch âž” Measure Behind âž” Rebase â€” the caller MUST re-run the Step 6
     verification tiers on the rebased tree before pushing (post-rebase
     re-verification catches logic drift that a clean textual merge can
     still introduce). Fail-closed: a failed rebase is aborted and the push
     is blocked; an unverifiable base count also blocks the push.
 
     Returns (fresh, behind, detail):
-      fresh=True  → safe to push (`behind` = 0 when already fresh);
-      fresh=False → push MUST NOT proceed (`detail` explains why).
+      fresh=True  â†’ safe to push (`behind` = 0 when already fresh);
+      fresh=False â†’ push MUST NOT proceed (`detail` explains why).
     """
     fetch_code, _, fetch_err = run_cmd(
         ["git", "fetch", f"https://github.com/{UPSTREAM_REPO}.git", "main"],
@@ -1641,7 +1604,7 @@ def pre_push_rebase_guard() -> tuple[bool, int, str]:
     if behind <= 0:
         return True, 0, "fresh base (0 commits behind upstream main)"
     log(
-        "⚠️",
+        "âš ï¸",
         f"Target branch advanced by {behind} commit(s). Rebasing onto latest main... (#514)",
     )
     rebase_code, _, rebase_err = run_cmd(["git", "rebase", "FETCH_HEAD"], check=False)
@@ -1650,12 +1613,12 @@ def pre_push_rebase_guard() -> tuple[bool, int, str]:
         return (
             False,
             behind,
-            f"rebase onto latest main failed — aborted, push blocked (#514): {rebase_err or ''}",
+            f"rebase onto latest main failed â€” aborted, push blocked (#514): {rebase_err or ''}",
         )
     return (
         True,
         behind,
-        f"rebased onto latest main (+{behind} commit(s)) — re-verify before pushing",
+        f"rebased onto latest main (+{behind} commit(s)) â€” re-verify before pushing",
     )
 
 
@@ -1668,35 +1631,35 @@ def step_7_record(
     fork_owner: str | None = None,
 ) -> bool:
     """Step 7: Prepare PR body with dynamic test evidence and submit PR."""
-    log("📝", "[Step 7/8: Record] Generating Universal PR Template...")
+    log("ðŸ“", "[Step 7/8: Record] Generating Universal PR Template...")
     tc7 = (contract or {}).get("task_contract", {})
 
     if auto_pr:
         # #514 Pre-Push Rebase Invariant: never push a stale base. Fetch,
-        # measure BEHIND, rebase if needed — then re-run the verification
+        # measure BEHIND, rebase if needed â€” then re-run the verification
         # tiers on the rebased tree before the push (post-rebase
         # re-verification; fresh evidence replaces the pre-rebase set).
         fresh, behind, guard_detail = pre_push_rebase_guard()
         if not fresh:
             log(
-                "❌",
+                "âŒ",
                 f"[Fail-Closed Gate] Pre-push rebase guard blocked the push (#514): {guard_detail}",
             )
             return False
         if behind > 0:
             log(
-                "🧪",
-                f"[#514] Rebased (+{behind}) — re-running verification tiers on the rebased tree...",
+                "ðŸ§ª",
+                f"[#514] Rebased (+{behind}) â€” re-running verification tiers on the rebased tree...",
             )
             reverrify_ok, reverrified_evidence = step_6_verify()
             if not reverrify_ok:
                 log(
-                    "❌",
-                    "[Fail-Closed Gate] Post-rebase re-verification failed (#514) — push blocked.",
+                    "âŒ",
+                    "[Fail-Closed Gate] Post-rebase re-verification failed (#514) â€” push blocked.",
                 )
                 return False
             evidence = reverrified_evidence
-            log("✅", f"[#514] Post-rebase re-verification passed ({guard_detail}).")
+            log("âœ…", f"[#514] Post-rebase re-verification passed ({guard_detail}).")
 
     reflection = {
         "why": str(task.get("why") or "").strip()
@@ -1714,21 +1677,21 @@ def step_7_record(
     if auto_pr:
         head_ref = branch
         if fork_owner:
-            log("🍴", f"Pathway 2: ensuring fork + pushing branch to {fork_owner}...")
+            log("ðŸ´", f"Pathway 2: ensuring fork + pushing branch to {fork_owner}...")
             pushed, push_detail = push_branch_to_fork(fork_owner, branch)
             if not pushed:
-                log("❌", f"[Fail-Closed Gate] Fork push failed: {push_detail}")
+                log("âŒ", f"[Fail-Closed Gate] Fork push failed: {push_detail}")
                 return False
             head_ref = f"{fork_owner}:{branch}"
         else:
-            log("🚀", f"Pushing branch '{branch}' to origin...")
+            log("ðŸš€", f"Pushing branch '{branch}' to origin...")
             pushed, push_detail = push_branch_direct("origin", branch)
             if not pushed:
-                log("❌", f"[Fail-Closed Gate] Branch push failed: {push_detail}")
+                log("âŒ", f"[Fail-Closed Gate] Branch push failed: {push_detail}")
                 return False
 
         log(
-            "🚀",
+            "ðŸš€",
             f"Opening Pull Request against {UPSTREAM_REPO}:main (head: {head_ref})...",
         )
         cmd = [
@@ -1748,10 +1711,10 @@ def step_7_record(
         ]
         code, out, err = run_cmd(cmd)
         if code == 0:
-            log("🎉", f"PR Successfully Created: {out}")
+            log("ðŸŽ‰", f"PR Successfully Created: {out}")
             return True
         else:
-            log("❌", f"PR creation via gh CLI failed ({code}): {err}")
+            log("âŒ", f"PR creation via gh CLI failed ({code}): {err}")
             print(
                 f"   Submit manually at: https://github.com/{UPSTREAM_REPO}/compare/main...{branch}"
             )
@@ -1762,7 +1725,7 @@ def step_7_record(
 
 def step_8_return() -> None:
     """Step 8: Fresh-board re-check and clean exit."""
-    log("🔄", "[Step 8/8: Return] Checking board freshness & cycle completed.")
+    log("ðŸ”„", "[Step 8/8: Return] Checking board freshness & cycle completed.")
     code, out, _ = run_cmd(
         [
             "gh",
@@ -1779,7 +1742,7 @@ def step_8_return() -> None:
     if code == 0 and out.strip() != "[]":
         with contextlib.suppress(json.JSONDecodeError, TypeError):
             prs = json.loads(out)
-            log("📋", "Active Open PRs on upstream board:")
+            log("ðŸ“‹", "Active Open PRs on upstream board:")
             for p in prs:
                 print(
                     f"   #{p.get('number')} ({p.get('headRefName')}): {p.get('title')}"
@@ -1790,7 +1753,7 @@ def step_8_return() -> None:
 
 
 # ============================================================================
-# Contributor additions: scheduled mode (AGENTS.md §0 — this extends the
+# Contributor additions: scheduled mode (AGENTS.md Â§0 â€” this extends the
 # EXISTING dispatcher in place; no new loop script is introduced). All lines
 # below are pure additions; upstream lines are left unmodified.
 # ============================================================================
@@ -1813,27 +1776,27 @@ def cron_expression(minutes: int) -> str:
 def print_cron_entry(minutes: int) -> None:
     """Print a ready-to-paste crontab entry for the requested cadence."""
     print(f"# continuous_agent_loop.py --print-cron (generated {_utc_now_stamp()})")
-    print(f"# cadence: every {minutes} min — {cron_expression(minutes)}")
+    print(f"# cadence: every {minutes} min â€” {cron_expression(minutes)}")
     print(
         f"{cron_expression(minutes)} cd {REPO_ROOT} && python3 scripts/agents/continuous_agent_loop.py --schedule {minutes} >> .agent_loop_schedule.log 2>&1"
     )
 
 
 def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
-    """Empty-board role dispatch (S09 #489 + owner policy: issue 0 → auditor).
+    """Empty-board role dispatch (S09 #489 + owner policy: issue 0 â†’ auditor).
 
     In scheduled mode the tick itself IS the canonical schedule event
     ``event:schedule.ecosystem_scan``; the S09 matrix routes it to the
     ecosystem-scout (auditor family, read-only weapons). Manual one-shot
-    runs carry no schedule event, so the fail-closed matrix DENYs — no role
+    runs carry no schedule event, so the fail-closed matrix DENYs â€” no role
     is ever invented for an unroutable signal.
 
     Returns 0 when a role was dispatched (healthy idle tick), 1 otherwise.
     """
     if not schedule_minutes or schedule_minutes <= 0:
         log(
-            "⚠️",
-            "[Role Dispatch] Board empty — a manual run carries no schedule event; "
+            "âš ï¸",
+            "[Role Dispatch] Board empty â€” a manual run carries no schedule event; "
             "matrix DENY (fail-closed). Auditor dispatch fires on --schedule ticks.",
         )
         return 1
@@ -1843,8 +1806,8 @@ def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
     due = due_roles(store, now)
     if not due:
         log(
-            "🌱",
-            "[Role Dispatch] Board empty but no role is due per cadence config — healthy skip (no dispatch).",
+            "ðŸŒ±",
+            "[Role Dispatch] Board empty but no role is due per cadence config â€” healthy skip (no dispatch).",
         )
         return 0
     decision = dispatch(
@@ -1858,8 +1821,8 @@ def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
     )
     if decision.decision == DECISION_DISPATCH and decision.role_id:
         log(
-            "🌱",
-            f"[Role Dispatch] Board empty → {decision.role_id} (auditor family) dispatched "
+            "ðŸŒ±",
+            f"[Role Dispatch] Board empty â†’ {decision.role_id} (auditor family) dispatched "
             f"via S09 matrix (event:schedule.ecosystem_scan, schedule={cron_expression(schedule_minutes)}). "
             f"Run the ecosystem escort: health sweep + board sweep + scout report.",
         )
@@ -1867,11 +1830,11 @@ def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
             mark_role_run(decision.role_id, store, now)
             save_last_run_store(store)
         except (OSError, RuntimeError, ValueError, TypeError) as exc:
-            log("⚠️", f"[Role Dispatch] cadence store update failed: {exc}")
+            log("âš ï¸", f"[Role Dispatch] cadence store update failed: {exc}")
         return 0
     log(
-        "⚠️",
-        f"[Role Dispatch] Board empty; matrix DENY ({decision.reason}) — fail-closed.",
+        "âš ï¸",
+        f"[Role Dispatch] Board empty; matrix DENY ({decision.reason}) â€” fail-closed.",
     )
     return 1
 
@@ -1879,7 +1842,7 @@ def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
 def _run_one_scheduled_tick(
     args: argparse.Namespace, exclude: set[str] | list[str] | None = None
 ) -> tuple[int, str | None]:
-    """One scheduled dispatch — reuses upstream's own single-cycle paths."""
+    """One scheduled dispatch â€” reuses upstream's own single-cycle paths."""
     if args.verify_only:
         passed, _ = step_6_verify()
         return (0 if passed else 1), None
@@ -1887,13 +1850,13 @@ def _run_one_scheduled_tick(
     if args.pick_next:
         issue_id = pick_next_issue(exclude=exclude)
         if not issue_id:
-            log("⚠️", "No eligible open issues found on board this tick!")
+            log("âš ï¸", "No eligible open issues found on board this tick!")
             # Empty board: create a scoped full-project audit issue so the loop
             # keeps producing actionable work, then dispatch the idle auditor.
             create_full_project_audit_issue()
             rc = dispatch_idle_audit(args.schedule)
             return (0 if rc == 0 else 1), None
-        log("🎯", f"Auto-selected highest priority Issue #{issue_id}")
+        log("ðŸŽ¯", f"Auto-selected highest priority Issue #{issue_id}")
     rc = run_cycle(args, issue_id)
     return rc, issue_id
 
@@ -1908,14 +1871,14 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
         cycle duration never accumulates end-to-start drift);
       - if a cycle overruns the interval, the next tick runs immediately and
         logs the catch-up loudly (silent drift is worse than a loud delay);
-      - a failed tick logs a warning and does NOT stop the clock — one failed
+      - a failed tick logs a warning and does NOT stop the clock â€” one failed
         tick is not a stalled schedule;
       - Ctrl-C stops the scheduler cleanly.
     """
     interval = args.schedule * 60
     total = args.cycles
     plan = "indefinitely (Ctrl-C to stop)" if total == 0 else f"{total} cycle(s)"
-    log("⏰", f"[Scheduled Mode] dispatch every {args.schedule} min, {plan}.")
+    log("â°", f"[Scheduled Mode] dispatch every {args.schedule} min, {plan}.")
     failures = 0
     cycle_no = 0
     next_start = time.monotonic()
@@ -1926,32 +1889,32 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
                 delay = next_start - time.monotonic()
                 if delay < 0:
                     log(
-                        "⚠️",
-                        f"[Scheduled Mode] overrun by {int(-delay)}s — running catch-up tick immediately (start-to-start anchor preserved).",
+                        "âš ï¸",
+                        f"[Scheduled Mode] overrun by {int(-delay)}s â€” running catch-up tick immediately (start-to-start anchor preserved).",
                     )
                 elif delay > 0:
                     time.sleep(delay)
             cycle_no += 1
             next_start = time.monotonic() + interval
             label = f"{cycle_no}/{total}" if total else str(cycle_no)
-            log("🚀", f"[Scheduled Mode] cycle {label} starting at {_utc_now_stamp()}.")
+            log("ðŸš€", f"[Scheduled Mode] cycle {label} starting at {_utc_now_stamp()}.")
             rc, dispatched_id = _run_one_scheduled_tick(args, exclude=dispatched)
             if dispatched_id:
                 dispatched.add(str(dispatched_id))
             if rc != 0:
                 failures += 1
                 log(
-                    "⚠️",
-                    f"[Scheduled Mode] cycle {label} exited {rc} — one failed tick is not a stalled clock; schedule continues.",
+                    "âš ï¸",
+                    f"[Scheduled Mode] cycle {label} exited {rc} â€” one failed tick is not a stalled clock; schedule continues.",
                 )
     except KeyboardInterrupt:
         log(
-            "🛑",
-            f"[Scheduled Mode] interrupted — clean stop after {cycle_no} cycle(s) ({failures} failed tick(s)).",
+            "ðŸ›‘",
+            f"[Scheduled Mode] interrupted â€” clean stop after {cycle_no} cycle(s) ({failures} failed tick(s)).",
         )
         return 130
     log(
-        "🏁",
+        "ðŸ",
         f"[Scheduled Mode] finished: {cycle_no} cycle(s), {failures} failed tick(s).",
     )
     return 0 if failures == 0 else 1
@@ -1975,7 +1938,7 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
         task.get("title", ""), task.get("labels", []), task.get("body", "")
     )
     log(
-        "🎯",
+        "ðŸŽ¯",
         f"Classified Task Role: '{assigned_role.upper()}' ({ROLES.get(assigned_role, '')})",
     )
 
@@ -2009,7 +1972,7 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
     # Verification check
     passed, evidence = step_6_verify()
     if not passed:
-        log("❌", "Verification failed. Please fix errors before proceeding.")
+        log("âŒ", "Verification failed. Please fix errors before proceeding.")
         return 1
 
     fork_owner = (
@@ -2025,7 +1988,7 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
         auto_pr=args.auto_pr,
         fork_owner=fork_owner,
     ):
-        log("❌", "Step 7 (Record) failed! Halting before completion return.")
+        log("âŒ", "Step 7 (Record) failed! Halting before completion return.")
         return 1
 
     step_8_return()
@@ -2034,7 +1997,7 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="SupremeAI Continuous Agent Loop — Lazy Team Leader & Dispatcher"
+        description="SupremeAI Continuous Agent Loop â€” Lazy Team Leader & Dispatcher"
     )
     parser.add_argument(
         "--issue", type=str, help="Specific GitHub issue number to claim and resolve"
@@ -2072,7 +2035,7 @@ def main() -> int:
     parser.add_argument(
         "--emit-prompt",
         action="store_true",
-        help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning",
+        help="DEPRECATED (#63): use --task-envelope â€” emits the unified envelope with a deprecation warning",
     )
     parser.add_argument(
         "--auto-pr",
@@ -2087,7 +2050,7 @@ def main() -> int:
     parser.add_argument(
         "--emit-contract",
         action="store_true",
-        help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning",
+        help="DEPRECATED (#63): use --task-envelope â€” emits the unified envelope with a deprecation warning",
     )
     parser.add_argument(
         "--touching-files",
@@ -2153,13 +2116,13 @@ def main() -> int:
 
     banner = (
         "======================================================================\n"
-        " SupremeAI — Continuous Agent Loop (Lazy Team Leader Runner) \n"
+        " SupremeAI â€” Continuous Agent Loop (Lazy Team Leader Runner) \n"
         f" Target: {UPSTREAM_REPO}\n"
         "======================================================================"
     )
     if args.task_envelope or args.emit_prompt or args.emit_contract:
         # #63: envelope mode keeps stdout PURE JSON (machine-parseable single
-        # payload) — the human banner goes to stderr instead.
+        # payload) â€” the human banner goes to stderr instead.
         print(banner, file=sys.stderr)
     else:
         print(banner)
@@ -2170,15 +2133,15 @@ def main() -> int:
     # configuration errors, rejected before anything runs (fail-fast).
     if args.schedule is not None and args.schedule <= 0:
         log(
-            "❌",
+            "âŒ",
             f"--schedule must be a positive number of minutes (got {args.schedule}).",
         )
         return 1
     if args.cycles < 0:
-        log("❌", f"--cycles must be >= 0 (0 = run indefinitely; got {args.cycles}).")
+        log("âŒ", f"--cycles must be >= 0 (0 = run indefinitely; got {args.cycles}).")
         return 1
     if args.cycles > 0 and args.schedule is None:
-        log("❌", "--cycles requires --schedule (scheduled mode).")
+        log("âŒ", "--cycles requires --schedule (scheduled mode).")
         return 1
     if args.print_cron:
         print_cron_entry(args.schedule if args.schedule is not None else 30)
@@ -2188,21 +2151,21 @@ def main() -> int:
 
     if args.verify_only:
         # Boot smoke (#567 tier 2): prove the freshness machinery WITHOUT
-        # mutating the tree — report-only mode (drift is printed, never
+        # mutating the tree â€” report-only mode (drift is printed, never
         # reverted; governance PRs intentionally carry constitution changes).
         # Infrastructure failures still fail closed (test_22 semantics).
         rules_ok = step_2_rules(
             auto_sync=False, offline=getattr(args, "offline", False)
         )
         passed, _ = step_6_verify()
-        # #67 parity marker — final stdout line, byte-identical across the
+        # #67 parity marker â€” final stdout line, byte-identical across the
         # public and private copies (grep target for cross-repo parity check).
         print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
         return 0 if (passed and rules_ok) else 1
 
     if args.emit_prompt or args.emit_contract:
         print(
-            "⚠️  DEPRECATION WARNING (#63): --emit-prompt / --emit-contract are deprecated.",
+            "âš ï¸  DEPRECATION WARNING (#63): --emit-prompt / --emit-contract are deprecated.",
             file=sys.stderr,
         )
         print("    Use the canonical unified payload: --task-envelope", file=sys.stderr)
@@ -2212,7 +2175,7 @@ def main() -> int:
 
     if args.loop:
         log(
-            "🔄",
+            "ðŸ”„",
             f"[Continuous Loop Mode] Starting task runner (max tasks: {args.max_tasks})...",
         )
         processed = 0
@@ -2220,240 +2183,41 @@ def main() -> int:
         while processed < args.max_tasks:
             next_issue = pick_next_issue(exclude=dispatched)
             if not next_issue:
-                log("🏁", "No more eligible open issues in queue. Loop finished.")
+                log("ðŸ", "No more eligible open issues in queue. Loop finished.")
                 break
             log(
-                "🚀",
+                "ðŸš€",
                 f"Dispatching Task #{next_issue} ({processed + 1}/{args.max_tasks})...",
             )
             dispatched.add(str(next_issue))
             rc = run_cycle(args, next_issue)
             if rc != 0:
                 log(
-                    "⚠️",
+                    "âš ï¸",
                     f"Task #{next_issue} halted with code {rc}. Stopping continuous loop.",
                 )
                 return rc
             processed += 1
             time.sleep(2)  # Short cooldown between dispatches
-        log("🎉", f"Continuous loop completed {processed} task(s).")
+        log("ðŸŽ‰", f"Continuous loop completed {processed} task(s).")
         return 0
 
     issue_to_run = args.issue
     if args.pick_next:
         issue_to_run = pick_next_issue()
         if not issue_to_run:
-            log("⚠️", "No eligible open issues found on board!")
+            log("âš ï¸", "No eligible open issues found on board!")
             create_full_project_audit_issue()
             dispatch_idle_audit(getattr(args, "schedule", None))
             return 1
-        log("🎯", f"Auto-selected highest priority Issue #{issue_to_run}")
+        log("ðŸŽ¯", f"Auto-selected highest priority Issue #{issue_to_run}")
 
     return run_cycle(args, issue_to_run)
 
 
-# ============================================================================
-# Role-Cadence + Empty-Board Issue Creation (plan §3, §4, §10)
-# ============================================================================
 
-
-CADENCE_CONFIG_PATH = REPO_ROOT / "scripts" / "agents" / "agent_cadence.json"
-LAST_RUN_STORE_PATH = REPO_ROOT / ".agent_last_run.json"
-
-DEFAULT_CADENCE_HOURS: dict[str, int] = {
-    "ecosystem-scout": 12,
-    "auditor": 12,
-    "human-eye": 24,
-    "rules-breaker": 24,
-    "platform-guardian": 24,
-}
-
-DEFAULT_MERGED_ROLES: dict[str, str] = {
-    "federation-auditor": "auditor",
-    "task-auditor": "auditor",
-}
-
-
-def load_cadence_config(path: Path | None = None) -> dict[str, Any]:
-    """Load role cadence config (fail-closed: missing/invalid -> defaults)."""
-    target = path or CADENCE_CONFIG_PATH
-    try:
-        if not target.exists():
-            return {
-                "cadences_hours": dict(DEFAULT_CADENCE_HOURS),
-                "merged_roles": dict(DEFAULT_MERGED_ROLES),
-            }
-        with target.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        cadences = data.get("cadences_hours") or {}
-        merged = data.get("merged_roles") or {}
-        # Validate: every cadence must be a positive int.
-        cleaned: dict[str, int] = {}
-        for role, hours in cadences.items():
-            try:
-                h = int(hours)
-            except (TypeError, ValueError):
-                continue
-            if h > 0:
-                cleaned[str(role)] = h
-        if not cleaned:
-            cleaned = dict(DEFAULT_CADENCE_HOURS)
-        return {"cadences_hours": cleaned, "merged_roles": merged or dict(DEFAULT_MERGED_ROLES)}
-    except (OSError, RuntimeError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:  # fail-closed: never crash the loop on bad config
-        log("⚠️", f"[Cadence] config load failed ({exc}); using defaults.")
-        return {
-            "cadences_hours": dict(DEFAULT_CADENCE_HOURS),
-            "merged_roles": dict(DEFAULT_MERGED_ROLES),
-        }
-
-
-def canonical_role(role: str, config: dict[str, Any] | None = None) -> str:
-    """Map merged aliases (federation-auditor/task-auditor) to canonical auditor."""
-    cfg = config or load_cadence_config()
-    merged = cfg.get("merged_roles", DEFAULT_MERGED_ROLES)
-    return merged.get(role, role)
-
-
-def load_last_run_store(path: Path | None = None) -> dict[str, float]:
-    """Load per-role last_run timestamps (epoch seconds). Missing/invalid -> {}."""
-    target = path or LAST_RUN_STORE_PATH
-    try:
-        if not target.exists():
-            return {}
-        with target.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        if not isinstance(data, dict):
-            return {}
-        out: dict[str, float] = {}
-        for k, v in data.items():
-            try:
-                out[str(k)] = float(v)
-            except (TypeError, ValueError):
-                continue
-        return out
-    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
-        return {}
-
-
-def save_last_run_store(store: dict[str, float], path: Path | None = None) -> bool:
-    """Persist per-role last_run timestamps. Returns True on success."""
-    target = path or LAST_RUN_STORE_PATH
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("w", encoding="utf-8") as fh:
-            json.dump(store, fh, indent=2, sort_keys=True)
-        return True
-    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        log("⚠️", f"[Cadence] last_run store save failed: {exc}")
-        return False
-
-
-def role_is_due(
-    role: str,
-    last_run_ts: float | None,
-    now_ts: float,
-    config: dict[str, Any] | None = None,
-) -> bool:
-    """True if `role` has not run within its configured cadence window."""
-    cfg = config or load_cadence_config()
-    cadences = cfg.get("cadences_hours", DEFAULT_CADENCE_HOURS)
-    canon = canonical_role(role, cfg)
-    hours = cadences.get(canon) or cadences.get(role)
-    if not hours or hours <= 0:
-        return False
-    if last_run_ts is None:
-        return True
-    try:
-        elapsed_hours = (now_ts - float(last_run_ts)) / 3600.0
-    except (TypeError, ValueError):
-        return True
-    return elapsed_hours >= hours
-
-
-def due_roles(
-    last_runs: dict[str, float] | None,
-    now_ts: float | None = None,
-    config: dict[str, Any] | None = None,
-) -> list[str]:
-    """Return the list of roles whose cadence window has elapsed."""
-    cfg = config or load_cadence_config()
-    store = last_runs or {}
-    now = now_ts if now_ts is not None else time.time()
-    result: list[str] = []
-    for role in cfg.get("cadences_hours", DEFAULT_CADENCE_HOURS):
-        if role_is_due(role, store.get(role), now, cfg):
-            result.append(role)
-    return result
-
-
-def mark_role_run(
-    role: str,
-    store: dict[str, float],
-    now_ts: float | None = None,
-    config: dict[str, Any] | None = None,
-) -> dict[str, float]:
-    """Record that `role` just ran. Returns the updated store (mutates in place)."""
-    cfg = config or load_cadence_config()
-    canon = canonical_role(role, cfg)
-    ts = now_ts if now_ts is not None else time.time()
-    store[canon] = ts
-    return store
-
-
-def create_full_project_audit_issue() -> str | None:
-    """Create a scoped 'full-project audit' issue when the board is empty.
-
-    Returns the issue number (as str) on success, None on failure/absence of gh.
-    Fail-closed: missing gh or API error -> None + log, never crash the loop.
-    """
-    title = "audit: full-project sweep (auto-generated by continuous agent loop)"
-    body = (
-        "## Summary\n"
-        "Auto-generated by the SupremeAI continuous agent loop because the task board "
-        "was empty. An auditor should sweep the whole project and file findings as "
-        "separate, scoped issues.\n\n"
-        "## Scope\n"
-        "- Touching files: (auditor to determine; keep <= 30 files / <= 200 KB per follow-up PR)\n"
-        "- Forbidden paths: .env*, secrets/**, credentials/**, vault/**\n\n"
-        "## Acceptance\n"
-        "- [ ] Full project audit completed\n"
-        "- [ ] Each finding filed as a separate issue with scope + acceptance + priority\n"
-        "- [ ] No duplicate findings\n\n"
-        "## Priority\nP2\n\n"
-        "## Type of Change\n- [x] docs/audit\n"
-    )
-    labels = "status:unclaimed,group:agent-orchestration,type:audit"
-    code, out, err = run_cmd(
-        [
-            "gh",
-            "issue",
-            "create",
-            "--repo",
-            UPSTREAM_REPO,
-            "--title",
-            title,
-            "--body",
-            body,
-            "--label",
-            labels,
-        ]
-    )
-    if code != 0:
-        log(
-            "⚠️",
-            f"[Empty-Board] audit issue creation failed ({err or out or f'code {code}'}).",
-        )
-        return None
-    # gh issue create prints the issue URL; extract trailing number.
-    url = (out or "").strip().splitlines()[-1] if out.strip() else ""
-    m = re.search(r"/issues/(\d+)", url)
-    if m:
-        num = m.group(1)
-        log("✅", f"[Empty-Board] created audit issue #{num}: {url}")
-        return num
-    log("⚠️", f"[Empty-Board] audit issue created but number unparseable: {out!r}")
-    return None
-
+# Role-cadence + empty-board issue creation (extracted to loop_cadence).
+from loop_cadence import *
 
 if __name__ == "__main__":
     sys.exit(main())
