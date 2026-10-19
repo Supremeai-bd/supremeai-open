@@ -26,6 +26,7 @@ run_cmd doubles and a hermetic REPO_ROOT tempdir — no network, no repo
 mutation). Dual-mode: unittest and pytest.
 Run: python3 -m unittest tests.test_constitution_freshness -v
 """
+
 from __future__ import annotations
 
 import inspect
@@ -38,7 +39,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
 
-import continuous_agent_loop as cal  # noqa: E402
+import continuous_agent_loop as cal
 
 
 def _blob_sha(tag: str) -> str:
@@ -97,6 +98,7 @@ class _GateHarness(unittest.TestCase):
 
     def script(self, script):
         """Install a scripted run_cmd double keyed by command prefix."""
+
         def fake_run(cmd, cwd=None, check=False):
             text = " ".join(cmd)
             self.seen.append(text)
@@ -104,6 +106,7 @@ class _GateHarness(unittest.TestCase):
                 if text.startswith(prefix):
                     return outcome
             return (0, "", "")
+
         cal.run_cmd = fake_run
 
 
@@ -121,14 +124,19 @@ class FreshnessSurfaceSSOT(unittest.TestCase):
         ids = [entry["id"] for entry in checklist]
         self.assertEqual(len(ids), len(set(ids)), "checklist ids must be unique")
         for required in (
-            "zero-admin-budget", "claim-gate", "reflection-evidence",
-            "p7-cohesive-sizing", "boundary-guard", "stale-base-guard",
+            "zero-admin-budget",
+            "claim-gate",
+            "reflection-evidence",
+            "p7-cohesive-sizing",
+            "boundary-guard",
+            "stale-base-guard",
         ):
             self.assertIn(required, ids)
 
     def test_03_checklist_names_the_pr_template_fields(self):
         reflection = next(
-            e for e in cal.mandatory_invariant_checklist()
+            e
+            for e in cal.mandatory_invariant_checklist()
             if e["id"] == "reflection-evidence"
         )
         self.assertIn("**why:**", reflection["rule"])
@@ -137,7 +145,8 @@ class FreshnessSurfaceSSOT(unittest.TestCase):
 
     def test_04_p7_entry_states_the_ingestion_ceiling(self):
         p7 = next(
-            e for e in cal.mandatory_invariant_checklist()
+            e
+            for e in cal.mandatory_invariant_checklist()
             if e["id"] == "p7-cohesive-sizing"
         )
         self.assertIn("30 files", p7["rule"])
@@ -160,7 +169,9 @@ class DiffRuleFreshness(unittest.TestCase):
     def test_07_remote_absent_is_divergence_not_crash(self):
         local = {p: _blob_sha(p) for p in cal.RULE_FRESHNESS_FILES}
         remote = {p: None for p in cal.RULE_FRESHNESS_FILES}
-        self.assertEqual(cal.diff_rule_freshness(local, remote), list(cal.RULE_FRESHNESS_FILES))
+        self.assertEqual(
+            cal.diff_rule_freshness(local, remote), list(cal.RULE_FRESHNESS_FILES)
+        )
 
     def test_08_absent_both_sides_is_fresh(self):
         shas = {p: None for p in cal.RULE_FRESHNESS_FILES}
@@ -219,10 +230,12 @@ class Step2FailClosed(_GateHarness):
 
     def test_16_unverifiable_worktree_blob_fails_closed(self):
         self.seed_repo()
-        self.script([
-            ("git fetch", (0, "", "")),
-            ("git hash-object", (128, "", "fatal: unable to hash")),
-        ])
+        self.script(
+            [
+                ("git fetch", (0, "", "")),
+                ("git hash-object", (128, "", "fatal: unable to hash")),
+            ]
+        )
         self.assertFalse(cal.step_2_rules())
 
     def test_17_origin_constitution_deletion_fails_closed(self):
@@ -233,14 +246,22 @@ class Step2FailClosed(_GateHarness):
             script.append(("git hash-object -- " + path, (0, shas[path] + "\n", "")))
             # origin/main dropped .github/PULL_REQUEST_TEMPLATE.md — rev-parse fails.
             if path == ".github/PULL_REQUEST_TEMPLATE.md":
-                script.append(("git rev-parse --verify --quiet origin/main:" + path, (1, "", "")))
+                script.append(
+                    ("git rev-parse --verify --quiet origin/main:" + path, (1, "", ""))
+                )
             else:
-                script.append(("git rev-parse --verify --quiet origin/main:" + path,
-                               (0, shas[path] + "\n", "")))
+                script.append(
+                    (
+                        "git rev-parse --verify --quiet origin/main:" + path,
+                        (0, shas[path] + "\n", ""),
+                    )
+                )
         self.script(script)
         self.assertFalse(cal.step_2_rules())
-        self.assertFalse(any("git checkout" in t for t in self.seen),
-                         "deletion must never be auto-synced via checkout")
+        self.assertFalse(
+            any("git checkout" in t for t in self.seen),
+            "deletion must never be auto-synced via checkout",
+        )
 
 
 class Step2AutoSync(_GateHarness):
@@ -252,8 +273,12 @@ class Step2AutoSync(_GateHarness):
             local = _blob_sha("local-" + path)
             remote = _blob_sha("drift-" + path) if path in diverged else local
             script.append(("git hash-object -- " + path, (0, local + "\n", "")))
-            script.append(("git rev-parse --verify --quiet origin/main:" + path,
-                           (0, remote + "\n", "")))
+            script.append(
+                (
+                    "git rev-parse --verify --quiet origin/main:" + path,
+                    (0, remote + "\n", ""),
+                )
+            )
         script.append(("git checkout", (0, "", "")))
         self.script(script)
 
@@ -269,12 +294,14 @@ class Step2AutoSync(_GateHarness):
         self.seed_repo()
         self._shas_script({"AGENTS.md"})
         # Override: the checkout itself fails.
-        self.script([
-            ("git fetch", (0, "", "")),
-            ("git hash-object", (0, "a" * 40 + "\n", "")),
-            ("git rev-parse", (0, "b" * 40 + "\n", "")),
-            ("git checkout", (1, "", "error: pathspec did not match")),
-        ])
+        self.script(
+            [
+                ("git fetch", (0, "", "")),
+                ("git hash-object", (0, "a" * 40 + "\n", "")),
+                ("git rev-parse", (0, "b" * 40 + "\n", "")),
+                ("git checkout", (1, "", "error: pathspec did not match")),
+            ]
+        )
         self.assertFalse(cal.step_2_rules())
 
     def test_20_all_fresh_runs_no_checkout(self):
@@ -283,12 +310,18 @@ class Step2AutoSync(_GateHarness):
         script: list[tuple[str, tuple[int, str, str]]] = [("git fetch", (0, "", ""))]
         for path in cal.RULE_FRESHNESS_FILES:
             script.append(("git hash-object -- " + path, (0, shas[path] + "\n", "")))
-            script.append(("git rev-parse --verify --quiet origin/main:" + path,
-                           (0, shas[path] + "\n", "")))
+            script.append(
+                (
+                    "git rev-parse --verify --quiet origin/main:" + path,
+                    (0, shas[path] + "\n", ""),
+                )
+            )
         self.script(script)
         self.assertTrue(cal.step_2_rules())
-        self.assertFalse(any("git checkout" in t for t in self.seen),
-                         "fresh constitution must not be touched")
+        self.assertFalse(
+            any("git checkout" in t for t in self.seen),
+            "fresh constitution must not be touched",
+        )
 
 
 class VerifyOnlyReportOnlyMode(_GateHarness):
@@ -298,15 +331,23 @@ class VerifyOnlyReportOnlyMode(_GateHarness):
         self.seed_repo()
         self._shas_script_all_diverged()
         self.assertTrue(cal.step_2_rules(auto_sync=False))
-        self.assertFalse(any("git checkout" in t for t in self.seen),
-                         "report-only mode must never mutate the tree")
+        self.assertFalse(
+            any("git checkout" in t for t in self.seen),
+            "report-only mode must never mutate the tree",
+        )
 
     def _shas_script_all_diverged(self) -> None:
         script: list[tuple[str, tuple[int, str, str]]] = [("git fetch", (0, "", ""))]
         for path in cal.RULE_FRESHNESS_FILES:
-            script.append(("git hash-object -- " + path, (0, _blob_sha("local") + "\n", "")))
-            script.append(("git rev-parse --verify --quiet origin/main:" + path,
-                           (0, _blob_sha("remote") + "\n", "")))
+            script.append(
+                ("git hash-object -- " + path, (0, _blob_sha("local") + "\n", ""))
+            )
+            script.append(
+                (
+                    "git rev-parse --verify --quiet origin/main:" + path,
+                    (0, _blob_sha("remote") + "\n", ""),
+                )
+            )
         self.script(script)
 
     def test_22_infra_failure_still_fails_closed_in_report_mode(self):

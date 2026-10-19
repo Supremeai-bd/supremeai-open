@@ -13,6 +13,7 @@ gateway subcommand) runs end to end with zero external credentials. The mock
 is a TEST fixture only, never production, and every mock completion carries a
 MOCK marker on the wire.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,39 +32,66 @@ async def _mock_attempt(endpoint, payload: bytes) -> AttemptResult:
     try:
         messages = json.loads(payload).get("messages", [])
         last_user = next(
-            (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), ""
+            (
+                m.get("content", "")
+                for m in reversed(messages)
+                if m.get("role") == "user"
+            ),
+            "",
         )
     except json.JSONDecodeError:
         last_user = ""
-    body = json.dumps({
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant",
-                        "content": f"{MOCK_TAG}:{endpoint.provider} echo: {last_user}"},
-            "finish_reason": "stop",
-        }],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-    }).encode()
-    return AttemptResult(endpoint=endpoint, status=200, headers={}, body=body, latency_ms=1)
+    body = json.dumps(
+        {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": f"{MOCK_TAG}:{endpoint.provider} echo: {last_user}",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    ).encode()
+    return AttemptResult(
+        endpoint=endpoint, status=200, headers={}, body=body, latency_ms=1
+    )
 
 
 def _mock_stream(endpoint, payload: bytes):
     """Deterministic mock provider stream: 3 chunks + stop (MOCK-tagged)."""
+
     async def gen():
-        yield {"type": "chunk",
-               "delta": {"role": "assistant", "content": f"{MOCK_TAG}:{endpoint.provider} "},
-               "finish_reason": None}
-        yield {"type": "chunk", "delta": {"content": "streaming "}, "finish_reason": None}
+        yield {
+            "type": "chunk",
+            "delta": {
+                "role": "assistant",
+                "content": f"{MOCK_TAG}:{endpoint.provider} ",
+            },
+            "finish_reason": None,
+        }
+        yield {
+            "type": "chunk",
+            "delta": {"content": "streaming "},
+            "finish_reason": None,
+        }
         yield {"type": "chunk", "delta": {"content": "echo"}, "finish_reason": None}
         yield {"type": "chunk", "delta": {}, "finish_reason": "stop"}
+
     return gen()
 
 
 config = load_config(os.environ.get("SUPREMEAI_ROUTING_POLICY"))
 
 if os.environ.get("SUPREMEAI_GATEWAY_MOCK_PROVIDER") == "1":
-    print("gateway.serve: MOCK PROVIDER ENABLED (SUPREMEAI_GATEWAY_MOCK_PROVIDER=1) "
-          "- test fixture only, never production", file=sys.stderr)
+    print(
+        "gateway.serve: MOCK PROVIDER ENABLED (SUPREMEAI_GATEWAY_MOCK_PROVIDER=1) "
+        "- test fixture only, never production",
+        file=sys.stderr,
+    )
     app = create_app(config, attempt_fn=_mock_attempt, stream_fn=_mock_stream)
 else:
     app = create_app(config)

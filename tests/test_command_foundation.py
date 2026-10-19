@@ -13,35 +13,34 @@ import sys
 import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
-from typing import Dict, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from command.config import CommandConfig, CommandConfigError  # noqa: E402
-    from command.dispatcher import (  # noqa: E402
+    from command.config import CommandConfig, CommandConfigError
+    from command.dispatcher import (
         DispatcherError,
         MiniRedis,
         TowerDispatcher,
         encode_resp,
     )
-    from command.telegram_bot import CommandRouter, TelegramUpdate  # noqa: E402
-    from command.webhook_ingress import (  # noqa: E402
+    from command.telegram_bot import CommandRouter, TelegramUpdate
+    from command.webhook_ingress import (
         WebhookIngress,
         compute_signature,
         make_http_server,
         verify_hmac,
     )
 except ImportError:
-    from src.config import CommandConfig, CommandConfigError  # noqa: E402
-    from src.dispatcher import (  # noqa: E402
+    from src.config import CommandConfig, CommandConfigError
+    from src.dispatcher import (
         DispatcherError,
         MiniRedis,
         TowerDispatcher,
         encode_resp,
     )
-    from src.telegram_bot import CommandRouter, TelegramUpdate  # noqa: E402
-    from src.webhook_ingress import (  # noqa: E402
+    from src.telegram_bot import CommandRouter, TelegramUpdate
+    from src.webhook_ingress import (
         WebhookIngress,
         compute_signature,
         make_http_server,
@@ -50,7 +49,7 @@ except ImportError:
 
 
 def make_config(**overrides) -> CommandConfig:
-    env: Dict[str, str] = {
+    env: dict[str, str] = {
         "TELEGRAM_BOT_TOKEN": "123456:TEST-ONLY-TOKEN",
         "TELEGRAM_SUPERADMIN_CHAT_ID": "424242",
         "COMMAND_HMAC_SECRET": "x" * 32,
@@ -62,6 +61,7 @@ def make_config(**overrides) -> CommandConfig:
 # ---------------------------------------------------------------------------
 # 1) config: fail-closed construction + redaction
 # ---------------------------------------------------------------------------
+
 
 def test_config_missing_env_lists_all_missing_vars():
     try:
@@ -76,7 +76,9 @@ def test_config_missing_env_lists_all_missing_vars():
 
 def test_config_rejects_bad_superadmin_and_short_hmac():
     try:
-        make_config(TELEGRAM_SUPERADMIN_CHAT_ID="not-numeric", COMMAND_HMAC_SECRET="short")
+        make_config(
+            TELEGRAM_SUPERADMIN_CHAT_ID="not-numeric", COMMAND_HMAC_SECRET="short"
+        )
         raise AssertionError("expected CommandConfigError")
     except CommandConfigError:
         pass
@@ -94,7 +96,10 @@ def test_config_repr_never_leaks_secrets():
 # 2) RBAC + Telegram command routing (pure layer)
 # ---------------------------------------------------------------------------
 
-def make_router(status="runway: 3 queued", dispatch="dispatched", armed="kill-switch ARMED"):
+
+def make_router(
+    status="runway: 3 queued", dispatch="dispatched", armed="kill-switch ARMED"
+):
     cfg = make_config()
     return CommandRouter(
         config=cfg,
@@ -120,9 +125,7 @@ def test_status_and_runway_route_to_status():
 
 def test_dispatch_validates_issue_url_fail_closed():
     router = make_router()
-    bad = router.route(
-        TelegramUpdate("424242", "/dispatch not-a-github-url")
-    )
+    bad = router.route(TelegramUpdate("424242", "/dispatch not-a-github-url"))
     assert bad.action == "reply" and "requires a GitHub issue URL" in bad.text
     good = router.route(
         TelegramUpdate(
@@ -145,6 +148,7 @@ def test_stop_arms_kill_switch_and_unknown_gets_help():
 # 3) HMAC webhook ingress (pure + local socket end-to-end)
 # ---------------------------------------------------------------------------
 
+
 def test_hmac_verify_ok_tampered_and_missing():
     secret = "h" * 32
     body = json.dumps({"issue_url": "https://github.com/o/r/issues/1"}).encode("utf-8")
@@ -157,7 +161,7 @@ def test_hmac_verify_ok_tampered_and_missing():
 
 
 def test_webhook_ingress_status_codes():
-    calls: List[str] = []
+    calls: list[str] = []
     ingress = WebhookIngress("h" * 32, on_valid=calls.append)
     body = json.dumps({"issue_url": "https://github.com/o/r/issues/7"}).encode("utf-8")
     sig = compute_signature("h" * 32, body)
@@ -172,13 +176,15 @@ def test_webhook_ingress_status_codes():
 
 
 def test_webhook_end_to_end_local_socket():
-    calls: List[str] = []
+    calls: list[str] = []
     ingress = WebhookIngress("h" * 32, on_valid=calls.append)
     server = make_http_server(ingress)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        body = json.dumps({"issue_url": "https://github.com/o/r/issues/9"}).encode("utf-8")
+        body = json.dumps({"issue_url": "https://github.com/o/r/issues/9"}).encode(
+            "utf-8"
+        )
         req = urllib.request.Request(
             "http://127.0.0.1:%d/dispatch" % server.server_address[1],
             data=body,
@@ -200,6 +206,7 @@ def test_webhook_end_to_end_local_socket():
 # 4) dispatcher payload shape + fail-closed errors (local dummy tower)
 # ---------------------------------------------------------------------------
 
+
 def test_dispatcher_rpc_payload_shape_and_result_parsing():
     captured = {}
 
@@ -207,13 +214,16 @@ def test_dispatcher_rpc_payload_shape_and_result_parsing():
         from http.server import BaseHTTPRequestHandler
 
         class H(BaseHTTPRequestHandler):
-            def do_POST(self):  # noqa: N802
+            def do_POST(self):
                 length = int(self.headers.get("Content-Length", "0"))
                 captured["body"] = json.loads(self.rfile.read(length).decode("utf-8"))
                 captured["headers"] = {k.lower(): v for k, v in self.headers.items()}
                 payload = json.dumps(
-                    {"jsonrpc": "2.0", "id": 1,
-                     "result": {"content": [{"type": "text", "text": "ok:3"}]}}
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "result": {"content": [{"type": "text", "text": "ok:3"}]},
+                    }
                 ).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -221,7 +231,7 @@ def test_dispatcher_rpc_payload_shape_and_result_parsing():
                 self.end_headers()
                 self.wfile.write(payload)
 
-            def log_message(self, fmt, *args):  # noqa: A002
+            def log_message(self, fmt, *args):
                 return
 
         return H
@@ -260,6 +270,7 @@ def test_dispatcher_rejects_http_error_and_bad_url():
 # ---------------------------------------------------------------------------
 # 5) RESP kill-switch encoding (pure, no socket)
 # ---------------------------------------------------------------------------
+
 
 def test_resp_encoding_shape():
     blob = encode_resp(b"SET", b"key", b"value", b"EX", b"60")

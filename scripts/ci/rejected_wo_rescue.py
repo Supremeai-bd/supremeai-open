@@ -243,20 +243,32 @@ def classify_rejection(comment_text: str, task_title: str = "") -> Triage:
     # Fail-closed first: fatal signals dominate everything else.
     if _RE_SECRET.search(text):
         evidence.append("secret/credential detection marker")
-        return Triage(CLASS_FATAL, MODE_FATAL_SECRET, False, evidence,
-                      labelPlan=FATAL_LABEL_PLAN)
+        return Triage(
+            CLASS_FATAL, MODE_FATAL_SECRET, False, evidence, labelPlan=FATAL_LABEL_PLAN
+        )
     if _RE_AST.search(text):
         evidence.append("malicious AST violation marker")
-        return Triage(CLASS_FATAL, MODE_FATAL_AST_VIOLATION, False, evidence,
-                      labelPlan=FATAL_LABEL_PLAN)
+        return Triage(
+            CLASS_FATAL,
+            MODE_FATAL_AST_VIOLATION,
+            False,
+            evidence,
+            labelPlan=FATAL_LABEL_PLAN,
+        )
     if _RE_BOUNDARY.search(text):
         evidence.append("out-of-boundary tampering marker")
-        return Triage(CLASS_FATAL, MODE_FATAL_BOUNDARY_TAMPERING, False,
-                      evidence, labelPlan=FATAL_LABEL_PLAN)
+        return Triage(
+            CLASS_FATAL,
+            MODE_FATAL_BOUNDARY_TAMPERING,
+            False,
+            evidence,
+            labelPlan=FATAL_LABEL_PLAN,
+        )
     if _RE_ADMIN_REVIEW.search(text):
         evidence.append("protected path requires admin review")
-        return Triage(CLASS_FATAL, MODE_ADMIN_REVIEW, False, evidence,
-                      labelPlan=FATAL_LABEL_PLAN)
+        return Triage(
+            CLASS_FATAL, MODE_ADMIN_REVIEW, False, evidence, labelPlan=FATAL_LABEL_PLAN
+        )
 
     # Healable mechanical modes (first match wins, deterministic priority).
     conflict_paths = extract_conflict_paths(text)
@@ -279,17 +291,28 @@ def classify_rejection(comment_text: str, task_title: str = "") -> Triage:
         evidence.append("CI gate failed on in-flight PR")
         mode = MODE_PR_CI_FAILED
     else:
-        return Triage(CLASS_FATAL, MODE_UNKNOWN, False,
-                      ["no known healable pattern - fail-closed"],
-                      labelPlan=FATAL_LABEL_PLAN)
+        return Triage(
+            CLASS_FATAL,
+            MODE_UNKNOWN,
+            False,
+            ["no known healable pattern - fail-closed"],
+            labelPlan=FATAL_LABEL_PLAN,
+        )
 
-    return Triage(CLASS_HEALABLE, mode, True, evidence, conflict_paths,
-                  HEALABLE_LABEL_PLAN, _rescue_plan(mode, conflict_paths,
-                                                    task_title))
+    return Triage(
+        CLASS_HEALABLE,
+        mode,
+        True,
+        evidence,
+        conflict_paths,
+        HEALABLE_LABEL_PLAN,
+        _rescue_plan(mode, conflict_paths, task_title),
+    )
 
 
-def triage(comment_text: str, issue_number: int | None = None,
-           task_title: str = "") -> dict:
+def triage(
+    comment_text: str, issue_number: int | None = None, task_title: str = ""
+) -> dict:
     """Full triage payload: classification + label plan + rescue plan."""
     t = classify_rejection(comment_text, task_title)
     payload = t.to_dict()
@@ -323,6 +346,7 @@ def is_valid_task_id(task_id: str) -> bool:
 # Rescue flow state machine (fail-closed sequence enforcement)
 # ---------------------------------------------------------------------------
 
+
 def validate_transition(current: str, nxt: str) -> bool:
     """True only when nxt is the immediate successor of current in the
     5-step rescue flow; the flow can never skip or loop."""
@@ -334,6 +358,7 @@ def validate_transition(current: str, nxt: str) -> bool:
 # ---------------------------------------------------------------------------
 # Self-test
 # ---------------------------------------------------------------------------
+
 
 def _self_test() -> int:
     failures: list[str] = []
@@ -375,14 +400,17 @@ def _self_test() -> int:
     )
     t3 = triage(sample_523, 523)
     check("523-mode", t3["mode"] == MODE_PATCH_APPLY_CONFLICT)
-    check("523-path",
-          t3["conflictPaths"] == ["scripts/agents/continuous_agent_loop.py"])
+    check(
+        "523-path", t3["conflictPaths"] == ["scripts/agents/continuous_agent_loop.py"]
+    )
 
     # Fatal: secret detection (marker built at runtime, never literal).
     marker = "secret " + "key detected"
     t4 = triage("validation failed: " + marker + " in payload")
-    check("fatal-secret", t4["classification"] == CLASS_FATAL
-          and t4["mode"] == MODE_FATAL_SECRET)
+    check(
+        "fatal-secret",
+        t4["classification"] == CLASS_FATAL and t4["mode"] == MODE_FATAL_SECRET,
+    )
     check("fatal-no-handoff", LABEL_HANDOFF not in t4["labelPlan"].get("apply", []))
 
     # Fatal: AST + boundary + admin review + unknown (fail-closed default).
@@ -393,8 +421,12 @@ def _self_test() -> int:
     t7 = triage("rejected: protected path requires admin review")
     check("fatal-admin", t7["mode"] == MODE_ADMIN_REVIEW)
     t8 = triage("some completely novel failure text")
-    check("unknown-fail-closed", t8["classification"] == CLASS_FATAL
-          and t8["mode"] == MODE_UNKNOWN and t8["healable"] is False)
+    check(
+        "unknown-fail-closed",
+        t8["classification"] == CLASS_FATAL
+        and t8["mode"] == MODE_UNKNOWN
+        and t8["healable"] is False,
+    )
 
     # Behind-main, reflection, ci-failed modes.
     t9 = triage("branch is behind origin/main; stale base rejected")
@@ -410,12 +442,16 @@ def _self_test() -> int:
     check("priority-fatal", t12["classification"] == CLASS_FATAL)
 
     # Task id builder: deterministic, contract-compliant, bounded.
-    id_a = build_task_id("feat(core): [seed-foundation] Initialize SupremeAI "
-                         "Core Decision Moat: Deterministic DAG Planner",
-                         "20261017")
-    id_b = build_task_id("feat(core): [seed-foundation] Initialize SupremeAI "
-                         "Core Decision Moat: Deterministic DAG Planner",
-                         "20261017")
+    id_a = build_task_id(
+        "feat(core): [seed-foundation] Initialize SupremeAI "
+        "Core Decision Moat: Deterministic DAG Planner",
+        "20261017",
+    )
+    id_b = build_task_id(
+        "feat(core): [seed-foundation] Initialize SupremeAI "
+        "Core Decision Moat: Deterministic DAG Planner",
+        "20261017",
+    )
     check("taskid-deterministic", id_a == id_b)
     check("taskid-format", is_valid_task_id(id_a))
     check("taskid-bounded", len(id_a) <= 72)
@@ -423,15 +459,19 @@ def _self_test() -> int:
     check("taskid-invalid-raw", not is_valid_task_id("my branch"))
 
     # Trigger contract fragment (operator appendix wires this verbatim).
-    check("contract-events",
-          CI_FIXER_TRIGGER_CONTRACT["events"] == ["event:pr.ci_failed",
-                                                  "event:bridge.rejected"])
+    check(
+        "contract-events",
+        CI_FIXER_TRIGGER_CONTRACT["events"]
+        == ["event:pr.ci_failed", "event:bridge.rejected"],
+    )
     check("contract-label", LABEL_HANDOFF in CI_FIXER_TRIGGER_CONTRACT["labels"])
 
     # Rescue flow: strict sequence, no skip, no loop, no unknown states.
     steps = RESCUE_FLOW_STEPS
-    check("flow-full", all(validate_transition(steps[i], steps[i + 1])
-                           for i in range(len(steps) - 1)))
+    check(
+        "flow-full",
+        all(validate_transition(steps[i], steps[i + 1]) for i in range(len(steps) - 1)),
+    )
     check("flow-no-skip", not validate_transition("INSPECT", "VERIFY"))
     check("flow-no-loop", not validate_transition("REBASE", "INSPECT"))
     check("flow-no-unknown", not validate_transition("INSPECT", "DEPLOY"))
@@ -442,15 +482,19 @@ def _self_test() -> int:
 
     # Label plan invariants.
     check("audit-kept", LABEL_REJECTED_AUDIT in HEALABLE_LABEL_PLAN["keep"])
-    check("rejected-never-removed",
-          LABEL_REJECTED_AUDIT not in HEALABLE_LABEL_PLAN["remove"])
+    check(
+        "rejected-never-removed",
+        LABEL_REJECTED_AUDIT not in HEALABLE_LABEL_PLAN["remove"],
+    )
 
     if failures:
         for f in failures:
             print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
         return 2
-    print("Self-healing bridge rescue triage self-test: ALL PASS "
-          f"({len(failures)} failures)")
+    print(
+        "Self-healing bridge rescue triage self-test: ALL PASS "
+        f"({len(failures)} failures)"
+    )
     return 0
 
 
@@ -458,9 +502,11 @@ def _self_test() -> int:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Rejected WO rescue triage plane (#545)")
+        description="Rejected WO rescue triage plane (#545)"
+    )
     parser.add_argument("--comment-file", help="rejection comment text file")
     parser.add_argument("--issue", type=int, help="work order issue number")
     parser.add_argument("--title", default="", help="work order title")

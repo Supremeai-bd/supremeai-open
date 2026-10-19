@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -20,26 +19,33 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from gateway.config import (  # noqa: E402
+from gateway.config import (
     ALLOWED_PROVIDERS,
-    ALLOWED_SCOPES,
     CONFIG_SCHEMA_VERSION,
     ConfigError,
     Endpoint,
     GatewayConfig,
     parse_routing_policy,
 )
-from gateway.provider_chain import (  # noqa: E402
+from gateway.provider_chain import (
     AttemptResult,
     ProviderChainExhausted,
     execute_chain,
 )
-from gateway.rate_limit import RateDecision, SlidingWindowLimiter  # noqa: E402
+from gateway.rate_limit import SlidingWindowLimiter
 
 
 class TestGatewayConfig(unittest.TestCase):
     def test_allowed_providers_ssot(self):
-        expected = {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"}
+        expected = {
+            "openai",
+            "anthropic",
+            "gemini",
+            "groq",
+            "openrouter",
+            "mistral",
+            "deepseek",
+        }
         self.assertEqual(ALLOWED_PROVIDERS, frozenset(expected))
 
     def test_routing_policy_load_valid(self):
@@ -61,7 +67,9 @@ class TestGatewayConfig(unittest.TestCase):
         invalid_raw = {
             "schema_version": CONFIG_SCHEMA_VERSION,
             "chains": {
-                "auto": [{"provider": "unauthorized-llm-provider", "model": "test-model"}]
+                "auto": [
+                    {"provider": "unauthorized-llm-provider", "model": "test-model"}
+                ]
             },
             "default_chain": "auto",
             "rate_limit": {"window_seconds": 60, "max_requests": 10},
@@ -95,7 +103,9 @@ class TestGatewayConfig(unittest.TestCase):
 class TestRateLimiter(unittest.TestCase):
     def test_sliding_window_within_limit(self):
         clock_time = 1000
-        limiter = SlidingWindowLimiter(window_s=60, max_requests=2, clock=lambda: clock_time)
+        limiter = SlidingWindowLimiter(
+            window_s=60, max_requests=2, clock=lambda: clock_time
+        )
 
         d1 = asyncio.run(limiter.check("client-1"))
         self.assertTrue(d1.allowed)
@@ -113,7 +123,9 @@ class TestRateLimiter(unittest.TestCase):
 
     def test_sliding_window_expiration(self):
         time_holder = [1000]
-        limiter = SlidingWindowLimiter(window_s=10, max_requests=1, clock=lambda: time_holder[0])
+        limiter = SlidingWindowLimiter(
+            window_s=10, max_requests=1, clock=lambda: time_holder[0]
+        )
 
         d1 = asyncio.run(limiter.check("client-2"))
         self.assertTrue(d1.allowed)
@@ -138,7 +150,9 @@ class TestProviderChain(unittest.TestCase):
                 latency_ms=45,
             )
 
-        res = asyncio.run(execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt))
+        res = asyncio.run(
+            execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
+        )
         self.assertEqual(res.status, 200)
         self.assertEqual(res.endpoint.provider, "groq")
 
@@ -163,7 +177,9 @@ class TestProviderChain(unittest.TestCase):
                 latency_ms=150,
             )
 
-        res = asyncio.run(execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt))
+        res = asyncio.run(
+            execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
+        )
         self.assertEqual(res.status, 200)
         self.assertEqual(res.endpoint.provider, "gemini")
 
@@ -181,7 +197,9 @@ class TestProviderChain(unittest.TestCase):
             )
 
         with self.assertRaises(ProviderChainExhausted) as ctx:
-            asyncio.run(execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt))
+            asyncio.run(
+                execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
+            )
 
         self.assertEqual(len(ctx.exception.ledger), 2)
 

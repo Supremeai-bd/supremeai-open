@@ -25,6 +25,7 @@ sync with this module (parity doctrine, cf. #67 marker discipline).
 
 Pure stdlib. Run: python3 scripts/agents/context_graph_resolver.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,9 +33,10 @@ import ast
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Final, Mapping
+from typing import Final
 
 NODE_TYPES: Final = ("satellite", "file", "contract", "policy", "god_node")
 EDGE_RELATIONS: Final = ("depends_on", "enforces", "dispatches_to", "validates")
@@ -45,7 +47,7 @@ TOKEN_BUDGET_PER_QUERY: Final = 500
 #: Benchmark floor (issue acceptance: > 50x; headline: 71.5x).
 MIN_TOKEN_SAVINGS_RATIO: Final = 50.0
 
-HEADING_RE = re.compile(r"^(#{1,3})\s+(.+)$", re.M)
+HEADING_RE = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
 RULE_REF_RE = re.compile(r"(?:^|\s)([A-Z][A-Z0-9_]+\.md)(?:#(\S+))?")
 
 
@@ -87,22 +89,22 @@ def estimate_tokens(text: str) -> int:
 
 def _check_node(node: KnowledgeNode) -> None:
     if node.type not in NODE_TYPES:
-        raise GraphError(f"node type must be one of {NODE_TYPES}, "
-                         f"got {node.type!r}")
+        raise GraphError(f"node type must be one of {NODE_TYPES}, got {node.type!r}")
     if not node.id or not node.summary:
         raise GraphError(f"node {node.id!r} needs id and summary")
     if not re.fullmatch(r"[0-9a-f]{64}", node.sha256):
-        raise GraphError(f"node {node.id!r} sha256 malformed: "
-                         f"{node.sha256!r}")
+        raise GraphError(f"node {node.id!r} sha256 malformed: {node.sha256!r}")
 
 
 def _check_edge(edge: KnowledgeEdge) -> None:
     if edge.relation not in EDGE_RELATIONS:
-        raise GraphError(f"edge relation must be one of {EDGE_RELATIONS}, "
-                         f"got {edge.relation!r}")
+        raise GraphError(
+            f"edge relation must be one of {EDGE_RELATIONS}, got {edge.relation!r}"
+        )
     if edge.confidence not in EDGE_CONFIDENCE:
-        raise GraphError(f"edge confidence must be one of {EDGE_CONFIDENCE}, "
-                         f"got {edge.confidence!r}")
+        raise GraphError(
+            f"edge confidence must be one of {EDGE_CONFIDENCE}, got {edge.confidence!r}"
+        )
     if not edge.source or not edge.target or edge.source == edge.target:
         raise GraphError(f"edge needs distinct endpoints, got {edge!r}")
 
@@ -116,8 +118,9 @@ def file_sha256(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def extract_python_nodes(path: str, content: str) -> tuple[
-        list[KnowledgeNode], list[KnowledgeEdge]]:
+def extract_python_nodes(
+    path: str, content: str
+) -> tuple[list[KnowledgeNode], list[KnowledgeEdge]]:
     """AST extraction: module-level defs/classes as nodes, imports as
     explicit ``depends_on`` edges (same-package targets only)."""
     nodes: list[KnowledgeNode] = []
@@ -131,23 +134,24 @@ def extract_python_nodes(path: str, content: str) -> tuple[
     doc = ast.get_docstring(tree) or path
     nodes.append(KnowledgeNode(node_id, "file", doc.splitlines()[0][:200], sha))
     for stmt in tree.body:
-        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef,
-                             ast.ClassDef)):
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             child_id = f"file:{path}#{stmt.name}"
             summary = (ast.get_docstring(stmt) or stmt.name).splitlines()[0][:200]
-            nodes.append(KnowledgeNode(child_id, "god_node", summary,
-                                       file_sha256(f"{path}::{stmt.name}")))
-            edges.append(KnowledgeEdge(node_id, child_id, "depends_on",
-                                       "explicit"))
+            nodes.append(
+                KnowledgeNode(
+                    child_id, "god_node", summary, file_sha256(f"{path}::{stmt.name}")
+                )
+            )
+            edges.append(KnowledgeEdge(node_id, child_id, "depends_on", "explicit"))
         if isinstance(stmt, ast.ImportFrom) and stmt.module:
             target = f"ref:{stmt.module.replace('.', '/')}.py"
-            edges.append(KnowledgeEdge(node_id, target, "depends_on",
-                                       "inferred"))
+            edges.append(KnowledgeEdge(node_id, target, "depends_on", "inferred"))
     return nodes, edges
 
 
-def extract_markdown_nodes(path: str, content: str) -> tuple[
-        list[KnowledgeNode], list[KnowledgeEdge]]:
+def extract_markdown_nodes(
+    path: str, content: str
+) -> tuple[list[KnowledgeNode], list[KnowledgeEdge]]:
     """Markdown extraction: H1-H3 headings as policy/contract nodes; rule
     references (FILE.md#anchor) as ``enforces`` edges with RAW targets
     (``ref:`` scheme — resolved against the full node set by
@@ -156,8 +160,11 @@ def extract_markdown_nodes(path: str, content: str) -> tuple[
     edges: list[KnowledgeEdge] = []
     sha = file_sha256(content)
     node_id = f"file:{path}"
-    ntype = "policy" if "rule" in path.lower() or "governance" in path.lower() \
+    ntype = (
+        "policy"
+        if "rule" in path.lower() or "governance" in path.lower()
         else "contract"
+    )
     first_para = next((ln for ln in content.splitlines() if ln.strip()), path)
     nodes.append(KnowledgeNode(node_id, ntype, first_para[:200], sha))
     seen_refs: set[str] = set()
@@ -169,8 +176,7 @@ def extract_markdown_nodes(path: str, content: str) -> tuple[
         target = f"ref:{ref_file}" + (f"#{anchor}" if anchor else "")
         if target not in seen_refs:
             seen_refs.add(target)
-            edges.append(KnowledgeEdge(node_id, target, "enforces",
-                                       "explicit"))
+            edges.append(KnowledgeEdge(node_id, target, "enforces", "explicit"))
     return nodes, edges
 
 
@@ -183,22 +189,24 @@ def _resolve_ref(target: str, node_ids: set[str]) -> str | None:
     Unresolvable refs are dropped honestly (never fabricated, never
     dangling).
     """
-    raw = target[len("ref:"):]
+    raw = target[len("ref:") :]
     base = raw.split("#")[0]
     anchored = f"file:{raw}"
     if target in node_ids:
         return target
     if anchored in node_ids or f"file:{raw}" in node_ids:
         return anchored if anchored in node_ids else f"file:{raw}"
-    matches = sorted(nid for nid in node_ids
-                     if nid.split("#")[0].endswith("/" + base)
-                     or nid.split("#")[0] == f"file:{base}")
+    matches = sorted(
+        nid
+        for nid in node_ids
+        if nid.split("#")[0].endswith("/" + base) or nid.split("#")[0] == f"file:{base}"
+    )
     if len(matches) == 1:
         return matches[0].split("#")[0]  # file-level node; anchor advisory
     return None
 
 
-def build_graph(sources: Mapping[str, str]) -> "KnowledgeGraph":
+def build_graph(sources: Mapping[str, str]) -> KnowledgeGraph:
     """Build the initial graph from {path: content}. Fail-closed."""
     nodes: list[KnowledgeNode] = []
     edges: list[KnowledgeEdge] = []
@@ -208,8 +216,10 @@ def build_graph(sources: Mapping[str, str]) -> "KnowledgeGraph":
         elif path.endswith(".md"):
             n, e = extract_markdown_nodes(path, content)
         else:
-            raise GraphError(f"unsupported source type: {path!r} "
-                             "(stdlib extractor covers .py and .md)")
+            raise GraphError(
+                f"unsupported source type: {path!r} "
+                "(stdlib extractor covers .py and .md)"
+            )
         nodes.extend(n)
         edges.extend(e)
     node_ids = {n.id for n in nodes}
@@ -219,8 +229,7 @@ def build_graph(sources: Mapping[str, str]) -> "KnowledgeGraph":
             resolved = _resolve_ref(edge.target, node_ids)
             if resolved is None:
                 continue  # honest drop: unresolved references are not edges
-            edge = KnowledgeEdge(edge.source, resolved, edge.relation,
-                                 edge.confidence)
+            edge = KnowledgeEdge(edge.source, resolved, edge.relation, edge.confidence)
         resolved_edges.append(edge)
     return KnowledgeGraph(nodes=tuple(nodes), edges=tuple(resolved_edges))
 
@@ -247,7 +256,8 @@ class KnowledgeGraph:
             if edge.source not in ids or edge.target not in ids:
                 raise GraphError(
                     f"edge {edge.source!r}->{edge.target!r} references an "
-                    "unknown node — dangling edges are rejected (fail-closed)")
+                    "unknown node — dangling edges are rejected (fail-closed)"
+                )
 
     @property
     def node_map(self) -> Mapping[str, KnowledgeNode]:
@@ -264,20 +274,25 @@ class KnowledgeGraph:
         edges = out_edges + in_edges
         neighbor_ids = {e.target for e in out_edges} | {e.source for e in in_edges}
         neighbors = tuple(nodes[nid] for nid in sorted(neighbor_ids))
-        text = "\n".join([f"{root.id}: {root.summary}"]
-                         + [f"- {e.relation} -> {e.target} ({e.confidence})"
-                            for e in out_edges]
-                         + [f"- {e.relation} <- {e.source} ({e.confidence})"
-                            for e in in_edges]
-                         + [f"{nb.id}: {nb.summary}" for nb in neighbors])
+        text = "\n".join(
+            [f"{root.id}: {root.summary}"]
+            + [f"- {e.relation} -> {e.target} ({e.confidence})" for e in out_edges]
+            + [f"- {e.relation} <- {e.source} ({e.confidence})" for e in in_edges]
+            + [f"{nb.id}: {nb.summary}" for nb in neighbors]
+        )
         tokens = estimate_tokens(text)
         return ContextResolution(
-            root=root, edges=edges, neighbors=neighbors,
-            tokens_estimate=tokens, budget_ok=tokens <= TOKEN_BUDGET_PER_QUERY)
+            root=root,
+            edges=edges,
+            neighbors=neighbors,
+            tokens_estimate=tokens,
+            budget_ok=tokens <= TOKEN_BUDGET_PER_QUERY,
+        )
 
 
-def benchmark_savings(raw_documents: Mapping[str, str],
-                      resolution: ContextResolution) -> float:
+def benchmark_savings(
+    raw_documents: Mapping[str, str], resolution: ContextResolution
+) -> float:
     """Token savings vs raw document injection (fail-closed, > 50x gate).
 
     ``raw_documents`` are the files the agent WOULD have read without the
@@ -286,13 +301,15 @@ def benchmark_savings(raw_documents: Mapping[str, str],
     """
     if not raw_documents:
         raise GraphError("benchmark needs raw documents")
-    root_file = resolution.root.id.split("#")[0][len("file:"):]
+    root_file = resolution.root.id.split("#")[0][len("file:") :]
     baseline_files = {root_file}
     for nb in resolution.neighbors:
-        baseline_files.add(nb.id.split("#")[0][len("file:"):])
-    baseline_tokens = sum(estimate_tokens(content)
-                          for path, content in sorted(raw_documents.items())
-                          if path in baseline_files)
+        baseline_files.add(nb.id.split("#")[0][len("file:") :])
+    baseline_tokens = sum(
+        estimate_tokens(content)
+        for path, content in sorted(raw_documents.items())
+        if path in baseline_files
+    )
     if baseline_tokens <= 0:
         raise GraphError("baseline documents empty for resolved context")
     return baseline_tokens / resolution.tokens_estimate
@@ -312,19 +329,24 @@ class IncrementalCache:
     def changed_files(self, current: Mapping[str, str]) -> tuple[str, ...]:
         """Paths whose content differs from the cached snapshot (values are
         raw content; hashing is internal)."""
-        return tuple(sorted(
-            path for path, content in current.items()
-            if self.hashes.get(path) != file_sha256(content)))
+        return tuple(
+            sorted(
+                path
+                for path, content in current.items()
+                if self.hashes.get(path) != file_sha256(content)
+            )
+        )
 
     def commit(self, current: Mapping[str, str]) -> None:
         """Record the current content snapshot (hashes computed here)."""
-        self.hashes.update({path: file_sha256(content)
-                            for path, content in current.items()})
+        self.hashes.update(
+            {path: file_sha256(content) for path, content in current.items()}
+        )
 
 
-def incremental_update(graph: KnowledgeGraph, cache: IncrementalCache,
-                       path: str, new_content: str) -> tuple[
-        KnowledgeGraph, int]:
+def incremental_update(
+    graph: KnowledgeGraph, cache: IncrementalCache, path: str, new_content: str
+) -> tuple[KnowledgeGraph, int]:
     """Touch 1 file -> update EXACTLY 1 node + its immediate edges.
 
     Returns the new graph and the number of rebuilt nodes (must be 1 for
@@ -335,9 +357,11 @@ def incremental_update(graph: KnowledgeGraph, cache: IncrementalCache,
     index = {n.id: i for i, n in enumerate(nodes)}
     target_id = f"file:{path}"
     if target_id not in index:
-        raise GraphError(f"node {target_id!r} not in graph — run the full "
-                         "builder first (incremental updates amend, never "
-                         "bootstrap)")
+        raise GraphError(
+            f"node {target_id!r} not in graph — run the full "
+            "builder first (incremental updates amend, never "
+            "bootstrap)"
+        )
     if path.endswith(".py"):
         fresh_nodes, fresh_edges = extract_python_nodes(path, new_content)
     elif path.endswith(".md"):
@@ -351,8 +375,9 @@ def incremental_update(graph: KnowledgeGraph, cache: IncrementalCache,
         if node.id == target_id:
             nodes[i] = new_root
             replaced += 1
-        elif (node.id.startswith(target_id + "#")
-              and node.sha256 != file_sha256(f"{path}::{node.id.split('#')[1]}")):
+        elif node.id.startswith(target_id + "#") and node.sha256 != file_sha256(
+            f"{path}::{node.id.split('#')[1]}"
+        ):
             fresh_child = next((n for n in fresh_nodes if n.id == node.id), None)
             if fresh_child is not None and fresh_child.sha256 != node.sha256:
                 nodes[i] = fresh_child
@@ -361,8 +386,9 @@ def incremental_update(graph: KnowledgeGraph, cache: IncrementalCache,
     # root's edges with the fresh ones (raw refs resolved, unresolved
     # dropped honestly — same contract as build_graph).
     node_ids = {n.id for n in nodes}
-    kept = [e for e in graph.edges
-            if not (e.source == target_id or e.target == target_id)]
+    kept = [
+        e for e in graph.edges if not (e.source == target_id or e.target == target_id)
+    ]
     for e in fresh_edges:
         if e.target.startswith("ref:"):
             resolved = _resolve_ref(e.target, node_ids)
@@ -377,32 +403,44 @@ def incremental_update(graph: KnowledgeGraph, cache: IncrementalCache,
 def self_test() -> bool:
     sources = {
         "docs/AGENT_RULES.md": "# Rules\n\nU4 hold doctrine. See AGENT_RULES.md#U4 "
-                               "and GATEWAY.md#auth\n",
+        "and GATEWAY.md#auth\n",
         "docs/GATEWAY.md": "# Gateway SSOT\nBearer + key auth\n",
         "scripts/agents/loop.py": (
             '"""Agent loop."""\nimport json\n\n'
-            "def run():\n    \"\"\"Run the loop.\"\"\"\n    return json.loads('{}')\n"),
+            'def run():\n    """Run the loop."""\n    return json.loads(\'{}\')\n'
+        ),
     }
     graph = build_graph(sources)
     assert any(n.id == "file:scripts/agents/loop.py" for n in graph.nodes)
-    assert any(n.type == "god_node" and n.id.endswith("#run")
-               for n in graph.nodes)
-    assert any(e.relation == "enforces" and e.confidence == "explicit"
-               for e in graph.edges)
+    assert any(n.type == "god_node" and n.id.endswith("#run") for n in graph.nodes)
+    assert any(
+        e.relation == "enforces" and e.confidence == "explicit" for e in graph.edges
+    )
 
     # Schema fail-closed (construction itself must raise).
     bad_graphs = (
         lambda: KnowledgeGraph((KnowledgeNode("x", "alien", "s", "a" * 64),), ()),
         lambda: KnowledgeGraph((KnowledgeNode("x", "file", "", "a" * 64),), ()),
         lambda: KnowledgeGraph((KnowledgeNode("x", "file", "s", "nothex"),), ()),
-        lambda: KnowledgeGraph((KnowledgeNode("x", "file", "s", "a" * 64),),
-                               (KnowledgeEdge("x", "x", "depends_on", "explicit"),)),
-        lambda: KnowledgeGraph((KnowledgeNode("x", "file", "s", "a" * 64),),
-                               (KnowledgeEdge("x", "y", "depends_on", "explicit"),)),
-        lambda: KnowledgeGraph((KnowledgeNode("x", "file", "s", "a" * 64),
-                                KnowledgeNode("x", "file", "s2", "b" * 64)), ()),
-        lambda: KnowledgeGraph((KnowledgeNode("x", "file", "s", "a" * 64),),
-                               (KnowledgeEdge("x", "x", "marries", "explicit"),)),
+        lambda: KnowledgeGraph(
+            (KnowledgeNode("x", "file", "s", "a" * 64),),
+            (KnowledgeEdge("x", "x", "depends_on", "explicit"),),
+        ),
+        lambda: KnowledgeGraph(
+            (KnowledgeNode("x", "file", "s", "a" * 64),),
+            (KnowledgeEdge("x", "y", "depends_on", "explicit"),),
+        ),
+        lambda: KnowledgeGraph(
+            (
+                KnowledgeNode("x", "file", "s", "a" * 64),
+                KnowledgeNode("x", "file", "s2", "b" * 64),
+            ),
+            (),
+        ),
+        lambda: KnowledgeGraph(
+            (KnowledgeNode("x", "file", "s", "a" * 64),),
+            (KnowledgeEdge("x", "x", "marries", "explicit"),),
+        ),
     )
     for build_bad in bad_graphs:
         try:
@@ -415,9 +453,10 @@ def self_test() -> bool:
     resolution = graph.resolve_context("file:docs/AGENT_RULES.md")
     assert resolution.budget_ok, resolution.tokens_estimate
     # Anchor advisory: ref GATEWAY.md#auth resolves to the file-level node.
-    assert any(e.target == "file:docs/GATEWAY.md" and e.relation == "enforces"
-               for e in resolution.edges) or \
-           any(nb.id == "file:docs/GATEWAY.md" for nb in resolution.neighbors)
+    assert any(
+        e.target == "file:docs/GATEWAY.md" and e.relation == "enforces"
+        for e in resolution.edges
+    ) or any(nb.id == "file:docs/GATEWAY.md" for nb in resolution.neighbors)
     try:
         graph.resolve_context("file:ghost.md")
         raise SystemExit("resolve gate failed open")
@@ -426,15 +465,23 @@ def self_test() -> bool:
 
     # Benchmark: graph 1-hop vs raw dump — synthetic >50x.
     big_rule = "docs/AGENT_RULES.md"
-    raw = {big_rule: ("line of doctrine text " * 4000),
-           "docs/GATEWAY.md": "line of gateway text " * 4000}
+    raw = {
+        big_rule: ("line of doctrine text " * 4000),
+        "docs/GATEWAY.md": "line of gateway text " * 4000,
+    }
     slim_graph = KnowledgeGraph(
-        nodes=(KnowledgeNode(f"file:{big_rule}", "policy",
-                             "one-line summary", "a" * 64),
-               KnowledgeNode("file:docs/GATEWAY.md", "contract",
-                             "one-line gateway", "b" * 64)),
-        edges=(KnowledgeEdge(f"file:{big_rule}", "file:docs/GATEWAY.md",
-                             "enforces", "explicit"),))
+        nodes=(
+            KnowledgeNode(f"file:{big_rule}", "policy", "one-line summary", "a" * 64),
+            KnowledgeNode(
+                "file:docs/GATEWAY.md", "contract", "one-line gateway", "b" * 64
+            ),
+        ),
+        edges=(
+            KnowledgeEdge(
+                f"file:{big_rule}", "file:docs/GATEWAY.md", "enforces", "explicit"
+            ),
+        ),
+    )
     slim_resolution = slim_graph.resolve_context(f"file:{big_rule}")
     ratio = benchmark_savings(raw, slim_resolution)
     assert ratio > MIN_TOKEN_SAVINGS_RATIO, ratio
@@ -446,17 +493,17 @@ def self_test() -> bool:
     new_sources = dict(sources)
     new_sources["scripts/agents/loop.py"] = (
         '"""Agent loop v2."""\nimport json\n\n'
-        "def run():\n    \"\"\"Run the loop faster.\"\"\"\n    return json.loads('{}')\n")
+        'def run():\n    """Run the loop faster."""\n    return json.loads(\'{}\')\n'
+    )
     changed = cache.changed_files(new_sources)
     assert changed == ("scripts/agents/loop.py",), changed
-    new_graph, rebuilt = incremental_update(graph, cache,
-                                            "scripts/agents/loop.py",
-                                            new_sources["scripts/agents/loop.py"])
+    new_graph, rebuilt = incremental_update(
+        graph, cache, "scripts/agents/loop.py", new_sources["scripts/agents/loop.py"]
+    )
     assert rebuilt == 1, rebuilt
     before = {n.id: n.sha256 for n in graph.nodes}
     after = {n.id: n.sha256 for n in new_graph.nodes}
-    untouched = [k for k in before
-                 if not k.startswith("file:scripts/agents/loop.py")]
+    untouched = [k for k in before if not k.startswith("file:scripts/agents/loop.py")]
     assert all(before[k] == after[k] for k in untouched), "full re-index leaked"
     updated = next(n for n in new_graph.nodes if n.id == "file:scripts/agents/loop.py")
     assert "v2" in updated.summary
@@ -472,8 +519,11 @@ def self_test() -> bool:
 def _cli() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--resolve", metavar="NODE_ID",
-                        help="resolve a node's 1-hop context from graph.json")
+    parser.add_argument(
+        "--resolve",
+        metavar="NODE_ID",
+        help="resolve a node's 1-hop context from graph.json",
+    )
     parser.add_argument("--graph", default="graph.json")
     args = parser.parse_args()
     if args.self_test:
@@ -481,17 +531,26 @@ def _cli() -> int:
         print("SELF-TEST OK: context_graph_resolver")
         return 0
     if args.resolve:
-        payload = json.load(open(args.graph, encoding="utf-8"))
+        with open(args.graph, encoding="utf-8") as _f:
+            payload = json.load(_f)
         graph = KnowledgeGraph(
             nodes=tuple(KnowledgeNode(**n) for n in payload["nodes"]),
-            edges=tuple(KnowledgeEdge(**e) for e in payload["edges"]))
+            edges=tuple(KnowledgeEdge(**e) for e in payload["edges"]),
+        )
         r = graph.resolve_context(args.resolve)
-        print(json.dumps({
-            "root": r.root.id, "tokens": r.tokens_estimate,
-            "budget_ok": r.budget_ok,
-            "edges": [e.__dict__ | {} for e in r.edges],
-            "neighbors": [n.id for n in r.neighbors],
-        }, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "root": r.root.id,
+                    "tokens": r.tokens_estimate,
+                    "budget_ok": r.budget_ok,
+                    "edges": [e.__dict__ | {} for e in r.edges],
+                    "neighbors": [n.id for n in r.neighbors],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
     parser.print_help()
     return 2

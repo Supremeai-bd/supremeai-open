@@ -26,36 +26,53 @@ Self-test: python3 pr_improvement_regression_guard.py --self-test
 CLI: python3 pr_improvement_regression_guard.py --evaluate request.json
 Exit codes: 0 = PASS, 2 = FAIL (fail-closed includes input errors).
 """
+
 from __future__ import annotations
 
 import json
 import re
 import sys
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
 
 # --- Single sources of truth (imported by the test suite; never copy) ------
 PASS = "PASS"
 FAIL = "FAIL"
 
 ASSERTION_RE = re.compile(
-    r"\bassert\b|expect\s*\(|self\.assert|\bit\s*\(|unittest\.[\w.]*assert")
+    r"\bassert\b|expect\s*\(|self\.assert|\bit\s*\(|unittest\.[\w.]*assert"
+)
 SUPPRESSION_RE = re.compile(
     r"unittest\.skip|pytest\.mark\.skip|@unittest\.skip|it\.skip|test\.skip|"
-    r"\.skip\(|xfail")
+    r"\.skip\(|xfail"
+)
 COMMENTED_ASSERTION_RE = re.compile(
-    r"#\s*\w*\.?(assert|expect)\b|//\s*\w*\.?(assert|expect)\b")
-DEPENDENCY_MANIFESTS = ("package.json", "requirements", "pyproject.toml",
-                        "go.mod", "Cargo.toml", "Gemfile")
-HARD_PROTECTED = (".github/", ".env", "*.pem", "*.key", "id_rsa",
-                  "*credential*", "*.p12")
+    r"#\s*\w*\.?(assert|expect)\b|//\s*\w*\.?(assert|expect)\b"
+)
+DEPENDENCY_MANIFESTS = (
+    "package.json",
+    "requirements",
+    "pyproject.toml",
+    "go.mod",
+    "Cargo.toml",
+    "Gemfile",
+)
+HARD_PROTECTED = (
+    ".github/",
+    ".env",
+    "*.pem",
+    "*.key",
+    "id_rsa",
+    "*credential*",
+    "*.p12",
+)
 PUBLIC_API_REMOVAL_RE = re.compile(
     r"^\s*(?:export\s+)?(?:async\s+)?def\s+([A-Za-z_]\w*)|"
     r"^\s*(?:export\s+)?function\s+([A-Za-z_]\w*)|"
     r"^\s*export\s+(?:const|class|interface)\s+([A-Za-z_]\w*)|"
     r"^\s*class\s+([A-Za-z_]\w*)|"
     r"(@\w+\.route\()|"
-    r"add_argument\(\s*['\"]([\w-]+)['\"]")
+    r"add_argument\(\s*['\"]([\w-]+)['\"]"
+)
 DEP_BLOCK_RE = re.compile(r'"(dependencies|devDependencies)"\s*:')
 _DEP_LINE_RE = re.compile(r'"[^"]+"\s*:\s*"[^"]*"')
 _IDENT = r"[A-Za-z_$][\w$]*"
@@ -64,10 +81,15 @@ _TOKEN_RE = re.compile(r"[A-Za-z_$][\w$]*|\d[\w.]*|\S")
 
 def is_test_file(path: str) -> bool:
     name = path.rsplit("/", 1)[-1]
-    return (path.startswith(("tests/", "test/", "spec/"))
-            or name.startswith("test_") or name.endswith("_test.ts")
-            or name.endswith(".test.ts") or name.endswith("_test.js")
-            or name.endswith(".test.js") or name.startswith("test"))
+    return (
+        path.startswith(("tests/", "test/", "spec/"))
+        or name.startswith("test_")
+        or name.endswith("_test.ts")
+        or name.endswith(".test.ts")
+        or name.endswith("_test.js")
+        or name.endswith(".test.js")
+        or name.startswith("test")
+    )
 
 
 def is_dependency_manifest(path: str) -> bool:
@@ -86,7 +108,7 @@ def is_hard_protected(path: str) -> bool:
     return False
 
 
-def _tokens(line: str) -> List[str]:
+def _tokens(line: str) -> list[str]:
     return _TOKEN_RE.findall(line)
 
 
@@ -95,9 +117,35 @@ def _is_pure_rename(removed: str, added: str) -> bool:
     ra, aa = _tokens(removed), _tokens(added)
     if len(ra) != len(aa) or not ra:
         return False
-    kw_ops = {"def", "return", "if", "else", "elif", "for", "while", "import",
-              "from", "class", "const", "let", "var", "function", "export",
-              "=", "==", "=>", "+", "-", "*", "/", "(", ")", ":", ",", "."}
+    kw_ops = {
+        "def",
+        "return",
+        "if",
+        "else",
+        "elif",
+        "for",
+        "while",
+        "import",
+        "from",
+        "class",
+        "const",
+        "let",
+        "var",
+        "function",
+        "export",
+        "=",
+        "==",
+        "=>",
+        "+",
+        "-",
+        "*",
+        "/",
+        "(",
+        ")",
+        ":",
+        ",",
+        ".",
+    }
     ident_like = re.compile(_IDENT + r"$")
     diff = 0
     for a, b in zip(ra, aa):
@@ -111,39 +159,51 @@ def _is_pure_rename(removed: str, added: str) -> bool:
     return diff > 0
 
 
-def _strip_semantics(line: str) -> Optional[str]:
+def _strip_semantics(line: str) -> str | None:
     """None when the line carries no semantic payload (churn candidate)."""
     s = line.strip()
     if not s:
         return None
     if s.startswith(("#", "//", "/*", "*", '"""', "'''", "<!--")):
         return None
-    if s in ("*/", "-->",):
+    if s in (
+        "*/",
+        "-->",
+    ):
         return None
     return s
 
 
-def _assertions_added(path: str, added: List[str]) -> int:
+def _assertions_added(path: str, added: list[str]) -> int:
     if not is_test_file(path):
         return 0
     return sum(1 for line in added if ASSERTION_RE.search(line))
 
 
-def _check_scope(changed_paths: List[str], declared: List[str],
-                 violations: List[dict]) -> None:
+def _check_scope(
+    changed_paths: list[str], declared: list[str], violations: list[dict]
+) -> None:
     declared_set = set(declared)
     for path in changed_paths:
         if path not in declared_set:
-            violations.append({
-                "check": "scope_contract_alignment", "severity": "block",
-                "evidence": f"file {path} is outside the declared Touching Files"})
+            violations.append(
+                {
+                    "check": "scope_contract_alignment",
+                    "severity": "block",
+                    "evidence": f"file {path} is outside the declared Touching Files",
+                }
+            )
         if is_hard_protected(path):
-            violations.append({
-                "check": "zero_scope_leakage", "severity": "block",
-                "evidence": f"hard-protected path {path} touched (declaration cannot override)"})
+            violations.append(
+                {
+                    "check": "zero_scope_leakage",
+                    "severity": "block",
+                    "evidence": f"hard-protected path {path} touched (declaration cannot override)",
+                }
+            )
 
 
-def _check_churn(changed_files: List[dict], violations: List[dict]) -> int:
+def _check_churn(changed_files: list[dict], violations: list[dict]) -> int:
     semantic_total = 0
     for cf in changed_files:
         removed_raw = cf.get("removed", [])
@@ -165,13 +225,17 @@ def _check_churn(changed_files: List[dict], violations: List[dict]) -> int:
         semantic_here += sum(1 for u in used if not u)
         semantic_total += semantic_here
     if semantic_total == 0:
-        violations.append({
-            "check": "rejection_of_cosmetic_churn", "severity": "block",
-            "evidence": "diff is whitespace/comment/docstring-only or pure renames"})
+        violations.append(
+            {
+                "check": "rejection_of_cosmetic_churn",
+                "severity": "block",
+                "evidence": "diff is whitespace/comment/docstring-only or pure renames",
+            }
+        )
     return semantic_total
 
 
-def _removed_symbol(line: str) -> Optional[str]:
+def _removed_symbol(line: str) -> str | None:
     m = PUBLIC_API_REMOVAL_RE.match(line)
     if not m:
         return None
@@ -183,31 +247,44 @@ def _removed_symbol(line: str) -> Optional[str]:
     return name
 
 
-def _check_suppression(changed_files: List[dict], violations: List[dict]) -> None:
+def _check_suppression(changed_files: list[dict], violations: list[dict]) -> None:
     for cf in changed_files:
         path = cf.get("path", "")
         added = cf.get("added", [])
         removed = cf.get("removed", [])
         for line in added:
             if SUPPRESSION_RE.search(line):
-                violations.append({
-                    "check": "zero_test_suppression", "severity": "block",
-                    "evidence": f"{path}: skip/xfail added: {line.strip()[:80]}"})
+                violations.append(
+                    {
+                        "check": "zero_test_suppression",
+                        "severity": "block",
+                        "evidence": f"{path}: skip/xfail added: {line.strip()[:80]}",
+                    }
+                )
             if is_test_file(path) and COMMENTED_ASSERTION_RE.search(line):
-                violations.append({
-                    "check": "zero_test_suppression", "severity": "block",
-                    "evidence": f"{path}: assertion commented out: {line.strip()[:80]}"})
+                violations.append(
+                    {
+                        "check": "zero_test_suppression",
+                        "severity": "block",
+                        "evidence": f"{path}: assertion commented out: {line.strip()[:80]}",
+                    }
+                )
         if is_test_file(path):
             added_set = {x.strip() for x in added}
             for line in removed:
                 if ASSERTION_RE.search(line) and line.strip() not in added_set:
-                    violations.append({
-                        "check": "zero_test_suppression", "severity": "block",
-                        "evidence": f"{path}: assertion deleted: {line.strip()[:80]}"})
+                    violations.append(
+                        {
+                            "check": "zero_test_suppression",
+                            "severity": "block",
+                            "evidence": f"{path}: assertion deleted: {line.strip()[:80]}",
+                        }
+                    )
 
 
-def _check_dependencies(changed_files: List[dict], allow_new: bool,
-                        violations: List[dict]) -> None:
+def _check_dependencies(
+    changed_files: list[dict], allow_new: bool, violations: list[dict]
+) -> None:
     if allow_new:
         return
     for cf in changed_files:
@@ -225,27 +302,40 @@ def _check_dependencies(changed_files: List[dict], allow_new: bool,
                     in_dep_block = True
                     continue
                 if in_dep_block and _DEP_LINE_RE.search(s):
-                    violations.append({
-                        "check": "zero_dependency_bloat", "severity": "block",
-                        "evidence": f"{path}: new npm dependency: {s[:80]}"})
+                    violations.append(
+                        {
+                            "check": "zero_dependency_bloat",
+                            "severity": "block",
+                            "evidence": f"{path}: new npm dependency: {s[:80]}",
+                        }
+                    )
                     continue
                 if in_dep_block and s.startswith("}"):
                     in_dep_block = False
                 continue
             if "requirements" in path:
-                violations.append({
-                    "check": "zero_dependency_bloat", "severity": "block",
-                    "evidence": f"{path}: new pip dependency: {s[:80]}"})
+                violations.append(
+                    {
+                        "check": "zero_dependency_bloat",
+                        "severity": "block",
+                        "evidence": f"{path}: new pip dependency: {s[:80]}",
+                    }
+                )
             elif path.endswith(("pyproject.toml", "go.mod", "Cargo.toml", "Gemfile")):
-                violations.append({
-                    "check": "zero_dependency_bloat", "severity": "block",
-                    "evidence": f"{path}: new dependency declaration: {s[:80]}"})
+                violations.append(
+                    {
+                        "check": "zero_dependency_bloat",
+                        "severity": "block",
+                        "evidence": f"{path}: new dependency declaration: {s[:80]}",
+                    }
+                )
 
 
-def _check_backward_compat(changed_files: List[dict], migration_notes: List[str],
-                           violations: List[dict]) -> None:
-    removed_names: List[str] = []
-    added_text: List[str] = []
+def _check_backward_compat(
+    changed_files: list[dict], migration_notes: list[str], violations: list[dict]
+) -> None:
+    removed_names: list[str] = []
+    added_text: list[str] = []
     for cf in changed_files:
         if is_test_file(cf.get("path", "")):
             continue
@@ -260,9 +350,13 @@ def _check_backward_compat(changed_files: List[dict], migration_notes: List[str]
             continue  # relocated, not removed
         if any(name in note for note in migration_notes):
             continue  # approved migration
-        violations.append({
-            "check": "backward_compatibility", "severity": "block",
-            "evidence": f"public symbol removed/renamed without migration note: {name}"})
+        violations.append(
+            {
+                "check": "backward_compatibility",
+                "severity": "block",
+                "evidence": f"public symbol removed/renamed without migration note: {name}",
+            }
+        )
 
 
 def evaluate(request: dict) -> dict:
@@ -275,7 +369,9 @@ def evaluate(request: dict) -> dict:
     for cf in changed_files:
         if not isinstance(cf, dict) or not isinstance(cf.get("path"), str):
             raise ValueError("each changed file needs a string path")
-        if not isinstance(cf.get("added", []), list) or not isinstance(cf.get("removed", []), list):
+        if not isinstance(cf.get("added", []), list) or not isinstance(
+            cf.get("removed", []), list
+        ):
             raise ValueError("added/removed must be line lists")
     declared = request.get("declared_files")
     if not isinstance(declared, list):
@@ -288,50 +384,69 @@ def evaluate(request: dict) -> dict:
         raise ValueError("fixed_failing_tests must be a list of test ids")
     allow_new = request.get("allow_new_dependencies") is True
 
-    violations: List[dict] = []
+    violations: list[dict] = []
     paths = [cf["path"] for cf in changed_files]
     _check_scope(paths, declared, violations)
 
-    assertions = sum(_assertions_added(cf["path"], cf.get("added", []))
-                     for cf in changed_files)
+    assertions = sum(
+        _assertions_added(cf["path"], cf.get("added", [])) for cf in changed_files
+    )
     fixed = request.get("fixed_failing_tests") or []
     if assertions < 1 and not fixed:
-        violations.append({
-            "check": "positive_test_gain", "severity": "block",
-            "evidence": "no verified test assertion added and no failing test fixed"})
+        violations.append(
+            {
+                "check": "positive_test_gain",
+                "severity": "block",
+                "evidence": "no verified test assertion added and no failing test fixed",
+            }
+        )
 
     semantic = _check_churn(changed_files, violations)
 
     schemas_touched = any(p.startswith("api-schemas/") for p in paths)
     if schemas_touched and request.get("schema_validation") != "verified":
-        violations.append({
-            "check": "contract_schema_validation", "severity": "block",
-            "evidence": "api-schemas/ touched but schema_validation != verified"})
+        violations.append(
+            {
+                "check": "contract_schema_validation",
+                "severity": "block",
+                "evidence": "api-schemas/ touched but schema_validation != verified",
+            }
+        )
 
     _check_suppression(changed_files, violations)
     _check_dependencies(changed_files, allow_new, violations)
     _check_backward_compat(changed_files, migration_notes, violations)
 
-    by_family: Dict[str, List[str]] = {}
+    by_family: dict[str, list[str]] = {}
     for v in violations:
         by_family.setdefault(v["check"], []).append(v["evidence"])
-    beneficial_checks = {"scope_contract_alignment", "positive_test_gain",
-                         "contract_schema_validation", "rejection_of_cosmetic_churn"}
+    beneficial_checks = {
+        "scope_contract_alignment",
+        "positive_test_gain",
+        "contract_schema_validation",
+        "rejection_of_cosmetic_churn",
+    }
     regression_checks = set(by_family) - beneficial_checks
     beneficial_ok = not (set(by_family) & beneficial_checks)
     regression_ok = not regression_checks
     verdict = PASS if (beneficial_ok and regression_ok) else FAIL
     return {
         "verdict": verdict,
-        "beneficial": {"passed": beneficial_ok,
-                       "failed_checks": sorted(set(by_family) & beneficial_checks)},
-        "zero_regression": {"passed": regression_ok,
-                            "failed_checks": sorted(regression_checks)},
+        "beneficial": {
+            "passed": beneficial_ok,
+            "failed_checks": sorted(set(by_family) & beneficial_checks),
+        },
+        "zero_regression": {
+            "passed": regression_ok,
+            "failed_checks": sorted(regression_checks),
+        },
         "violations": violations,
-        "stats": {"files_changed": len(paths),
-                  "assertions_added": assertions,
-                  "semantic_lines": semantic,
-                  "failing_tests_fixed": len(fixed)},
+        "stats": {
+            "files_changed": len(paths),
+            "assertions_added": assertions,
+            "semantic_lines": semantic,
+            "failing_tests_fixed": len(fixed),
+        },
         "evaluated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -341,26 +456,37 @@ def _self_test() -> int:
         return {"path": path, "added": list(added), "removed": list(removed)}
 
     def req(files, declared=None, **kw):
-        base = {"changed_files": files,
-                "declared_files": declared if declared is not None
-                else [f["path"] for f in files]}
+        base = {
+            "changed_files": files,
+            "declared_files": declared
+            if declared is not None
+            else [f["path"] for f in files],
+        }
         base.update(kw)
         return base
 
     # Tier 1 case 1: valid PR (adds test + functional code) -> PASS
-    good = req([cf("scripts/ci/guard.py", ["def check(x):\n    return x > 0"]),
-                cf("tests/test_guard.py", ["def test_check():", "    assert check(1) is True"])])
+    good = req(
+        [
+            cf("scripts/ci/guard.py", ["def check(x):\n    return x > 0"]),
+            cf(
+                "tests/test_guard.py",
+                ["def test_check():", "    assert check(1) is True"],
+            ),
+        ]
+    )
     r = evaluate(good)
     assert r["verdict"] == PASS, r
     assert r["stats"]["assertions_added"] == 1, r
 
     # Tier 1 case 2: cosmetic churn (comments/whitespace only) -> FAIL
-    churn = req([cf("scripts/ci/guard.py",
-                    ["# a new shiny comment", "x = 1  "],
-                    ["x = 1"])])
+    churn = req(
+        [cf("scripts/ci/guard.py", ["# a new shiny comment", "x = 1  "], ["x = 1"])]
+    )
     r = evaluate(churn)
     assert r["verdict"] == FAIL and any(
-        v["check"] == "rejection_of_cosmetic_churn" for v in r["violations"]), r
+        v["check"] == "rejection_of_cosmetic_churn" for v in r["violations"]
+    ), r
 
     # rename-only diff also fails as churn
     ren = req([cf("scripts/ci/guard.py", ["total = count + 1"], ["sum_ = count + 1"])])
@@ -368,87 +494,144 @@ def _self_test() -> int:
     assert r["verdict"] == FAIL, r
 
     # Tier 1 case 3: test suppression -> FAIL
-    sup = req([cf("tests/test_guard.py",
-                  ["@unittest.skip(\"flaky\")", "def test_check():", "    assert check(1)"])])
+    sup = req(
+        [
+            cf(
+                "tests/test_guard.py",
+                ['@unittest.skip("flaky")', "def test_check():", "    assert check(1)"],
+            )
+        ]
+    )
     r = evaluate(sup)
     assert r["verdict"] == FAIL and any(
-        v["check"] == "zero_test_suppression" for v in r["violations"]), r
+        v["check"] == "zero_test_suppression" for v in r["violations"]
+    ), r
 
     # deleting an existing assertion -> FAIL
-    dele = req([cf("tests/test_guard.py",
-                   ["def test_check():"],
-                   ["def test_check():", "    assert check(1)"])])
+    dele = req(
+        [
+            cf(
+                "tests/test_guard.py",
+                ["def test_check():"],
+                ["def test_check():", "    assert check(1)"],
+            )
+        ]
+    )
     r = evaluate(dele)
     assert r["verdict"] == FAIL, r
 
     # Tier 1 case 4: out-of-scope file -> FAIL
-    leak = req([cf("scripts/ci/guard.py", ["assert True"])], declared=["scripts/ci/other.py"])
+    leak = req(
+        [cf("scripts/ci/guard.py", ["assert True"])], declared=["scripts/ci/other.py"]
+    )
     r = evaluate(leak)
     assert r["verdict"] == FAIL and any(
-        v["check"] == "scope_contract_alignment" for v in r["violations"]), r
+        v["check"] == "scope_contract_alignment" for v in r["violations"]
+    ), r
 
     # hard-protected path fails even when declared
     hard = req([cf(".github/workflows/pipeline.yml", ["+ tweak"])])
     r = evaluate(hard)
     assert r["verdict"] == FAIL and any(
-        v["check"] == "zero_scope_leakage" for v in r["violations"]), r
+        v["check"] == "zero_scope_leakage" for v in r["violations"]
+    ), r
 
     # dependency bloat -> FAIL
-    dep = req([cf("package.json", ['"dependencies": {', '  "left-pad": "^1.3.0"']),
-               cf("tests/test_guard.py", ["assert True"])])
+    dep = req(
+        [
+            cf("package.json", ['"dependencies": {', '  "left-pad": "^1.3.0"']),
+            cf("tests/test_guard.py", ["assert True"]),
+        ]
+    )
     r = evaluate(dep)
     assert r["verdict"] == FAIL and any(
-        v["check"] == "zero_dependency_bloat" for v in r["violations"]), r
+        v["check"] == "zero_dependency_bloat" for v in r["violations"]
+    ), r
 
     # requirements.txt additions rejected
-    pip = req([cf("requirements.txt", ["requests==2.0.0"]),
-               cf("tests/test_guard.py", ["assert True"])])
+    pip = req(
+        [
+            cf("requirements.txt", ["requests==2.0.0"]),
+            cf("tests/test_guard.py", ["assert True"]),
+        ]
+    )
     r = evaluate(pip)
     assert r["verdict"] == FAIL, r
 
     # public API removal without migration note -> FAIL
-    api = req([cf("scripts/ci/guard.py", [], ["def old_check(x):", "    return x"]),
-               cf("tests/test_guard.py", ["assert True"])])
+    api = req(
+        [
+            cf("scripts/ci/guard.py", [], ["def old_check(x):", "    return x"]),
+            cf("tests/test_guard.py", ["assert True"]),
+        ]
+    )
     r = evaluate(api)
     assert r["verdict"] == FAIL and any(
-        v["check"] == "backward_compatibility" for v in r["violations"]), r
+        v["check"] == "backward_compatibility" for v in r["violations"]
+    ), r
     # ...but allowed with a migration note naming the symbol
-    api2 = req([cf("scripts/ci/guard.py", [], ["def old_check(x):", "    return x"]),
-                cf("tests/test_guard.py", ["assert True"])],
-               migration_notes=["old_check replaced by new_check (#486)"])
+    api2 = req(
+        [
+            cf("scripts/ci/guard.py", [], ["def old_check(x):", "    return x"]),
+            cf("tests/test_guard.py", ["assert True"]),
+        ],
+        migration_notes=["old_check replaced by new_check (#486)"],
+    )
     r = evaluate(api2)
     assert r["verdict"] == PASS, r
     # ...and relocation (name re-added) is fine
-    api3 = req([cf("scripts/ci/guard.py",
-                   ["def old_check(x):  # moved", "    return x"],
-                   ["def old_check(x):", "    return x"]),
-                cf("tests/test_guard.py", ["assert True"])])
+    api3 = req(
+        [
+            cf(
+                "scripts/ci/guard.py",
+                ["def old_check(x):  # moved", "    return x"],
+                ["def old_check(x):", "    return x"],
+            ),
+            cf("tests/test_guard.py", ["assert True"]),
+        ]
+    )
     assert evaluate(api3)["verdict"] == PASS
 
     # schema contract: api-schemas touched without verification -> FAIL
-    sch = req([cf("api-schemas/gateway.openapi.yaml", ["  new: true"]),
-               cf("tests/test_guard.py", ["assert True"])])
+    sch = req(
+        [
+            cf("api-schemas/gateway.openapi.yaml", ["  new: true"]),
+            cf("tests/test_guard.py", ["assert True"]),
+        ]
+    )
     r = evaluate(sch)
     assert r["verdict"] == FAIL and any(
-        v["check"] == "contract_schema_validation" for v in r["violations"]), r
-    sch2 = req([cf("api-schemas/gateway.openapi.yaml", ["  new: true"]),
-                cf("tests/test_guard.py", ["assert True"])],
-               schema_validation="verified")
+        v["check"] == "contract_schema_validation" for v in r["violations"]
+    ), r
+    sch2 = req(
+        [
+            cf("api-schemas/gateway.openapi.yaml", ["  new: true"]),
+            cf("tests/test_guard.py", ["assert True"]),
+        ],
+        schema_validation="verified",
+    )
     assert evaluate(sch2)["verdict"] == PASS
 
     # no test gain and no fixed failing test -> FAIL; with fixed list -> PASS
     nt = req([cf("scripts/ci/guard.py", ["def f():\n    return 1"])])
     r = evaluate(nt)
     assert r["verdict"] == FAIL and any(
-        v["check"] == "positive_test_gain" for v in r["violations"]), r
-    nt2 = req([cf("scripts/ci/guard.py", ["def f():\n    return 1"])],
-              fixed_failing_tests=["tests/test_guard.py::test_f"])
+        v["check"] == "positive_test_gain" for v in r["violations"]
+    ), r
+    nt2 = req(
+        [cf("scripts/ci/guard.py", ["def f():\n    return 1"])],
+        fixed_failing_tests=["tests/test_guard.py::test_f"],
+    )
     assert evaluate(nt2)["verdict"] == PASS
 
     # fail-closed malformed inputs
-    for bad in (None, {}, {"changed_files": "x"},
-                {"changed_files": [{}]},
-                {"changed_files": [{"path": "a.py"}], "declared_files": "x"}):
+    for bad in (
+        None,
+        {},
+        {"changed_files": "x"},
+        {"changed_files": [{}]},
+        {"changed_files": [{"path": "a.py"}], "declared_files": "x"},
+    ):
         try:
             evaluate(bad)
             raise AssertionError("expected ValueError")
@@ -467,9 +650,21 @@ if __name__ == "__main__":
         try:
             verdict = evaluate(req)
         except ValueError as exc:
-            print(json.dumps({"verdict": FAIL, "violations": [
-                {"check": "input_validation", "severity": "block",
-                 "evidence": str(exc)}]}, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "verdict": FAIL,
+                        "violations": [
+                            {
+                                "check": "input_validation",
+                                "severity": "block",
+                                "evidence": str(exc),
+                            }
+                        ],
+                    },
+                    indent=2,
+                )
+            )
             sys.exit(2)
         print(json.dumps(verdict, indent=2))
         sys.exit(0 if verdict["verdict"] == PASS else 2)

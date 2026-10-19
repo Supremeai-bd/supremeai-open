@@ -88,30 +88,36 @@ def build_healing_issue(pr: dict) -> dict:
     priority = priority_for_failure(bool(pr.get("blocked_merge")))
     fp = dedup_fingerprint(repo, num)
     title = healing_title(repo, num, checks)
-    body = "\n".join([
-        "### Automated CI-Heal Work Order (runway-first, self-healing reporter)",
-        "",
-        f"- **PR:** {repo}#{num}",
-        f"- **Branch:** `{pr.get('branch', 'unknown')}`",
-        f"- **Target commit:** `{pr.get('head_sha', 'unknown')}`",
-        f"- **Failing checks:** {', '.join(sorted(checks))}",
-        f"- **Priority rationale:** {priority} — "
-        + ("main/merge path blocked" if priority == P0 else "in-flight work, runway hygiene"),
-        "",
-        "**Failure log snippet:**",
-        "```",
-        (pr.get("log_snippet") or "(log unavailable)").strip()[:400],
-        "```",
-        "",
-        "**Heal procedure (CI-FIXER role):**",
-        "1. Fetch the PR branch; rebase against current main (resolves Stale-Base Guard).",
-        "2. Enrich PR metadata: summary + test evidence (resolves Knowledge Sharing Guard).",
-        "3. Push the fix; CI green -> landing.yml auto-merges -> this issue auto-closes.",
-        "",
-        f"Dedup fingerprint: `{fp}`",
-        fingerprint_marker(fp),
-        "",
-    ])
+    body = "\n".join(
+        [
+            "### Automated CI-Heal Work Order (runway-first, self-healing reporter)",
+            "",
+            f"- **PR:** {repo}#{num}",
+            f"- **Branch:** `{pr.get('branch', 'unknown')}`",
+            f"- **Target commit:** `{pr.get('head_sha', 'unknown')}`",
+            f"- **Failing checks:** {', '.join(sorted(checks))}",
+            f"- **Priority rationale:** {priority} — "
+            + (
+                "main/merge path blocked"
+                if priority == P0
+                else "in-flight work, runway hygiene"
+            ),
+            "",
+            "**Failure log snippet:**",
+            "```",
+            (pr.get("log_snippet") or "(log unavailable)").strip()[:400],
+            "```",
+            "",
+            "**Heal procedure (CI-FIXER role):**",
+            "1. Fetch the PR branch; rebase against current main (resolves Stale-Base Guard).",
+            "2. Enrich PR metadata: summary + test evidence (resolves Knowledge Sharing Guard).",
+            "3. Push the fix; CI green -> landing.yml auto-merges -> this issue auto-closes.",
+            "",
+            f"Dedup fingerprint: `{fp}`",
+            fingerprint_marker(fp),
+            "",
+        ]
+    )
     return {"title": title, "body": body, "labels": healing_labels(repo, priority)}
 
 
@@ -124,6 +130,7 @@ def is_ci_failure_issue(title: str, labels: list[str]) -> bool:
 # ---------------------------------------------------------------------------
 # gh CLI integration (mirrors continuous_agent_loop.run_cmd conventions)
 # ---------------------------------------------------------------------------
+
 
 def _run(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
     try:
@@ -140,8 +147,19 @@ def collect_failing_prs(repo: str = DEFAULT_REPO) -> tuple[list[dict], str]:
     code, out, err = _run(["gh", "--version"])
     if code == 127:
         return [], "gh-missing"
-    code, out, _ = _run(["gh", "pr", "list", "--repo", repo, "--state", "open",
-                         "--json", "number,headRefName,headRefOid,mergeable,statusCheckRollup"])
+    code, out, _ = _run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,headRefName,headRefOid,mergeable,statusCheckRollup",
+        ]
+    )
     if code != 0:
         return [], "gh-missing"
     try:
@@ -151,32 +169,66 @@ def collect_failing_prs(repo: str = DEFAULT_REPO) -> tuple[list[dict], str]:
     failing: list[dict] = []
     for pr in prs:
         rollup = pr.get("statusCheckRollup") or []
-        bad = [c.get("name", "check") for c in rollup
-               if (c.get("conclusion") or "").upper() in ("FAILURE", "TIMED_OUT")]
+        bad = [
+            c.get("name", "check")
+            for c in rollup
+            if (c.get("conclusion") or "").upper() in ("FAILURE", "TIMED_OUT")
+        ]
         if not bad:
             continue
         blocked = (pr.get("mergeable") or "").upper() == "CONFLICTING"
         log_snip = ""
         for c in rollup:
             if (c.get("conclusion") or "").upper() in ("FAILURE", "TIMED_OUT"):
-                cc, co, _ = _run(["gh", "run", "view", str(c.get("detailsUrl", "")),
-                                  "--repo", repo, "--log-failed"], timeout=20)
+                cc, co, _ = _run(
+                    [
+                        "gh",
+                        "run",
+                        "view",
+                        str(c.get("detailsUrl", "")),
+                        "--repo",
+                        repo,
+                        "--log-failed",
+                    ],
+                    timeout=20,
+                )
                 if cc == 0 and co:
                     log_snip = co[-400:]
                     break
-        failing.append({
-            "repo": repo, "number": pr.get("number"), "branch": pr.get("headRefName"),
-            "head_sha": pr.get("headRefOid"), "failing_checks": bad,
-            "blocked_merge": blocked, "log_snippet": log_snip,
-        })
+        failing.append(
+            {
+                "repo": repo,
+                "number": pr.get("number"),
+                "branch": pr.get("headRefName"),
+                "head_sha": pr.get("headRefOid"),
+                "failing_checks": bad,
+                "blocked_merge": blocked,
+                "log_snippet": log_snip,
+            }
+        )
     return failing, "gh"
 
 
 def open_issue_has_marker(repo: str, fp: str) -> bool:
-    code, out, _ = _run(["gh", "issue", "list", "--repo", repo, "--state", "open",
-                         "--search", f'"{fingerprint_marker(fp)}"', "--json", "number"])
+    code, out, _ = _run(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--search",
+            f'"{fingerprint_marker(fp)}"',
+            "--json",
+            "number",
+        ]
+    )
     if code != 0:
-        return False  # fail-open on search errors only; fingerprint still logged in body
+        return (
+            False  # fail-open on search errors only; fingerprint still logged in body
+        )
     try:
         return len(json.loads(out or "[]")) > 0
     except json.JSONDecodeError:
@@ -185,18 +237,28 @@ def open_issue_has_marker(repo: str, fp: str) -> bool:
 
 def self_test() -> int:
     """Offline verification, no gh required."""
-    t = healing_title(DEFAULT_REPO, 480, ["Stale-Base Guard", "Knowledge Sharing Guard"])
-    assert t == (f"fix({DEFAULT_REPO}): [ci-failure] Heal PR #480 checks "
-                 "(Knowledge Sharing Guard, Stale-Base Guard)"), t
+    t = healing_title(
+        DEFAULT_REPO, 480, ["Stale-Base Guard", "Knowledge Sharing Guard"]
+    )
+    assert t == (
+        f"fix({DEFAULT_REPO}): [ci-failure] Heal PR #480 checks "
+        "(Knowledge Sharing Guard, Stale-Base Guard)"
+    ), t
     assert TITLE_RE.match(t)
     assert priority_for_failure(True) == P0 and priority_for_failure(False) == P1
     labels = healing_labels(DEFAULT_REPO, P0)
     assert labels == ["bridge:queued", "P0-critical", f"repo:{DEFAULT_REPO}", "area:ci"]
-    issue = build_healing_issue({
-        "repo": DEFAULT_REPO, "number": 481, "branch": "feat/x", "head_sha": "abc1234",
-        "failing_checks": ["Stale-Base Guard"], "blocked_merge": True,
-        "log_snippet": "error: branch is stale\n",
-    })
+    issue = build_healing_issue(
+        {
+            "repo": DEFAULT_REPO,
+            "number": 481,
+            "branch": "feat/x",
+            "head_sha": "abc1234",
+            "failing_checks": ["Stale-Base Guard"],
+            "blocked_merge": True,
+            "log_snippet": "error: branch is stale\n",
+        }
+    )
     assert issue["labels"][1] == P0
     for needle in ("feat/x", "abc1234", "Stale-Base Guard", "healing-fp:"):
         assert needle in issue["body"], needle
@@ -205,14 +267,20 @@ def self_test() -> int:
     fp3 = dedup_fingerprint(DEFAULT_REPO, 484)
     assert fp1 == dedup_fingerprint(DEFAULT_REPO, 480), "must be deterministic"
     assert len({fp1, fp2, fp3}) == 3, "must be collision-free across pairs"
-    assert is_ci_failure_issue("[ci-failure] heal", []) and is_ci_failure_issue("x", ["area:ci"])
+    assert is_ci_failure_issue("[ci-failure] heal", []) and is_ci_failure_issue(
+        "x", ["area:ci"]
+    )
     assert not is_ci_failure_issue("feat: new dashboard", ["enhancement"])
-    print("self-test: 6/6 scenario groups PASS (title, priority, labels, payload, fingerprint, classifier)")
+    print(
+        "self-test: 6/6 scenario groups PASS (title, priority, labels, payload, fingerprint, classifier)"
+    )
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Automated CI-failure healing issue reporter")
+    ap = argparse.ArgumentParser(
+        description="Automated CI-failure healing issue reporter"
+    )
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--self-test", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
@@ -225,19 +293,39 @@ def main(argv: list[str] | None = None) -> int:
 
     prs, gh_mode = collect_failing_prs(args.repo)
     if gh_mode == "gh-missing":
-        print("gh CLI not available or failed; nothing collected (exit 0, fail-honest).")
+        print(
+            "gh CLI not available or failed; nothing collected (exit 0, fail-honest)."
+        )
         return 0
     payloads = [build_healing_issue(pr) for pr in prs]
-    fresh = [p for p, pr in zip(payloads, prs)
-             if not open_issue_has_marker(args.repo, dedup_fingerprint(pr["repo"], pr["number"]))]
+    fresh = [
+        p
+        for p, pr in zip(payloads, prs)
+        if not open_issue_has_marker(
+            args.repo, dedup_fingerprint(pr["repo"], pr["number"])
+        )
+    ]
     for pr, p in zip(prs, payloads):
         print(f"[{'FRESH' if p in fresh else 'DUPLICATE-SKIP'}] {p['title']}")
     if args.execute and fresh:
         for p in fresh:
             lbl = ",".join(p["labels"])
-            code, _, err = _run(["gh", "issue", "create", "--repo", args.repo,
-                                 "--title", p["title"], "--body", p["body"],
-                                 "--label", lbl], timeout=45)
+            code, _, err = _run(
+                [
+                    "gh",
+                    "issue",
+                    "create",
+                    "--repo",
+                    args.repo,
+                    "--title",
+                    p["title"],
+                    "--body",
+                    p["body"],
+                    "--label",
+                    lbl,
+                ],
+                timeout=45,
+            )
             print(f"filed rc={code} {p['title'][:60]} {err.strip()[:80]}")
     return 0
 

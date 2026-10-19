@@ -22,18 +22,18 @@ imported by the test suite, never copied.
 
 Self-test: python3 claim_quota_reference.py --self-test
 """
+
 from __future__ import annotations
 
 import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Tuple
 
 # --- Single sources of truth (imported by the test suite; never copy) ------
-TTL_MINUTES_DEFAULT = 30     # AUTONOMOUS_TRANSIT_PIPELINE.md stale-claim expiry
-MAX_ACTIVE_CLAIMS = 1        # task #479 normative limit (supersedes the
-                             # S0.1 placeholder value of 3)
+TTL_MINUTES_DEFAULT = 30  # AUTONOMOUS_TRANSIT_PIPELINE.md stale-claim expiry
+MAX_ACTIVE_CLAIMS = 1  # task #479 normative limit (supersedes the
+# S0.1 placeholder value of 3)
 AGENT_CONCURRENCY_LIMIT_REACHED = "AGENT_CONCURRENCY_LIMIT_REACHED"
 
 MESSAGE_TEMPLATE = (
@@ -49,7 +49,8 @@ QUOTA_APPLIES_TO = frozenset({"GRANT_NEW", "GRANT_RENEW", "GRANT_TAKEOVER"})
 
 _MARKERTED_RE = re.compile(
     r"<!--\s*atomic-claim:issue=(?P<issue>\d+),agent=(?P<agent>[^,]+),"
-    r"ts=(?P<ts>[^,]+),ttl=(?P<ttl>\S+?)\s*-->")
+    r"ts=(?P<ts>[^,]+),ttl=(?P<ttl>\S+?)\s*-->"
+)
 _ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
 _ISO_S = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -70,10 +71,10 @@ def _aware(now: datetime) -> datetime:
     return now
 
 
-def validate_board(board: dict) -> List[dict]:
+def validate_board(board: dict) -> list[dict]:
     """Validate a board snapshot; returns the issues list. Fail-closed."""
     if not isinstance(board, dict) or not isinstance(board.get("issues"), list):
-        raise ValueError("board must be {\"issues\": [...]}")
+        raise ValueError('board must be {"issues": [...]}')
     for issue in board["issues"]:
         number = issue.get("number")
         if not isinstance(number, int) or number <= 0:
@@ -81,8 +82,9 @@ def validate_board(board: dict) -> List[dict]:
     return board["issues"]
 
 
-def claim_is_released(issue: dict, claimed_at: datetime, now: datetime,
-                      ttl_minutes: int) -> bool:
+def claim_is_released(
+    issue: dict, claimed_at: datetime, now: datetime, ttl_minutes: int
+) -> bool:
     """Release semantics (spec section 4). A slot is freed when:
     (a) the lease expired (Rule 9, strict-greater: exactly-TTL is live);
     (b) the holding issue is closed;
@@ -98,7 +100,7 @@ def claim_is_released(issue: dict, claimed_at: datetime, now: datetime,
     return (now - claimed_at) > timedelta(minutes=ttl_minutes)
 
 
-def scan_active_claims(board: dict, agent_id: str, now: datetime) -> List[int]:
+def scan_active_claims(board: dict, agent_id: str, now: datetime) -> list[int]:
     """Issue numbers of the agent's live claims on open issues.
 
     Detection: status:claimed label + latest S0.1 atomic-claim marker.
@@ -110,12 +112,12 @@ def scan_active_claims(board: dict, agent_id: str, now: datetime) -> List[int]:
     Deterministic output: ascending issue numbers.
     """
     _aware(now)
-    live: List[int] = []
+    live: list[int] = []
     for issue in validate_board(board):
         if "status:claimed" not in (issue.get("labels") or []):
             continue
-        best_ts: Optional[datetime] = None
-        best_agent: Optional[str] = None
+        best_ts: datetime | None = None
+        best_agent: str | None = None
         for comment in issue.get("comments") or []:
             body = comment.get("body") or ""
             m = _MARKERTED_RE.search(body)
@@ -151,8 +153,8 @@ def scan_active_claims(board: dict, agent_id: str, now: datetime) -> List[int]:
 class QuotaDecision:
     granted: bool
     code: str
-    active_claims: Tuple[int, ...]
-    blocking_issue: Optional[int]
+    active_claims: tuple[int, ...]
+    blocking_issue: int | None
     message: str
 
 
@@ -165,9 +167,14 @@ def rejection_payload(agent_id: str, blocking_issue: int) -> dict:
     }
 
 
-def enforce_quota(board: dict, target_issue: int, agent_id: str, now: datetime,
-                  target_decision: Optional[str] = None,
-                  max_active: int = MAX_ACTIVE_CLAIMS) -> QuotaDecision:
+def enforce_quota(
+    board: dict,
+    target_issue: int,
+    agent_id: str,
+    now: datetime,
+    target_decision: str | None = None,
+    max_active: int = MAX_ACTIVE_CLAIMS,
+) -> QuotaDecision:
     """Quota gate for work.claim (spec section 3).
 
     Runs AFTER the S0.1 target-issue decision matrix and BEFORE any
@@ -192,8 +199,12 @@ def enforce_quota(board: dict, target_issue: int, agent_id: str, now: datetime,
         return QuotaDecision(True, code, tuple(active), None, "")
     blocking = min(active)
     return QuotaDecision(
-        False, AGENT_CONCURRENCY_LIMIT_REACHED, tuple(active), blocking,
-        MESSAGE_TEMPLATE.format(agent=agent_id, issue=blocking))
+        False,
+        AGENT_CONCURRENCY_LIMIT_REACHED,
+        tuple(active),
+        blocking,
+        MESSAGE_TEMPLATE.format(agent=agent_id, issue=blocking),
+    )
 
 
 def _self_test() -> int:
@@ -204,13 +215,26 @@ def _self_test() -> int:
     def snap(rows):
         return {"issues": rows}
 
-    def row(num, agent, ts="2026-10-17T06:00:00Z", state="open",
-            labels=("status:claimed",), wo_verified=False):
+    def row(
+        num,
+        agent,
+        ts="2026-10-17T06:00:00Z",
+        state="open",
+        labels=("status:claimed",),
+        wo_verified=False,
+    ):
         return {
-            "number": num, "state": state, "labels": list(labels),
-            "wo_verified": wo_verified, "label_claimed_at": None,
-            "comments": [{"ts": ts, "body":
-                          f"<!-- atomic-claim:issue={num},agent={agent},ts={ts},ttl=30m -->"}],
+            "number": num,
+            "state": state,
+            "labels": list(labels),
+            "wo_verified": wo_verified,
+            "label_claimed_at": None,
+            "comments": [
+                {
+                    "ts": ts,
+                    "body": f"<!-- atomic-claim:issue={num},agent={agent},ts={ts},ttl=30m -->",
+                }
+            ],
         }
 
     # spec test 1: clean board, A claims 900 -> GRANT_NEW (Success)
@@ -218,14 +242,22 @@ def _self_test() -> int:
     d = enforce_quota(board, 900, "agent-a", mid)
     assert d.granted and d.code == "GRANT_NEW", d
     # A now holds 900 live; claiming 902 must fail closed
-    board = snap([row(900, "agent-a"), row(901, "agent-b"), row(902, "agent-c", labels=[])])
+    board = snap(
+        [row(900, "agent-a"), row(901, "agent-b"), row(902, "agent-c", labels=[])]
+    )
     d = enforce_quota(board, 902, "agent-a", mid)
     assert not d.granted and d.code == AGENT_CONCURRENCY_LIMIT_REACHED, d
     assert d.blocking_issue == 900 and d.active_claims == (900,)
     payload = rejection_payload("agent-a", 900)
-    assert payload == {"isError": True, "code": AGENT_CONCURRENCY_LIMIT_REACHED,
-                       "message": MESSAGE_TEMPLATE.format(agent="agent-a", issue=900)}
-    assert "Issue #900" in payload["message"] and "Submit patch or release" in payload["message"]
+    assert payload == {
+        "isError": True,
+        "code": AGENT_CONCURRENCY_LIMIT_REACHED,
+        "message": MESSAGE_TEMPLATE.format(agent="agent-a", issue=900),
+    }
+    assert (
+        "Issue #900" in payload["message"]
+        and "Submit patch or release" in payload["message"]
+    )
     # different agent still granted (spec test 3)
     d = enforce_quota(board, 902, "agent-c", mid)
     assert d.granted
@@ -236,10 +268,14 @@ def _self_test() -> int:
     board2 = snap([row(900, "agent-a", state="closed"), row(902, "agent-c", labels=[])])
     assert enforce_quota(board2, 902, "agent-a", mid).granted
     # submitted-and-verified WO frees the slot
-    board3 = snap([row(900, "agent-a", wo_verified=True), row(902, "agent-c", labels=[])])
+    board3 = snap(
+        [row(900, "agent-a", wo_verified=True), row(902, "agent-c", labels=[])]
+    )
     assert enforce_quota(board3, 902, "agent-a", mid).granted
     # queued WO does NOT free the slot
-    board4 = snap([row(900, "agent-a", wo_verified=False), row(902, "agent-c", labels=[])])
+    board4 = snap(
+        [row(900, "agent-a", wo_verified=False), row(902, "agent-c", labels=[])]
+    )
     assert not enforce_quota(board4, 902, "agent-a", mid).granted
     # renewal of own held issue never blocked, even at the cap
     board5 = snap([row(900, "agent-a"), row(902, "agent-c", labels=[])])
@@ -249,7 +285,9 @@ def _self_test() -> int:
     d = enforce_quota(board5, 902, "agent-a", mid, target_decision="NOOP_SELF")
     assert d.granted and d.code == "NOOP_SELF"
     # deterministic blocking anchor: lowest issue number
-    board6 = snap([row(910, "agent-a"), row(905, "agent-a"), row(920, "agent-b", labels=[])])
+    board6 = snap(
+        [row(910, "agent-a"), row(905, "agent-a"), row(920, "agent-b", labels=[])]
+    )
     d = enforce_quota(board6, 920, "agent-a", mid)
     assert d.blocking_issue == 905 and d.active_claims == (905, 910)
     # max_active knob (ops-tunable; default 1 per task #479)
@@ -263,8 +301,12 @@ def _self_test() -> int:
         except ValueError:
             pass
     try:
-        enforce_quota(snap([row(900, "agent-a")]), 902, "agent-a",
-                      parse_ts("2026-10-17T05:59:00Z"))
+        enforce_quota(
+            snap([row(900, "agent-a")]),
+            902,
+            "agent-a",
+            parse_ts("2026-10-17T05:59:00Z"),
+        )
         raise AssertionError("expected clock-skew ValueError")
     except ValueError:
         pass

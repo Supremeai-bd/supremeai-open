@@ -113,24 +113,30 @@ Hunk E — in the `run_auto_bridge_pr_opener` loop, after the
 existing-PR skip and before the Claim Gate block:
 
 ```python
-        # Stale-Base Guard prevention (#485): evaluate base drift first.
-        status = branch_base_status(branch, repo)
-        if status in ("behind", "diverged"):
-            print(f"  [WO #{wo_num}] Branch base is {status} vs main; "
-                  f"attempting clean rebase onto origin/main.")
-            if auto_open:
-                ok, detail = rebase_branch_onto_main(branch, repo)
-                if not ok:
-                    print(f"    ❌ Stale-base auto-sync failed: {detail}")
-                    actions.append({"wo": wo_num, "branch": branch,
-                                    "status": "skipped-stale-base",
-                                    "error": detail})
-                    continue
-            else:
-                print("    [DRY-RUN] Would rebase onto origin/main.")
-                actions.append({"wo": wo_num, "branch": branch,
-                                "status": "stale-base-plan"})
-                continue
+# Stale-Base Guard prevention (#485): evaluate base drift first.
+status = branch_base_status(branch, repo)
+if status in ("behind", "diverged"):
+    print(
+        f"  [WO #{wo_num}] Branch base is {status} vs main; "
+        f"attempting clean rebase onto origin/main."
+    )
+    if auto_open:
+        ok, detail = rebase_branch_onto_main(branch, repo)
+        if not ok:
+            print(f"    ❌ Stale-base auto-sync failed: {detail}")
+            actions.append(
+                {
+                    "wo": wo_num,
+                    "branch": branch,
+                    "status": "skipped-stale-base",
+                    "error": detail,
+                }
+            )
+            continue
+    else:
+        print("    [DRY-RUN] Would rebase onto origin/main.")
+        actions.append({"wo": wo_num, "branch": branch, "status": "stale-base-plan"})
+        continue
 ```
 
 Hunk E2 — helper next to the above (executed only under --auto-open):
@@ -148,8 +154,12 @@ def rebase_branch_onto_main(branch: str, repo: str = UPSTREAM_REPO) -> tuple[boo
         if res.returncode != 0:
             subprocess.run(["git", "rebase", "--abort"], capture_output=True)
             return False, (res.stderr or res.stdout).strip()[:400]
-    push = subprocess.run(["git", "push", "--force-with-lease", "origin", branch],
-                          capture_output=True, text=True, timeout=60)
+    push = subprocess.run(
+        ["git", "push", "--force-with-lease", "origin", branch],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
     if push.returncode != 0:
         return False, (push.stderr or push.stdout).strip()[:400]
     return True, "rebased onto origin/main"

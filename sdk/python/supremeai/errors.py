@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 RETRYABLE_STATUSES = frozenset({502, 503, 504})
 
@@ -19,15 +19,17 @@ class GatewayError(RuntimeError):
         status: int,
         code: str = "GATEWAY_ERROR",
         message: str = "gateway request failed",
-        provider: Optional[str] = None,
-        retryable: Optional[bool] = None,
+        provider: str | None = None,
+        retryable: bool | None = None,
         body: Any = None,
     ) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
         self.provider = provider
-        self.retryable = status in RETRYABLE_STATUSES if retryable is None else retryable
+        self.retryable = (
+            status in RETRYABLE_STATUSES if retryable is None else retryable
+        )
         self.body = body
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper

@@ -34,8 +34,8 @@ from __future__ import annotations
 
 import asyncio
 import re
-from dataclasses import dataclass, field
-from typing import AsyncIterator, Dict, Optional
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------
 # Voice catalog — Bangla-first (bn-BD primary, bn-IN dialect fallbacks)
@@ -57,7 +57,7 @@ class VoiceSpec:
     role: str
 
 
-VOICE_CATALOG: Dict[str, VoiceSpec] = {
+VOICE_CATALOG: dict[str, VoiceSpec] = {
     spec.voice_id: spec
     for spec in (
         VoiceSpec(
@@ -88,7 +88,7 @@ VOICE_CATALOG: Dict[str, VoiceSpec] = {
 }
 
 # Aliases accepted by validate/resolve (short names -> canonical ids).
-VOICE_ALIASES: Dict[str, str] = {
+VOICE_ALIASES: dict[str, str] = {
     "pradeep": "bn-BD-PradeepNeural",
     "nabanita": "bn-BD-NabanitaNeural",
     "bashkar": "bn-IN-BashkarNeural",
@@ -136,7 +136,7 @@ class VoiceRequest:
     total_timeout_s: float = DEFAULT_TOTAL_TIMEOUT_S
 
     @property
-    def cache_key_fields(self) -> Dict[str, str]:
+    def cache_key_fields(self) -> dict[str, str]:
         return {"voice": self.voice, "rate": self.rate, "pitch": self.pitch}
 
 
@@ -174,12 +174,16 @@ def validate_request(
         )
     if not _PITCH_RE.match(pitch or ""):
         raise VoiceRequestError(
-            "pitch %r malformed; expected sign+digits+Hz, e.g. '+5Hz' or '-10Hz'" % pitch
+            "pitch %r malformed; expected sign+digits+Hz, e.g. '+5Hz' or '-10Hz'"
+            % pitch
         )
     if total_timeout_s <= 0:
         raise VoiceRequestError("total_timeout_s must be > 0")
     return VoiceRequest(
-        text=body, voice=canonical_voice, rate=rate, pitch=pitch,
+        text=body,
+        voice=canonical_voice,
+        rate=rate,
+        pitch=pitch,
         total_timeout_s=total_timeout_s,
     )
 
@@ -240,7 +244,7 @@ async def _edge_tts_stream(request: VoiceRequest) -> AsyncIterator[bytes]:
         raise
     except asyncio.TimeoutError as exc:
         raise VoiceSynthesisError("edge-tts protocol timed out") from exc
-    except Exception as exc:  # noqa: BLE001 - protocol taxonomy is client-defined
+    except Exception as exc:
         raise VoiceSynthesisError("edge-tts synthesis failed: %s" % exc) from exc
 
 
@@ -297,7 +301,9 @@ class VoiceService:
             key = self._cache.key_for(request.text, **request.cache_key_fields)
             hit = self._cache.get(key)
             if hit is not None:
-                return VoiceResult(audio=hit, request=request, cached=True, chunk_count=1)
+                return VoiceResult(
+                    audio=hit, request=request, cached=True, chunk_count=1
+                )
         try:
             audio, chunk_count = await asyncio.wait_for(
                 self._collect(self._synthesizer(request)),
@@ -311,13 +317,15 @@ class VoiceService:
             raise VoiceSynthesisError(
                 "synthesis exceeded %.0fs wall-clock guard" % request.total_timeout_s
             ) from exc
-        except Exception as exc:  # noqa: BLE001 - own the error taxonomy
+        except Exception as exc:
             raise VoiceSynthesisError("synthesis failed: %s" % exc) from exc
         if not audio:
             raise VoiceSynthesisError("synthesis returned zero audio bytes")
         if self._cache is not None and key is not None:
             self._cache.put(key, audio)
-        return VoiceResult(audio=audio, request=request, cached=False, chunk_count=chunk_count)
+        return VoiceResult(
+            audio=audio, request=request, cached=False, chunk_count=chunk_count
+        )
 
     # -- internals ----------------------------------------------------------
 

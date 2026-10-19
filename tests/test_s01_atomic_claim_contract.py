@@ -15,6 +15,7 @@ Run modes (dual-mode doctrine):
 Extraction SSOT: TTL and marker constants are imported from the reference
 implementation, never duplicated here.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,7 +32,7 @@ REF_DIR = HERE.parent / "scripts" / "tower"
 if str(REF_DIR) not in sys.path:
     sys.path.insert(0, str(REF_DIR))
 
-import work_claim_reference as ref  # noqa: E402
+import work_claim_reference as ref
 
 T0 = datetime(2026, 10, 17, 2, 40, 52, tzinfo=timezone.utc)
 
@@ -48,27 +49,39 @@ class UnitDecisionMatrix(unittest.TestCase):
 
     def test_02_same_agent_live_is_noop(self):
         cur = ref.parse_marker(ref.build_marker(456, "zai", T0))
-        self.assertEqual(ref.evaluate_claim(cur, 456, "zai", minutes(10)), ref.NOOP_SELF)
+        self.assertEqual(
+            ref.evaluate_claim(cur, 456, "zai", minutes(10)), ref.NOOP_SELF
+        )
 
     def test_03_same_agent_expired_renews(self):
         cur = ref.parse_marker(ref.build_marker(456, "zai", T0))
-        self.assertEqual(ref.evaluate_claim(cur, 456, "zai", minutes(31)), ref.GRANT_RENEW)
+        self.assertEqual(
+            ref.evaluate_claim(cur, 456, "zai", minutes(31)), ref.GRANT_RENEW
+        )
 
     def test_04_other_agent_live_conflicts(self):
         cur = ref.parse_marker(ref.build_marker(456, "zai", T0))
-        self.assertEqual(ref.evaluate_claim(cur, 456, "other", minutes(10)), ref.CONFLICT_OTHER)
+        self.assertEqual(
+            ref.evaluate_claim(cur, 456, "other", minutes(10)), ref.CONFLICT_OTHER
+        )
 
     def test_05_other_agent_expired_takes_over(self):
         cur = ref.parse_marker(ref.build_marker(456, "zai", T0))
-        self.assertEqual(ref.evaluate_claim(cur, 456, "other", minutes(31)), ref.GRANT_TAKEOVER)
+        self.assertEqual(
+            ref.evaluate_claim(cur, 456, "other", minutes(31)), ref.GRANT_TAKEOVER
+        )
 
     def test_06_ttl_is_thirty_minutes_by_reference(self):
         self.assertEqual(ref.TTL_MINUTES, 30)  # transit doctrine constant
 
     def test_07_boundary_minute_is_live(self):
         cur = ref.parse_marker(ref.build_marker(456, "zai", T0))
-        self.assertEqual(ref.evaluate_claim(cur, 456, "other", minutes(29)), ref.CONFLICT_OTHER)
-        self.assertEqual(ref.evaluate_claim(cur, 456, "other", minutes(30)), ref.GRANT_TAKEOVER)
+        self.assertEqual(
+            ref.evaluate_claim(cur, 456, "other", minutes(29)), ref.CONFLICT_OTHER
+        )
+        self.assertEqual(
+            ref.evaluate_claim(cur, 456, "other", minutes(30)), ref.GRANT_TAKEOVER
+        )
 
 
 class UnitMarkerFormat(unittest.TestCase):
@@ -84,8 +97,12 @@ class UnitMarkerFormat(unittest.TestCase):
         self.assertEqual(c.ttl_minutes, ref.TTL_MINUTES)
 
     def test_09_garbage_never_parses(self):
-        for junk in ("", "atomic-claim:issue=1", "<!-- not-a-marker -->",
-                     "<!-- atomic-claim:issue=x,agent=y,ts=z,ttl=1m -->"):
+        for junk in (
+            "",
+            "atomic-claim:issue=1",
+            "<!-- not-a-marker -->",
+            "<!-- atomic-claim:issue=x,agent=y,ts=z,ttl=1m -->",
+        ):
             self.assertIsNone(ref.parse_marker(junk), junk)
 
     def test_10_latest_marker_wins(self):
@@ -170,21 +187,27 @@ class UnitAtomicTransaction(unittest.TestCase):
         self.assertEqual(ref.latest_claim(self.ad.list_comments(456)).agent, "other")  # type: ignore[union-attr]
 
 
-TOWER_URL = os.environ.get("SUPREMEAI_TOWER_URL", "https://supremeai-mcp-tower.onrender.com/mcp")
+TOWER_URL = os.environ.get(
+    "SUPREMEAI_TOWER_URL", "https://supremeai-mcp-tower.onrender.com/mcp"
+)
 
 
 def tower_tools(timeout: int = 20):
     """Minimal MCP initialize + tools/list over HTTP (no SDK deps)."""
+
     def rpc(session, req_id, method, params):
         payload = {"jsonrpc": "2.0", "id": req_id, "method": method}
         if params is not None:
             payload["params"] = params
-        headers = {"Content-Type": "application/json",
-                   "Accept": "application/json, text/event-stream"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
         if session:
             headers["mcp-session-id"] = session
-        req = urllib.request.Request(TOWER_URL, data=json.dumps(payload).encode(),
-                                     headers=headers, method="POST")
+        req = urllib.request.Request(
+            TOWER_URL, data=json.dumps(payload).encode(), headers=headers, method="POST"
+        )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             sid = resp.headers.get("mcp-session-id") or session
             body = resp.read().decode("utf-8", errors="replace")
@@ -196,12 +219,24 @@ def tower_tools(timeout: int = 20):
                     continue
         return (json.loads(body) if body.strip() else {}), sid
 
-    resp, sid = rpc(None, 1, "initialize", {
-        "protocolVersion": "2025-03-26", "capabilities": {},
-        "clientInfo": {"name": "s01-contract-test", "version": "1.0.0"}})
+    resp, sid = rpc(
+        None,
+        1,
+        "initialize",
+        {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "s01-contract-test", "version": "1.0.0"},
+        },
+    )
     if not resp.get("result"):
         raise ConnectionError("tower initialize failed")
-    rpc(sid, 0, "notifications/initialized", {}, )
+    rpc(
+        sid,
+        0,
+        "notifications/initialized",
+        {},
+    )
     resp, _ = rpc(sid, 2, "tools/list", {})
     return [t.get("name") for t in resp.get("result", {}).get("tools", [])]
 
@@ -212,8 +247,10 @@ class LiveTowerContract(unittest.TestCase):
     def tools(self):
         return tower_tools()
 
-    @unittest.skipUnless(os.environ.get("S01_LIVE") == "1",
-                         "skip-until-landed (set S01_LIVE=1 to attempt live checks)")
+    @unittest.skipUnless(
+        os.environ.get("S01_LIVE") == "1",
+        "skip-until-landed (set S01_LIVE=1 to attempt live checks)",
+    )
     def test_21_tool_advertised(self):
         try:
             names = self.tools()

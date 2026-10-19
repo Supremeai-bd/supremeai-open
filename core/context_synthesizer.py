@@ -3,15 +3,17 @@ Hierarchical Context Budgeter & Progressive Disclosure Engine — Core Decision 
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List
 
 
 class ContextStage(str, Enum):
-    STAGE1_DISCOVERY = "STAGE1_DISCOVERY"    # Metadata only (< 1,000 tokens)
+    STAGE1_DISCOVERY = "STAGE1_DISCOVERY"  # Metadata only (< 1,000 tokens)
     STAGE2_ACTIVATION = "STAGE2_ACTIVATION"  # Contract + Instructions (< 4,000 tokens)
-    STAGE3_EXECUTION = "STAGE3_EXECUTION"    # Full Source + Verification (< 16,000 tokens)
+    STAGE3_EXECUTION = (
+        "STAGE3_EXECUTION"  # Full Source + Verification (< 16,000 tokens)
+    )
 
 
 @dataclass(frozen=True)
@@ -26,10 +28,16 @@ class ContextSynthesizer:
     Enforces the token diet contract across task lifecycles to prevent prompt bloat.
     """
 
-    STAGE_BUDGETS: Dict[ContextStage, BudgetLimits] = {
-        ContextStage.STAGE1_DISCOVERY: BudgetLimits(max_tokens=1000, allow_source_code=False, allow_full_diff=False),
-        ContextStage.STAGE2_ACTIVATION: BudgetLimits(max_tokens=4000, allow_source_code=False, allow_full_diff=False),
-        ContextStage.STAGE3_EXECUTION: BudgetLimits(max_tokens=16000, allow_source_code=True, allow_full_diff=True),
+    STAGE_BUDGETS: dict[ContextStage, BudgetLimits] = {
+        ContextStage.STAGE1_DISCOVERY: BudgetLimits(
+            max_tokens=1000, allow_source_code=False, allow_full_diff=False
+        ),
+        ContextStage.STAGE2_ACTIVATION: BudgetLimits(
+            max_tokens=4000, allow_source_code=False, allow_full_diff=False
+        ),
+        ContextStage.STAGE3_EXECUTION: BudgetLimits(
+            max_tokens=16000, allow_source_code=True, allow_full_diff=True
+        ),
     }
 
     @classmethod

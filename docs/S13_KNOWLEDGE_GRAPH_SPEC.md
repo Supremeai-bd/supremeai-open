@@ -74,11 +74,14 @@ must stay in sync, cf. the #67 marker convention).
 #!/usr/bin/env python3
 """Full-graph builder: walk the archive tree, extract nodes/edges, write
 archive/graph.json + archive/cache/file_hashes.json. Zero-dependency."""
+
 import hashlib, json, sys
 from pathlib import Path
 
+
 def file_sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
 
 def main(root: Path = Path("archive/sources")) -> int:
     nodes, edges, cache = [], [], {}
@@ -87,16 +90,22 @@ def main(root: Path = Path("archive/sources")) -> int:
             continue
         content = path.read_text(encoding="utf-8")
         cache[str(path)] = file_sha256(content)
-        nodes.append({"id": f"file:{path}", "type":
-                      "policy" if path.suffix == ".md" else "file",
-                      "summary": content.splitlines()[0][:200],
-                      "sha256": cache[str(path)]})
+        nodes.append(
+            {
+                "id": f"file:{path}",
+                "type": "policy" if path.suffix == ".md" else "file",
+                "summary": content.splitlines()[0][:200],
+                "sha256": cache[str(path)],
+            }
+        )
     Path("archive/cache").mkdir(parents=True, exist_ok=True)
     Path("archive/cache/file_hashes.json").write_text(json.dumps(cache, indent=2))
-    Path("archive/graph.json").write_text(json.dumps(
-        {"nodes": nodes, "edges": edges}, indent=2))
+    Path("archive/graph.json").write_text(
+        json.dumps({"nodes": nodes, "edges": edges}, indent=2)
+    )
     print(f"graph built: {len(nodes)} nodes")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
@@ -107,16 +116,20 @@ if __name__ == "__main__":
 #!/usr/bin/env python3
 """Incremental updater: `git diff --name-only` against
 archive/cache/file_hashes.json; touches exactly the modified nodes."""
+
 import json, subprocess, sys
 from pathlib import Path
 
+
 def main() -> int:
     cache = json.loads(Path("archive/cache/file_hashes.json").read_text())
-    changed = subprocess.run(["git", "diff", "--name-only", "HEAD"],
-                             capture_output=True, text=True).stdout.split()
+    changed = subprocess.run(
+        ["git", "diff", "--name-only", "HEAD"], capture_output=True, text=True
+    ).stdout.split()
     touched = [p for p in changed if p in cache]
     print(json.dumps({"touched": touched, "full_reindex": False}))
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

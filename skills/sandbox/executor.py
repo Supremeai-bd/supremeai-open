@@ -13,9 +13,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
 
 DEFAULT_TIMEOUT_S = 10.0
 
@@ -40,9 +40,9 @@ class SkillSandbox:
     def run(
         self,
         script: str,
-        args: Optional[Sequence[str]] = None,
-        timeout_s: Optional[float] = None,
-        extra_env: Optional[Dict[str, str]] = None,
+        args: Sequence[str] | None = None,
+        timeout_s: float | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> SandboxResult:
         script_path = (self.skill_root / script).resolve()
         if self.skill_root.resolve() not in script_path.parents:
@@ -83,7 +83,9 @@ class SkillSandbox:
                 return SandboxResult(
                     script=script,
                     returncode=-1,
-                    stdout=exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
+                    stdout=exc.stdout.decode("utf-8", errors="replace")
+                    if isinstance(exc.stdout, bytes)
+                    else (exc.stdout or ""),
                     stderr="sandbox timeout: script exceeded its budget and was terminated",
                     timed_out=True,
                     workdir=str(workdir),
@@ -91,7 +93,9 @@ class SkillSandbox:
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
-    def run_entry(self, descriptor_entry: Optional[str], args: Optional[Sequence[str]] = None) -> SandboxResult:
+    def run_entry(
+        self, descriptor_entry: str | None, args: Sequence[str] | None = None
+    ) -> SandboxResult:
         """Execute a capability's declared entry point."""
         if not descriptor_entry:
             raise ValueError("capability declares no entry script")

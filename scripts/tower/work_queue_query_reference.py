@@ -13,6 +13,7 @@ Contract (from docs/S05_UNIFIED_QUEUE_SPEC.md):
 
 Self-test: python3 work_queue_query_reference.py --self-test
 """
+
 from __future__ import annotations
 
 import json
@@ -34,8 +35,11 @@ def build_queue_query(label: str | None = None) -> dict:
         applied = label.strip()
         params["labels"] = applied
     qs = urlencode(params)
-    return {"url": f"https://api.github.com/repos/{REPO}/issues?{qs}",
-            "params": params, "applied_label": applied}
+    return {
+        "url": f"https://api.github.com/repos/{REPO}/issues?{qs}",
+        "params": params,
+        "applied_label": applied,
+    }
 
 
 def is_queue_eligible(issue: dict) -> bool:
@@ -54,14 +58,22 @@ def normalize_queue(issues: list, applied_label: str | None = None) -> dict:
         "label": applied_label,
         "authenticatedRead": True,
         "count": len(rows),
-        "workOrders": [{"number": i["number"], "title": i.get("title", ""),
-                        "state": i.get("state"), "labels": sorted(
-                            l.get("name", str(l)) if isinstance(l, dict) else str(l)
-                            for l in i.get("labels") or []),
-                        "url": i.get("html_url"),
-                        "createdAt": i.get("created_at"),
-                        "updatedAt": i.get("updated_at"),
-                        "comments": i.get("comments", 0)} for i in rows],
+        "workOrders": [
+            {
+                "number": i["number"],
+                "title": i.get("title", ""),
+                "state": i.get("state"),
+                "labels": sorted(
+                    l.get("name", str(l)) if isinstance(l, dict) else str(l)
+                    for l in i.get("labels") or []
+                ),
+                "url": i.get("html_url"),
+                "createdAt": i.get("created_at"),
+                "updatedAt": i.get("updated_at"),
+                "comments": i.get("comments", 0),
+            }
+            for i in rows
+        ],
     }
 
 
@@ -86,8 +98,12 @@ def _self_test() -> int:
     assert norm["label"] is None and norm["count"] == 2
     norm2 = normalize_queue(rows, applied_label="x")
     assert norm2["label"] == "x"
-    d = {"number": 5, "title": "dict-label", "state": "open",
-         "labels": [{"name": "status:unclaimed"}]}
+    d = {
+        "number": 5,
+        "title": "dict-label",
+        "state": "open",
+        "labels": [{"name": "status:unclaimed"}],
+    }
     nd = normalize_queue([d])
     assert nd["workOrders"][0]["labels"] == ["status:unclaimed"]
     print("self-test OK: work_queue_query_reference")

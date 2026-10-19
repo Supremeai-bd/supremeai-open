@@ -40,12 +40,14 @@ deterministic. Pure stdlib.
 
 Run: python3 scripts/ci/staggered_rolling_train.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
 import datetime as _dt
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Final, Mapping
+from typing import Final
 
 from hourly_satellite_batcher import (  # reuse — freshness SSOT (no copy)
     BatchConflict,
@@ -103,8 +105,7 @@ def full_repo_name(satellite: str) -> str:
         raise TrainError(f"satellite must be a string; got {satellite!r}")
     norm = satellite.strip().lower()
     known = {slot.satellite for slot in ROLLING_SCHEDULE}
-    if norm.startswith("supremeai-"):
-        norm = norm[len("supremeai-"):]
+    norm = norm.removeprefix("supremeai-")
     if norm not in known:
         raise TrainError(f"unknown rolling-train satellite: {satellite!r}")
     if norm == "infra":
@@ -116,7 +117,9 @@ def assert_no_overlap(schedule=ROLLING_SCHEDULE) -> None:
     """Schedule invariant: strict, non-overlapping, unique, full coverage."""
     slots = tuple(schedule)
     if len(slots) != 11:
-        raise TrainError(f"rolling schedule must cover exactly 11 satellites; got {len(slots)}")
+        raise TrainError(
+            f"rolling schedule must cover exactly 11 satellites; got {len(slots)}"
+        )
     names = [slot.satellite for slot in slots]
     if len(set(names)) != len(names):
         raise TrainError(f"duplicate satellite in rolling schedule: {names}")
@@ -190,7 +193,7 @@ def plan_consolidation(
     last_synced: str | None,
     target_head: str | None,
     parents: Mapping[str, str] | None = None,
-    commit_files: Mapping[str, ] | None = None,
+    commit_files: Mapping[str,] | None = None,
 ) -> ConsolidationPlan:
     """Build the atomic consolidation plan for one satellite's slot.
 
@@ -211,7 +214,9 @@ def plan_consolidation(
         from hourly_satellite_batcher import is_descendant  # local: reuse SSOT
 
         if is_descendant(target_head, last_synced, parents):
-            conflicts = three_way_check(files, last_synced, target_head, parents, commit_files)
+            conflicts = three_way_check(
+                files, last_synced, target_head, parents, commit_files
+            )
             if conflicts:
                 raise BatchConflict(
                     f"{satellite} → {target}: conflict files since sync base "
@@ -243,8 +248,20 @@ def self_test() -> bool:
     # schedule invariants (issue #514 Tier 4 — verbatim order)
     assert_no_overlap()
     assert [s.satellite for s in ROLLING_SCHEDULE] == (
-        ["open", "studio", "browser", "api", "skills", "vscode",
-         "command", "agents", "archive", "infra", "sdk"])
+        [
+            "open",
+            "studio",
+            "browser",
+            "api",
+            "skills",
+            "vscode",
+            "command",
+            "agents",
+            "archive",
+            "infra",
+            "sdk",
+        ]
+    )
     assert [s.minute for s in ROLLING_SCHEDULE] == list(range(0, 110, 10))
     try:
         assert_no_overlap((ROLLING_SCHEDULE[0], ROLLING_SCHEDULE[0]))
@@ -279,19 +296,19 @@ def self_test() -> bool:
 
     # deterministic slot resolution — fixed epoch math, cycle wrap exact
     epoch = _dt.datetime(1970, 1, 1, tzinfo=_dt.timezone.utc)
-    assert active_slot(epoch).satellite == "open"          # minute 0 of cycle 0
+    assert active_slot(epoch).satellite == "open"  # minute 0 of cycle 0
     t10 = epoch + _dt.timedelta(minutes=10)
     assert active_slot(t10).satellite == "studio"
     t109 = epoch + _dt.timedelta(minutes=109)
-    assert active_slot(t109).satellite == "sdk"            # last slot of the cycle
+    assert active_slot(t109).satellite == "sdk"  # last slot of the cycle
     t110 = epoch + _dt.timedelta(minutes=110)
-    assert active_slot(t110).satellite == "open"           # exact wrap
+    assert active_slot(t110).satellite == "open"  # exact wrap
     t115 = epoch + _dt.timedelta(minutes=115)
-    assert active_slot(t115).satellite == "open"           # 5 min into the wrapped open slot
+    assert active_slot(t115).satellite == "open"  # 5 min into the wrapped open slot
     t120 = epoch + _dt.timedelta(minutes=120)
-    assert active_slot(t120).satellite == "studio"         # second slot of the next cycle
+    assert active_slot(t120).satellite == "studio"  # second slot of the next cycle
     naive = _dt.datetime(1970, 1, 1, 0, 30)
-    assert active_slot(naive).satellite == "api"           # naive == UTC, minute 30
+    assert active_slot(naive).satellite == "api"  # naive == UTC, minute 30
     try:
         active_slot("now")
         raise AssertionError("non-datetime must be rejected")
@@ -311,16 +328,26 @@ def self_test() -> bool:
     commit_files = {mid: ("docs/ledger/a.md",), head: ("docs/ledger/b.md",)}
     # clean consolidation: batch carries a file the target never touched
     plan = plan_consolidation(
-        "archive", (head, mid), ("docs/ledger/c.md",),
-        last_synced=base, target_head=head, parents=parents, commit_files=commit_files,
+        "archive",
+        (head, mid),
+        ("docs/ledger/c.md",),
+        last_synced=base,
+        target_head=head,
+        parents=parents,
+        commit_files=commit_files,
     )
     assert plan.target == "Supremeai-bd/supremeai-archive"
     assert plan.shas == (head, mid)
     # conflict → fail closed
     try:
         plan_consolidation(
-            "archive", (head,), ("docs/ledger/b.md",),
-            last_synced=base, target_head=head, parents=parents, commit_files=commit_files,
+            "archive",
+            (head,),
+            ("docs/ledger/b.md",),
+            last_synced=base,
+            target_head=head,
+            parents=parents,
+            commit_files=commit_files,
         )
         raise AssertionError("conflicting consolidation must be rejected")
     except BatchConflict:
@@ -328,23 +355,30 @@ def self_test() -> bool:
     # stale target → fail closed
     try:
         plan_consolidation(
-            "archive", (mid,), ("docs/ledger/a.md",),
-            last_synced=head, target_head=mid, parents=parents, commit_files=commit_files,
+            "archive",
+            (mid,),
+            ("docs/ledger/a.md",),
+            last_synced=head,
+            target_head=mid,
+            parents=parents,
+            commit_files=commit_files,
         )
         raise AssertionError("stale target must be rejected")
     except FreshnessViolation:
         pass
     # missing bookkeeping → fail closed
     try:
-        plan_consolidation("sdk", (head,), ("sdk/x.ts",),
-                           last_synced=base, target_head=head)
+        plan_consolidation(
+            "sdk", (head,), ("sdk/x.ts",), last_synced=base, target_head=head
+        )
         raise AssertionError("missing parents/commit_files must be rejected")
     except TrainError:
         pass
     # unknown satellite → fail closed
     try:
-        plan_consolidation("core", (head,), ("core/x.py",),
-                           last_synced=None, target_head=None)
+        plan_consolidation(
+            "core", (head,), ("core/x.py",), last_synced=None, target_head=None
+        )
         raise AssertionError("non-train satellite must be rejected")
     except TrainError:
         pass
@@ -353,6 +387,7 @@ def self_test() -> bool:
     class _Item:
         def __init__(self, urgent: bool):
             self.urgent = urgent
+
     picked = urgent_bypass([_Item(True), _Item(False), _Item(True)])
     assert len(picked) == 2 and all(i.urgent for i in picked)
     assert urgent_bypass([]) == ()
@@ -363,7 +398,9 @@ def self_test() -> bool:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Staggered Rolling Train (issue #514)")
-    parser.add_argument("--self-test", action="store_true", help="offline guard-the-guard")
+    parser.add_argument(
+        "--self-test", action="store_true", help="offline guard-the-guard"
+    )
     args = parser.parse_args(argv)
     if args.self_test:
         return 0 if self_test() else 1

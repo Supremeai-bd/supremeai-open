@@ -48,37 +48,86 @@ the same expression is still flagged by R4.
 
 Pure stdlib. Run: python3 scripts/ci/cross_platform_invariant_guard.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
 import ast
 import json
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Iterable, Mapping, Sequence
+from typing import Final
 
 EXIT_CLEAN: Final = 0
 EXIT_VIOLATION: Final = 2
 EXIT_MALFORMED: Final = 3
 
-DEFAULT_TIMEOUT: Final = 30          # seconds; auto-fixer retrofit value
-UTF8_FAMILY: Final = frozenset({
-    "utf-8", "utf8", "utf_8", "u8", "utf", "utf-8//",
-})
-CRLF_SUFFIXES: Final = frozenset({
-    ".py", ".sh", ".ts", ".md", ".tsx", ".js", ".mjs", ".cjs",
-})
-SUBPROCESS_FUNCS: Final = frozenset({
-    "run", "call", "check_output", "check_call", "Popen",
-})
-TIMEOUT_REQUIRED_FUNCS: Final = frozenset({
-    "run", "call", "check_output", "check_call",
-})
-EXTERNAL_TOOLS: Final = frozenset({
-    "gh", "git", "docker", "curl", "jq", "node", "npm", "npx", "bun",
-    "pip", "python3", "python", "shellcheck", "gitleaks", "tar",
-    "rsync", "ssh", "gcloud", "aws", "kubectl", "make",
-})
+DEFAULT_TIMEOUT: Final = 30  # seconds; auto-fixer retrofit value
+UTF8_FAMILY: Final = frozenset(
+    {
+        "utf-8",
+        "utf8",
+        "utf_8",
+        "u8",
+        "utf",
+        "utf-8//",
+    }
+)
+CRLF_SUFFIXES: Final = frozenset(
+    {
+        ".py",
+        ".sh",
+        ".ts",
+        ".md",
+        ".tsx",
+        ".js",
+        ".mjs",
+        ".cjs",
+    }
+)
+SUBPROCESS_FUNCS: Final = frozenset(
+    {
+        "run",
+        "call",
+        "check_output",
+        "check_call",
+        "Popen",
+    }
+)
+TIMEOUT_REQUIRED_FUNCS: Final = frozenset(
+    {
+        "run",
+        "call",
+        "check_output",
+        "check_call",
+    }
+)
+EXTERNAL_TOOLS: Final = frozenset(
+    {
+        "gh",
+        "git",
+        "docker",
+        "curl",
+        "jq",
+        "node",
+        "npm",
+        "npx",
+        "bun",
+        "pip",
+        "python3",
+        "python",
+        "shellcheck",
+        "gitleaks",
+        "tar",
+        "rsync",
+        "ssh",
+        "gcloud",
+        "aws",
+        "kubectl",
+        "make",
+    }
+)
 SEPARATOR_CHARS: Final = ("/", "\\")
 
 
@@ -121,9 +170,12 @@ def _open_family(call: ast.Call) -> str | None:
     func = call.func
     if isinstance(func, ast.Name) and func.id == "open":
         return "open"
-    if (isinstance(func, ast.Attribute) and func.attr == "open"
-            and isinstance(func.value, ast.Name)
-            and func.value.id in ("io", "codecs")):
+    if (
+        isinstance(func, ast.Attribute)
+        and func.attr == "open"
+        and isinstance(func.value, ast.Name)
+        and func.value.id in ("io", "codecs")
+    ):
         return f"{func.value.id}.open"
     return None
 
@@ -133,9 +185,13 @@ def _explicit_encoding(call: ast.Call) -> str | None:
     kw = _kwarg(call, "encoding")
     if kw is not None:
         return _const_str(kw.value)
-    if call.func and isinstance(call.func, ast.Attribute) \
-            and isinstance(call.func.value, ast.Name) \
-            and call.func.value.id == "codecs" and len(call.args) >= 3:
+    if (
+        call.func
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "codecs"
+        and len(call.args) >= 3
+    ):
         return _const_str(call.args[2])
     return None
 
@@ -151,7 +207,9 @@ def _mode_is_binary(call: ast.Call) -> bool:
     return False
 
 
-def _check_encoding_call(call: ast.Call, path: str, violations: list[Violation]) -> None:
+def _check_encoding_call(
+    call: ast.Call, path: str, violations: list[Violation]
+) -> None:
     """R1 for the open family and pathlib .read_text/.write_text."""
     func = call.func
     family = _open_family(call)
@@ -160,37 +218,63 @@ def _check_encoding_call(call: ast.Call, path: str, violations: list[Violation])
             return
         encoding = _explicit_encoding(call)
         if encoding is None:
-            violations.append(Violation(
-                path, call.lineno, "R1-utf8-encoding",
-                f"{family}(...) missing explicit encoding='utf-8'; Windows "
-                "default cp1252 will crash on Unicode/emojis"))
+            violations.append(
+                Violation(
+                    path,
+                    call.lineno,
+                    "R1-utf8-encoding",
+                    f"{family}(...) missing explicit encoding='utf-8'; Windows "
+                    "default cp1252 will crash on Unicode/emojis",
+                )
+            )
         elif not _is_utf8_literal(encoding):
-            violations.append(Violation(
-                path, call.lineno, "R1-utf8-encoding",
-                f"{family}(... encoding={encoding!r}) is not utf-8 family"))
+            violations.append(
+                Violation(
+                    path,
+                    call.lineno,
+                    "R1-utf8-encoding",
+                    f"{family}(... encoding={encoding!r}) is not utf-8 family",
+                )
+            )
         return
     if isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text"):
         encoding = _explicit_encoding(call)
         if encoding is None:
-            violations.append(Violation(
-                path, call.lineno, "R1-utf8-encoding",
-                f".{func.attr}(...) missing explicit encoding='utf-8'; "
-                "locale-dependent decoding breaks Windows runners"))
+            violations.append(
+                Violation(
+                    path,
+                    call.lineno,
+                    "R1-utf8-encoding",
+                    f".{func.attr}(...) missing explicit encoding='utf-8'; "
+                    "locale-dependent decoding breaks Windows runners",
+                )
+            )
         elif not _is_utf8_literal(encoding):
-            violations.append(Violation(
-                path, call.lineno, "R1-utf8-encoding",
-                f".{func.attr}(... encoding={encoding!r}) is not utf-8 family"))
+            violations.append(
+                Violation(
+                    path,
+                    call.lineno,
+                    "R1-utf8-encoding",
+                    f".{func.attr}(... encoding={encoding!r}) is not utf-8 family",
+                )
+            )
 
 
 def _subprocess_name(call: ast.Call) -> str | None:
     func = call.func
-    if (isinstance(func, ast.Attribute) and func.attr in SUBPROCESS_FUNCS
-            and isinstance(func.value, ast.Name) and func.value.id == "subprocess"):
+    if (
+        isinstance(func, ast.Attribute)
+        and func.attr in SUBPROCESS_FUNCS
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "subprocess"
+    ):
         return func.attr
     return None
 
 
-def _check_encoding_subprocess(call: ast.Call, path: str, violations: list[Violation]) -> None:
+def _check_encoding_subprocess(
+    call: ast.Call, path: str, violations: list[Violation]
+) -> None:
     """R1 for subprocess calls with text=True / universal_newlines=True."""
     name = _subprocess_name(call)
     if name is None:
@@ -198,20 +282,34 @@ def _check_encoding_subprocess(call: ast.Call, path: str, violations: list[Viola
     text_mode = False
     for flag in ("text", "universal_newlines"):
         kw = _kwarg(call, flag)
-        if kw is not None and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+        if (
+            kw is not None
+            and isinstance(kw.value, ast.Constant)
+            and kw.value.value is True
+        ):
             text_mode = True
     if not text_mode:
         return
     encoding = _explicit_encoding(call)
     if encoding is None:
-        violations.append(Violation(
-            path, call.lineno, "R1-utf8-encoding",
-            f"subprocess.{name}(text=True) without encoding='utf-8'; child "
-            "output decodes with cp1252 on Windows"))
+        violations.append(
+            Violation(
+                path,
+                call.lineno,
+                "R1-utf8-encoding",
+                f"subprocess.{name}(text=True) without encoding='utf-8'; child "
+                "output decodes with cp1252 on Windows",
+            )
+        )
     elif not _is_utf8_literal(encoding):
-        violations.append(Violation(
-            path, call.lineno, "R1-utf8-encoding",
-            f"subprocess.{name}(encoding={encoding!r}) is not utf-8 family"))
+        violations.append(
+            Violation(
+                path,
+                call.lineno,
+                "R1-utf8-encoding",
+                f"subprocess.{name}(encoding={encoding!r}) is not utf-8 family",
+            )
+        )
 
 
 def _check_timeout(call: ast.Call, path: str, violations: list[Violation]) -> None:
@@ -221,14 +319,24 @@ def _check_timeout(call: ast.Call, path: str, violations: list[Violation]) -> No
         return
     kw = _kwarg(call, "timeout")
     if kw is None:
-        violations.append(Violation(
-            path, call.lineno, "R2-subprocess-timeout",
-            f"subprocess.{name}(...) missing explicit timeout=<seconds>; a "
-            "hanging job burns up to 360 Actions quota minutes"))
+        violations.append(
+            Violation(
+                path,
+                call.lineno,
+                "R2-subprocess-timeout",
+                f"subprocess.{name}(...) missing explicit timeout=<seconds>; a "
+                "hanging job burns up to 360 Actions quota minutes",
+            )
+        )
     elif isinstance(kw.value, ast.Constant) and kw.value.value is None:
-        violations.append(Violation(
-            path, call.lineno, "R2-subprocess-timeout",
-            f"subprocess.{name}(timeout=None) is unbounded; pass a number"))
+        violations.append(
+            Violation(
+                path,
+                call.lineno,
+                "R2-subprocess-timeout",
+                f"subprocess.{name}(timeout=None) is unbounded; pass a number",
+            )
+        )
 
 
 def _popen_wait_chains(tree: ast.AST, path: str, violations: list[Violation]) -> None:
@@ -241,9 +349,12 @@ def _popen_wait_chains(tree: ast.AST, path: str, violations: list[Violation]) ->
             value = node.value
             if isinstance(value, ast.Call):
                 func = value.func
-                if (isinstance(func, ast.Attribute) and func.attr == "Popen"
-                        and isinstance(func.value, ast.Name)
-                        and func.value.id == "subprocess"):
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "Popen"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "subprocess"
+                ):
                     for target in targets:
                         if isinstance(target, ast.Name):
                             popen_vars.add(target.id)
@@ -252,12 +363,20 @@ def _popen_wait_chains(tree: ast.AST, path: str, violations: list[Violation]) ->
             continue
         if node.func.attr not in ("communicate", "wait"):
             continue
-        if not isinstance(node.func.value, ast.Name) or node.func.value.id not in popen_vars:
+        if (
+            not isinstance(node.func.value, ast.Name)
+            or node.func.value.id not in popen_vars
+        ):
             continue
         if _kwarg(node, "timeout") is None:
-            violations.append(Violation(
-                path, node.lineno, "R2-subprocess-timeout",
-                f"Popen .{node.func.attr}() without timeout=<seconds>"))
+            violations.append(
+                Violation(
+                    path,
+                    node.lineno,
+                    "R2-subprocess-timeout",
+                    f"Popen .{node.func.attr}() without timeout=<seconds>",
+                )
+            )
 
 
 def _url_exempt(texts: Iterable[str | None]) -> bool:
@@ -276,45 +395,75 @@ def _separator_concat(tree: ast.AST, path: str, violations: list[Violation]) -> 
                 if not text:
                     continue
                 if text.endswith(SEPARATOR_CHARS) or text.startswith(SEPARATOR_CHARS):
-                    violations.append(Violation(
-                        path, node.lineno, "R4-posix-path",
-                        f"hardcoded path separator in string concatenation "
-                        f"({text!r}); use pathlib.Path or os.path.join()"))
+                    violations.append(
+                        Violation(
+                            path,
+                            node.lineno,
+                            "R4-posix-path",
+                            f"hardcoded path separator in string concatenation "
+                            f"({text!r}); use pathlib.Path or os.path.join()",
+                        )
+                    )
         elif isinstance(node, ast.JoinedStr):
             parts = [_const_str(v) for v in node.values if isinstance(v, ast.Constant)]
             if _url_exempt(parts):
                 continue
             for text in parts:
-                if text and (text.endswith(SEPARATOR_CHARS) or text.startswith(SEPARATOR_CHARS)):
-                    violations.append(Violation(
-                        path, node.lineno, "R4-posix-path",
-                        f"f-string path separator ({text!r}); use pathlib.Path "
-                        "or os.path.join()"))
+                if text and (
+                    text.endswith(SEPARATOR_CHARS) or text.startswith(SEPARATOR_CHARS)
+                ):
+                    violations.append(
+                        Violation(
+                            path,
+                            node.lineno,
+                            "R4-posix-path",
+                            f"f-string path separator ({text!r}); use pathlib.Path "
+                            "or os.path.join()",
+                        )
+                    )
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             attr = node.func.attr
-            if (attr == "join" and isinstance(node.func.value, ast.Constant)
-                    and isinstance(node.func.value.value, str)):
+            if (
+                attr == "join"
+                and isinstance(node.func.value, ast.Constant)
+                and isinstance(node.func.value.value, str)
+            ):
                 sep = node.func.value.value
                 if sep in SEPARATOR_CHARS and not _url_exempt([sep]):
-                    violations.append(Violation(
-                        path, node.lineno, "R4-posix-path",
-                        f"{sep!r}.join(...) path building; use os.path.join() "
-                        "or pathlib"))
+                    violations.append(
+                        Violation(
+                            path,
+                            node.lineno,
+                            "R4-posix-path",
+                            f"{sep!r}.join(...) path building; use os.path.join() "
+                            "or pathlib",
+                        )
+                    )
             if attr in ("split", "rsplit") and node.args:
                 sep = _const_str(node.args[0])
                 if sep in SEPARATOR_CHARS:
-                    violations.append(Violation(
-                        path, node.lineno, "R4-posix-path",
-                        f".{attr}({sep!r}) path splitting; use pathlib parts "
-                        "or os.path.split"))
+                    violations.append(
+                        Violation(
+                            path,
+                            node.lineno,
+                            "R4-posix-path",
+                            f".{attr}({sep!r}) path splitting; use pathlib parts "
+                            "or os.path.split",
+                        )
+                    )
         elif isinstance(node, ast.Call):
             for arg in node.args:
                 value = _const_str(arg)
                 if value and "\\" in value and "/" in value:
-                    violations.append(Violation(
-                        path, node.lineno, "R4-posix-path",
-                        f"mixed-separator path literal {value!r}; normalize "
-                        "with pathlib.Path"))
+                    violations.append(
+                        Violation(
+                            path,
+                            node.lineno,
+                            "R4-posix-path",
+                            f"mixed-separator path literal {value!r}; normalize "
+                            "with pathlib.Path",
+                        )
+                    )
 
 
 def _which_tool_names(tree: ast.AST) -> set[str]:
@@ -375,8 +524,9 @@ def _in_file_notfound_handler(tree: ast.AST, target: ast.Call) -> bool:
                 if isinstance(handler.type, ast.Name):
                     types = (handler.type,)
                 elif isinstance(handler.type, ast.Tuple):
-                    types = tuple(elt for elt in handler.type.elts
-                                  if isinstance(elt, ast.Name))
+                    types = tuple(
+                        elt for elt in handler.type.elts if isinstance(elt, ast.Name)
+                    )
                 if any(t.id == "FileNotFoundError" for t in types):
                     return True
     return False
@@ -398,11 +548,16 @@ def _check_cli_presence(tree: ast.AST, path: str, violations: list[Violation]) -
             continue
         if _in_file_notfound_handler(tree, node):
             continue
-        violations.append(Violation(
-            path, node.lineno, "R5-cli-presence",
-            f"subprocess.{name} calls external tool {tool!r} without a "
-            f"shutil.which({tool!r}) guard or FileNotFoundError handling; "
-            "containers raise FileNotFoundError (exit 127)"))
+        violations.append(
+            Violation(
+                path,
+                node.lineno,
+                "R5-cli-presence",
+                f"subprocess.{name} calls external tool {tool!r} without a "
+                f"shutil.which({tool!r}) guard or FileNotFoundError handling; "
+                "containers raise FileNotFoundError (exit 127)",
+            )
+        )
 
 
 def _check_swallow(tree: ast.AST, path: str, violations: list[Violation]) -> None:
@@ -411,21 +566,35 @@ def _check_swallow(tree: ast.AST, path: str, violations: list[Violation]) -> Non
         if not isinstance(node, ast.ExceptHandler):
             continue
         if not node.body:
-            violations.append(Violation(
-                path, node.lineno, "R6-anti-swallow",
-                "empty except handler swallows errors"))
+            violations.append(
+                Violation(
+                    path,
+                    node.lineno,
+                    "R6-anti-swallow",
+                    "empty except handler swallows errors",
+                )
+            )
             continue
         only_pass = all(
             isinstance(stmt, ast.Pass)
-            or (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
-                and stmt.value.value is Ellipsis)
-            for stmt in node.body)
+            or (
+                isinstance(stmt, ast.Expr)
+                and isinstance(stmt.value, ast.Constant)
+                and stmt.value.value is Ellipsis
+            )
+            for stmt in node.body
+        )
         if only_pass:
             label = "bare except:" if node.type is None else "except:"
-            violations.append(Violation(
-                path, node.lineno, "R6-anti-swallow",
-                f"{label} pass silently swallows errors; log, return, or "
-                "re-raise honestly"))
+            violations.append(
+                Violation(
+                    path,
+                    node.lineno,
+                    "R6-anti-swallow",
+                    f"{label} pass silently swallows errors; log, return, or "
+                    "re-raise honestly",
+                )
+            )
 
 
 def scan_source(path: str, content: str) -> tuple[list[Violation], int | None]:
@@ -460,17 +629,27 @@ def scan_record(record: SourceRecord) -> list[Violation]:
         found, bad_line = scan_source(record.path, record.content)
         violations.extend(found)
         if bad_line is not None:
-            violations.append(Violation(
-                record.path, bad_line, "PARSE-FAIL-CLOSED",
-                "Python file does not parse; guard cannot verify invariants"))
+            violations.append(
+                Violation(
+                    record.path,
+                    bad_line,
+                    "PARSE-FAIL-CLOSED",
+                    "Python file does not parse; guard cannot verify invariants",
+                )
+            )
     if ext in CRLF_SUFFIXES:
         raw = record.content.encode("utf-8", errors="surrogateescape")
         for lineno, line in enumerate(raw.split(b"\n"), start=1):
             if line.endswith(b"\r"):
-                violations.append(Violation(
-                    record.path, lineno, "R3-crlf-purge",
-                    "CRLF line ending; causes /bin/bash^M bad-interpreter "
-                    "and command-not-found outages on Linux"))
+                violations.append(
+                    Violation(
+                        record.path,
+                        lineno,
+                        "R3-crlf-purge",
+                        "CRLF line ending; causes /bin/bash^M bad-interpreter "
+                        "and command-not-found outages on Linux",
+                    )
+                )
     return violations
 
 
@@ -519,7 +698,7 @@ def _fix_record(record: SourceRecord) -> tuple[str, list[str]]:
         try:
             tree = ast.parse(source, filename=record.path)
         except SyntaxError:
-            return (record.content, []) if not notes else (record.content, [])
+            return (record.content, [])
         changed = False
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -592,8 +771,8 @@ def _parse_records(raw: str) -> list[SourceRecord]:
 def self_test() -> bool:
     # Sample sources are assembled at runtime via chr()/repr() so this
     # module stays clean under its own scan (no flaggable literals).
-    BS = chr(92)   # backslash
-    FS = chr(47)   # forward slash
+    BS = chr(92)  # backslash
+    FS = chr(47)  # forward slash
     CRLF = chr(13) + chr(10)
 
     def run(src: str) -> list[Violation]:
@@ -601,37 +780,42 @@ def self_test() -> bool:
         assert bad is None, (src, bad)
         return found
 
-    rules = {v.rule for v in [
-        *run("open('f.txt')"),
-        *run("open('f.txt', 'rb')"),
-        *run("open('f.txt', encoding='utf-8')"),
-        *run("open('f.txt', encoding='cp1252')"),
-        *run("open('f.txt', 'r', encoding='UTF-8')"),
-        *run("path.read_text()"),
-        *run("path.write_text(data, encoding='UTF-8')"),
-        *run("subprocess.run(cmd, text=True)"),
-        *run("subprocess.run(cmd, text=True, encoding='utf-8')"),
-        *run("subprocess.run(cmd, timeout=30)"),
-        *run("subprocess.run(cmd, timeout=None)"),
-        *run("subprocess.check_output(cmd)"),
-    ]}
+    rules = {
+        v.rule
+        for v in [
+            *run("open('f.txt')"),
+            *run("open('f.txt', 'rb')"),
+            *run("open('f.txt', encoding='utf-8')"),
+            *run("open('f.txt', encoding='cp1252')"),
+            *run("open('f.txt', 'r', encoding='UTF-8')"),
+            *run("path.read_text()"),
+            *run("path.write_text(data, encoding='UTF-8')"),
+            *run("subprocess.run(cmd, text=True)"),
+            *run("subprocess.run(cmd, text=True, encoding='utf-8')"),
+            *run("subprocess.run(cmd, timeout=30)"),
+            *run("subprocess.run(cmd, timeout=None)"),
+            *run("subprocess.check_output(cmd)"),
+        ]
+    }
     assert rules == {"R1-utf8-encoding", "R2-subprocess-timeout"}, rules
 
     # Binary mode and codecs positional encoding are exempt / honored.
     assert run("open('f.bin', 'wb')\n") == []
     assert run("import codecs\ncodecs.open('f.txt', 'r', 'utf-8')\n") == []
     assert run("import io\nio.open('f.txt', encoding='utf8')\n") == []
-    assert any(v.rule == "R1-utf8-encoding"
-               for v in run("subprocess.run(cmd, universal_newlines=True)\n"))
+    assert any(
+        v.rule == "R1-utf8-encoding"
+        for v in run("subprocess.run(cmd, universal_newlines=True)\n")
+    )
 
     # R2 Popen chain tracking.
-    popen_src = ("import subprocess\n"
-                 "p = subprocess.Popen(cmd)\n"
-                 "out = p.communicate()\n")
+    popen_src = "import subprocess\np = subprocess.Popen(cmd)\nout = p.communicate()\n"
     assert [v.rule for v in run(popen_src)] == ["R2-subprocess-timeout"]
-    ok_popen = ("import subprocess\n"
-                "p = subprocess.Popen(cmd)\n"
-                "out = p.communicate(timeout=10)\n")
+    ok_popen = (
+        "import subprocess\n"
+        "p = subprocess.Popen(cmd)\n"
+        "out = p.communicate(timeout=10)\n"
+    )
     assert run(ok_popen) == []
 
     # R3: CRLF (byte-level).
@@ -650,7 +834,7 @@ def self_test() -> bool:
     assert any(v.rule == "R4-posix-path" for v in run(join))
     split = "parts = p.split(" + repr(FS) + ")\n"
     assert any(v.rule == "R4-posix-path" for v in run(split))
-    mixed = "cmd(" + repr('C:' + BS + 'dir' + FS + 'file') + ")\n"
+    mixed = "cmd(" + repr("C:" + BS + "dir" + FS + "file") + ")\n"
     assert any(v.rule == "R4-posix-path" for v in run(mixed))
     assert run("p = os.path.join('dir', name)\n") == []
     assert run("p = pathlib.Path('dir') " + chr(47) + " 'x'\n") == []
@@ -660,29 +844,35 @@ def self_test() -> bool:
     assert not any(v.rule == "R4-posix-path" for v in run(url_lit))
 
     # R5: CLI presence.
-    which = ("import shutil, subprocess\n"
-             "if shutil.which('git') is None:\n"
-             "    raise SystemExit(127)\n"
-             "subprocess.run(['git', 'status'], timeout=30)\n")
+    which = (
+        "import shutil, subprocess\n"
+        "if shutil.which('git') is None:\n"
+        "    raise SystemExit(127)\n"
+        "subprocess.run(['git', 'status'], timeout=30)\n"
+    )
     assert run(which) == []
-    no_which = ("import subprocess\n"
-                "subprocess.run(['git', 'status'], timeout=30)\n")
+    no_which = "import subprocess\nsubprocess.run(['git', 'status'], timeout=30)\n"
     assert any(v.rule == "R5-cli-presence" for v in run(no_which))
-    caught = ("import subprocess\n"
-              "def go():\n"
-              "    try:\n"
-              "        subprocess.run(['gh', 'pr'], timeout=30)\n"
-              "    except FileNotFoundError:\n"
-              "        return 127\n")
+    caught = (
+        "import subprocess\n"
+        "def go():\n"
+        "    try:\n"
+        "        subprocess.run(['gh', 'pr'], timeout=30)\n"
+        "    except FileNotFoundError:\n"
+        "        return 127\n"
+    )
     assert run(caught) == []
     unknown_tool = "subprocess.run(['make', 'all'], timeout=5)\n"
     assert any(v.rule == "R5-cli-presence" for v in run(unknown_tool))
 
     # R6: anti-swallow.
-    assert any(v.rule == "R6-anti-swallow"
-               for v in run("try:\n    a()\nexcept Exception:\n    pass\n"))
-    assert any(v.rule == "R6-anti-swallow"
-               for v in run("try:\n    a()\nexcept:\n    pass\n"))
+    assert any(
+        v.rule == "R6-anti-swallow"
+        for v in run("try:\n    a()\nexcept Exception:\n    pass\n")
+    )
+    assert any(
+        v.rule == "R6-anti-swallow" for v in run("try:\n    a()\nexcept:\n    pass\n")
+    )
     assert run("try:\n    a()\nexcept Exception:\n    raise\n") == []
     assert run("try:\n    a()\nexcept Exception:\n    log.error('x')\n") == []
     assert run("try:\n    a()\nexcept FileNotFoundError:\n    code = 127\n") == []
@@ -694,9 +884,11 @@ def self_test() -> bool:
     assert any(v.rule == "PARSE-FAIL-CLOSED" for v in scan_records(broken))
 
     # Fixer: R1 + R2 retrofit with round-trip validation.
-    dirty = ("with open('a.txt') as fh:\n"
-             "    data = fh.read()\n"
-             "subprocess.run(['git', 'status'])\n")
+    dirty = (
+        "with open('a.txt') as fh:\n"
+        "    data = fh.read()\n"
+        "subprocess.run(['git', 'status'])\n"
+    )
     fixed, notes = autofix_records([SourceRecord("dirty.py", dirty)])
     assert "encoding='utf-8'" in fixed[0].content, fixed
     assert "timeout=30" in fixed[0].content, fixed
@@ -717,12 +909,17 @@ def self_test() -> bool:
 def _cli(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--files", nargs="*",
-                        help="paths to scan (read from disk with utf-8)")
-    parser.add_argument("--files-json",
-                        help="inline JSON list of {path, content}; omit to read stdin")
-    parser.add_argument("--fix", action="store_true",
-                        help="auto-retrofit R1/R2/R3 (in place with --files)")
+    parser.add_argument(
+        "--files", nargs="*", help="paths to scan (read from disk with utf-8)"
+    )
+    parser.add_argument(
+        "--files-json", help="inline JSON list of {path, content}; omit to read stdin"
+    )
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="auto-retrofit R1/R2/R3 (in place with --files)",
+    )
     args = parser.parse_args(argv)
     if args.self_test:
         self_test()
@@ -746,8 +943,13 @@ def _cli(argv: Sequence[str] | None = None) -> int:
             print("FIXED", note)
         if args.files:
             for record in records:
-                with open(record.path, "w", encoding="utf-8",
-                          errors="surrogateescape", newline="") as fh:
+                with open(
+                    record.path,
+                    "w",
+                    encoding="utf-8",
+                    errors="surrogateescape",
+                    newline="",
+                ) as fh:
                     fh.write(record.content)
     violations = scan_records(records)
     for violation in violations:

@@ -15,6 +15,7 @@ Design invariants:
 
 Self-test: python3 stale_claim_releaser.py --self-test
 """
+
 from __future__ import annotations
 
 import json
@@ -26,7 +27,8 @@ TTL_MINUTES_DEFAULT = 30
 
 _MARKER_TYPED = re.compile(
     r"<!--\s*atomic-claim:issue=(?P<issue>\d+),agent=(?P<agent>[^,]+),"
-    r"ts=(?P<ts>[^,]+),ttl=(?P<ttl>\S+?)\s*-->")
+    r"ts=(?P<ts>[^,]+),ttl=(?P<ttl>\S+?)\s*-->"
+)
 _MARKER_PLAIN = re.compile(r"<!--\s*atomic-claim\s*-->")
 _ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
 _ISO_S = "%Y-%m-%dT%H:%M:%SZ"
@@ -54,26 +56,32 @@ def parse_atomic_claims(comments: list) -> list:
             tm = re.fullmatch(r"(\d+)m", ttl_raw)
             if tm:
                 minutes = int(tm.group(1))
-            claims.append({
-                "issue": int(m.group("issue")),
-                "agent": m.group("agent"),
-                "ts": parse_ts(m.group("ts")),
-                "ttl_minutes": minutes,
-                "marker": "typed",
-            })
+            claims.append(
+                {
+                    "issue": int(m.group("issue")),
+                    "agent": m.group("agent"),
+                    "ts": parse_ts(m.group("ts")),
+                    "ttl_minutes": minutes,
+                    "marker": "typed",
+                }
+            )
             continue
         if _MARKER_PLAIN.search(body) and c.get("ts"):
-            claims.append({
-                "issue": None,
-                "agent": c.get("agent") or "unknown",
-                "ts": parse_ts(c["ts"]),
-                "ttl_minutes": TTL_MINUTES_DEFAULT,
-                "marker": "plain",
-            })
+            claims.append(
+                {
+                    "issue": None,
+                    "agent": c.get("agent") or "unknown",
+                    "ts": parse_ts(c["ts"]),
+                    "ttl_minutes": TTL_MINUTES_DEFAULT,
+                    "marker": "plain",
+                }
+            )
     return claims
 
 
-def is_stale(claimed_at: datetime, now: datetime, ttl_minutes: int = TTL_MINUTES_DEFAULT) -> bool:
+def is_stale(
+    claimed_at: datetime, now: datetime, ttl_minutes: int = TTL_MINUTES_DEFAULT
+) -> bool:
     """Rule 9: strict-greater comparison; exactly-TTL is NOT stale."""
     if now < claimed_at:
         raise ValueError("clock skew: now earlier than claim time")
@@ -97,7 +105,7 @@ def release_plan(snapshot: dict, now: datetime) -> dict:
                  "last_push_at": iso|null, "pr_opened_at": iso|null}]}
     """
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get("issues"), list):
-        raise ValueError("snapshot must be {\"issues\": [...]}")
+        raise ValueError('snapshot must be {"issues": [...]}')
     releases, keeps = [], []
     for issue in snapshot["issues"]:
         number = issue.get("number")
@@ -113,28 +121,41 @@ def release_plan(snapshot: dict, now: datetime) -> dict:
             if not lt:
                 keeps.append({"issue": number, "reason": "no_claim_marker"})
                 continue
-            claims = [{"agent": "unknown", "ts": parse_ts(lt),
-                       "ttl_minutes": TTL_MINUTES_DEFAULT, "marker": "label"}]
+            claims = [
+                {
+                    "agent": "unknown",
+                    "ts": parse_ts(lt),
+                    "ttl_minutes": TTL_MINUTES_DEFAULT,
+                    "marker": "label",
+                }
+            ]
         claim = max(claims, key=lambda c: c["ts"])
         activity = _latest_activity(issue)
         if activity is not None and activity > claim["ts"]:
-            keeps.append({"issue": number, "agent": claim["agent"],
-                          "reason": "activity_after_claim"})
+            keeps.append(
+                {
+                    "issue": number,
+                    "agent": claim["agent"],
+                    "reason": "activity_after_claim",
+                }
+            )
             continue
         if is_stale(claim["ts"], now, claim["ttl_minutes"]):
-            releases.append({
-                "issue": number,
-                "agent": claim["agent"],
-                "claimed_at": claim["ts"].strftime(_ISO_S),
-                "action": "release",
-                "reason": "stale_lease_expired",
-                "lease_minutes": claim["ttl_minutes"],
-            })
+            releases.append(
+                {
+                    "issue": number,
+                    "agent": claim["agent"],
+                    "claimed_at": claim["ts"].strftime(_ISO_S),
+                    "action": "release",
+                    "reason": "stale_lease_expired",
+                    "lease_minutes": claim["ttl_minutes"],
+                }
+            )
         else:
-            keeps.append({"issue": number, "agent": claim["agent"],
-                          "reason": "lease_active"})
-    return {"releases": releases, "keeps": keeps,
-            "computed_at": now.strftime(_ISO_S)}
+            keeps.append(
+                {"issue": number, "agent": claim["agent"], "reason": "lease_active"}
+            )
+    return {"releases": releases, "keeps": keeps, "computed_at": now.strftime(_ISO_S)}
 
 
 def _self_test() -> int:
@@ -147,15 +168,33 @@ def _self_test() -> int:
     for claimed, now, ttl, want in cases:
         got = is_stale(parse_ts(claimed), parse_ts(now), ttl)
         assert got is want, f"is_stale({claimed},{now},{ttl}) = {got}, want {want}"
-    assert parse_atomic_claims([
-        {"ts": "2026-10-17T05:00:00Z",
-         "body": "<!-- atomic-claim:issue=470,agent=z,ts=2026-10-17T05:00:00Z,ttl=30m -->"}
-    ])[0]["agent"] == "z"
-    snap = {"issues": [{
-        "number": 1, "labels": ["status:claimed"],
-        "comments": [{"ts": "2026-10-17T05:00:00Z",
-                      "body": "<!-- atomic-claim:issue=1,agent=a,ts=2026-10-17T05:00:00Z,ttl=30m -->"}],
-        "last_push_at": None, "pr_opened_at": None}]}
+    assert (
+        parse_atomic_claims(
+            [
+                {
+                    "ts": "2026-10-17T05:00:00Z",
+                    "body": "<!-- atomic-claim:issue=470,agent=z,ts=2026-10-17T05:00:00Z,ttl=30m -->",
+                }
+            ]
+        )[0]["agent"]
+        == "z"
+    )
+    snap = {
+        "issues": [
+            {
+                "number": 1,
+                "labels": ["status:claimed"],
+                "comments": [
+                    {
+                        "ts": "2026-10-17T05:00:00Z",
+                        "body": "<!-- atomic-claim:issue=1,agent=a,ts=2026-10-17T05:00:00Z,ttl=30m -->",
+                    }
+                ],
+                "last_push_at": None,
+                "pr_opened_at": None,
+            }
+        ]
+    }
     plan = release_plan(snap, parse_ts("2026-10-17T05:31:00Z"))
     assert len(plan["releases"]) == 1 and plan["releases"][0]["agent"] == "a"
     plan2 = release_plan(snap, parse_ts("2026-10-17T05:29:00Z"))

@@ -75,7 +75,9 @@ def fetch_account_services(api_key: str) -> list[dict[str, Any]]:
         return [item.get("service", {}) for item in data]
 
 
-def fetch_service_deploys(service_id: str, api_key: str, limit: int = 50) -> list[dict[str, Any]]:
+def fetch_service_deploys(
+    service_id: str, api_key: str, limit: int = 50
+) -> list[dict[str, Any]]:
     """Fetch recent deploys for a given service."""
     req = urllib.request.Request(
         f"https://api.render.com/v1/services/{service_id}/deploys?limit={limit}",
@@ -131,7 +133,9 @@ def evaluate_deployment_mode(
         "build_minutes": build_minutes,
         "threshold": threshold,
         "limit": RENDER_MONTHLY_LIMIT_MINUTES,
-        "mode": "GITHUB_ACTIONS_BUILD_AND_PUSH" if exceeded else "RENDER_NATIVE_AUTODEPLOY",
+        "mode": "GITHUB_ACTIONS_BUILD_AND_PUSH"
+        if exceeded
+        else "RENDER_NATIVE_AUTODEPLOY",
         "allow_render_native_build": not exceeded,
         "warning": exceeded,
         "message": (
@@ -170,16 +174,20 @@ def set_render_autodeploy(service_id: str, api_key: str, enabled: bool) -> bool:
 def run_self_test() -> int:
     """Offline self-test for build calculations and decision branching."""
     print("Running render_build_quota_guard offline self-test...")
-    
+
     # Under threshold check
     res_ok = evaluate_deployment_mode(245.5, threshold=450.0)
-    assert res_ok["mode"] == "RENDER_NATIVE_AUTODEPLOY", f"Expected native deploy, got {res_ok}"
+    assert res_ok["mode"] == "RENDER_NATIVE_AUTODEPLOY", (
+        f"Expected native deploy, got {res_ok}"
+    )
     assert res_ok["allow_render_native_build"] is True
     assert res_ok["warning"] is False
 
     # Over threshold check
     res_over = evaluate_deployment_mode(452.1, threshold=450.0)
-    assert res_over["mode"] == "GITHUB_ACTIONS_BUILD_AND_PUSH", f"Expected GH actions, got {res_over}"
+    assert res_over["mode"] == "GITHUB_ACTIONS_BUILD_AND_PUSH", (
+        f"Expected GH actions, got {res_over}"
+    )
     assert res_over["allow_render_native_build"] is False
     assert res_over["warning"] is True
 
@@ -193,12 +201,31 @@ def run_self_test() -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Render Account Build Minutes Tracker & Deployment Router")
-    parser.add_argument("--service", type=str, help="Specific service name to inspect (e.g. supremeai-primary-node)")
-    parser.add_argument("--threshold", type=float, default=SAFE_BUILD_THRESHOLD_MINUTES, help="Build minutes threshold (default: 450.0)")
-    parser.add_argument("--all", action="store_true", help="Inspect all known services across all configured keys")
-    parser.add_argument("--self-test", action="store_true", help="Run offline deterministic self-test")
-    parser.add_argument("--json", action="store_true", help="Output results in pure JSON format")
+    parser = argparse.ArgumentParser(
+        description="Render Account Build Minutes Tracker & Deployment Router"
+    )
+    parser.add_argument(
+        "--service",
+        type=str,
+        help="Specific service name to inspect (e.g. supremeai-primary-node)",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=SAFE_BUILD_THRESHOLD_MINUTES,
+        help="Build minutes threshold (default: 450.0)",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Inspect all known services across all configured keys",
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="Run offline deterministic self-test"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Output results in pure JSON format"
+    )
     args = parser.parse_args()
 
     if args.self_test:
@@ -223,14 +250,18 @@ def main() -> int:
     has_warning = False
 
     for svc_name, key_var in services_to_check:
-        api_key = env.get(key_var) or (env.get("RENDER_API_KEY_API") if key_var == "RENDER_API_KEY_5" else None)
+        api_key = env.get(key_var) or (
+            env.get("RENDER_API_KEY_API") if key_var == "RENDER_API_KEY_5" else None
+        )
         if not api_key:
-            results.append({
-                "service": svc_name,
-                "account_key_var": key_var,
-                "warning": False,
-                "notice": f"API key '{key_var}' not configured in current environment. Ready for configuration.",
-            })
+            results.append(
+                {
+                    "service": svc_name,
+                    "account_key_var": key_var,
+                    "warning": False,
+                    "notice": f"API key '{key_var}' not configured in current environment. Ready for configuration.",
+                }
+            )
             continue
 
         try:
@@ -238,10 +269,12 @@ def main() -> int:
             services = fetch_account_services(api_key)
             target = next((s for s in services if s.get("name") == svc_name), None)
             if not target:
-                results.append({
-                    "service": svc_name,
-                    "error": f"Service '{svc_name}' not found under key '{key_var}'",
-                })
+                results.append(
+                    {
+                        "service": svc_name,
+                        "error": f"Service '{svc_name}' not found under key '{key_var}'",
+                    }
+                )
                 continue
 
             svc_id = target.get("id", "")
@@ -258,17 +291,30 @@ def main() -> int:
                 has_warning = True
 
         except Exception as e:
-            results.append({
-                "service": svc_name,
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "service": svc_name,
+                    "error": str(e),
+                }
+            )
 
     if args.json:
-        print(json.dumps({"services": results, "threshold": args.threshold, "has_warning": has_warning}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "services": results,
+                    "threshold": args.threshold,
+                    "has_warning": has_warning,
+                },
+                indent=2,
+            )
+        )
     else:
         print("=" * 72)
         print(" SupremeAI — Render Account Build Minutes & Deployment Router")
-        print(f" Safe Threshold: {args.threshold} mins | Render Free Quota: 500.0 mins/month")
+        print(
+            f" Safe Threshold: {args.threshold} mins | Render Free Quota: 500.0 mins/month"
+        )
         print("=" * 72)
         for r in results:
             if "error" in r:
@@ -281,7 +327,9 @@ def main() -> int:
                 continue
             icon = "[WARN]" if r["warning"] else "[OK]"
             print(f"{icon} {r['service']} ({r['account_key_var']}):")
-            print(f"   Monthly Build Time: {r['build_minutes']} / 500.0 mins ({r['monthly_deploys']} deploys)")
+            print(
+                f"   Monthly Build Time: {r['build_minutes']} / 500.0 mins ({r['monthly_deploys']} deploys)"
+            )
             print(f"   Current autoDeploy : {r['current_auto_deploy']}")
             print(f"   Selected Action    : {r['mode']}")
             print(f"   Directive          : {r['message']}")

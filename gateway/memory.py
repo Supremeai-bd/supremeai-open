@@ -6,6 +6,7 @@ implementation without changing the HTTP contract. Scoring is honest
 (keyword-overlap, no fabricated embeddings) — production should inject a
 real embedding model via the store's score() hook.
 """
+
 from __future__ import annotations
 
 import re
@@ -28,12 +29,22 @@ class MemoryStore:
     def __init__(self) -> None:
         self._items: list[MemoryItem] = []
 
-    def store(self, *, text: str, namespace: str = "default", item_id: str | None = None,
-              metadata: dict[str, Any] | None = None) -> MemoryItem:
+    def store(
+        self,
+        *,
+        text: str,
+        namespace: str = "default",
+        item_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemoryItem:
         iid = item_id or ("mem-" + uuid.uuid4().hex[:12])
         # upsert by id
-        self._items = [x for x in self._items if not (x.id == iid and x.namespace == namespace)]
-        item = MemoryItem(id=iid, namespace=namespace, text=text, metadata=metadata or {})
+        self._items = [
+            x for x in self._items if not (x.id == iid and x.namespace == namespace)
+        ]
+        item = MemoryItem(
+            id=iid, namespace=namespace, text=text, metadata=metadata or {}
+        )
         self._items.append(item)
         return item
 
@@ -46,8 +57,14 @@ class MemoryStore:
         union = len(q_tokens | t_tokens)
         return inter / union if union else 0.0
 
-    def search(self, *, query: str, top_k: int = 5, namespace: str | None = None,
-               threshold: float = 0.0) -> list[dict[str, Any]]:
+    def search(
+        self,
+        *,
+        query: str,
+        top_k: int = 5,
+        namespace: str | None = None,
+        threshold: float = 0.0,
+    ) -> list[dict[str, Any]]:
         cands = self._items
         if namespace:
             cands = [x for x in cands if x.namespace == namespace]
@@ -59,14 +76,16 @@ class MemoryStore:
         scored.sort(key=lambda p: p[0], reverse=True)
         out = []
         for s, x in scored[:top_k]:
-            out.append({
-                "id": x.id,
-                "score": round(s, 4),
-                "text": x.text,
-                "namespace": x.namespace,
-                "metadata": x.metadata,
-                "created": x.created,
-            })
+            out.append(
+                {
+                    "id": x.id,
+                    "score": round(s, 4),
+                    "text": x.text,
+                    "namespace": x.namespace,
+                    "metadata": x.metadata,
+                    "created": x.created,
+                }
+            )
         return out
 
     def clear(self, namespace: str | None = None) -> int:

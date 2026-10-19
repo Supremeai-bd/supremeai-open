@@ -25,29 +25,55 @@ record; the guard never passes partially.
 
 Pure stdlib. Run: python3 scripts/ci/vendored_tree_guard.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Mapping, Sequence
+from typing import Final
 
 VENDORED_DIR_MARKERS: Final = (
-    "/vendor/", "/third_party/", "/node_modules/",
-    "/bower_components/", "/vendors/",
+    "/vendor/",
+    "/third_party/",
+    "/node_modules/",
+    "/bower_components/",
+    "/vendors/",
 )
-VENDORED_DIR_ROOTS: Final = ("vendor/", "third_party/", "node_modules/",
-                             "bower_components/", "vendors/")
-VENDORED_FILE_MAX_BYTES: Final = 512 * 1024        # 512 KiB single file
-VENDORED_TREE_FILE_COUNT: Final = 50               # files per new top dir
+VENDORED_DIR_ROOTS: Final = (
+    "vendor/",
+    "third_party/",
+    "node_modules/",
+    "bower_components/",
+    "vendors/",
+)
+VENDORED_FILE_MAX_BYTES: Final = 512 * 1024  # 512 KiB single file
+VENDORED_TREE_FILE_COUNT: Final = 50  # files per new top dir
 VENDORED_TREE_MAX_TOTAL_BYTES: Final = 2 * 1024 * 1024  # 2 MiB total
-LOCKFILE_NAMES: Final = frozenset({
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
-    "Cargo.lock", "Pipfile.lock", "composer.lock",
-})
-OVERSIZE_LIBRARY_SUFFIXES: Final = (".jar", ".war", ".wasm", ".node",
-                                    ".so", ".dll", ".dylib", ".a", ".lib")
+LOCKFILE_NAMES: Final = frozenset(
+    {
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "poetry.lock",
+        "Cargo.lock",
+        "Pipfile.lock",
+        "composer.lock",
+    }
+)
+OVERSIZE_LIBRARY_SUFFIXES: Final = (
+    ".jar",
+    ".war",
+    ".wasm",
+    ".node",
+    ".so",
+    ".dll",
+    ".dylib",
+    ".a",
+    ".lib",
+)
 
 EXIT_CLEAN: Final = 0
 EXIT_VIOLATION: Final = 2
@@ -68,9 +94,9 @@ class GuardVerdict:
 
 def _is_vendored_path(path: str) -> bool:
     normalized = "/" + path.replace("\\", "/").lstrip("/")
-    return (any(marker in normalized for marker in VENDORED_DIR_MARKERS)
-            or any(normalized.startswith("/" + root)
-                   for root in VENDORED_DIR_ROOTS))
+    return any(marker in normalized for marker in VENDORED_DIR_MARKERS) or any(
+        normalized.startswith("/" + root) for root in VENDORED_DIR_ROOTS
+    )
 
 
 def _top_dir(path: str) -> str:
@@ -85,17 +111,19 @@ def guard_added_files(files: Sequence[AddedFile]) -> GuardVerdict:
 
     vendored = [f for f in files if _is_vendored_path(f.path)]
     if vendored:
-        violations.append(
-            f"R1 vendored directory paths: {len(vendored)} file(s)")
+        violations.append(f"R1 vendored directory paths: {len(vendored)} file(s)")
         offenders.update(f.path for f in vendored)
 
-    oversize = [f for f in files
-                if f.bytes > VENDORED_FILE_MAX_BYTES
-                or f.path.lower().endswith(OVERSIZE_LIBRARY_SUFFIXES)]
+    oversize = [
+        f
+        for f in files
+        if f.bytes > VENDORED_FILE_MAX_BYTES
+        or f.path.lower().endswith(OVERSIZE_LIBRARY_SUFFIXES)
+    ]
     if oversize:
         violations.append(
-            f"R2 oversize/binary library additions: "
-            f"{[f.path for f in oversize]}")
+            f"R2 oversize/binary library additions: {[f.path for f in oversize]}"
+        )
         offenders.update(f.path for f in oversize)
 
     by_top: Mapping[str, list[AddedFile]] = {}
@@ -105,16 +133,19 @@ def guard_added_files(files: Sequence[AddedFile]) -> GuardVerdict:
         if len(group) > VENDORED_TREE_FILE_COUNT:
             violations.append(
                 f"R3 mass addition under {top!r}: {len(group)} new files "
-                f"(limit {VENDORED_TREE_FILE_COUNT})")
+                f"(limit {VENDORED_TREE_FILE_COUNT})"
+            )
             offenders.update(f.path for f in group)
 
-    lockfiles = [f for f in files
-                 if f.path.replace("\\", "/").split("/")[-1] in LOCKFILE_NAMES]
+    lockfiles = [
+        f for f in files if f.path.replace("\\", "/").split("/")[-1] in LOCKFILE_NAMES
+    ]
     if lockfiles:
         violations.append(
             f"R4 dependency lockfile additions: "
             f"{[f.path for f in lockfiles]} — vendoring manifests are "
-            "prohibited; surgical extraction needs no dependency tree")
+            "prohibited; surgical extraction needs no dependency tree"
+        )
         offenders.update(f.path for f in lockfiles)
 
     total = sum(f.bytes for f in files)
@@ -122,7 +153,8 @@ def guard_added_files(files: Sequence[AddedFile]) -> GuardVerdict:
         violations.append(
             f"R5 total added mass {total} bytes exceeds "
             f"{VENDORED_TREE_MAX_TOTAL_BYTES} — extract the Gold Pearl, "
-            "not the repository")
+            "not the repository"
+        )
         offenders.update(f.path for f in files)
 
     return GuardVerdict(
@@ -143,8 +175,12 @@ def _parse_records(raw: str) -> list[AddedFile]:
         raise SystemExit(EXIT_VIOLATION)
     parsed: list[AddedFile] = []
     for item in payload:
-        if (not isinstance(item, dict) or not isinstance(item.get("path"), str)
-                or not isinstance(item.get("bytes"), int) or item["bytes"] < 0):
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("path"), str)
+            or not isinstance(item.get("bytes"), int)
+            or item["bytes"] < 0
+        ):
             print("EXIT_VIOLATION: each record needs {path: str, bytes: int}")
             raise SystemExit(EXIT_VIOLATION)
         parsed.append(AddedFile(path=item["path"], bytes=item["bytes"]))
@@ -152,11 +188,13 @@ def _parse_records(raw: str) -> list[AddedFile]:
 
 
 def self_test() -> bool:
-    clean = guard_added_files([
-        AddedFile("scripts/agents/scout_extractor.py", 9000),
-        AddedFile("tests/test_s11_surgical_adoption.py", 7000),
-        AddedFile("docs/S11_SURGICAL_ADOPTION_SPEC.md", 8000),
-    ])
+    clean = guard_added_files(
+        [
+            AddedFile("scripts/agents/scout_extractor.py", 9000),
+            AddedFile("tests/test_s11_surgical_adoption.py", 7000),
+            AddedFile("docs/S11_SURGICAL_ADOPTION_SPEC.md", 8000),
+        ]
+    )
     assert clean.exit_code == EXIT_CLEAN and not clean.violations
 
     cases: tuple[tuple[list[AddedFile], str], ...] = (
@@ -165,8 +203,13 @@ def self_test() -> bool:
         ([AddedFile("third_party/engine/core.py", 10)], "R1"),
         ([AddedFile("src/blob.jar", 100)], "R2"),
         ([AddedFile("src/huge.bin", VENDORED_FILE_MAX_BYTES + 1)], "R2"),
-        ([AddedFile(f"newpkg/mod{i}.py", 10) for i in range(
-            VENDORED_TREE_FILE_COUNT + 1)], "R3"),
+        (
+            [
+                AddedFile(f"newpkg/mod{i}.py", 10)
+                for i in range(VENDORED_TREE_FILE_COUNT + 1)
+            ],
+            "R3",
+        ),
         ([AddedFile("package-lock.json", 400)], "R4"),
         ([AddedFile("web/yarn.lock", 400)], "R4"),
         ([AddedFile(f"f{i}.py", 300 * 1024) for i in range(8)], "R5"),
@@ -179,8 +222,9 @@ def self_test() -> bool:
 
     # Boundary: exactly at the limits is clean.
     edge_files = [AddedFile("ok.bin", VENDORED_FILE_MAX_BYTES)]
-    edge_files += [AddedFile(f"pkg/mod{i}.py", 10)
-                   for i in range(VENDORED_TREE_FILE_COUNT)]
+    edge_files += [
+        AddedFile(f"pkg/mod{i}.py", 10) for i in range(VENDORED_TREE_FILE_COUNT)
+    ]
     edge_files.append(AddedFile("tail.py", 400 * 1024))  # ≤ per-file cap
     edge = guard_added_files(edge_files)
     assert edge.exit_code == EXIT_CLEAN, edge
@@ -193,9 +237,10 @@ def self_test() -> bool:
 def _cli() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--files-json",
-                        help="inline JSON list of {path, bytes} records; "
-                             "omit to read stdin")
+    parser.add_argument(
+        "--files-json",
+        help="inline JSON list of {path, bytes} records; omit to read stdin",
+    )
     args = parser.parse_args()
     if args.self_test:
         self_test()

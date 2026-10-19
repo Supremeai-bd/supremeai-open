@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from .manifest_schema import (
     CapabilityDescriptor,
@@ -25,12 +24,12 @@ CURSOR_MANIFEST = "plugin.json"
 class ProgressiveLoader:
     """Filesystem-backed capability registry with context-diet semantics."""
 
-    def __init__(self, roots: List[Path]) -> None:
+    def __init__(self, roots: list[Path]) -> None:
         self.roots = [Path(root) for root in roots]
-        self._index: Dict[str, CapabilityDescriptor] = {}
-        self._bodies: Dict[str, str] = {}
+        self._index: dict[str, CapabilityDescriptor] = {}
+        self._bodies: dict[str, str] = {}
 
-    def discover(self) -> Dict[str, CapabilityDescriptor]:
+    def discover(self) -> dict[str, CapabilityDescriptor]:
         """Stage 1: index every skill under the roots (metadata only)."""
         self._index = {}
         self._bodies = {}
@@ -46,7 +45,8 @@ class ProgressiveLoader:
                 if plugin_json.parent.name != ".cursor-plugin":
                     continue
                 descriptor, notes = parse_cursor_plugin(
-                    plugin_json.read_text(encoding="utf-8"), source_path=str(plugin_json)
+                    plugin_json.read_text(encoding="utf-8"),
+                    source_path=str(plugin_json),
                 )
                 self._adopt(descriptor, notes)
         return dict(self._index)
@@ -57,11 +57,11 @@ class ProgressiveLoader:
         self._index[descriptor.name] = descriptor
         self._bodies[descriptor.name] = body
 
-    def summaries(self) -> List[Dict[str, object]]:
+    def summaries(self) -> list[dict[str, object]]:
         """Stage 2: lightweight summaries; safe for boot-time context."""
         return [descriptor.summary() for descriptor in self._index.values()]
 
-    def load(self, name: str) -> Dict[str, object]:
+    def load(self, name: str) -> dict[str, object]:
         """Stage 3: full instructions + entry for exactly one capability."""
         if name not in self._index:
             raise KeyError(f"capability not indexed: {name}")
@@ -72,19 +72,21 @@ class ProgressiveLoader:
             "instructions": self._bodies[name],
         }
 
-    def match(self, task_text: str) -> Optional[CapabilityDescriptor]:
+    def match(self, task_text: str) -> CapabilityDescriptor | None:
         """Resolve a dispatched task to a capability via trigger keywords."""
         lowered = task_text.lower()
-        best: Optional[CapabilityDescriptor] = None
+        best: CapabilityDescriptor | None = None
         best_score = 0
         for descriptor in self._index.values():
-            score = sum(1 for trigger in descriptor.triggers if trigger.lower() in lowered)
+            score = sum(
+                1 for trigger in descriptor.triggers if trigger.lower() in lowered
+            )
             if score > best_score:
                 best, best_score = descriptor, score
         return best
 
     @staticmethod
-    def read_index(path: Path) -> Dict[str, Dict[str, str]]:
+    def read_index(path: Path) -> dict[str, dict[str, str]]:
         """Validate and return registry/index.json content (git sources)."""
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         skills = raw.get("skills", {})

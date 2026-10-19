@@ -16,15 +16,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from registry.manifest_schema import (  # noqa: E402
+from registry.manifest_schema import (
     CapabilityDescriptor,
     ManifestError,
     parse_cursor_plugin,
     parse_skill_md,
 )
-from registry.package_manager import PackageManager, PackageManagerError  # noqa: E402
-from registry.progressive_loader import ProgressiveLoader  # noqa: E402
-from sandbox.executor import SkillSandbox  # noqa: E402
+from registry.package_manager import PackageManager, PackageManagerError
+from registry.progressive_loader import ProgressiveLoader
+from sandbox.executor import SkillSandbox
 
 EXAMPLES = ROOT / "examples"
 
@@ -39,25 +39,30 @@ entry: scripts/run.py
 Full instructions live here and load only at dispatch.
 """
 
-PLUGIN_JSON_SAMPLE = json.dumps({
-    "name": "Thermos_Review",
-    "version": "2.0.0",
-    "description": "Deep security review workflow.",
-    "commands": {
-        "security-review": {"description": "full review"},
-        "quick-scan": {"description": "fast pass"},
-    },
-})
+PLUGIN_JSON_SAMPLE = json.dumps(
+    {
+        "name": "Thermos_Review",
+        "version": "2.0.0",
+        "description": "Deep security review workflow.",
+        "commands": {
+            "security-review": {"description": "full review"},
+            "quick-scan": {"description": "fast pass"},
+        },
+    }
+)
 
 
 def make_skill(root: Path, name: str = "packme") -> Path:
     skill_dir = root / name
     (skill_dir / "scripts").mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: %s\nversion: 0.1.0\ndescription: pack test\nentry: scripts/go.py\n---\nbody\n" % name,
+        "---\nname: %s\nversion: 0.1.0\ndescription: pack test\nentry: scripts/go.py\n---\nbody\n"
+        % name,
         encoding="utf-8",
     )
-    (skill_dir / "scripts" / "go.py").write_text("print('packed ok')\n", encoding="utf-8")
+    (skill_dir / "scripts" / "go.py").write_text(
+        "print('packed ok')\n", encoding="utf-8"
+    )
     return skill_dir
 
 
@@ -120,17 +125,24 @@ class TestProgressiveLoader(unittest.TestCase):
 
     def test_trigger_matching(self):
         self.loader.discover()
-        self.assertEqual(self.loader.match("please greet the operator").name, "echo-greeter")
+        self.assertEqual(
+            self.loader.match("please greet the operator").name, "echo-greeter"
+        )
         self.assertIsNone(self.loader.match("unrelated task text"))
 
     def test_read_index_validates(self):
         with tempfile.TemporaryDirectory() as tmp:
             index = Path(tmp) / "index.json"
-            index.write_text(json.dumps({"skills": {"x": {"git": "git@example:x.git"}}}), encoding="utf-8")
+            index.write_text(
+                json.dumps({"skills": {"x": {"git": "git@example:x.git"}}}),
+                encoding="utf-8",
+            )
             skills = ProgressiveLoader.read_index(index)
             self.assertIn("x", skills)
             bad = Path(tmp) / "bad.json"
-            bad.write_text(json.dumps({"skills": {"y": {"ref": "no-git"}}}), encoding="utf-8")
+            bad.write_text(
+                json.dumps({"skills": {"y": {"ref": "no-git"}}}), encoding="utf-8"
+            )
             with self.assertRaises(ManifestError):
                 ProgressiveLoader.read_index(bad)
 
@@ -140,7 +152,9 @@ class TestPackageManager(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name) / "installed"
         self.root.mkdir()
-        self.manager = PackageManager(self.root, index_path=Path(self.tmp.name) / "absent.json")
+        self.manager = PackageManager(
+            self.root, index_path=Path(self.tmp.name) / "absent.json"
+        )
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -192,7 +206,9 @@ class TestSandbox(unittest.TestCase):
         self.assertFalse(result.timed_out)
 
     def test_timeout_enforced(self):
-        (self.skill / "scripts" / "slow.py").write_text("import time; time.sleep(30)\n", encoding="utf-8")
+        (self.skill / "scripts" / "slow.py").write_text(
+            "import time; time.sleep(30)\n", encoding="utf-8"
+        )
         result = SkillSandbox(self.skill).run("scripts/slow.py", timeout_s=1.0)
         self.assertTrue(result.timed_out)
         self.assertIn("timeout", result.stderr)
@@ -214,7 +230,9 @@ class TestSandbox(unittest.TestCase):
 
 class TestDescriptorValidation(unittest.TestCase):
     def test_validate_rejects_bad_name(self):
-        descriptor = CapabilityDescriptor(name="Space Name", version="1", description="d")
+        descriptor = CapabilityDescriptor(
+            name="Space Name", version="1", description="d"
+        )
         with self.assertRaises(ManifestError):
             descriptor.validate()
 

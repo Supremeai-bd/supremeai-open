@@ -25,7 +25,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "scripts" / "ci"))
 
-import satellite_board_guard as sbg  # noqa: E402
+import satellite_board_guard as sbg
 
 
 def fake_fetch(items):
@@ -47,8 +47,18 @@ class RegistryDoctrineTest(unittest.TestCase):
     """Tier 1 — the audited registry IS the #626 doctrine, pinned."""
 
     EXPECTED = {
-        "studio", "api", "vscode", "browser", "core", "command",
-        "skills", "agents", "sdk", "archive", "infrastructure", "mcp-control-plane",
+        "studio",
+        "api",
+        "vscode",
+        "browser",
+        "core",
+        "command",
+        "skills",
+        "agents",
+        "sdk",
+        "archive",
+        "infrastructure",
+        "mcp-control-plane",
     }
 
     def test_01_registry_matches_issue_626_doctrine(self):
@@ -84,9 +94,7 @@ class VerdictLogicTest(unittest.TestCase):
         self.assertEqual(len(r.violating), 3)
 
     def test_06_pr_classification_requires_pull_request_key(self):
-        issues, prs, _ = sbg.classify_items(
-            [{"number": 7, "title": "plain issue"}]
-        )
+        issues, prs, _ = sbg.classify_items([{"number": 7, "title": "plain issue"}])
         self.assertEqual((issues, prs), (1, 0))
         issues, prs, _ = sbg.classify_items(
             [{"number": 8, "title": "pr", "pull_request": {"url": "y"}}]
@@ -135,9 +143,11 @@ class ExitCodeAndOutputTest(unittest.TestCase):
 
     def test_13_exit_code_any_violation_is_one(self):
         def mixed(org, repo, token=None):
-            return [] if repo == "studio" else [
-                {"number": 1, "title": "stray", "pull_request": {"url": "x"}}
-            ]
+            return (
+                []
+                if repo == "studio"
+                else [{"number": 1, "title": "stray", "pull_request": {"url": "x"}}]
+            )
 
         reports = sbg.audit_all(fetch=mixed)
         self.assertEqual(sbg.decide_exit_code(reports), 1)

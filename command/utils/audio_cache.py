@@ -25,7 +25,6 @@ import os
 import tempfile
 import time
 from collections import OrderedDict
-from typing import Optional
 
 
 class AudioCacheError(RuntimeError):
@@ -57,8 +56,8 @@ class AudioCache:
         self._hits = 0
         self._misses = 0
         if backend == "memory":
-            self._store: "OrderedDict[str, tuple[bytes, float]]" = OrderedDict()
-            self._temp_dir: Optional[str] = None
+            self._store: OrderedDict[str, tuple[bytes, float]] = OrderedDict()
+            self._temp_dir: str | None = None
         else:
             try:
                 self._temp_dir = tempfile.mkdtemp(prefix="supremeai-voice-cache-")
@@ -79,7 +78,7 @@ class AudioCache:
 
     # -- core operations ------------------------------------------------------
 
-    def get(self, key: str) -> Optional[bytes]:
+    def get(self, key: str) -> bytes | None:
         """Return cached audio or None (expired/absent). Counts statistics."""
         entry = self._store.get(key)
         if entry is None:

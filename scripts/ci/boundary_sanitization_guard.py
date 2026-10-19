@@ -51,8 +51,8 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -68,7 +68,7 @@ if hasattr(sys.stdout, "reconfigure"):
 APPROVED_TOP_LEVEL_DIRS = {
     ".github",
     ".githooks",  # issue #161: local ingress pre-push guard (poka-yoke, no runtime surface)
-    ".agents",    # Agent workspace customizations (rules, skills, minimal-elegance)
+    ".agents",  # Agent workspace customizations (rules, skills, minimal-elegance)
     "api-schemas",
     "docs",
     "examples",
@@ -116,7 +116,12 @@ APPROVED_SUBTREES = {
     # as valid a segment as a directory. Expansion per the process documented
     # in this module's docstring (PR references the governing issue #45).
     "scripts": {"agents", "ops", "ci", "tower", "bridge", "validate_schemas.py"},
-    ".github": {"ISSUE_TEMPLATE", "workflows", "actions", "PULL_REQUEST_TEMPLATE.md"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
+    ".github": {
+        "ISSUE_TEMPLATE",
+        "workflows",
+        "actions",
+        "PULL_REQUEST_TEMPLATE.md",
+    },  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
     "infrastructure": {"mcp-control-plane"},
 }
 
@@ -124,19 +129,28 @@ APPROVED_SUBTREES = {
 # Layer 1 — PROPRIETARY PATH GUARD (a file must not LIVE in proprietary space)
 # ---------------------------------------------------------------------------
 
-PATH_RULES: List[Tuple[str, str]] = [
+PATH_RULES: list[tuple[str, str]] = [
     # (regex over the posix relpath, reason)
-    (r"(^|/)\.env($|\.[^/]*$)", "dot-env file (only *.example/*.sample/*.template allowed)"),
+    (
+        r"(^|/)\.env($|\.[^/]*$)",
+        "dot-env file (only *.example/*.sample/*.template allowed)",
+    ),
     (r"\.(pem|p12|pfx|jks|keystore|keytab)$", "private key / certificate store file"),
     (r"(^|/)id_(rsa|ed25519|ecdsa)(\..*)?$", "SSH private key file"),
     (r"(^|/)\.ssh/", "SSH material directory"),
     (r"(^|/)service-account[^/]*\.json$", "service-account credential file"),
-    (r"(^|/)(vault|secrets?|credentials?|private-keys?)/", "credential/proprietary directory"),
-    (r"(^|/)(supremeai-core|packages/core|apps/core)(/|$)", "proprietary core module tree"),
+    (
+        r"(^|/)(vault|secrets?|credentials?|private-keys?)/",
+        "credential/proprietary directory",
+    ),
+    (
+        r"(^|/)(supremeai-core|packages/core|apps/core)(/|$)",
+        "proprietary core module tree",
+    ),
     (r"\.(sqlite3?|db)$", "database file"),
 ]
 
-_ENV_ALLOWLIST_SUFFIX = re.compile(r"\.(example|sample|template)$", re.I)
+_ENV_ALLOWLIST_SUFFIX = re.compile(r"\.(example|sample|template)$", re.IGNORECASE)
 _ENV_PATH = re.compile(r"(^|/)\.env($|\.[^/]*$)")
 
 # ---------------------------------------------------------------------------
@@ -150,7 +164,7 @@ _PLACEHOLDER_VALUE = re.compile(
     r"^(\s*|\$\{[^}]*\}|\$\{\{[^}]*\}\}|\$[A-Z_][A-Z0-9_]*|"
     r"<[^>]*>|x{3,}|\*{3,}|changeme|change-me|your[-_][-a-z0-9_]*|"
     r"example[-_][-a-z0-9_]*|placeholder|redacted|none|null|true|false|yes|no)\s*$",
-    re.I,
+    re.IGNORECASE,
 )
 
 _ASSIGNMENT_NAMES = (
@@ -160,17 +174,33 @@ _ASSIGNMENT_NAMES = (
 )
 _ASSIGNMENT = re.compile(rf"\b({_ASSIGNMENT_NAMES})\s*[:=]\s*(\S.*?)\s*$")
 
-_CONTENT_MARKERS: List[Tuple[re.Pattern, str]] = [
-    (re.compile(r"<system[_-]prompt>", re.I), "internal system prompt fence"),
+_CONTENT_MARKERS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"<system[_-]prompt>", re.IGNORECASE), "internal system prompt fence"),
     (
-        re.compile(r"SYSTEM\s+PROMPT\s*[\u2014\u2013-]+\s*(INTERNAL|CONFIDENTIAL|PROPRIETARY|DO\s+NOT)", re.I),
+        re.compile(
+            r"SYSTEM\s+PROMPT\s*[\u2014\u2013-]+\s*(INTERNAL|CONFIDENTIAL|PROPRIETARY|DO\s+NOT)",
+            re.IGNORECASE,
+        ),
         "internal system prompt banner",
     ),
-    (re.compile(r"SUPREMEAI\s+CONFIDENTIAL", re.I), "proprietary confidentiality banner"),
-    (re.compile(r"INTERNAL\s*[\u2014\u2013-]+\s*DO\s+NOT\s+DISTRIBUTE", re.I), "proprietary distribution banner"),
-    (re.compile(r"sb_secret_[A-Za-z0-9_\-]{10,}"), "Supabase service-role secret literal"),
     (
-        re.compile(r"(from\s+supremeai[_-]core[\s.]|import\s+supremeai[_-]core|['\"]supremeai-core/)"),
+        re.compile(r"SUPREMEAI\s+CONFIDENTIAL", re.IGNORECASE),
+        "proprietary confidentiality banner",
+    ),
+    (
+        re.compile(
+            r"INTERNAL\s*[\u2014\u2013-]+\s*DO\s+NOT\s+DISTRIBUTE", re.IGNORECASE
+        ),
+        "proprietary distribution banner",
+    ),
+    (
+        re.compile(r"sb_secret_[A-Za-z0-9_\-]{10,}"),
+        "Supabase service-role secret literal",
+    ),
+    (
+        re.compile(
+            r"(from\s+supremeai[_-]core[\s.]|import\s+supremeai[_-]core|['\"]supremeai-core/)"
+        ),
         "proprietary supremeai-core module import",
     ),
 ]
@@ -181,8 +211,14 @@ _PEM_HEADER = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
 _PEM_BODY = re.compile(r"[A-Za-z0-9+/=]{60,}")
 
 # Real credential shape in connection URLs: scheme://user:password@host
-_DB_URL = re.compile(r"\b(?:postgres|postgresql|mysql|mongodb(?:\+srv)?)://[^\s:/@]+:[^\s@]+@", re.I)
-_DB_URL_PLACEHOLDER = re.compile(r":\$\{[^}]*\}@|:\$\{\{[^}]*\}\}@|:(your|example|changeit|password|pass|user|xxx+)[^\s@]*@", re.I)
+_DB_URL = re.compile(
+    r"\b(?:postgres|postgresql|mysql|mongodb(?:\+srv)?)://[^\s:/@]+:[^\s@]+@",
+    re.IGNORECASE,
+)
+_DB_URL_PLACEHOLDER = re.compile(
+    r":\$\{[^}]*\}@|:\$\{\{[^}]*\}\}@|:(your|example|changeit|password|pass|user|xxx+)[^\s@]*@",
+    re.IGNORECASE,
+)
 
 
 def _value_is_concrete(value: str) -> bool:
@@ -206,7 +242,7 @@ def _check_pem(lines: Sequence[str], header_idx: int) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def surface_violation(rel_posix: str) -> Optional[str]:
+def surface_violation(rel_posix: str) -> str | None:
     top = rel_posix.split("/", 1)[0]
     if "/" not in rel_posix:
         if top in APPROVED_ROOT_FILES:
@@ -226,15 +262,15 @@ def surface_violation(rel_posix: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-def scan_file(repo_root: Path, rel: str) -> List[str]:
+def scan_file(repo_root: Path, rel: str) -> list[str]:
     """Return violation messages for one file (empty list = clean)."""
-    findings: List[str] = []
+    findings: list[str] = []
     rel_posix = rel.replace("\\", "/")
     path = repo_root / rel_posix
 
     # -- Layer 1: path guard ------------------------------------------------
     for pattern, reason in PATH_RULES:
-        if re.search(pattern, rel_posix, re.I):
+        if re.search(pattern, rel_posix, re.IGNORECASE):
             if _ENV_PATH.search(rel_posix) and _ENV_ALLOWLIST_SUFFIX.search(rel_posix):
                 continue
             findings.append(f"PATH: {reason} (pattern: {pattern})")
@@ -272,12 +308,14 @@ def scan_file(repo_root: Path, rel: str) -> List[str]:
         if _PEM_HEADER.search(line) and _check_pem(lines, idx):
             findings.append(f"CONTENT[{idx + 1}]: PEM private key with base64 body")
         if _DB_URL.search(line) and not _DB_URL_PLACEHOLDER.search(line):
-            findings.append(f"CONTENT[{idx + 1}]: connection URL with embedded credentials")
+            findings.append(
+                f"CONTENT[{idx + 1}]: connection URL with embedded credentials"
+            )
 
     return findings
 
 
-def _git_tracked_files(repo_root: Path) -> List[str]:
+def _git_tracked_files(repo_root: Path) -> list[str]:
     """Tracked file list via git; any git failure is an operational error."""
     try:
         proc = subprocess.run(
@@ -290,17 +328,20 @@ def _git_tracked_files(repo_root: Path) -> List[str]:
         raise RuntimeError(f"git ls-files failed: {exc}") from exc
     if proc.returncode != 0:
         raise RuntimeError(
-            "git ls-files returned nonzero: " + proc.stderr.decode(errors="replace")[:400]
+            "git ls-files returned nonzero: "
+            + proc.stderr.decode(errors="replace")[:400]
         )
     entries = [e for e in proc.stdout.decode(errors="replace").split("\0") if e]
     if not entries:
-        raise RuntimeError("git ls-files produced no output — refusing to pass (fail-closed)")
+        raise RuntimeError(
+            "git ls-files produced no output — refusing to pass (fail-closed)"
+        )
     return entries
 
 
-def _resolve_scan_files(repo_root: Path, requested: Sequence[str]) -> List[str]:
+def _resolve_scan_files(repo_root: Path, requested: Sequence[str]) -> list[str]:
     """Validate and normalise --files input; fail-closed on bad input."""
-    resolved: List[str] = []
+    resolved: list[str] = []
     for item in requested:
         if not item.strip():
             raise RuntimeError("empty path in --files input")
@@ -323,19 +364,27 @@ def _run_scan(repo_root: Path, files: Sequence[str], label: str) -> int:
             violations += 1
             print(f"::error::BOUNDARY VIOLATION [{label}] {rel} :: {finding}")
     print()
-    print(f"Boundary scan summary [{label}]: files_scanned={len(files)} violations={violations}")
+    print(
+        f"Boundary scan summary [{label}]: files_scanned={len(files)} violations={violations}"
+    )
     if violations:
-        print("Result: ❌ FAIL — proprietary boundary violations detected (fail-closed).")
+        print(
+            "Result: ❌ FAIL — proprietary boundary violations detected (fail-closed)."
+        )
         print("Remediation: remove the material, or consciously expand the approved")
         print("surface registry in scripts/ci/boundary_sanitization_guard.py via a PR.")
         return 1
-    print("Result: ✅ PASS — public/private boundary intact (only approved public surfaces present).")
+    print(
+        "Result: ✅ PASS — public/private boundary intact (only approved public surfaces present)."
+    )
     return 0
 
 
 def cmd_check(repo_root: Path) -> int:
     files = _git_tracked_files(repo_root)
-    print(f"Boundary Sanitization Guard — full-tree audit of {len(files)} tracked files")
+    print(
+        f"Boundary Sanitization Guard — full-tree audit of {len(files)} tracked files"
+    )
     return _run_scan(repo_root, files, "--check")
 
 
@@ -362,12 +411,16 @@ def cmd_base_head(repo_root: Path, base: str, head: str) -> int:
         timeout=60,
     )
     if proc.returncode != 0:
-        raise RuntimeError("git diff failed: " + proc.stderr.decode(errors="replace")[:400])
+        raise RuntimeError(
+            "git diff failed: " + proc.stderr.decode(errors="replace")[:400]
+        )
     files = [f for f in proc.stdout.decode(errors="replace").splitlines() if f.strip()]
     if not files:
         print("No files changed between revisions — nothing to scan.")
         return 0
-    print(f"Boundary Sanitization Guard — diff scan {base}..{head} ({len(files)} files)")
+    print(
+        f"Boundary Sanitization Guard — diff scan {base}..{head} ({len(files)} files)"
+    )
     return _run_scan(repo_root, files, "--diff")
 
 
@@ -376,13 +429,17 @@ def cmd_base_head(repo_root: Path, base: str, head: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _self_test_case(repo_root: Path, rel: str, content_lines: List[str], expect_violations: bool) -> None:
+def _self_test_case(
+    repo_root: Path, rel: str, content_lines: list[str], expect_violations: bool
+) -> None:
     target = repo_root / rel
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("".join(content_lines), encoding="utf-8")
     findings = scan_file(repo_root, rel)
     if expect_violations and not findings:
-        raise AssertionError(f"self-test MISS: {rel} should have been flagged (findings empty)")
+        raise AssertionError(
+            f"self-test MISS: {rel} should have been flagged (findings empty)"
+        )
     if not expect_violations and findings:
         raise AssertionError(
             f"self-test FALSE-POSITIVE: {rel} should have passed, got: {findings}"
@@ -399,12 +456,16 @@ def cmd_self_test() -> int:
     # own rule fires on NAME + any concrete non-placeholder value.
     pem_header = "-----BEGIN RSA " + "PRIVATE KEY-----\n"
     pem_body = "MIIEpAIBAAKCAQEA0123456789abcdefghijklmnopqrstuvwxyzABCDEF01QRST\n"
-    service_role_leak = "SUPABASE_SERVICE_ROLE_" + "KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\n"
+    service_role_leak = (
+        "SUPABASE_SERVICE_ROLE_" + "KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\n"
+    )
     sb_token_leak = 'const t = "sb_' + 'secret_AbCdEf1234567890";\n'
     core_import_py = "from supremeai_" + "core import decide\n"
     core_import_ts = "import client from 'supremeai-" + "core/client';\n"
     db_url_leak = "psql postgres://admin:" + "S3cretPw@db.internal:5432/prod\n"
-    prompt_fence = "<system_" + "prompt> internal reasoning moat </system_" + "prompt>\n"
+    prompt_fence = (
+        "<system_" + "prompt> internal reasoning moat </system_" + "prompt>\n"
+    )
     secret_ref = "VAULT_" + "TOKEN: ${{ secrets.VAULT_" + "TOKEN }}\n"
     empty_ref = "VAULT_" + "TOKEN=\n"
     with tempfile.TemporaryDirectory(prefix="boundary-guard-selftest-") as tmp:
@@ -412,14 +473,31 @@ def cmd_self_test() -> int:
         # (relpath, lines, expect_violation?)
         cases = [
             # --- must PASS (calibrated legitimate content) ---
-            ("scripts/agents/runner.py", ["import os\n", "def main():\n    return 0\n"], False),
-            ("docs/note.md", ["The private monorepo (supremeai-core) stays private.\n"], False),
-            ("infrastructure/mcp-control-plane/src/lib/masking.ts",
-             ["// PEM private keys\n", "/-----BEGIN [A-Z ]*PRIVATE KEY-----/,\n"], False),
-            ("infrastructure/mcp-control-plane/render.yaml",
-             ["      - key: SUPABASE_SERVICE_ROLE_KEY\n"], False),
-            ("infrastructure/mcp-control-plane/src/lib/env.ts",
-             ["export const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY\n"], False),
+            (
+                "scripts/agents/runner.py",
+                ["import os\n", "def main():\n    return 0\n"],
+                False,
+            ),
+            (
+                "docs/note.md",
+                ["The private monorepo (supremeai-core) stays private.\n"],
+                False,
+            ),
+            (
+                "infrastructure/mcp-control-plane/src/lib/masking.ts",
+                ["// PEM private keys\n", "/-----BEGIN [A-Z ]*PRIVATE KEY-----/,\n"],
+                False,
+            ),
+            (
+                "infrastructure/mcp-control-plane/render.yaml",
+                ["      - key: SUPABASE_SERVICE_ROLE_KEY\n"],
+                False,
+            ),
+            (
+                "infrastructure/mcp-control-plane/src/lib/env.ts",
+                ["export const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY\n"],
+                False,
+            ),
             (".github/workflows/workflow_ref.yml", [secret_ref], False),
             ("docs/empty_ref.env.example", [empty_ref], False),
             # --- must FAIL (real leak classes; placed in APPROVED surfaces so
@@ -440,8 +518,10 @@ def cmd_self_test() -> int:
         ]
         for rel, lines, expect in cases:
             _self_test_case(root, rel, lines, expect)
-        print(f"Self-test: {len(cases)}/{len(cases)} fixture assertions passed "
-              f"(miss=0, false-positive=0).")
+        print(
+            f"Self-test: {len(cases)}/{len(cases)} fixture assertions passed "
+            f"(miss=0, false-positive=0)."
+        )
     print("SELF-TEST PASS — guard detection + calibration verified.")
     return 0
 
@@ -451,7 +531,7 @@ def cmd_self_test() -> int:
 # ---------------------------------------------------------------------------
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="boundary_sanitization_guard.py",
         description=(
@@ -459,14 +539,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "Fail-closed: exit 0 clean / 1 violations / 2 operational error."
         ),
     )
-    parser.add_argument("--check", action="store_true", help="audit every git-tracked file")
     parser.add_argument(
-        "--files", nargs="+", metavar="PATH",
+        "--check", action="store_true", help="audit every git-tracked file"
+    )
+    parser.add_argument(
+        "--files",
+        nargs="+",
+        metavar="PATH",
         help="scan exactly these paths (PR changed-files mode)",
     )
-    parser.add_argument("--base", metavar="SHA", help="diff-scan base revision (with --head)")
-    parser.add_argument("--head", metavar="SHA", help="diff-scan head revision (with --base)")
-    parser.add_argument("--self-test", action="store_true", help="offline guard-the-guard fixtures")
+    parser.add_argument(
+        "--base", metavar="SHA", help="diff-scan base revision (with --head)"
+    )
+    parser.add_argument(
+        "--head", metavar="SHA", help="diff-scan head revision (with --base)"
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="offline guard-the-guard fixtures"
+    )
     args = parser.parse_args(argv)
 
     repo_root = Path(__file__).resolve().parents[2]
@@ -490,7 +580,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
 
     parser.print_usage(sys.stderr)
-    print("error: choose a mode: --check | --files PATH... | --base SHA --head SHA | --self-test", file=sys.stderr)
+    print(
+        "error: choose a mode: --check | --files PATH... | --base SHA --head SHA | --self-test",
+        file=sys.stderr,
+    )
     return 2
 
 

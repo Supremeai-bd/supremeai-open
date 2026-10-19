@@ -5,9 +5,9 @@ UNIT layer: offline, pure, against scripts/tower/work_next_reference.py.
 
 Run: pytest tests/test_s03_work_next_contract.py  OR  python3 tests/test_s03_work_next_contract.py
 """
+
 from __future__ import annotations
 
-import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -18,8 +18,8 @@ REF_DIR = HERE.parent / "scripts" / "tower"
 if str(REF_DIR) not in sys.path:
     sys.path.insert(0, str(REF_DIR))
 
-import work_claim_reference as s01  # noqa: E402  (SSOT for the decision matrix)
-import work_next_reference as s03  # noqa: E402
+import work_claim_reference as s01
+import work_next_reference as s03
 
 T0 = datetime(2026, 10, 17, 4, 0, 0, tzinfo=timezone.utc)
 
@@ -29,8 +29,16 @@ def claim(issue, agent, ts=T0, ttl=s01.TTL_MINUTES):
 
 
 def row(num, title="task", **kw):
-    base = dict(number=num, title=title, state="open", labels=("P1-high",),
-                claim=None, has_inflight_wo=False, blocked_label=False, is_task_issue=True)
+    base = dict(
+        number=num,
+        title=title,
+        state="open",
+        labels=("P1-high",),
+        claim=None,
+        has_inflight_wo=False,
+        blocked_label=False,
+        is_task_issue=True,
+    )
     base.update(kw)
     return s03.IssueState(**base)
 
@@ -86,10 +94,15 @@ class UnitFilters(unittest.TestCase):
 
 class UnitRanking(unittest.TestCase):
     def test_11_p0_before_p1_before_p2(self):
-        board = [row(1, labels=("P2-medium",)), row(2, labels=("P0-critical",)),
-                 row(3, labels=("P1-high",))]
+        board = [
+            row(1, labels=("P2-medium",)),
+            row(2, labels=("P0-critical",)),
+            row(3, labels=("P1-high",)),
+        ]
         res = s03.work_next(board, "zai", now=T0)
-        self.assertEqual([res.pick.issue] + [p.issue for p in res.runner_ups][:2], [2, 3, 1])
+        self.assertEqual(
+            [res.pick.issue] + [p.issue for p in res.runner_ups][:2], [2, 3, 1]
+        )
 
     def test_12_fifo_within_tier(self):
         board = [row(9), row(4), row(6)]
@@ -110,12 +123,18 @@ class UnitRanking(unittest.TestCase):
         self.assertEqual(len(all_issues), len(set(all_issues)))
 
     def test_15_excluded_counts_shape(self):
-        board = [row(1, state="closed"), row(2, has_inflight_wo=True),
-                 row(3, is_task_issue=False), row(4, claim=claim(4, "other")),
-                 row(5)]
+        board = [
+            row(1, state="closed"),
+            row(2, has_inflight_wo=True),
+            row(3, is_task_issue=False),
+            row(4, claim=claim(4, "other")),
+            row(5),
+        ]
         res = s03.work_next(board, "zai", now=T0)
-        self.assertEqual(res.excluded, {"closed": 1, "live_foreign_claim": 1,
-                                        "inflight": 1, "non_task": 1})
+        self.assertEqual(
+            res.excluded,
+            {"closed": 1, "live_foreign_claim": 1, "inflight": 1, "non_task": 1},
+        )
         self.assertEqual(res.evaluated, 5)
 
 
@@ -144,8 +163,10 @@ class UnitContract(unittest.TestCase):
 
     def test_20_decision_codes_surface_in_pick(self):
         res = s03.work_next([row(1, claim=claim(1, "zai"))], "zai", now=T0)
-        self.assertIn(res.pick.claim_decision, ("NOOP_SELF", s03.GRANT_RENEW,
-                                               s03.GRANT_TAKEOVER, s03.GRANT_NEW))
+        self.assertIn(
+            res.pick.claim_decision,
+            ("NOOP_SELF", s03.GRANT_RENEW, s03.GRANT_TAKEOVER, s03.GRANT_NEW),
+        )
 
 
 class LiveContract(unittest.TestCase):

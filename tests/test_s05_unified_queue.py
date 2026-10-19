@@ -7,20 +7,27 @@ closed exclusion, response shape, deterministic ordering.
 
 Pure stdlib. Run: python3 -m unittest test_s05_unified_queue -v
 """
+
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "tower"))
 
-import work_queue_query_reference as qref  # noqa: E402
+import work_queue_query_reference as qref
 
 
 def mk(num, state="open", labels=None, pr=False, title=None):
-    row = {"number": num, "title": title or f"issue-{num}", "state": state,
-           "labels": labels or [], "html_url": f"https://example.test/{num}",
-           "created_at": "2026-10-17T00:00:00Z",
-           "updated_at": "2026-10-17T00:00:00Z", "comments": 0}
+    row = {
+        "number": num,
+        "title": title or f"issue-{num}",
+        "state": state,
+        "labels": labels or [],
+        "html_url": f"https://example.test/{num}",
+        "created_at": "2026-10-17T00:00:00Z",
+        "updated_at": "2026-10-17T00:00:00Z",
+        "comments": 0,
+    }
     if pr:
         row["pull_request"] = {"url": "https://example.test/pr"}
     return row
@@ -77,8 +84,9 @@ class Normalization(unittest.TestCase):
     def test_11_multi_label_issue_included_and_labels_sorted(self):
         row = mk(470, labels=[{"name": "P1-high"}, {"name": "status:unclaimed"}])
         norm = qref.normalize_queue([row])
-        self.assertEqual(norm["workOrders"][0]["labels"],
-                         ["P1-high", "status:unclaimed"])
+        self.assertEqual(
+            norm["workOrders"][0]["labels"], ["P1-high", "status:unclaimed"]
+        )
 
     def test_12_empty_queue_shape(self):
         norm = qref.normalize_queue([])

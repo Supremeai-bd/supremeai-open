@@ -105,8 +105,10 @@ def main() -> int:
             failures.append(f"SPEC §5 does not document pipeline guard job: '{job}'")
 
     # 4. No flag-table copy in CONTRIBUTING (SSOT is SPEC §4).
-    if re.search(r"^\|\s*`--", contrib, flags=re.M):
-        failures.append("CONTRIBUTING.md still contains a flag-table copy (SSOT is SPEC §4)")
+    if re.search(r"^\|\s*`--", contrib, flags=re.MULTILINE):
+        failures.append(
+            "CONTRIBUTING.md still contains a flag-table copy (SSOT is SPEC §4)"
+        )
 
     # 5. SSOT pointers present.
     if "count SSOT: §4" not in spec:

@@ -28,7 +28,10 @@ three steps plus pick-next (reference calls — placement is operator's):
 
 ```python
 from scripts.ci.admin_sovereignty_guard import (
-    DENIAL_CODE, filter_pick_next, quarantine_decision)
+    DENIAL_CODE,
+    filter_pick_next,
+    quarantine_decision,
+)
 
 # step_1_understand / step_3_inspect_state / step_4_branch (before checkout):
 decision = quarantine_decision(issue_labels, issue_number)

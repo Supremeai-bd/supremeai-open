@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import sys
 import urllib.request
 from dataclasses import dataclass, field
@@ -149,10 +148,17 @@ def render_report(rows: list) -> str:
     lines = ["Federation Mirror Parity Report", "=" * 62]
     for r in rows:
         lines.append(f"\n[{r.verdict:>11}] {r.klass:<14} {r.path}")
-        lines.append(f"              baseline(open@{BRANCH}) sha256="
-                     f"{(r.baseline_sha or '----------')[:12]}")
+        lines.append(
+            f"              baseline(open@{BRANCH}) sha256="
+            f"{(r.baseline_sha or '----------')[:12]}"
+        )
         for c in r.copies:
-            mark = {"OK": "  =", "DRIFT": " !=", "MISSING": " ??", "UNREACHABLE": " ~~"}[c.status]
+            mark = {
+                "OK": "  =",
+                "DRIFT": " !=",
+                "MISSING": " ??",
+                "UNREACHABLE": " ~~",
+            }[c.status]
             lines.append(f"   {mark} {c.repo:<44} {c.status} {c.detail}".rstrip())
     hard = [r.verdict for r in rows if r.verdict in ("DRIFT", "MISSING")]
     lines.append("\nSummary: " + ", ".join(f"{r.verdict}:{r.path}" for r in rows))
@@ -175,34 +181,40 @@ def self_test() -> int:
             return "MISSING", None
         if repo.endswith("supremeai-api"):
             if path == "docs/CONSUMERS.md":
-                return "OK", b"contract-body-v7\n"          # parity
+                return "OK", b"contract-body-v7\n"  # parity
             if path == "api-schemas/gateway.openapi.yaml":
-                return "OK", b"openapi: 3.1\n drifted\n"    # drift
+                return "OK", b"openapi: 3.1\n drifted\n"  # drift
         if repo.endswith("supremeai-sdk") and path == "docs/CONSUMERS.md":
-            return "MISSING", None                           # missing
-        return "UNREACHABLE", None                           # private plane
+            return "MISSING", None  # missing
+        return "UNREACHABLE", None  # private plane
 
     rows = run_check(fake_fetch)
-    assert rows[0].verdict == "MISSING", rows[0].verdict      # sdk missing
-    assert rows[1].verdict == "DRIFT", rows[1].verdict        # api drifted
+    assert rows[0].verdict == "MISSING", rows[0].verdict  # sdk missing
+    assert rows[1].verdict == "DRIFT", rows[1].verdict  # api drifted
     assert rows[2].verdict == "UNREACHABLE", rows[2].verdict  # private plane
     report = render_report(rows)
     assert "Gate: FAIL" in report
     assert "DRIFT" in report and "MISSING" in report
 
-    ok_rows = run_check(lambda repo, path, timeout=15: ("OK", b"same\n")
-                        if path == "x" else fake_fetch(repo, path))
+    ok_rows = run_check(
+        lambda repo, path, timeout=15: (
+            ("OK", b"same\n") if path == "x" else fake_fetch(repo, path)
+        )
+    )
     # happy path: identical bytes everywhere -> PARITY
-    happy = check_row({"path": "docs/CONSUMERS.md", "satellites": ["S/x"],
-                       "class": "BYTE-IDENTICAL"},
-                      fetch=lambda repo, path, timeout=15: ("OK", b"same\n"))
+    happy = check_row(
+        {"path": "docs/CONSUMERS.md", "satellites": ["S/x"], "class": "BYTE-IDENTICAL"},
+        fetch=lambda repo, path, timeout=15: ("OK", b"same\n"),
+    )
     assert happy.verdict == "PARITY", happy.verdict
     print("self-test: 4/4 scenario groups PASS (parity, drift, missing, unreachable)")
     return 0
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="SupremeAI federation mirror parity checker")
+    ap = argparse.ArgumentParser(
+        description="SupremeAI federation mirror parity checker"
+    )
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="gate mode (exit codes)")
     mode.add_argument("--report", action="store_true", help="human-readable dashboard")

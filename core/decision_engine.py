@@ -3,14 +3,14 @@ Multi-Agent Role Arbiter & Risk Policy Classifier — Core Decision Moat.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Set
 
 
 class AgentRole(str, Enum):
-    CODER = "CODER"      # Standard implementation agent
-    SCOUT = "SCOUT"      # Reconnaissance and discovery
+    CODER = "CODER"  # Standard implementation agent
+    SCOUT = "SCOUT"  # Reconnaissance and discovery
     AUDITOR = "AUDITOR"  # Security, sanitization and invariant checker
     BREAKER = "BREAKER"  # Adversarial unit & edge-case stress tester
 
@@ -18,7 +18,7 @@ class AgentRole(str, Enum):
 @dataclass(frozen=True)
 class TaskClassification:
     recommended_role: AgentRole
-    risk_tier: str       # L1 (Low), L2 (Medium), L3 (High / Core)
+    risk_tier: str  # L1 (Low), L2 (Medium), L3 (High / Core)
     requires_approval: bool
     rationale: str
 
@@ -30,19 +30,19 @@ class DecisionEngine:
     """
 
     CRITICAL_CORE_PATTERNS = {
-        "core/", "security/", "auth/", "vault/", ".github/workflows/"
+        "core/",
+        "security/",
+        "auth/",
+        "vault/",
+        ".github/workflows/",
     }
 
-    DOCS_PATTERNS = {
-        "docs/", ".md", "README", "AGENTS"
-    }
+    DOCS_PATTERNS = {"docs/", ".md", "README", "AGENTS"}
 
-    TEST_PATTERNS = {
-        "test", "tests/", "_test.py", ".test.ts"
-    }
+    TEST_PATTERNS = {"test", "tests/", "_test.py", ".test.ts"}
 
     @classmethod
-    def classify_task(cls, title: str, scope_paths: List[str]) -> TaskClassification:
+    def classify_task(cls, title: str, scope_paths: list[str]) -> TaskClassification:
         normalized_paths = [p.lower() for p in scope_paths]
 
         # 1. Check if touches critical paths
@@ -60,7 +60,11 @@ class DecisionEngine:
 
         # 2. Check if docs or recon only
         is_docs_only = normalized_paths and all(
-            any(p.endswith(ext) or pat in p for pat in cls.DOCS_PATTERNS for ext in [".md", ".txt"])
+            any(
+                p.endswith(ext) or pat in p
+                for pat in cls.DOCS_PATTERNS
+                for ext in [".md", ".txt"]
+            )
             for p in normalized_paths
         )
         if is_docs_only:
@@ -73,8 +77,7 @@ class DecisionEngine:
 
         # 3. Check if test-focused
         is_test_focused = normalized_paths and all(
-            any(pat in p for pat in cls.TEST_PATTERNS)
-            for p in normalized_paths
+            any(pat in p for pat in cls.TEST_PATTERNS) for p in normalized_paths
         )
         if is_test_focused:
             return TaskClassification(

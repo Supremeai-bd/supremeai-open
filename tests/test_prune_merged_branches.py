@@ -13,13 +13,17 @@ import textwrap
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(REPO_ROOT, "scripts", "bridge", "prune_merged_branches.sh").replace("\\", "/")
+SCRIPT = os.path.join(
+    REPO_ROOT, "scripts", "bridge", "prune_merged_branches.sh"
+).replace("\\", "/")
 
 BASH = "bash"
 if os.name == "nt":
     git_bin = shutil.which("git")
     if git_bin:
-        git_bash = os.path.join(os.path.dirname(os.path.dirname(git_bin)), "bin", "bash.exe")
+        git_bash = os.path.join(
+            os.path.dirname(os.path.dirname(git_bin)), "bin", "bash.exe"
+        )
         if os.path.exists(git_bash):
             BASH = git_bash
 
@@ -40,7 +44,9 @@ class PruneMergedBranchesTest(unittest.TestCase):
         base = self._tmp.name
         # bare "origin" repo
         self.origin = os.path.join(base, "origin.git")
-        subprocess.run(["git", "init", "--bare", "-q", "-b", "main", self.origin], check=True)
+        subprocess.run(
+            ["git", "init", "--bare", "-q", "-b", "main", self.origin], check=True
+        )
         # work clone: seed main, add merged bridge/contributor branches + one unmerged
         self.work = os.path.join(base, "work")
         subprocess.run(["git", "clone", "-q", self.origin, self.work], check=True)
@@ -50,9 +56,12 @@ class PruneMergedBranchesTest(unittest.TestCase):
         # seed main first (clone of an empty origin starts on an unborn HEAD)
         subprocess.run(
             ["git", "commit", "-q", "--allow-empty", "-m", "seed"],
-            cwd=self.work, check=True,
+            cwd=self.work,
+            check=True,
         )
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=self.work, check=True)
+        subprocess.run(
+            ["git", "push", "-q", "origin", "main"], cwd=self.work, check=True
+        )
         for name, diverge in (
             ("bridge/bridge-20261017-old-wo", False),
             ("contributor/issue-999", False),
@@ -61,13 +70,27 @@ class PruneMergedBranchesTest(unittest.TestCase):
             self._commit_on_branch(name, diverge)
             if not diverge:
                 # simulate a LANDED PR: merge the branch into main and push
-                subprocess.run(["git", "checkout", "-q", "main"], cwd=self.work, check=True)
-                subprocess.run(["git", "merge", "-q", "--ff-only", name], cwd=self.work, check=True)
-                subprocess.run(["git", "push", "-q", "origin", "main"], cwd=self.work, check=True)
+                subprocess.run(
+                    ["git", "checkout", "-q", "main"], cwd=self.work, check=True
+                )
+                subprocess.run(
+                    ["git", "merge", "-q", "--ff-only", name], cwd=self.work, check=True
+                )
+                subprocess.run(
+                    ["git", "push", "-q", "origin", "main"], cwd=self.work, check=True
+                )
         subprocess.run(
-            ["git", "push", "-q", "origin",
-             "bridge/bridge-20261017-old-wo", "contributor/issue-999", "feature/unmerged-keep"],
-            cwd=self.work, check=True,
+            [
+                "git",
+                "push",
+                "-q",
+                "origin",
+                "bridge/bridge-20261017-old-wo",
+                "contributor/issue-999",
+                "feature/unmerged-keep",
+            ],
+            cwd=self.work,
+            check=True,
         )
         subprocess.run(["git", "fetch", "-q", "origin"], cwd=self.work, check=True)
         # fake gh on PATH
@@ -85,22 +108,29 @@ class PruneMergedBranchesTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def _commit_on_branch(self, name, diverge=False):
-        subprocess.run(["git", "checkout", "-q", "-B", name, "main"], cwd=self.work, check=True)
+        subprocess.run(
+            ["git", "checkout", "-q", "-B", name, "main"], cwd=self.work, check=True
+        )
         subprocess.run(
             ["git", "commit", "-q", "--allow-empty", "-m", "c-" + name],
-            cwd=self.work, check=True,
+            cwd=self.work,
+            check=True,
         )
         if diverge:  # second commit that never lands on main -> branch stays unmerged
             subprocess.run(
                 ["git", "commit", "-q", "--allow-empty", "-m", "diverge-" + name],
-                cwd=self.work, check=True,
+                cwd=self.work,
+                check=True,
             )
 
     def _run(self, *extra, base="main"):
         env = dict(self.env, REMOTE="origin", BASE=base)
         return subprocess.run(
             [BASH, SCRIPT, *extra],
-            cwd=self.work, env=env, capture_output=True, text=True,
+            cwd=self.work,
+            env=env,
+            capture_output=True,
+            text=True,
         )
 
     def test_dry_run_lists_merged_only_and_never_calls_gh(self):
@@ -127,7 +157,10 @@ class PruneMergedBranchesTest(unittest.TestCase):
         env = dict(self.env, REMOTE="origin", BASE="main", FAKE_GH_FAIL="1")
         r = subprocess.run(
             [BASH, SCRIPT, "--execute"],
-            cwd=self.work, env=env, capture_output=True, text=True,
+            cwd=self.work,
+            env=env,
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("failed: 2", r.stdout)

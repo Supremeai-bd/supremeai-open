@@ -10,6 +10,7 @@ Env:
   TELEGRAM_BOT_TOKEN     (optional; alerts skipped if unset)
   TELEGRAM_SUPERADMIN_CHAT_ID (optional)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,9 +18,8 @@ import json
 import logging
 import os
 import sys
-import time
-import urllib.request
 import urllib.parse
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -28,7 +28,9 @@ try:
 except ImportError:  # pragma: no cover - package context
     from .sync_cookies_to_infisical import export_and_sync
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("cookie_sync_scheduler")
 
 INTERVAL_HOURS = float(os.getenv("SYNC_INTERVAL_HOURS", "6"))
@@ -60,7 +62,10 @@ async def run_once() -> bool:
         result = await export_and_sync()
         logger.info("Sync OK: %s", result)
         if result.get("expired"):
-            send_telegram("⚠️ SupremeAI cookie sync: AI fleet session appears EXPIRED (%d AI cookies). Re-login required." % result.get("ai_cookies", 0))
+            send_telegram(
+                "⚠️ SupremeAI cookie sync: AI fleet session appears EXPIRED (%d AI cookies). Re-login required."
+                % result.get("ai_cookies", 0)
+            )
             return False
         return True
     except Exception as exc:  # noqa: BLE001

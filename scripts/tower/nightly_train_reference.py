@@ -32,14 +32,15 @@ Deterministic, fail-closed contract:
 
 Pure stdlib. Run: python3 scripts/tower/nightly_train_reference.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Final, Mapping
+from typing import Final
 
 # ---------------------------------------------------------------------------
 # Registry & boundary (criterion 1 & 2)
@@ -47,17 +48,26 @@ from typing import Final, Mapping
 
 #: The 11 canonical satellites (issue #492, verbatim list).
 CANONICAL_SATELLITES: Final = (
-    "open", "studio", "browser", "command", "skills", "vscode",
-    "agents", "api", "infra", "sdk", "core",
+    "open",
+    "studio",
+    "browser",
+    "command",
+    "skills",
+    "vscode",
+    "agents",
+    "api",
+    "infra",
+    "sdk",
+    "core",
 )
 
 PROPRIETARY_MONOREPO: Final = "Supremeai-bd/supremeai"
 PUBLIC_EMBASSY: Final = "Supremeai-bd/supremeai-open"
 STUDIO_SATELLITE: Final = "Supremeai-bd/supremeai-studio"
 
-SATELLITE_FULL_NAMES: Final[Mapping[str, str]] = MappingProxyType({
-    sat: f"Supremeai-bd/supremeai-{sat}" for sat in CANONICAL_SATELLITES
-})
+SATELLITE_FULL_NAMES: Final[Mapping[str, str]] = MappingProxyType(
+    {sat: f"Supremeai-bd/supremeai-{sat}" for sat in CANONICAL_SATELLITES}
+)
 
 
 class TowerBoundaryViolation(ValueError):
@@ -67,7 +77,9 @@ class TowerBoundaryViolation(ValueError):
 def is_monorepo(target: str) -> bool:
     normalized = target.strip().lower()
     return normalized in (
-        PROPRIETARY_MONOREPO.lower(), "supremeai", "supremeai-bd/supremeai",
+        PROPRIETARY_MONOREPO.lower(),
+        "supremeai",
+        "supremeai-bd/supremeai",
     )
 
 
@@ -80,15 +92,12 @@ def assert_tower_target(target: str) -> str:
             f"canonical satellites {CANONICAL_SATELLITES}"
         )
     short = target.rstrip("/").rsplit("/", 1)[-1].lower()
-    if short.startswith("supremeai-"):
-        short = short[len("supremeai-"):]
+    short = short.removeprefix("supremeai-")
     if short not in CANONICAL_SATELLITES:
         raise TowerBoundaryViolation(
-            f"{target!r} is not a canonical satellite "
-            f"({CANONICAL_SATELLITES})"
+            f"{target!r} is not a canonical satellite ({CANONICAL_SATELLITES})"
         )
-    return SATELLITE_FULL_NAMES[short] if short in CANONICAL_SATELLITES \
-        else str(target)
+    return SATELLITE_FULL_NAMES[short] if short in CANONICAL_SATELLITES else str(target)
 
 
 # ---------------------------------------------------------------------------
@@ -109,14 +118,22 @@ def validate_cron(expr: str, tz: str = "UTC") -> None:
     if len(fields) != CRON_FIELDS or tuple(fields) != ("0", "0", "*", "*", "*"):
         raise ScheduleError(
             f"nightly train cron must be exactly {NIGHTLY_CRON_UTC!r} "
-            f"(00:00 UTC), got {expr!r}")
+            f"(00:00 UTC), got {expr!r}"
+        )
     if tz.upper() != "UTC":
         raise ScheduleError(f"nightly train timezone must be UTC, got {tz!r}")
 
 
 HEAVY_SUITE_MARKERS: Final = (
-    "integration", "e2e", "end-to-end", "migration", "db_migrate",
-    "fallback_probe", "cross_boundary", "full_battery", "multi_model",
+    "integration",
+    "e2e",
+    "end-to-end",
+    "migration",
+    "db_migrate",
+    "fallback_probe",
+    "cross_boundary",
+    "full_battery",
+    "multi_model",
 )
 
 
@@ -145,8 +162,12 @@ PHASE_1_INGRESS: Final = "PHASE_1_INGRESS"
 PHASE_2_HEAVY_VERIFY: Final = "PHASE_2_HEAVY_VERIFY"
 PHASE_3_LANDING: Final = "PHASE_3_LANDING"
 PHASE_4_TELEMETRY: Final = "PHASE_4_TELEMETRY"
-PHASES: Final = (PHASE_1_INGRESS, PHASE_2_HEAVY_VERIFY, PHASE_3_LANDING,
-                 PHASE_4_TELEMETRY)
+PHASES: Final = (
+    PHASE_1_INGRESS,
+    PHASE_2_HEAVY_VERIFY,
+    PHASE_3_LANDING,
+    PHASE_4_TELEMETRY,
+)
 
 PARITY_VERDICTS: Final = ("PARITY", "DRIFT", "MISSING")
 
@@ -157,23 +178,23 @@ class TrainError(ValueError):
 
 @dataclass(frozen=True)
 class SatelliteHead:
-    satellite: str          # canonical short name
-    sha: str                # latest stable head commit SHA
+    satellite: str  # canonical short name
+    sha: str  # latest stable head commit SHA
 
 
 @dataclass(frozen=True)
 class ParityRecord:
     satellite: str
-    verdict: str            # PARITY | DRIFT | MISSING
+    verdict: str  # PARITY | DRIFT | MISSING
     expected_sha: str
     observed_sha: str
-    isolated_commit: str = ""   # Phase 4: commit isolated for regression
+    isolated_commit: str = ""  # Phase 4: commit isolated for regression
     p0_incident: bool = False
 
 
 @dataclass(frozen=True)
 class ConsolidationRun:
-    run_date: str                        # YYYYMMDD (UTC)
+    run_date: str  # YYYYMMDD (UTC)
     satellite_heads: tuple[SatelliteHead, ...] = field(default_factory=tuple)
     parity_records: tuple[ParityRecord, ...] = field(default_factory=tuple)
     heavy_suites: tuple[str, ...] = field(default_factory=tuple)
@@ -195,40 +216,59 @@ def ingest_heads(heads: tuple[SatelliteHead, ...]) -> tuple[SatelliteHead, ...]:
         if head.satellite not in CANONICAL_SATELLITES:
             raise TrainError(f"unknown satellite {head.satellite!r}")
         if not re.fullmatch(r"[0-9a-f]{40}", head.sha):
-            raise TrainError(f"satellite {head.satellite!r} sha malformed: "
-                             f"{head.sha!r}")
+            raise TrainError(
+                f"satellite {head.satellite!r} sha malformed: {head.sha!r}"
+            )
         if head.satellite in seen:
             raise TrainError(f"duplicate head for {head.satellite!r}")
         seen.add(head.satellite)
     missing = set(CANONICAL_SATELLITES) - seen
     if missing:
-        raise TrainError(f"Phase 1 incomplete — missing satellite heads: "
-                         f"{sorted(missing)}")
+        raise TrainError(
+            f"Phase 1 incomplete — missing satellite heads: {sorted(missing)}"
+        )
     return heads
 
 
-def verify_parity(run: ConsolidationRun,
-                  expected: Mapping[str, str]) -> tuple[ParityRecord, ...]:
+def verify_parity(
+    run: ConsolidationRun, expected: Mapping[str, str]
+) -> tuple[ParityRecord, ...]:
     """Phase 2/3 support: per-satellite parity against the staging manifest."""
     records: list[ParityRecord] = []
     for head in run.satellite_heads:
         exp = expected.get(head.satellite)
         if exp is None:
-            records.append(ParityRecord(head.satellite, "MISSING",
-                                        expected_sha="", observed_sha=head.sha))
+            records.append(
+                ParityRecord(
+                    head.satellite, "MISSING", expected_sha="", observed_sha=head.sha
+                )
+            )
         elif exp == head.sha:
-            records.append(ParityRecord(head.satellite, "PARITY",
-                                        expected_sha=exp, observed_sha=head.sha))
+            records.append(
+                ParityRecord(
+                    head.satellite, "PARITY", expected_sha=exp, observed_sha=head.sha
+                )
+            )
         else:
-            records.append(ParityRecord(head.satellite, "DRIFT",
-                                        expected_sha=exp, observed_sha=head.sha,
-                                        isolated_commit=head.sha,
-                                        p0_incident=True))
-    missing = [sat for sat in CANONICAL_SATELLITES
-               if sat not in {r.satellite for r in records}]
+            records.append(
+                ParityRecord(
+                    head.satellite,
+                    "DRIFT",
+                    expected_sha=exp,
+                    observed_sha=head.sha,
+                    isolated_commit=head.sha,
+                    p0_incident=True,
+                )
+            )
+    missing = [
+        sat for sat in CANONICAL_SATELLITES if sat not in {r.satellite for r in records}
+    ]
     for sat in missing:
-        records.append(ParityRecord(sat, "MISSING", expected_sha="",
-                                    observed_sha="", p0_incident=True))
+        records.append(
+            ParityRecord(
+                sat, "MISSING", expected_sha="", observed_sha="", p0_incident=True
+            )
+        )
     return tuple(records)
 
 
@@ -237,8 +277,7 @@ def full_parity(records: tuple[ParityRecord, ...]) -> bool:
     return bool(records) and all(r.verdict == "PARITY" for r in records)
 
 
-def build_heartbeat(run_date: str,
-                    records: tuple[ParityRecord, ...]) -> dict:
+def build_heartbeat(run_date: str, records: tuple[ParityRecord, ...]) -> dict:
     """Phase 4: telemetry heartbeat for Studio dashboard + public board."""
     if not re.fullmatch(r"\d{8}", run_date):
         raise TrainError(f"run_date must be YYYYMMDD, got {run_date!r}")
@@ -250,13 +289,16 @@ def build_heartbeat(run_date: str,
         "tag": f"nightly-{run_date}",
         "parity": "100%" if full_parity(records) else "REGRESSION",
         "satellites": {
-            r.satellite: {"verdict": r.verdict, "sha": r.observed_sha}
-            for r in records
+            r.satellite: {"verdict": r.verdict, "sha": r.observed_sha} for r in records
         },
         "incidents": [
-            {"satellite": r.satellite, "isolated_commit": r.isolated_commit,
-             "severity": "P0-critical"}
-            for r in records if r.p0_incident
+            {
+                "satellite": r.satellite,
+                "isolated_commit": r.isolated_commit,
+                "severity": "P0-critical",
+            }
+            for r in records
+            if r.p0_incident
         ],
         "broadcast_targets": (PUBLIC_EMBASSY, STUDIO_SATELLITE),
     }
@@ -288,9 +330,13 @@ def self_test() -> bool:
 
     # Cron contract.
     validate_cron(NIGHTLY_CRON_UTC)
-    for bad_expr, bad_tz in (("0 1 * * *", "UTC"), ("0 0 * * *", "EST"),
-                             ("30 0 * * *", "UTC"), ("0 0 1 * *", "UTC"),
-                             ("0 0 * * * *", "UTC")):
+    for bad_expr, bad_tz in (
+        ("0 1 * * *", "UTC"),
+        ("0 0 * * *", "EST"),
+        ("30 0 * * *", "UTC"),
+        ("0 0 1 * *", "UTC"),
+        ("0 0 * * * *", "UTC"),
+    ):
         try:
             validate_cron(bad_expr, bad_tz)
             raise SystemExit(f"cron gate failed open: {bad_expr}/{bad_tz}")
@@ -298,8 +344,13 @@ def self_test() -> bool:
             pass
 
     # Heavy-suite exclusivity.
-    for suite in ("integration_smoke", "e2e_gateway", "db_migrate_0042",
-                  "multi_model_fallback_probe", "cross_boundary_contracts"):
+    for suite in (
+        "integration_smoke",
+        "e2e_gateway",
+        "db_migrate_0042",
+        "multi_model_fallback_probe",
+        "cross_boundary_contracts",
+    ):
         assert is_heavy_suite(suite), suite
         try:
             assert_suite_allowed(suite, "daytime_satellite")
@@ -312,15 +363,17 @@ def self_test() -> bool:
 
     # Ingest: all 11, fail-closed.
     sha = "a" * 40
-    heads = tuple(SatelliteHead(s, sha.replace("a", format(i, "x") * 40 if False else "b" * 40))
-                  for i, s in enumerate(CANONICAL_SATELLITES))
+    heads = tuple(
+        SatelliteHead(s, sha.replace("a", format(i, "x") * 40 if False else "b" * 40))
+        for i, s in enumerate(CANONICAL_SATELLITES)
+    )
     heads = tuple(SatelliteHead(s, "b" * 40) for s in CANONICAL_SATELLITES)
     assert len(ingest_heads(heads)) == 11
     for broken in (
-        heads[:10],                                                   # missing one
-        heads + (SatelliteHead("open", "b" * 40),),                   # duplicate
-        heads + (SatelliteHead("unknown-sat", "b" * 40),),            # not canonical
-        heads[:-1] + (SatelliteHead("sdk", "tooshort"),),             # malformed sha
+        heads[:10],  # missing one
+        heads + (SatelliteHead("open", "b" * 40),),  # duplicate
+        heads + (SatelliteHead("unknown-sat", "b" * 40),),  # not canonical
+        heads[:-1] + (SatelliteHead("sdk", "tooshort"),),  # malformed sha
     ):
         try:
             ingest_heads(broken)  # type: ignore[arg-type]
@@ -336,7 +389,8 @@ def self_test() -> bool:
     assert full_parity(records)
     drifted_heads = tuple(
         SatelliteHead("api", "c" * 40) if s == "api" else h
-        for s, h in ((h.satellite, h) for h in heads))
+        for s, h in ((h.satellite, h) for h in heads)
+    )
     run2 = ConsolidationRun(run_date="20261018", satellite_heads=drifted_heads)
     records2 = verify_parity(run2, expected)
     assert not full_parity(records2)
@@ -351,9 +405,11 @@ def self_test() -> bool:
     assert heartbeat["broadcast_targets"] == (PUBLIC_EMBASSY, STUDIO_SATELLITE)
     clean = build_heartbeat("20261018", records)
     assert clean["parity"] == "100%"
-    for broken in (lambda: build_heartbeat("202610", records),
-                   lambda: build_heartbeat("2026-10-18", records),
-                   lambda: build_heartbeat("20261018", ())):
+    for broken in (
+        lambda: build_heartbeat("202610", records),
+        lambda: build_heartbeat("2026-10-18", records),
+        lambda: build_heartbeat("20261018", ()),
+    ):
         try:
             broken()
             raise SystemExit("heartbeat gate failed open")
@@ -380,8 +436,9 @@ def self_test() -> bool:
 def _cli() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--check-target", metavar="REPO",
-                        help="simulate an MCP Tower routing decision")
+    parser.add_argument(
+        "--check-target", metavar="REPO", help="simulate an MCP Tower routing decision"
+    )
     args = parser.parse_args()
     if args.self_test:
         self_test()

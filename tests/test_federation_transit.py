@@ -25,6 +25,7 @@ Pure stdlib, fully offline (git interactions are simulated via a scripted
 run_cmd double — no network, no repo mutation). Dual-mode: unittest and
 pytest. Run: python3 -m unittest test_federation_transit -v
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -37,9 +38,9 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "scripts" / "ci"))
 sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
 
-import hourly_satellite_batcher as hb  # noqa: E402
-import staggered_rolling_train as srt  # noqa: E402
-import continuous_agent_loop as cal  # noqa: E402
+import continuous_agent_loop as cal
+import hourly_satellite_batcher as hb
+import staggered_rolling_train as srt
 
 
 def sha40(ch: str) -> str:
@@ -92,8 +93,13 @@ class RoutingMatrixSSOT(unittest.TestCase):
             self.assertEqual(hb.route_path(path), expected, msg=path)
 
     def test_04_monorepo_paths_never_ride_a_satellite(self):
-        for path in ("scripts/agents/loop.py", "docs/SPEC.md", "patches/x.patch",
-                     "AGENTS.md", "AGENT_RULES.md"):
+        for path in (
+            "scripts/agents/loop.py",
+            "docs/SPEC.md",
+            "patches/x.patch",
+            "AGENTS.md",
+            "AGENT_RULES.md",
+        ):
             self.assertEqual(hb.route_path(path), "monorepo", msg=path)
 
     def test_05_unrouted_paths_fail_closed_to_quarantine(self):
@@ -152,10 +158,14 @@ class BatchPlanning(unittest.TestCase):
 
     def test_12_consolidated_one_batch_per_satellite(self):
         s1, s2 = sha40("1"), sha40("2")
-        plan = self._plan([
-            hb.LandedCommit(s1, ("studio/a.tsx", "studio/b.tsx"), "2026-10-17T08:10:00Z"),
-            hb.LandedCommit(s2, ("studio/c.tsx",), "2026-10-17T08:20:00Z"),
-        ])
+        plan = self._plan(
+            [
+                hb.LandedCommit(
+                    s1, ("studio/a.tsx", "studio/b.tsx"), "2026-10-17T08:10:00Z"
+                ),
+                hb.LandedCommit(s2, ("studio/c.tsx",), "2026-10-17T08:20:00Z"),
+            ]
+        )
         self.assertEqual(len(plan.batches), 1)
         batch = plan.batches[0]
         self.assertEqual(batch.satellite, "studio")
@@ -165,41 +175,63 @@ class BatchPlanning(unittest.TestCase):
 
     def test_13_outside_window_excluded_unless_urgent(self):
         inside, outside = sha40("3"), sha40("4")
-        plan = self._plan([
-            hb.LandedCommit(inside, ("api/x.ts",), "2026-10-17T08:30:00Z"),
-            hb.LandedCommit(outside, ("api/y.ts",), "2026-10-17T07:00:00Z"),
-        ])
+        plan = self._plan(
+            [
+                hb.LandedCommit(inside, ("api/x.ts",), "2026-10-17T08:30:00Z"),
+                hb.LandedCommit(outside, ("api/y.ts",), "2026-10-17T07:00:00Z"),
+            ]
+        )
         self.assertEqual([b.shas for b in plan.batches], [(inside,)])
-        bypassed = self._plan([
-            hb.LandedCommit(outside, ("api/y.ts",), "2026-10-17T07:00:00Z",
-                            frozenset({"bridge:urgent"})),
-        ])
+        bypassed = self._plan(
+            [
+                hb.LandedCommit(
+                    outside,
+                    ("api/y.ts",),
+                    "2026-10-17T07:00:00Z",
+                    frozenset({"bridge:urgent"}),
+                ),
+            ]
+        )
         self.assertEqual(len(bypassed.batches), 1)
         self.assertTrue(bypassed.batches[0].urgent)
         self.assertEqual(bypassed.batches[0].shas, (outside,))
 
     def test_14_unrouted_quarantined_monorepo_split(self):
         s = sha40("5")
-        plan = self._plan([
-            hb.LandedCommit(s, ("misc/unknown.bin", "docs/SPEC.md"), "2026-10-17T08:10:00Z"),
-        ])
+        plan = self._plan(
+            [
+                hb.LandedCommit(
+                    s, ("misc/unknown.bin", "docs/SPEC.md"), "2026-10-17T08:10:00Z"
+                ),
+            ]
+        )
         self.assertEqual(plan.unrouted, ((s, "misc/unknown.bin"),))
         self.assertEqual(plan.monorepo_paths, ("docs/SPEC.md",))
         self.assertEqual(plan.batches, ())
 
     def test_15_deterministic_sorted_output(self):
         s1, s2 = sha40("6"), sha40("7")
-        plan_a = self._plan([
-            hb.LandedCommit(s1, ("api/a.ts", "studio/b.tsx"), "2026-10-17T08:01:00Z"),
-            hb.LandedCommit(s2, ("browser/c.ts",), "2026-10-17T08:02:00Z"),
-        ])
-        plan_b = self._plan([
-            hb.LandedCommit(s2, ("browser/c.ts",), "2026-10-17T08:02:00Z"),
-            hb.LandedCommit(s1, ("api/a.ts", "studio/b.tsx"), "2026-10-17T08:01:00Z"),
-        ])
+        plan_a = self._plan(
+            [
+                hb.LandedCommit(
+                    s1, ("api/a.ts", "studio/b.tsx"), "2026-10-17T08:01:00Z"
+                ),
+                hb.LandedCommit(s2, ("browser/c.ts",), "2026-10-17T08:02:00Z"),
+            ]
+        )
+        plan_b = self._plan(
+            [
+                hb.LandedCommit(s2, ("browser/c.ts",), "2026-10-17T08:02:00Z"),
+                hb.LandedCommit(
+                    s1, ("api/a.ts", "studio/b.tsx"), "2026-10-17T08:01:00Z"
+                ),
+            ]
+        )
         self.assertEqual(plan_a, plan_b)
-        self.assertEqual([b.satellite for b in plan_a.batches],
-                         sorted(b.satellite for b in plan_a.batches))
+        self.assertEqual(
+            [b.satellite for b in plan_a.batches],
+            sorted(b.satellite for b in plan_a.batches),
+        )
 
     def test_16_non_commit_input_rejected(self):
         with self.assertRaises(hb.BatchError):
@@ -237,13 +269,19 @@ class FreshnessAndThreeWay(unittest.TestCase):
         parents = {head: mid, mid: base}
         commit_files = {mid: ("browser/a.ts",), head: ("browser/b.ts",)}
         self.assertEqual(
-            hb.three_way_check(("browser/fresh.ts",), base, head, parents, commit_files), ())
+            hb.three_way_check(
+                ("browser/fresh.ts",), base, head, parents, commit_files
+            ),
+            (),
+        )
         self.assertEqual(
             hb.three_way_check(("browser/a.ts",), base, head, parents, commit_files),
-            ("browser/a.ts",))
+            ("browser/a.ts",),
+        )
         self.assertEqual(
             hb.three_way_check(("browser/b.ts",), base, head, parents, commit_files),
-            ("browser/b.ts",))
+            ("browser/b.ts",),
+        )
 
     def test_22_three_way_requires_descendant_target(self):
         base, head = sha40("4"), sha40("5")
@@ -255,9 +293,14 @@ class FreshnessAndThreeWay(unittest.TestCase):
         commit = hb.LandedCommit(head, ("browser/a.ts",), "2026-10-17T08:10:00Z")
         with self.assertRaises(hb.BatchConflict):
             hb.plan_batches(
-                [commit], "2026-10-17T08:00:00Z", "2026-10-17T09:00:00Z",
-                last_synced={"browser": base}, target_heads={"browser": head},
-                parents={head: base}, commit_files={head: ("browser/a.ts",)})
+                [commit],
+                "2026-10-17T08:00:00Z",
+                "2026-10-17T09:00:00Z",
+                last_synced={"browser": base},
+                target_heads={"browser": head},
+                parents={head: base},
+                commit_files={head: ("browser/a.ts",)},
+            )
 
     def test_24_plan_rejects_stale_target(self):
         older, mid, head = sha40("1"), sha40("2"), sha40("3")
@@ -265,18 +308,34 @@ class FreshnessAndThreeWay(unittest.TestCase):
         with self.assertRaises(hb.FreshnessViolation):
             # sync base (head) is NEWER than the target HEAD (mid) → stale target
             hb.plan_batches(
-                [commit], "2026-10-17T08:00:00Z", "2026-10-17T09:00:00Z",
+                [commit],
+                "2026-10-17T08:00:00Z",
+                "2026-10-17T09:00:00Z",
                 last_synced={"studio": head},
                 target_heads={"studio": mid},
-                parents={head: mid, mid: older}, commit_files={})
+                parents={head: mid, mid: older},
+                commit_files={},
+            )
 
 
 class RollingSchedule(unittest.TestCase):
     def test_25_verbatim_tier4_schedule(self):
-        self.assertEqual([(s.minute, s.satellite) for s in srt.ROLLING_SCHEDULE], [
-            (0, "open"), (10, "studio"), (20, "browser"), (30, "api"),
-            (40, "skills"), (50, "vscode"), (60, "command"), (70, "agents"),
-            (80, "archive"), (90, "infra"), (100, "sdk")])
+        self.assertEqual(
+            [(s.minute, s.satellite) for s in srt.ROLLING_SCHEDULE],
+            [
+                (0, "open"),
+                (10, "studio"),
+                (20, "browser"),
+                (30, "api"),
+                (40, "skills"),
+                (50, "vscode"),
+                (60, "command"),
+                (70, "agents"),
+                (80, "archive"),
+                (90, "infra"),
+                (100, "sdk"),
+            ],
+        )
         self.assertEqual(srt.CYCLE_MINUTES, 110)
         self.assertEqual(srt.SLOT_MINUTES, 10)
         srt.assert_no_overlap()
@@ -293,9 +352,13 @@ class RollingSchedule(unittest.TestCase):
 
     def test_27_canonical_repo_names(self):
         self.assertEqual(srt.full_repo_name("open"), "Supremeai-bd/supremeai-open")
-        self.assertEqual(srt.full_repo_name("infra"), "Supremeai-bd/supremeai-infrastructure")
-        self.assertEqual(srt.full_repo_name("supremeai-infra"),
-                         "Supremeai-bd/supremeai-infrastructure")  # issue alias
+        self.assertEqual(
+            srt.full_repo_name("infra"), "Supremeai-bd/supremeai-infrastructure"
+        )
+        self.assertEqual(
+            srt.full_repo_name("supremeai-infra"),
+            "Supremeai-bd/supremeai-infrastructure",
+        )  # issue alias
         self.assertEqual(srt.full_repo_name(" SDK "), "Supremeai-bd/supremeai-sdk")
         for bad in ("core", "", "supremeai", "unknown"):
             with self.assertRaises(srt.TrainError, msg=bad):
@@ -305,29 +368,40 @@ class RollingSchedule(unittest.TestCase):
         epoch = _dt.datetime(1970, 1, 1, tzinfo=_dt.timezone.utc)
         self.assertEqual(srt.active_slot(epoch).satellite, "open")
         self.assertEqual(
-            srt.active_slot(epoch + _dt.timedelta(minutes=10)).satellite, "studio")
+            srt.active_slot(epoch + _dt.timedelta(minutes=10)).satellite, "studio"
+        )
         self.assertEqual(
-            srt.active_slot(epoch + _dt.timedelta(minutes=109)).satellite, "sdk")
+            srt.active_slot(epoch + _dt.timedelta(minutes=109)).satellite, "sdk"
+        )
         self.assertEqual(
-            srt.active_slot(epoch + _dt.timedelta(minutes=110)).satellite, "open")
+            srt.active_slot(epoch + _dt.timedelta(minutes=110)).satellite, "open"
+        )
         self.assertEqual(
-            srt.active_slot(epoch + _dt.timedelta(minutes=110 + 45)).satellite, "skills")
+            srt.active_slot(epoch + _dt.timedelta(minutes=110 + 45)).satellite, "skills"
+        )
         self.assertEqual(
-            srt.active_slot(_dt.datetime(1970, 1, 1, 0, 30)).satellite, "api")  # naive=UTC
+            srt.active_slot(_dt.datetime(1970, 1, 1, 0, 30)).satellite, "api"
+        )  # naive=UTC
 
     def test_29_slot_type_and_bounds_enforced(self):
         with self.assertRaises(srt.TrainError):
             srt.active_slot("now")
-        start, end = srt.slot_bounds(_dt.datetime(
-            1970, 1, 1, 0, 12, tzinfo=_dt.timezone.utc))
+        start, end = srt.slot_bounds(
+            _dt.datetime(1970, 1, 1, 0, 12, tzinfo=_dt.timezone.utc)
+        )
         self.assertEqual((end - start).total_seconds(), srt.SLOT_MINUTES * 60)
 
     def test_30_consolidation_plan_happy_path(self):
         base, head = sha40("1"), sha40("2")
         plan = srt.plan_consolidation(
-            "archive", (head,), ("docs/ledger/c.md",),
-            last_synced=base, target_head=head,
-            parents={head: base}, commit_files={head: ("docs/ledger/a.md",)})
+            "archive",
+            (head,),
+            ("docs/ledger/c.md",),
+            last_synced=base,
+            target_head=head,
+            parents={head: base},
+            commit_files={head: ("docs/ledger/a.md",)},
+        )
         self.assertEqual(plan.target, "Supremeai-bd/supremeai-archive")
         self.assertEqual(plan.satellite, "archive")
 
@@ -335,29 +409,43 @@ class RollingSchedule(unittest.TestCase):
         base, mid, head = sha40("3"), sha40("5"), sha40("4")
         with self.assertRaises(srt.BatchConflict):
             srt.plan_consolidation(
-                "archive", (head,), ("docs/ledger/a.md",),
-                last_synced=base, target_head=head,
-                parents={head: base}, commit_files={head: ("docs/ledger/a.md",)})
+                "archive",
+                (head,),
+                ("docs/ledger/a.md",),
+                last_synced=base,
+                target_head=head,
+                parents={head: base},
+                commit_files={head: ("docs/ledger/a.md",)},
+            )
         with self.assertRaises(srt.FreshnessViolation):
             # target HEAD (mid) is an ancestor of the sync base (head) → stale
             srt.plan_consolidation(
-                "archive", (mid,), ("docs/ledger/c.md",),
-                last_synced=head, target_head=mid,
-                parents={head: mid, mid: base}, commit_files={})
+                "archive",
+                (mid,),
+                ("docs/ledger/c.md",),
+                last_synced=head,
+                target_head=mid,
+                parents={head: mid, mid: base},
+                commit_files={},
+            )
         with self.assertRaises(srt.TrainError):
-            srt.plan_consolidation("sdk", (head,), ("sdk/x.ts",),
-                                   last_synced=base, target_head=head)  # no bookkeeping
+            srt.plan_consolidation(
+                "sdk", (head,), ("sdk/x.ts",), last_synced=base, target_head=head
+            )  # no bookkeeping
         with self.assertRaises(srt.TrainError):
-            srt.plan_consolidation("core", (head,), ("core/x.py",),
-                                   last_synced=None, target_head=None)
+            srt.plan_consolidation(
+                "core", (head,), ("core/x.py",), last_synced=None, target_head=None
+            )
         with self.assertRaises(srt.TrainError):
-            srt.plan_consolidation("studio", (), ("studio/x.tsx",),
-                                   last_synced=None, target_head=None)
+            srt.plan_consolidation(
+                "studio", (), ("studio/x.tsx",), last_synced=None, target_head=None
+            )
 
     def test_32_tier3_urgent_bypass(self):
         class Item:
             def __init__(self, urgent):
                 self.urgent = urgent
+
         picked = srt.urgent_bypass([Item(True), Item(False), Item(True)])
         self.assertEqual(len(picked), 2)
         self.assertTrue(all(i.urgent for i in picked))
@@ -375,6 +463,7 @@ class PrePushRebaseGuard(unittest.TestCase):
                 if text.startswith(prefix):
                     return outcome
             return (0, "", "")
+
         return fake_run
 
     def setUp(self):
@@ -387,18 +476,22 @@ class PrePushRebaseGuard(unittest.TestCase):
         cal.log = self._original_log
 
     def test_33_fresh_base_passes_without_rebase(self):
-        cal.run_cmd = self._script([
-            ("git rev-list", (0, "0\n", "")),
-        ])
+        cal.run_cmd = self._script(
+            [
+                ("git rev-list", (0, "0\n", "")),
+            ]
+        )
         fresh, behind, detail = cal.pre_push_rebase_guard()
         self.assertTrue(fresh)
         self.assertEqual(behind, 0)
 
     def test_34_stale_base_rebases_and_reports(self):
-        cal.run_cmd = self._script([
-            ("git rev-list", (0, "3\n", "")),
-            ("git rebase", (0, "", "")),
-        ])
+        cal.run_cmd = self._script(
+            [
+                ("git rev-list", (0, "3\n", "")),
+                ("git rebase", (0, "", "")),
+            ]
+        )
         fresh, behind, detail = cal.pre_push_rebase_guard()
         self.assertTrue(fresh)
         self.assertEqual(behind, 3)
@@ -424,27 +517,35 @@ class PrePushRebaseGuard(unittest.TestCase):
         self.assertFalse(fresh)
         self.assertEqual(behind, 3)
         self.assertIn("aborted", detail)
-        self.assertTrue(any("rebase --abort" in t for t in seen),
-                        "rebase --abort must run on failure")
+        self.assertTrue(
+            any("rebase --abort" in t for t in seen),
+            "rebase --abort must run on failure",
+        )
 
     def test_36_unverifiable_base_fails_closed(self):
-        cal.run_cmd = self._script([
-            ("git fetch", (128, "", "network down")),
-        ])
+        cal.run_cmd = self._script(
+            [
+                ("git fetch", (128, "", "network down")),
+            ]
+        )
         fresh, behind, detail = cal.pre_push_rebase_guard()
         self.assertFalse(fresh)
         self.assertIn("fetch", detail)
 
-        cal.run_cmd = self._script([
-            ("git rev-list", (1, "", "fatal")),
-        ])
+        cal.run_cmd = self._script(
+            [
+                ("git rev-list", (1, "", "fatal")),
+            ]
+        )
         fresh, _, detail = cal.pre_push_rebase_guard()
         self.assertFalse(fresh)
         self.assertIn("behind-count", detail)
 
-        cal.run_cmd = self._script([
-            ("git rev-list", (0, "not-a-number\n", "")),
-        ])
+        cal.run_cmd = self._script(
+            [
+                ("git rev-list", (0, "not-a-number\n", "")),
+            ]
+        )
         fresh, _, detail = cal.pre_push_rebase_guard()
         self.assertFalse(fresh)
         self.assertIn("unparseable", detail)
@@ -465,19 +566,23 @@ class PrePushRebaseGuard(unittest.TestCase):
         self.assertIn("Fail-closed", doc)
 
     def test_39_pre_work_fresh_base_passes(self):
-        cal.run_cmd = self._script([
-            ("git rev-list", (0, "0\n", "")),
-        ])
+        cal.run_cmd = self._script(
+            [
+                ("git rev-list", (0, "0\n", "")),
+            ]
+        )
         synced, behind, detail = cal.pre_work_rebase_guard()
         self.assertTrue(synced)
         self.assertEqual(behind, 0)
         self.assertIn("fresh", detail)
 
     def test_40_pre_work_stale_base_rebases(self):
-        cal.run_cmd = self._script([
-            ("git rev-list", (0, "2\n", "")),
-            ("git rebase", (0, "", "")),
-        ])
+        cal.run_cmd = self._script(
+            [
+                ("git rev-list", (0, "2\n", "")),
+                ("git rebase", (0, "", "")),
+            ]
+        )
         synced, behind, detail = cal.pre_work_rebase_guard()
         self.assertTrue(synced)
         self.assertEqual(behind, 2)

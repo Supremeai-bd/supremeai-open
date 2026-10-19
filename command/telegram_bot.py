@@ -25,8 +25,9 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from .config import CommandConfig
 from .services.voice_service import (
@@ -34,6 +35,8 @@ from .services.voice_service import (
     VoiceRequestError,
     VoiceServiceUnavailable,
     VoiceSynthesisError,
+)
+from .services.voice_service import (
     validate_request as validate_voice_request,
 )
 
@@ -65,9 +68,7 @@ VALID_COMMANDS = (
     "/start",
 )
 
-VOICE_USAGE_TEXT = (
-    "⚠️ /voice requires text, e.g.\n/voice সিস্টেম সম্পূর্ণ স্বাভাবিক আছে"
-)
+VOICE_USAGE_TEXT = "⚠️ /voice requires text, e.g.\n/voice সিস্টেম সম্পূর্ণ স্বাভাবিক আছে"
 
 # Canonical status phrase (also the warm-cache demo phrase in the docs).
 VOICE_STATUS_PHRASE = "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে"
@@ -94,8 +95,8 @@ def build_voice_status_summary(status_text: str) -> str:
 class VoiceOutcome:
     """Result of one sync voice synthesis attempt (loud error taxonomy)."""
 
-    audio: Optional[bytes] = None
-    error: Optional[str] = None
+    audio: bytes | None = None
+    error: str | None = None
     voice_used: str = ""
     size_bytes: int = 0
 
@@ -147,7 +148,7 @@ class TelegramUpdate:
         self.text = (text or "").strip()
 
     @classmethod
-    def from_payload(cls, payload: Dict[str, Any]) -> "TelegramUpdate":
+    def from_payload(cls, payload: dict[str, Any]) -> TelegramUpdate:
         message = (payload or {}).get("message") or {}
         chat = message.get("chat") or {}
         return cls(chat_id=str(chat.get("id", "")), text=str(message.get("text", "")))
@@ -159,7 +160,7 @@ class BotReply:
         text: str,
         allowed: bool = True,
         action: str = "reply",
-        voice_audio: Optional[bytes] = None,
+        voice_audio: bytes | None = None,
     ) -> None:
         self.text = text
         self.allowed = allowed
@@ -169,7 +170,7 @@ class BotReply:
         self.voice_audio = voice_audio
 
 
-def _validate_issue_url(url: str) -> Optional[str]:
+def _validate_issue_url(url: str) -> str | None:
     url = (url or "").strip()
     if not url.startswith(ISSUE_URL_PREFIX) or "/issues/" not in url:
         return None
@@ -190,7 +191,7 @@ class CommandRouter:
         fetch_status: Callable[[], str],
         dispatch_issue: Callable[[str], str],
         arm_kill_switch: Callable[[], str],
-        synthesize_voice: Optional[Callable[[str], "VoiceOutcome"]] = None,
+        synthesize_voice: Callable[[str], VoiceOutcome] | None = None,
     ) -> None:
         self.config = config
         self._fetch_status = fetch_status
@@ -212,7 +213,7 @@ class CommandRouter:
         argument = parts[1].strip() if len(parts) > 1 else ""
         if command in ("/status", "/runway"):
             status_text = self._fetch_status()
-            voice_audio: Optional[bytes] = None
+            voice_audio: bytes | None = None
             if self.voice_alerts_enabled:
                 if self.synthesize_voice is None:
                     status_text += (
@@ -226,7 +227,9 @@ class CommandRouter:
                     if outcome.ok:
                         voice_audio = outcome.audio
                     else:
-                        status_text += "\n🔊 voice alert unavailable: %s" % outcome.error
+                        status_text += (
+                            "\n🔊 voice alert unavailable: %s" % outcome.error
+                        )
             return BotReply(status_text, voice_audio=voice_audio)
         if command == "/voice":
             if not argument:
@@ -276,9 +279,7 @@ class StdlibTelegramTransport:
         self.config = config
 
     def send_message(self, chat_id: str, text: str) -> None:
-        payload = json.dumps(
-            {"chat_id": chat_id, "text": text}
-        ).encode("utf-8")
+        payload = json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8")
         req = urllib.request.Request(
             self.config.telegram_api_base + "/sendMessage",
             data=payload,
@@ -321,9 +322,13 @@ class StdlibTelegramTransport:
             if resp.status != 200:
                 raise RuntimeError("telegram sendVoice HTTP %d" % resp.status)
 
-    def poll_updates(self, router: CommandRouter, timeout_s: int = 25) -> None:  # pragma: no cover - runtime loop
+    def poll_updates(
+        self, router: CommandRouter, timeout_s: int = 25
+    ) -> None:  # pragma: no cover - runtime loop
         offset = 0
-        url = self.config.telegram_api_base + "/getUpdates?timeout=%d" % max(1, timeout_s)
+        url = self.config.telegram_api_base + "/getUpdates?timeout=%d" % max(
+            1, timeout_s
+        )
         while True:
             req = urllib.request.Request(
                 url + ("&offset=%d" % offset if offset else ""),

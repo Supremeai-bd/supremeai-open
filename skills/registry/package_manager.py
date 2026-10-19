@@ -14,7 +14,6 @@ import sys
 import tarfile
 import tempfile
 from pathlib import Path
-from typing import List, Optional
 
 from .manifest_schema import ManifestError, parse_skill_md
 from .progressive_loader import ProgressiveLoader
@@ -27,9 +26,11 @@ class PackageManagerError(RuntimeError):
 
 
 class PackageManager:
-    def __init__(self, target_root: Path, index_path: Optional[Path] = None) -> None:
+    def __init__(self, target_root: Path, index_path: Path | None = None) -> None:
         self.target_root = Path(target_root)
-        self.index_path = Path(index_path) if index_path else self.target_root / INDEX_FILENAME
+        self.index_path = (
+            Path(index_path) if index_path else self.target_root / INDEX_FILENAME
+        )
 
     # ---- verbs -------------------------------------------------------
     def install(self, source: str) -> Path:
@@ -37,7 +38,9 @@ class PackageManager:
         staged = self._stage_source(source)
         try:
             if not (staged / "SKILL.md").is_file():
-                raise PackageManagerError(f"not a skill directory (no SKILL.md): {source}")
+                raise PackageManagerError(
+                    f"not a skill directory (no SKILL.md): {source}"
+                )
             descriptor, _ = parse_skill_md(
                 (staged / "SKILL.md").read_text(encoding="utf-8"),
                 source_path=str(staged / "SKILL.md"),
@@ -50,7 +53,7 @@ class PackageManager:
         finally:
             shutil.rmtree(staged, ignore_errors=True)
 
-    def list_installed(self) -> List[str]:
+    def list_installed(self) -> list[str]:
         if not self.target_root.is_dir():
             return []
         names = []
@@ -67,12 +70,14 @@ class PackageManager:
         shutil.rmtree(destination)
         return destination
 
-    def pack(self, skill_dir: Path, output: Optional[Path] = None) -> Path:
+    def pack(self, skill_dir: Path, output: Path | None = None) -> Path:
         """Build a distributable .skill tar.gz from a skill directory."""
         skill_dir = Path(skill_dir)
         skill_md = skill_dir / "SKILL.md"
         if not skill_md.is_file():
-            raise PackageManagerError(f"not a skill directory (no SKILL.md): {skill_dir}")
+            raise PackageManagerError(
+                f"not a skill directory (no SKILL.md): {skill_dir}"
+            )
         name = skill_dir.name
         output = output or (skill_dir.parent / f"{name}.skill")
         with tarfile.open(output, "w:gz") as archive:
@@ -102,10 +107,12 @@ class PackageManager:
         )
         if result.returncode != 0:
             shutil.rmtree(staging, ignore_errors=True)
-            raise PackageManagerError(f"git clone failed for {source!r}: {result.stderr.strip()[:200]}")
+            raise PackageManagerError(
+                f"git clone failed for {source!r}: {result.stderr.strip()[:200]}"
+            )
         return staging / "skill"
 
-    def _resolve_index(self, name: str) -> tuple[Optional[str], Optional[str]]:
+    def _resolve_index(self, name: str) -> tuple[str | None, str | None]:
         """Return (git_url, ref) for an index name, or (None, None).
 
         The ref is returned separately: ``url@ref`` is not valid git-clone
@@ -121,7 +128,9 @@ class PackageManager:
 
 
 def build_cli() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="supremeai-skill", description="SupremeAI skill package manager")
+    parser = argparse.ArgumentParser(
+        prog="supremeai-skill", description="SupremeAI skill package manager"
+    )
     parser.add_argument("--root", default=".", help="skill installation root")
     parser.add_argument("--index", default=None, help="path to registry index.json")
     verbs = parser.add_subparsers(dest="verb", required=True)
@@ -136,7 +145,7 @@ def build_cli() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = build_cli().parse_args(argv)
     manager = PackageManager(Path(args.root), Path(args.index) if args.index else None)
     try:
@@ -148,7 +157,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         elif args.verb == "remove":
             print(f"removed: {manager.remove(args.name)}")
         elif args.verb == "pack":
-            print(f"packed: {manager.pack(Path(args.directory), Path(args.out) if args.out else None)}")
+            print(
+                f"packed: {manager.pack(Path(args.directory), Path(args.out) if args.out else None)}"
+            )
     except (PackageManagerError, ManifestError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

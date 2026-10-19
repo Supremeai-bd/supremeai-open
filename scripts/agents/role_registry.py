@@ -24,17 +24,17 @@ Fail-closed by contract:
 
 Pure stdlib. Run: python3 scripts/agents/role_registry.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
 import sys
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Final
 
 sys.path.insert(0, str(__file__).rsplit("/", 1)[0])
 
-from role_trigger_matrix import (  # noqa: E402
+from role_trigger_matrix import (
     CODE_WRITE_WEAPONS,
     ROLE_CONTRACTS,
     ROLE_IDS,
@@ -109,37 +109,41 @@ class RoleRegistry:
         return False
 
 
-SCOUT_WEAPONS: Final = frozenset({
-    # SSOT dispatch weapons (role_trigger_matrix, issue #489 matrix):
-    "search_web",
-    "read_url_content",
-    "gh_issue_create",
-    # Operational scoped weapons mandated by issue #497:
-    "ast_parser",          # AST slicing for the Gold Pearl (20-100 lines)
-    "repo_inspector",      # read-only manifests / contracts / dependency graphs
-    "artifact_writer",     # writes EcosystemDossier report artifacts (NOT code)
-})
+SCOUT_WEAPONS: Final = frozenset(
+    {
+        # SSOT dispatch weapons (role_trigger_matrix, issue #489 matrix):
+        "search_web",
+        "read_url_content",
+        "gh_issue_create",
+        # Operational scoped weapons mandated by issue #497:
+        "ast_parser",  # AST slicing for the Gold Pearl (20-100 lines)
+        "repo_inspector",  # read-only manifests / contracts / dependency graphs
+        "artifact_writer",  # writes EcosystemDossier report artifacts (NOT code)
+    }
+)
 
 
 def default_registry() -> RoleRegistry:
     """Registry with the #497 Ecosystem Scout registration."""
     registry = RoleRegistry()
-    registry.register(RoleRecord(
-        role_id="ecosystem-scout",
-        display_name="Ecosystem Scout (ইকোসিস্টেম এজেন্ট)",
-        operational_weapons=SCOUT_WEAPONS,
-        read_only=True,
-        description=(
-            "Autonomous external-intelligence scout: 4-phase dissection "
-            "(extraction, comparative analysis, risk audit, adoption RFC) "
-            "under the Surgical Need-Driven Extraction Doctrine — "
-            "never vendor full repositories, extract only the Gold Pearl."
-        ),
-        adapters=(
-            "scout_analyze_repository",   # MCP tool (issue #497 criterion 3)
-            "render_dossier_markdown",    # standard artifact export
-        ),
-    ))
+    registry.register(
+        RoleRecord(
+            role_id="ecosystem-scout",
+            display_name="Ecosystem Scout (ইকোসিস্টেম এজেন্ট)",
+            operational_weapons=SCOUT_WEAPONS,
+            read_only=True,
+            description=(
+                "Autonomous external-intelligence scout: 4-phase dissection "
+                "(extraction, comparative analysis, risk audit, adoption RFC) "
+                "under the Surgical Need-Driven Extraction Doctrine — "
+                "never vendor full repositories, extract only the Gold Pearl."
+            ),
+            adapters=(
+                "scout_analyze_repository",  # MCP tool (issue #497 criterion 3)
+                "render_dossier_markdown",  # standard artifact export
+            ),
+        )
+    )
     return registry
 
 
@@ -157,23 +161,55 @@ def self_test() -> bool:
     # Fail-closed lookups and registrations.
     for broken, exc in (
         (lambda: registry.get("ghost"), ValueError),
-        (lambda: registry.register(record), ValueError),          # duplicate
-        (lambda: registry.register(RoleRecord(                    # not dispatch role
-            role_id="ghost", display_name="g",
-            operational_weapons=frozenset({"search_web"}),
-            read_only=True, description="x")), ValueError),
-        (lambda: registry.register(RoleRecord(                    # missing SSOT weapon
-            role_id="ecosystem-scout", display_name="g",
-            operational_weapons=frozenset({"search_web"}),
-            read_only=True, description="x")), ValueError),
-        (lambda: registry.register(RoleRecord(                    # write leak
-            role_id="ecosystem-scout", display_name="g",
-            operational_weapons=SCOUT_WEAPONS | {"write_to_file"},
-            read_only=True, description="x")), ValueError),
-        (lambda: registry.register(RoleRecord(                    # undeclared posture
-            role_id="ecosystem-scout", display_name="g",
-            operational_weapons=SCOUT_WEAPONS | {"pr_create"},
-            read_only=True, description="x")), ValueError),
+        (lambda: registry.register(record), ValueError),  # duplicate
+        (
+            lambda: registry.register(
+                RoleRecord(  # not dispatch role
+                    role_id="ghost",
+                    display_name="g",
+                    operational_weapons=frozenset({"search_web"}),
+                    read_only=True,
+                    description="x",
+                )
+            ),
+            ValueError,
+        ),
+        (
+            lambda: registry.register(
+                RoleRecord(  # missing SSOT weapon
+                    role_id="ecosystem-scout",
+                    display_name="g",
+                    operational_weapons=frozenset({"search_web"}),
+                    read_only=True,
+                    description="x",
+                )
+            ),
+            ValueError,
+        ),
+        (
+            lambda: registry.register(
+                RoleRecord(  # write leak
+                    role_id="ecosystem-scout",
+                    display_name="g",
+                    operational_weapons=SCOUT_WEAPONS | {"write_to_file"},
+                    read_only=True,
+                    description="x",
+                )
+            ),
+            ValueError,
+        ),
+        (
+            lambda: registry.register(
+                RoleRecord(  # undeclared posture
+                    role_id="ecosystem-scout",
+                    display_name="g",
+                    operational_weapons=SCOUT_WEAPONS | {"pr_create"},
+                    read_only=True,
+                    description="x",
+                )
+            ),
+            ValueError,
+        ),
     ):
         try:
             broken()
@@ -196,8 +232,10 @@ def _cli() -> int:
         registry = default_registry()
         for role in registry.list_roles():
             r = registry.get(role)
-            print(f"{role}: {r.display_name} read_only={r.read_only} "
-                  f"weapons={sorted(r.operational_weapons)}")
+            print(
+                f"{role}: {r.display_name} read_only={r.read_only} "
+                f"weapons={sorted(r.operational_weapons)}"
+            )
         return 0
     parser.print_help()
     return 2

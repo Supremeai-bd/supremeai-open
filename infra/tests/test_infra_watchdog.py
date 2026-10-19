@@ -5,13 +5,12 @@ Validates multi-satellite watchdog, quota monitor thresholds, and DR rollback au
 
 import unittest
 
+from infra.dr.automated_rollback import AutomatedRollback, RollbackStatus
 from infra.ops.health_watchdog import (
     DEFAULT_ENDPOINTS,
-    EndpointStatus,
     FederationWatchdog,
 )
 from infra.ops.quota_monitor import QuotaMonitor
-from infra.dr.automated_rollback import AutomatedRollback, RollbackStatus
 
 
 class TestInfraWatchdog(unittest.TestCase):
@@ -101,7 +100,9 @@ class TestQuotaMonitor(unittest.TestCase):
 
     def test_quota_healthy_usage(self):
         # 100 minutes used over 5 days -> 20 min/day -> 600 min/mo projected
-        eval_res = self.monitor.evaluate_usage(used_minutes=100.0, days_elapsed=5, days_in_month=30)
+        eval_res = self.monitor.evaluate_usage(
+            used_minutes=100.0, days_elapsed=5, days_in_month=30
+        )
         self.assertEqual(eval_res.status, "HEALTHY")
         self.assertEqual(eval_res.remaining_minutes, 1900.0)
         self.assertEqual(eval_res.daily_burn_rate, 20.0)
@@ -126,13 +127,17 @@ class TestQuotaMonitor(unittest.TestCase):
 
     def test_quota_runaway_job_detection(self):
         # Normal runtime (< 600s)
-        normal_job = self.monitor.check_job_runtime("matrix-py311", duration_seconds=120.0)
+        normal_job = self.monitor.check_job_runtime(
+            "matrix-py311", duration_seconds=120.0
+        )
         self.assertFalse(normal_job.is_runaway)
         self.assertEqual(normal_job.status, "NORMAL")
         self.assertIsNone(normal_job.recommendation)
 
         # Runaway runtime (> 600s)
-        runaway_job = self.monitor.check_job_runtime("hanging-integration-test", duration_seconds=750.0)
+        runaway_job = self.monitor.check_job_runtime(
+            "hanging-integration-test", duration_seconds=750.0
+        )
         self.assertTrue(runaway_job.is_runaway)
         self.assertEqual(runaway_job.status, "RUNAWAY")
         self.assertIn("exceeded timeout threshold", runaway_job.recommendation)
@@ -176,7 +181,9 @@ class TestDisasterRecoveryRollback(unittest.TestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event.deployment_id, "dep-102")
         self.assertEqual(event.rollback_version, "v2.1.0")
-        self.assertIn("Post-deployment health verification check failed", event.trigger_reason)
+        self.assertIn(
+            "Post-deployment health verification check failed", event.trigger_reason
+        )
 
 
 if __name__ == "__main__":

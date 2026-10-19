@@ -13,13 +13,12 @@ On rejection the response carries ``Retry-After`` (MCP_CONNECT §4 etiquette:
 Thread-safe via a single asyncio lock; per-key memory is bounded (oldest
 windows evicted beyond ``max_keys`` — a key cannot OOM the gateway).
 """
+
 from __future__ import annotations
 
 import asyncio
-import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque
 
 from .config import utc_ts
 
@@ -35,15 +34,21 @@ class RateDecision:
 class SlidingWindowLimiter:
     """asyncio-safe sliding window; deterministic under a injected clock."""
 
-    def __init__(self, window_s: int, max_requests: int, *, max_keys: int = 10_000,
-                 clock: callable = utc_ts):  # noqa: ANN401 (test clock injection)
+    def __init__(
+        self,
+        window_s: int,
+        max_requests: int,
+        *,
+        max_keys: int = 10_000,
+        clock: callable = utc_ts,
+    ):
         if window_s <= 0 or max_requests <= 0:
             raise ValueError("window_s and max_requests must be positive (fail-closed)")
         self.window_s = window_s
         self.max_requests = max_requests
         self.max_keys = max_keys
         self._clock = clock
-        self._hits: dict[str, Deque[int]] = {}
+        self._hits: dict[str, deque[int]] = {}
         self._lock = asyncio.Lock()
 
     async def check(self, key: str) -> RateDecision:

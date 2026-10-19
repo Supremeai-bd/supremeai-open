@@ -10,6 +10,7 @@ acceptance criteria: syntax + schema compliance of ``api-schemas/*.schema.json``
 validation of paired ``*.fixture.json`` files, exact line numbers on syntax
 errors, and the 0/1 exit-code contract.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,7 +20,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from validate_schemas import (  # noqa: E402
+from validate_schemas import (
     FORMAT_CHECKS,
     Finding,
     SchemaValidator,
@@ -47,6 +48,7 @@ VALID_SCHEMA = {
 
 
 # --- instance validator ------------------------------------------------------
+
 
 def test_type_required_additionalproperties():
     v = SchemaValidator(VALID_SCHEMA)
@@ -78,8 +80,10 @@ def test_conditional_if_then_else():
             "healing": {"type": "array"},
         },
         "allOf": [
-            {"if": {"properties": {"decision": {"const": "HOLD"}}},
-             "then": {"required": ["healing"]}},
+            {
+                "if": {"properties": {"decision": {"const": "HOLD"}}},
+                "then": {"required": ["healing"]},
+            },
         ],
     }
     v = SchemaValidator(schema)
@@ -116,14 +120,22 @@ def test_one_of_and_not():
 
 # --- line numbers ------------------------------------------------------------
 
+
 def test_syntax_error_carries_exact_line():
     findings = []
     try:
         json.loads('{\n  "$id": "x",\n  "oops"\n}')
         raise AssertionError("expected JSONDecodeError")
     except json.JSONDecodeError as exc:
-        findings.append(Finding("ERROR", "x.schema.json", f"JSON syntax error: {exc.msg}",
-                                line=exc.lineno, col=exc.colno))
+        findings.append(
+            Finding(
+                "ERROR",
+                "x.schema.json",
+                f"JSON syntax error: {exc.msg}",
+                line=exc.lineno,
+                col=exc.colno,
+            )
+        )
     assert len(findings) == 1
     assert findings[0].line == 4 and findings[0].col == 1
 
@@ -135,6 +147,7 @@ def test_best_effort_line_for_semantic_error():
 
 
 # --- schema-document linter --------------------------------------------------
+
 
 def _lint(doc):
     findings = []
@@ -154,6 +167,7 @@ def test_lint_catches_bad_pattern_and_missing_id():
     assert any("does not compile" in f.message for f in findings)
     # missing $id is a root-convention rule enforced by check_schema_file
     import tempfile
+
     with tempfile.TemporaryDirectory() as td:
         no_id = {k: v for k, v in VALID_SCHEMA.items() if k != "$id"}
         p = Path(td) / "no_id.schema.json"
@@ -164,17 +178,24 @@ def test_lint_catches_bad_pattern_and_missing_id():
 
 
 def test_lint_catches_wrong_keyword_value_types():
-    bad = json.loads(json.dumps(VALID_SCHEMA).replace('"required": ["x"]', '"required": "x"'))
+    bad = json.loads(
+        json.dumps(VALID_SCHEMA).replace('"required": ["x"]', '"required": "x"')
+    )
     findings = _lint(bad)
     assert any("'required' must be a list of strings" in f.message for f in findings)
-    bad2 = json.loads(json.dumps(VALID_SCHEMA).replace('"minimum": 1', '"minimum": "1"'))
+    bad2 = json.loads(
+        json.dumps(VALID_SCHEMA).replace('"minimum": 1', '"minimum": "1"')
+    )
     findings = _lint(bad2)
     assert any("'minimum' must be a number" in f.message for f in findings)
 
 
 def test_lint_flags_unknown_format_as_warning_not_error():
-    doc = json.loads(json.dumps(VALID_SCHEMA).replace(
-        '"pattern": "^[a-z]+$"', '"pattern": "^[a-z]+$", "format": "ipv6"'))
+    doc = json.loads(
+        json.dumps(VALID_SCHEMA).replace(
+            '"pattern": "^[a-z]+$"', '"pattern": "^[a-z]+$", "format": "ipv6"'
+        )
+    )
     findings = _lint(doc)
     assert any(f.severity == "WARNING" and "ipv6" in f.message for f in findings)
     assert not any(f.severity == "ERROR" and "ipv6" in f.message for f in findings)
@@ -182,13 +203,17 @@ def test_lint_flags_unknown_format_as_warning_not_error():
 
 # --- file-level drivers ------------------------------------------------------
 
+
 def test_check_schema_file_duplicate_id():
     import tempfile
+
     with tempfile.TemporaryDirectory() as td:
         a = Path(td) / "a.schema.json"
         b = Path(td) / "b.schema.json"
         a.write_text(json.dumps(VALID_SCHEMA), encoding="utf-8")
-        dup = json.loads(json.dumps(VALID_SCHEMA).replace('"title": "T"', '"title": "T2"'))
+        dup = json.loads(
+            json.dumps(VALID_SCHEMA).replace('"title": "T"', '"title": "T2"')
+        )
         b.write_text(json.dumps(dup), encoding="utf-8")
         seen = {}
         f1 = []
@@ -201,11 +226,14 @@ def test_check_schema_file_duplicate_id():
 
 def test_fixture_pairing_and_orphan_warning():
     import tempfile
+
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         (td / "t.schema.json").write_text(json.dumps(VALID_SCHEMA), encoding="utf-8")
         (td / "t.fixture.json").write_text(json.dumps({"x": 2}), encoding="utf-8")
-        (td / "orphan.fixture.json").write_text(json.dumps({"anything": 1}), encoding="utf-8")
+        (td / "orphan.fixture.json").write_text(
+            json.dumps({"anything": 1}), encoding="utf-8"
+        )
         findings = []
         seen = {}
         schema = check_schema_file(td / "t.schema.json", seen, findings)
@@ -217,11 +245,15 @@ def test_fixture_pairing_and_orphan_warning():
         (td / "t.fixture.json").write_text(json.dumps({"x": "bad"}), encoding="utf-8")
         findings2 = []
         check_fixture_file(td / "t.fixture.json", {"t": schema}, findings2)
-        assert any(f.severity == "ERROR" and "expected type integer" in f.message for f in findings2)
+        assert any(
+            f.severity == "ERROR" and "expected type integer" in f.message
+            for f in findings2
+        )
         assert all(f.line is not None for f in findings2 if f.severity == "ERROR")
 
 
 # --- integration + exit codes (issue acceptance) -----------------------------
+
 
 def test_repo_schemas_pass_and_exit_code_contract():
     repo = Path(__file__).resolve().parent.parent
@@ -230,6 +262,7 @@ def test_repo_schemas_pass_and_exit_code_contract():
         assert main([]) == 0, "real api-schemas/ must pass"
     # failing directory -> exit 1 with error lines
     import tempfile
+
     with tempfile.TemporaryDirectory() as td:
         Path(td, "bad.schema.json").write_text("{ nope", encoding="utf-8")
         assert main(["--dir", td]) == 1
@@ -243,7 +276,9 @@ def test_format_registry_has_repo_formats():
 
 
 if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
+    fns = [
+        v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)
+    ]
     failed = 0
     for fn in fns:
         try:

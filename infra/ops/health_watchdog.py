@@ -3,13 +3,12 @@ SupremeAI Federation Multi-Satellite Health Watchdog
 Periodic automated prober monitoring endpoints across federation satellites.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-import json
 import logging
-from typing import Callable, Dict, List, Optional
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 logger = logging.getLogger("infra.health_watchdog")
 
@@ -23,7 +22,7 @@ class EndpointStatus:
     latency_ms: float
     consecutive_failures: int = 0
     last_checked_iso: str = ""
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -52,16 +51,16 @@ class FederationWatchdog:
 
     def __init__(
         self,
-        endpoints: Optional[Dict[str, str]] = None,
+        endpoints: dict[str, str] | None = None,
         failure_threshold: int = 3,
         timeout_seconds: float = 5.0,
-        probe_fn: Optional[Callable[[str], tuple[bool, int, float, Optional[str]]]] = None,
+        probe_fn: Callable[[str], tuple[bool, int, float, str | None]] | None = None,
     ):
         self.endpoints = endpoints or dict(DEFAULT_ENDPOINTS)
         self.failure_threshold = max(1, failure_threshold)
         self.timeout_seconds = timeout_seconds
         self._probe_fn = probe_fn or self._default_http_probe
-        self.statuses: Dict[str, EndpointStatus] = {
+        self.statuses: dict[str, EndpointStatus] = {
             name: EndpointStatus(
                 name=name,
                 url=url,
@@ -72,9 +71,9 @@ class FederationWatchdog:
             )
             for name, url in self.endpoints.items()
         }
-        self.alerts: List[WatchdogAlert] = []
+        self.alerts: list[WatchdogAlert] = []
 
-    def _default_http_probe(self, url: str) -> tuple[bool, int, float, Optional[str]]:
+    def _default_http_probe(self, url: str) -> tuple[bool, int, float, str | None]:
         """Standard library HTTP GET probe."""
         start = datetime.now(timezone.utc)
         req = urllib.request.Request(
@@ -123,7 +122,9 @@ class FederationWatchdog:
                     satellite_name=name,
                     endpoint_url=url,
                     consecutive_failures=current.consecutive_failures,
-                    severity="CRITICAL" if current.consecutive_failures >= 5 else "HIGH",
+                    severity="CRITICAL"
+                    if current.consecutive_failures >= 5
+                    else "HIGH",
                     title=f"[SATELLITE_DOWN] {name} failed {current.consecutive_failures} consecutive probes",
                     details=(
                         f"Satellite {name} ({url}) returned status {status_code} "
@@ -135,13 +136,13 @@ class FederationWatchdog:
 
         return current
 
-    def probe_all(self) -> Dict[str, EndpointStatus]:
+    def probe_all(self) -> dict[str, EndpointStatus]:
         """Probes all registered satellite endpoints sequentially."""
         for name in self.endpoints:
             self.probe_endpoint(name)
         return self.statuses
 
-    def get_unhealthy(self) -> List[EndpointStatus]:
+    def get_unhealthy(self) -> list[EndpointStatus]:
         """Returns all currently unhealthy endpoints."""
         return [s for s in self.statuses.values() if not s.healthy]
 

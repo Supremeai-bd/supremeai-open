@@ -11,7 +11,7 @@ from .progressive_loader import ProgressiveLoader
 __all__ = [
     "CapabilityDescriptor",
     "ManifestError",
+    "ProgressiveLoader",
     "parse_cursor_plugin",
     "parse_skill_md",
-    "ProgressiveLoader",
 ]

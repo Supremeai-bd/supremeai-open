@@ -52,8 +52,15 @@ AGENTS_MD_PATH = REPO_ROOT / "AGENTS.md"
 AGENT_RULES_PATH = REPO_ROOT / "AGENT_RULES.md"
 
 VALID_TASK_TYPES = {
-    "AUDIT", "PLAN", "IMPLEMENT", "FIX_CI", "REVIEW",
-    "SECURITY_AUDIT", "DISCOVERY", "MERGE", "ADMIN_DECISION",
+    "AUDIT",
+    "PLAN",
+    "IMPLEMENT",
+    "FIX_CI",
+    "REVIEW",
+    "SECURITY_AUDIT",
+    "DISCOVERY",
+    "MERGE",
+    "ADMIN_DECISION",
 }
 VALID_PRIORITIES = {"P0", "P1", "P2", "P3"}
 VALID_ADMIN_GATE_STATUSES = {"NOT_REQUIRED", "WAITING", "APPROVED", "REJECTED"}
@@ -62,13 +69,15 @@ VALID_ADMIN_GATE_STATUSES = {"NOT_REQUIRED", "WAITING", "APPROVED", "REJECTED"}
 # Fail-closed: build_task_contract() / resolve_group() reject any group not
 # listed here. The .github/ISSUE_TEMPLATE/agent-task.yml dropdown must stay
 # aligned with this registry.
-VALID_GROUPS = frozenset({
-    "agent-orchestration",  # continuous loop, agent dispatch, roles, envelopes, lifecycle
-    "mcp-tower",            # MCP Control Plane tools, health probes, bridge adapters, endpoints
-    "core-engine",          # federation business logic, state machines, models
-    "schemas-contracts",    # OpenAPI schemas, contract definitions, protocol envelopes
-    "infra-ops",            # deploy configs, CI actions, cloud runtime configuration
-})
+VALID_GROUPS = frozenset(
+    {
+        "agent-orchestration",  # continuous loop, agent dispatch, roles, envelopes, lifecycle
+        "mcp-tower",  # MCP Control Plane tools, health probes, bridge adapters, endpoints
+        "core-engine",  # federation business logic, state machines, models
+        "schemas-contracts",  # OpenAPI schemas, contract definitions, protocol envelopes
+        "infra-ops",  # deploy configs, CI actions, cloud runtime configuration
+    }
+)
 DEFAULT_GROUP = "agent-orchestration"
 ENVELOPE_VERSION = 1  # task-envelope-v1 (#63)
 # #67 parity marker: BOTH copies of this program (public supremeai-open and
@@ -167,6 +176,8 @@ def _offline_requested(flag: bool) -> bool:
         env.get(var, "").strip().lower() in ("1", "true", "yes", "on")
         for var in OFFLINE_ENV_VARS
     )
+
+
 # The 7 Specialist Agent Roles
 ROLES: dict[str, str] = {
     "coder": "Implementation specialist (features, bug fixes, refactoring)",
@@ -191,18 +202,28 @@ def log(icon: str, msg: str) -> None:
     print(f"{icon} {msg}")
 
 
-def run_cmd(cmd: list[str], cwd: Path = REPO_ROOT, check: bool = False, timeout: int = 300) -> tuple[int, str, str]:
+def run_cmd(
+    cmd: list[str], cwd: Path = REPO_ROOT, check: bool = False, timeout: int = 300
+) -> tuple[int, str, str]:
     """Execute command safely and return (returncode, stdout, stderr).
 
     Returns exit code 127 fail-honestly when binary is not found, preventing
     unhandled FileNotFoundError on zero-credential environments without gh/git.
     """
     try:
-        p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+        p = subprocess.run(
+            cmd,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
         stdout = p.stdout.decode("utf-8", errors="replace").strip()
         stderr = p.stderr.decode("utf-8", errors="replace").strip()
         if check and p.returncode != 0:
-            raise RuntimeError(f"Command failed ({p.returncode}): {' '.join(cmd)}\n{stderr}")
+            raise RuntimeError(
+                f"Command failed ({p.returncode}): {' '.join(cmd)}\n{stderr}"
+            )
         return p.returncode, stdout, stderr
     except FileNotFoundError as exc:
         binary = cmd[0] if cmd else "unknown"
@@ -280,9 +301,8 @@ def build_task_contract(
             "objective": objective or f"Task #{task_id}",
             "scope": {
                 "touching_files": touching_files or [],
-                "forbidden_paths": forbidden_paths or [
-                    ".env*", "secrets/**", "credentials/**", "vault/**"
-                ],
+                "forbidden_paths": forbidden_paths
+                or [".env*", "secrets/**", "credentials/**", "vault/**"],
             },
             "dependencies": dependencies or [],
             "predecessor": str(predecessor) if predecessor is not None else None,
@@ -291,18 +311,14 @@ def build_task_contract(
                 "status": gate_status_upper,
             },
             "role_policy": role_policy,
-            "required_evidence": required_evidence or [
-                "verification tier output", "diff check", "board freshness re-poll"
-            ],
-            "verification": verification or [
-                "py_compile", "json schema parse", "smoke validation"
-            ],
-            "acceptance": acceptance or [
-                "Passes local validation tests", "Zero unhandled crashes"
-            ],
-            "stop_conditions": stop_conditions or [
-                "Security boundary hit", "Out of declared scope"
-            ],
+            "required_evidence": required_evidence
+            or ["verification tier output", "diff check", "board freshness re-poll"],
+            "verification": verification
+            or ["py_compile", "json schema parse", "smoke validation"],
+            "acceptance": acceptance
+            or ["Passes local validation tests", "Zero unhandled crashes"],
+            "stop_conditions": stop_conditions
+            or ["Security boundary hit", "Out of declared scope"],
             "output_format": output_format,
         }
     }
@@ -324,7 +340,9 @@ def classify_task_role(title: str, labels: list[str], body: str) -> str:
     return decision.role_id
 
 
-def build_agent_prompt(task: dict[str, Any], role: str, contract: dict[str, Any]) -> str:
+def build_agent_prompt(
+    task: dict[str, Any], role: str, contract: dict[str, Any]
+) -> str:
     """Build a deterministic, contract-bound scoped prompt for the specialist agent."""
     tc = contract.get("task_contract", {})
     touching_files = tc.get("scope", {}).get("touching_files", [])
@@ -334,18 +352,18 @@ def build_agent_prompt(task: dict[str, Any], role: str, contract: dict[str, Any]
 You are assigned as the **{role.upper()}** specialist by the SupremeAI Continuous Loop Team Leader.
 
 **1. Mission Objective:**
-{tc.get('objective')}
+{tc.get("objective")}
 
 **2. Task Context & Problem Statement:**
-Issue #{task.get('id')}: {task.get('title')}
-{task.get('body')}
+Issue #{task.get("id")}: {task.get("title")}
+{task.get("body")}
 
 **3. Scope Boundary (STRICT):**
-- Authorized Touching Files: {touching_files if touching_files else 'Keep to smallest safe minimal set (1-5 files)'}
+- Authorized Touching Files: {touching_files if touching_files else "Keep to smallest safe minimal set (1-5 files)"}
 - Forbidden Paths: {forbidden_paths}
 
 **4. Role Policy Contract ({role}):**
-{ROLES.get(role, '')}
+{ROLES.get(role, "")}
 
 **5. Execution Instructions:**
 - Implement the smallest safe change strictly inside declared scope.
@@ -369,7 +387,11 @@ def resolve_group(explicit: str | None, task: dict[str, Any] | None = None) -> s
             )
         return group
     if task:
-        haystack = " ".join(task.get("labels", []) or []).lower() + "\n" + str(task.get("body") or "").lower()
+        haystack = (
+            " ".join(task.get("labels", []) or []).lower()
+            + "\n"
+            + str(task.get("body") or "").lower()
+        )
         for group in sorted(VALID_GROUPS):
             if group in haystack:
                 return group
@@ -414,32 +436,42 @@ def build_pr_body(
 ### Task Contract Snapshot (reproducibility & governance)
 ```yaml
 task_contract:
-  task_id: {tc.get('task_id')}
-  task_type: {tc.get('task_type')}
-  group: {tc.get('group')}
-  priority: {tc.get('priority')}
-  role: {tc.get('role_policy')}
+  task_id: {tc.get("task_id")}
+  task_type: {tc.get("task_type")}
+  group: {tc.get("group")}
+  priority: {tc.get("priority")}
+  role: {tc.get("role_policy")}
   scope:
-    touching_files: {json.dumps(tc.get('scope', {}).get('touching_files', []))}
-    forbidden_paths: {json.dumps(tc.get('scope', {}).get('forbidden_paths', []))}
+    touching_files: {json.dumps(tc.get("scope", {}).get("touching_files", []))}
+    forbidden_paths: {json.dumps(tc.get("scope", {}).get("forbidden_paths", []))}
   admin_gate:
-    required: {str(tc.get('admin_gate', {}).get('required', False)).lower()}
-    status: {tc.get('admin_gate', {}).get('status', 'NOT_REQUIRED')}
-  role_policy: {tc.get('role_policy')}
+    required: {str(tc.get("admin_gate", {}).get("required", False)).lower()}
+    status: {tc.get("admin_gate", {}).get("status", "NOT_REQUIRED")}
+  role_policy: {tc.get("role_policy")}
 ```
 """
 
     evidence_block = ""
     if evidence is not None:
         evidence_lines = []
-        for ev in (evidence or []):
+        for ev in evidence or []:
             status_icon = "✅" if ev.get("passed") else "❌"
             extra = f" ({ev.get('count')} files verified)" if "count" in ev else ""
             verdict = "PASS" if ev.get("passed") else "FAIL"
             if not ev.get("passed") and ev.get("reason"):
-                extra = f"{extra} (skipped: {ev['reason']})" if ev.get("skipped") else f"{extra} ({ev['reason']})"
-            evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}")
-        evidence_content = "\n".join(evidence_lines) if evidence_lines else "- ✅ All verification tiers passed."
+                extra = (
+                    f"{extra} (skipped: {ev['reason']})"
+                    if ev.get("skipped")
+                    else f"{extra} ({ev['reason']})"
+                )
+            evidence_lines.append(
+                f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}"
+            )
+        evidence_content = (
+            "\n".join(evidence_lines)
+            if evidence_lines
+            else "- ✅ All verification tiers passed."
+        )
         evidence_block = f"""
 ## Dynamic Test Evidence (verification tiers — SSOT: docs/AGENT_LOOP_SPEC.md §4)
 {evidence_content}
@@ -451,9 +483,15 @@ task_contract:
     reflection_block = ""
     if reflection is not None:
         why_text = str(reflection.get("why") or "").strip()
-        alts = [str(a).strip() for a in (reflection.get("alternatives_rejected") or []) if str(a).strip()]
+        alts = [
+            str(a).strip()
+            for a in (reflection.get("alternatives_rejected") or [])
+            if str(a).strip()
+        ]
         if not alts:
-            alts = ["Direct implementation of the issue's stated deliverables — no competing approach was viable to reject."]
+            alts = [
+                "Direct implementation of the issue's stated deliverables — no competing approach was viable to reject."
+            ]
         alt_lines = "\n".join(f"  - {a}" for a in alts)
         reflection_block = f"""
 ## Reflection Evidence (why + alternatives_rejected)
@@ -470,7 +508,7 @@ task_contract:
 """
 
     return f"""## Summary
-Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
+Autonomous contribution for issue #{issue_ref}: {task.get("title")}.
 
 ## Linked Issue / Claim
 {closing_line}Refs #{issue_ref}
@@ -483,7 +521,9 @@ Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
 """
 
 
-def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any]) -> dict[str, Any]:
+def build_task_envelope(
+    task: dict[str, Any], role: str, contract: dict[str, Any]
+) -> dict[str, Any]:
     """Build the Single Deterministic Task Envelope (#63).
 
     One canonical JSON payload that replaces the four legacy output formats:
@@ -554,7 +594,10 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
             "labels": [],
         }
     else:
-        log("❌", "[Fail-Closed Gate] --task-envelope requires --issue <number> (or --allow-adhoc for offline testing).")
+        log(
+            "❌",
+            "[Fail-Closed Gate] --task-envelope requires --issue <number> (or --allow-adhoc for offline testing).",
+        )
         return 1
 
     try:
@@ -571,7 +614,9 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
             group=group,
             priority=args.priority,
             objective=task.get("title") or f"Resolve issue #{task['id']}",
-            touching_files=[f.strip() for f in args.touching_files.split(",")] if args.touching_files else [],
+            touching_files=[f.strip() for f in args.touching_files.split(",")]
+            if args.touching_files
+            else [],
         )
     except ValueError as exc:
         log("❌", f"[Task Contract Fail-Closed Gate] {exc}")
@@ -600,37 +645,58 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
       - exclude: issue numbers already dispatched in this session. Prevents
         session-local re-picks while GitHub search API index updates.
     """
-    code, out, err = run_cmd([
-        "gh", "issue", "list",
-        "--repo", UPSTREAM_REPO,
-        "--state", "open",
-        "--limit", "200",
-        "--json", "number,title,labels",
-    ])
+    code, out, err = run_cmd(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            UPSTREAM_REPO,
+            "--state",
+            "open",
+            "--limit",
+            "200",
+            "--json",
+            "number,title,labels",
+        ]
+    )
     issues = []
     if code == 0 and out.strip():
         try:
             issues = json.loads(out)
         except Exception as parse_err:
             # Malformed payload must not masquerade as an empty board.
-            log("⚠️", f"[Board Fetch] gh output unparseable ({parse_err}) — attempting public API fallback.")
+            log(
+                "⚠️",
+                f"[Board Fetch] gh output unparseable ({parse_err}) — attempting public API fallback.",
+            )
     if not issues:
         # Fallback to public GitHub API via urllib if gh is not installed or fails
         try:
             import urllib.request
+
             req = urllib.request.Request(
                 f"https://api.github.com/repos/{UPSTREAM_REPO}/issues?state=open&per_page=100",
-                headers={"User-Agent": "SupremeAI-Loop-Runner", "Accept": "application/vnd.github+json"}
+                headers={
+                    "User-Agent": "SupremeAI-Loop-Runner",
+                    "Accept": "application/vnd.github+json",
+                },
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 if resp.status == 200:
                     raw_data = json.loads(resp.read().decode("utf-8"))
-                    issues = [i for i in raw_data if isinstance(i, dict) and "pull_request" not in i]
+                    issues = [
+                        i
+                        for i in raw_data
+                        if isinstance(i, dict) and "pull_request" not in i
+                    ]
         except Exception as http_err:
-            log("⚠️", f"[Board Fetch] gh unavailable ({err or out or f'code {code}'}) and HTTP fallback error: {http_err}")
+            log(
+                "⚠️",
+                f"[Board Fetch] gh unavailable ({err or out or f'code {code}'}) and HTTP fallback error: {http_err}",
+            )
             return None
     try:
-
         # Claim-gated (#88): open issues are available unless claimed or held.
         # Removing explicit status:unclaimed eliminates label desynchronization.
         EXCLUDED_LABELS = {
@@ -645,7 +711,9 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
             labels = item.get("labels")
             if not isinstance(labels, list):
                 return []
-            return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+            return [
+                str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)
+            ]
 
         def is_claimable(item: dict[str, Any]) -> bool:
             names = label_names(item)
@@ -658,7 +726,12 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
             names = label_names(item)
             tier = 4  # unlabeled sorts last
             for marker, rank in PRIORITY_MAP:
-                if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
+                if any(
+                    name == marker
+                    or name.startswith(marker + "-")
+                    or name.startswith(marker + " ")
+                    for name in names
+                ):
                     tier = rank
                     break
             return (tier, int(item.get("number", 0)))  # number ASC = oldest first
@@ -666,7 +739,9 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
         candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
         if exclude:
             excluded_set = {str(e) for e in exclude}
-            candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
+            candidates = [
+                i for i in candidates if str(i.get("number")) not in excluded_set
+            ]
         sorted_issues = sorted(candidates, key=priority_key)
         if sorted_issues:
             return str(sorted_issues[0].get("number"))
@@ -682,40 +757,91 @@ except ImportError:
     yaml = None
 
 
-def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) -> dict[str, Any] | None:
+def step_1_understand(
+    issue_id: str | None = None, allow_adhoc: bool = False
+) -> dict[str, Any] | None:
     """Step 1: Fetch and validate task contract / issue context fail-closed."""
     log("📖", "[Step 1/8: Understand] Loading task contract...")
-    
+
     if issue_id:
-        code, out, err = run_cmd(["gh", "issue", "view", str(issue_id), "--repo", UPSTREAM_REPO, "--json", "number,title,body,state,labels"])
+        code, out, err = run_cmd(
+            [
+                "gh",
+                "issue",
+                "view",
+                str(issue_id),
+                "--repo",
+                UPSTREAM_REPO,
+                "--json",
+                "number,title,body,state,labels",
+            ]
+        )
         if code != 0:
-            log("❌", f"[Fail-Closed Gate] Could not fetch issue #{issue_id} from {UPSTREAM_REPO}: {err or out}")
-            log("❌", "Cannot verify issue validity or acceptance criteria. Aborting task.")
+            log(
+                "❌",
+                f"[Fail-Closed Gate] Could not fetch issue #{issue_id} from {UPSTREAM_REPO}: {err or out}",
+            )
+            log(
+                "❌",
+                "Cannot verify issue validity or acceptance criteria. Aborting task.",
+            )
             return None
         try:
             data = json.loads(out)
             state = data.get("state", "OPEN").upper()
             if state == "CLOSED":
-                log("❌", f"[Fail-Closed Gate] Issue #{data.get('number')} is CLOSED. Autonomous work on closed tasks is rejected.")
+                log(
+                    "❌",
+                    f"[Fail-Closed Gate] Issue #{data.get('number')} is CLOSED. Autonomous work on closed tasks is rejected.",
+                )
                 return None
 
             # Duplicate work check: look for open PRs
-            pr_code, pr_out, _ = run_cmd(["gh", "pr", "list", "--repo", UPSTREAM_REPO, "--state", "open", "--json", "number,title,headRefName"])
+            pr_code, pr_out, _ = run_cmd(
+                [
+                    "gh",
+                    "pr",
+                    "list",
+                    "--repo",
+                    UPSTREAM_REPO,
+                    "--state",
+                    "open",
+                    "--json",
+                    "number,title,headRefName",
+                ]
+            )
             if pr_code == 0 and pr_out.strip():
                 try:
                     open_prs = json.loads(pr_out)
                     for pr in open_prs:
                         pr_head = pr.get("headRefName", "")
                         pr_title = pr.get("title", "")
-                        if f"issue-{issue_id}" in pr_head or f"#{issue_id}" in pr_title or f"task-{issue_id}" in pr_head:
-                            log("⚠️", f"Existing open PR found for issue #{issue_id}: PR #{pr.get('number')} ({pr_head}).")
-                            log("❌", "[Fail-Closed Gate] Duplicate PR work rejected. Coordinate or review existing PR first.")
+                        if (
+                            f"issue-{issue_id}" in pr_head
+                            or f"#{issue_id}" in pr_title
+                            or f"task-{issue_id}" in pr_head
+                        ):
+                            log(
+                                "⚠️",
+                                f"Existing open PR found for issue #{issue_id}: PR #{pr.get('number')} ({pr_head}).",
+                            )
+                            log(
+                                "❌",
+                                "[Fail-Closed Gate] Duplicate PR work rejected. Coordinate or review existing PR first.",
+                            )
                             return None
                 except Exception:
                     pass
 
-            labels_list = [l.get("name", "") for l in data.get("labels", [])] if isinstance(data.get("labels"), list) else []
-            log("✅", f"Loaded Issue #{data.get('number')} ({state}): {data.get('title')}")
+            labels_list = (
+                [l.get("name", "") for l in data.get("labels", [])]
+                if isinstance(data.get("labels"), list)
+                else []
+            )
+            log(
+                "✅",
+                f"Loaded Issue #{data.get('number')} ({state}): {data.get('title')}",
+            )
             return {
                 "id": str(data.get("number")),
                 "title": data.get("title", ""),
@@ -724,16 +850,37 @@ def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) ->
                 "labels": labels_list,
             }
         except Exception as e:
-            log("❌", f"[Fail-Closed Gate] Failed to parse issue JSON for #{issue_id}: {e}")
+            log(
+                "❌",
+                f"[Fail-Closed Gate] Failed to parse issue JSON for #{issue_id}: {e}",
+            )
             return None
 
     if not allow_adhoc:
-        log("❌", "[Fail-Closed Gate] No --issue specified! Multi-agent mode requires a specific issue contract.")
-        log("ℹ️", "Please provide --issue <number>, use --pick-next, or pass --allow-adhoc explicitly for local offline testing.")
+        log(
+            "❌",
+            "[Fail-Closed Gate] No --issue specified! Multi-agent mode requires a specific issue contract.",
+        )
+        log(
+            "ℹ️",
+            "Please provide --issue <number>, use --pick-next, or pass --allow-adhoc explicitly for local offline testing.",
+        )
         return None
 
     log("ℹ️", f"Checking active issues on {UPSTREAM_REPO}...")
-    code, out, _ = run_cmd(["gh", "issue", "list", "--repo", UPSTREAM_REPO, "--limit", "5", "--json", "number,title"])
+    code, out, _ = run_cmd(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            UPSTREAM_REPO,
+            "--limit",
+            "5",
+            "--json",
+            "number,title",
+        ]
+    )
     if code == 0 and out.strip() != "[]":
         try:
             issues = json.loads(out)
@@ -783,33 +930,48 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
         return False
 
     if _offline_requested(offline):
-        log("⚠️", "[Rules Gate] OFFLINE mode requested — freshness NOT verified "
-                  "against origin/main (explicit stale-context risk).")
+        log(
+            "⚠️",
+            "[Rules Gate] OFFLINE mode requested — freshness NOT verified "
+            "against origin/main (explicit stale-context risk).",
+        )
         _print_rule_version_and_checklist()
         log("✅", "Local constitution files present. Rules loaded (offline).")
         return True
 
     code, _, err = run_cmd(["git", "fetch", "origin", "main"], cwd=repo_root)
     if code != 0:
-        log("❌", f"[Rules Gate] Cannot verify freshness: git fetch failed ({err or f'code {code}'}).")
+        log(
+            "❌",
+            f"[Rules Gate] Cannot verify freshness: git fetch failed ({err or f'code {code}'}).",
+        )
         log("❌", "Fail-closed: refusing to load rules from an unverifiable state.")
         return False
 
     local_shas: dict[str, str | None] = {}
     remote_shas: dict[str, str | None] = {}
     for path in RULE_FRESHNESS_FILES:
-        h_code, h_out, h_err = run_cmd(["git", "hash-object", "--", path], cwd=repo_root)
+        h_code, h_out, h_err = run_cmd(
+            ["git", "hash-object", "--", path], cwd=repo_root
+        )
         if h_code != 0:
-            log("❌", f"[Rules Gate] Unverifiable worktree blob for {path}: {h_err or f'code {h_code}'}.")
+            log(
+                "❌",
+                f"[Rules Gate] Unverifiable worktree blob for {path}: {h_err or f'code {h_code}'}.",
+            )
             log("❌", "Fail-closed: refusing to load rules from an unverifiable state.")
             return False
         local_shas[path] = h_out.strip() or None
         r_code, r_out, _ = run_cmd(
-            ["git", "rev-parse", "--verify", "--quiet", f"origin/main:{path}"], cwd=repo_root
+            ["git", "rev-parse", "--verify", "--quiet", f"origin/main:{path}"],
+            cwd=repo_root,
         )
         if r_code != 0:
-            log("❌", f"[Rules Gate] origin/main does not contain {path}. "
-                      "Origin-side constitution deletion must never be auto-synced.")
+            log(
+                "❌",
+                f"[Rules Gate] origin/main does not contain {path}. "
+                "Origin-side constitution deletion must never be auto-synced.",
+            )
             log("❌", "Fail-closed: escalate to an ADMIN_DECISION issue.")
             return False
         remote_shas[path] = r_out.strip() or None
@@ -819,20 +981,31 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
     if not diverged:
         log("✅", "Constitution fresh: all rule files match origin/main.")
     elif auto_sync:
-        log("⚠️", f"[Rules Gate] Constitution drift detected: {diverged} — auto-syncing from origin/main...")
+        log(
+            "⚠️",
+            f"[Rules Gate] Constitution drift detected: {diverged} — auto-syncing from origin/main...",
+        )
         for path in diverged:
             c_code, _, c_err = run_cmd(
                 ["git", "checkout", "origin/main", "--", path], cwd=repo_root
             )
             if c_code != 0:
-                log("❌", f"[Rules Gate] Auto-sync checkout failed for {path}: {c_err}.")
-                log("❌", "Fail-closed: refusing to load rules from a diverged constitution.")
+                log(
+                    "❌", f"[Rules Gate] Auto-sync checkout failed for {path}: {c_err}."
+                )
+                log(
+                    "❌",
+                    "Fail-closed: refusing to load rules from a diverged constitution.",
+                )
                 return False
         log("✅", f"Constitution auto-synced from origin/main: {diverged}")
     else:
         log("⚠️", f"[Rules Gate] Constitution drift DETECTED (report-only): {diverged}")
-        log("ℹ️", "Report-only mode: the tree is never mutated here (governance PRs "
-                 "intentionally carry constitution changes).")
+        log(
+            "ℹ️",
+            "Report-only mode: the tree is never mutated here (governance PRs "
+            "intentionally carry constitution changes).",
+        )
 
     _print_rule_version_and_checklist()
     log("✅", "Rules loaded. Zero-Admin & Scope rules active.")
@@ -851,14 +1024,23 @@ def step_3_inspect_state(force: bool = False) -> dict[str, str]:
     log("🔍", "[Step 3/8: Inspect State] Checking git repository status...")
     _, status, _ = run_cmd(["git", "status", "--porcelain"])
     _, branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-    
+
     dirty = bool(status.strip())
     if dirty:
         log("⚠️", f"Current branch: {branch} (uncommitted changes: YES)")
         if not force:
-            log("❌", "[Fail-Closed Workspace Isolation] Working tree has uncommitted modifications!")
-            log("❌", "Running multi-agent loop on a dirty workspace risks cross-contaminating agent sessions.")
-            log("ℹ️", "Commit or stash uncommitted changes before continuing, or run with --force.")
+            log(
+                "❌",
+                "[Fail-Closed Workspace Isolation] Working tree has uncommitted modifications!",
+            )
+            log(
+                "❌",
+                "Running multi-agent loop on a dirty workspace risks cross-contaminating agent sessions.",
+            )
+            log(
+                "ℹ️",
+                "Commit or stash uncommitted changes before continuing, or run with --force.",
+            )
             return {"branch": branch, "dirty": "True", "clean": "False"}
     else:
         log("ℹ️", f"Current branch: {branch} (uncommitted changes: NO)")
@@ -882,7 +1064,11 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
         check=False,
     )
     if fetch_code != 0:
-        return False, 0, f"pre-work fetch of upstream main failed: {fetch_err or 'unknown'}"
+        return (
+            False,
+            0,
+            f"pre-work fetch of upstream main failed: {fetch_err or 'unknown'}",
+        )
     count_code, count_out, count_err = run_cmd(
         ["git", "rev-list", "--count", "HEAD..FETCH_HEAD"], check=False
     )
@@ -894,12 +1080,23 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
         return False, 0, f"unparseable behind-count: {count_out!r}"
     if behind <= 0:
         return True, 0, "fresh work-start base (0 commits behind upstream main)"
-    log("🔄", f"[Start-of-Work Rebase] Local is {behind} commit(s) behind upstream main. Rebasing before branch creation...")
+    log(
+        "🔄",
+        f"[Start-of-Work Rebase] Local is {behind} commit(s) behind upstream main. Rebasing before branch creation...",
+    )
     rebase_code, _, rebase_err = run_cmd(["git", "rebase", "FETCH_HEAD"], check=False)
     if rebase_code != 0:
         run_cmd(["git", "rebase", "--abort"], check=False)
-        return False, behind, f"start-of-work rebase onto upstream main failed — aborted, branch blocked: {rebase_err or 'conflict'}"
-    return True, behind, f"rebased onto upstream main (+{behind} commit(s)) — fresh start"
+        return (
+            False,
+            behind,
+            f"start-of-work rebase onto upstream main failed — aborted, branch blocked: {rebase_err or 'conflict'}",
+        )
+    return (
+        True,
+        behind,
+        f"rebased onto upstream main (+{behind} commit(s)) — fresh start",
+    )
 
 
 def step_4_branch(task: dict[str, Any]) -> str | None:
@@ -907,22 +1104,52 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
     # 🔒 GATE 0: START-OF-WORK REBASE GUARD (Dual-Rebase Mandate: start & pre-push)
     synced, behind, sync_detail = pre_work_rebase_guard()
     if not synced:
-        log("❌", f"[Fail-Closed Gate] Start-of-work rebase guard blocked branch creation: {sync_detail}")
+        log(
+            "❌",
+            f"[Fail-Closed Gate] Start-of-work rebase guard blocked branch creation: {sync_detail}",
+        )
         return None
     if behind > 0:
-        log("✅", f"[Start-of-Work Rebase] Branch point aligned with latest upstream main ({sync_detail}).")
+        log(
+            "✅",
+            f"[Start-of-Work Rebase] Branch point aligned with latest upstream main ({sync_detail}).",
+        )
 
     issue_num = task.get("id", "adhoc")
-    target_branch = f"contributor/issue-{issue_num}" if issue_num != "adhoc" else f"contributor/work-{int(time.time())}"
+    target_branch = (
+        f"contributor/issue-{issue_num}"
+        if issue_num != "adhoc"
+        else f"contributor/work-{int(time.time())}"
+    )
 
     # 🔒 GATE 1: NO CLAIM -> NO BRANCH (AGENTS.md Step 4 / #430)
     # The agent must verify and acquire an atomic claim on GitHub BEFORE creating or checking out any branch.
     if issue_num != "adhoc":
-        log("🔒", f"[Step 4/8: Claim Gate] Acquiring atomic claim on Issue #{issue_num} BEFORE branch creation...")
-        edit_code, _, edit_err = run_cmd(["gh", "issue", "edit", str(issue_num), "--repo", UPSTREAM_REPO, "--add-label", "status:claimed"])
+        log(
+            "🔒",
+            f"[Step 4/8: Claim Gate] Acquiring atomic claim on Issue #{issue_num} BEFORE branch creation...",
+        )
+        edit_code, _, edit_err = run_cmd(
+            [
+                "gh",
+                "issue",
+                "edit",
+                str(issue_num),
+                "--repo",
+                UPSTREAM_REPO,
+                "--add-label",
+                "status:claimed",
+            ]
+        )
         if edit_code != 0:
-            log("❌", f"[Claim Gate Rejection] Failed to add status:claimed on Issue #{issue_num}: {edit_err}")
-            log("❌", "Contract violation: No claim -> no branch. Aborting branch creation.")
+            log(
+                "❌",
+                f"[Claim Gate Rejection] Failed to add status:claimed on Issue #{issue_num}: {edit_err}",
+            )
+            log(
+                "❌",
+                "Contract violation: No claim -> no branch. Aborting branch creation.",
+            )
             return None
 
         claim_comment = (
@@ -932,12 +1159,32 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
             f"- **claimed (UTC):** {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
             "- **contract:** AGENTS.md Step 4 — no claim, no branch; no branch, no push (#430)."
         )
-        comm_code, _, comm_err = run_cmd(["gh", "issue", "comment", str(issue_num), "--repo", UPSTREAM_REPO, "--body", claim_comment])
+        comm_code, _, comm_err = run_cmd(
+            [
+                "gh",
+                "issue",
+                "comment",
+                str(issue_num),
+                "--repo",
+                UPSTREAM_REPO,
+                "--body",
+                claim_comment,
+            ]
+        )
         if comm_code != 0:
-            log("❌", f"[Claim Gate Rejection] Failed to post atomic-claim comment on Issue #{issue_num}: {comm_err}")
-            log("❌", "Contract violation: No claim -> no branch. Aborting branch creation.")
+            log(
+                "❌",
+                f"[Claim Gate Rejection] Failed to post atomic-claim comment on Issue #{issue_num}: {comm_err}",
+            )
+            log(
+                "❌",
+                "Contract violation: No claim -> no branch. Aborting branch creation.",
+            )
             return None
-        log("✅", f"Atomic claim successfully secured on Issue #{issue_num} (No claim -> no branch verified)")
+        log(
+            "✅",
+            f"Atomic claim successfully secured on Issue #{issue_num} (No claim -> no branch verified)",
+        )
 
     log("🌿", f"[Step 4/8: Branch] Ensuring branch '{target_branch}'...")
     code, _, _ = run_cmd(["git", "rev-parse", "--verify", target_branch])
@@ -951,9 +1198,14 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
         if checkout_code != 0:
             target_branch = f"contributor/issue-{issue_num}-{int(time.time())}"
             log("🌿", f"Switching to isolated session branch '{target_branch}'")
-            create_code, _, create_err = run_cmd(["git", "checkout", "-b", target_branch])
+            create_code, _, create_err = run_cmd(
+                ["git", "checkout", "-b", target_branch]
+            )
             if create_code != 0:
-                log("❌", f"Failed to create isolated branch '{target_branch}': {create_err}")
+                log(
+                    "❌",
+                    f"Failed to create isolated branch '{target_branch}': {create_err}",
+                )
                 return None
     else:
         create_code, _, create_err = run_cmd(["git", "checkout", "-b", target_branch])
@@ -963,7 +1215,10 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
 
     _, active_branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
     if active_branch != target_branch:
-        log("❌", f"Branch checkout verification failed! Expected '{target_branch}', got '{active_branch}'.")
+        log(
+            "❌",
+            f"Branch checkout verification failed! Expected '{target_branch}', got '{active_branch}'.",
+        )
         return None
 
     log("✅", f"Active on verified branch '{target_branch}'")
@@ -983,11 +1238,18 @@ def step_5_work_notice(role: str, prompt: str) -> None:
 
 def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
     """Step 6: Run the verification tiers and collect dynamic evidence."""
-    log("🧪", "[Step 6/8: Verify] Running the verification contract (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4)...")
+    log(
+        "🧪",
+        "[Step 6/8: Verify] Running the verification contract (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4)...",
+    )
     evidence: list[dict[str, Any]] = []
 
     # 1. Python Syntax / Compile smoke
-    py_files = [p for p in REPO_ROOT.glob("**/*.py") if "venv" not in str(p) and ".git" not in str(p)]
+    py_files = [
+        p
+        for p in REPO_ROOT.glob("**/*.py")
+        if "venv" not in str(p) and ".git" not in str(p)
+    ]
     py_errors = []
     for py in py_files:
         code, _, err = run_cmd([sys.executable, "-m", "py_compile", str(py)])
@@ -995,12 +1257,31 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
             py_errors.append(f"{py.name}: {err}")
     if py_errors:
         log("❌", f"Python syntax errors in {len(py_errors)} files: {py_errors[0]}")
-        evidence.append({"tier": 1, "name": "Python Syntax Compile", "passed": False, "count": len(py_files), "errors": py_errors})
+        evidence.append(
+            {
+                "tier": 1,
+                "name": "Python Syntax Compile",
+                "passed": False,
+                "count": len(py_files),
+                "errors": py_errors,
+            }
+        )
         return False, evidence
-    evidence.append({"tier": 1, "name": "Python Syntax Compile", "passed": True, "count": len(py_files)})
+    evidence.append(
+        {
+            "tier": 1,
+            "name": "Python Syntax Compile",
+            "passed": True,
+            "count": len(py_files),
+        }
+    )
 
     # 2. JSON Schema validation
-    json_files = [j for j in REPO_ROOT.glob("**/*.json") if "node_modules" not in str(j) and ".git" not in str(j)]
+    json_files = [
+        j
+        for j in REPO_ROOT.glob("**/*.json")
+        if "node_modules" not in str(j) and ".git" not in str(j)
+    ]
     json_errors = []
     for jf in json_files:
         try:
@@ -1010,9 +1291,24 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
             json_errors.append(f"{jf.name}: {e}")
     if json_errors:
         log("❌", f"Invalid JSON in {len(json_errors)} files: {json_errors[0]}")
-        evidence.append({"tier": 2, "name": "JSON Schema Parse", "passed": False, "count": len(json_files), "errors": json_errors})
+        evidence.append(
+            {
+                "tier": 2,
+                "name": "JSON Schema Parse",
+                "passed": False,
+                "count": len(json_files),
+                "errors": json_errors,
+            }
+        )
         return False, evidence
-    evidence.append({"tier": 2, "name": "JSON Schema Parse", "passed": True, "count": len(json_files)})
+    evidence.append(
+        {
+            "tier": 2,
+            "name": "JSON Schema Parse",
+            "passed": True,
+            "count": len(json_files),
+        }
+    )
 
     # 2b. api-schemas/ deep validation (#45): fail-closed delegation to the
     # stdlib-only drop-in CLI (deterministic 0/1 exit contract). Guarded on
@@ -1024,15 +1320,35 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
     if schema_cli.is_file() and schema_dir.is_dir():
         v_code, v_out, v_err = run_cmd([sys.executable, str(schema_cli)])
         if v_code != 0:
-            first_line = ((v_err or v_out or "").strip().splitlines() or ["no output"])[0][:200]
-            log("❌", f"api-schemas deep validation failed (exit {v_code}): {first_line}")
-            evidence.append({"tier": 2, "name": "JSON Schema Parse", "passed": False, "api_schemas_exit": v_code, "detail": first_line})
+            first_line = ((v_err or v_out or "").strip().splitlines() or ["no output"])[
+                0
+            ][:200]
+            log(
+                "❌",
+                f"api-schemas deep validation failed (exit {v_code}): {first_line}",
+            )
+            evidence.append(
+                {
+                    "tier": 2,
+                    "name": "JSON Schema Parse",
+                    "passed": False,
+                    "api_schemas_exit": v_code,
+                    "detail": first_line,
+                }
+            )
             return False, evidence
-        evidence.append({"tier": 2, "name": "api-schemas Deep Validation (#45)", "passed": True})
+        evidence.append(
+            {"tier": 2, "name": "api-schemas Deep Validation (#45)", "passed": True}
+        )
 
     # 3. YAML & OpenAPI Schema validation
     if yaml is not None:
-        yaml_files = [y for y in list(REPO_ROOT.glob("**/*.yaml")) + list(REPO_ROOT.glob("**/*.yml")) if ".git" not in str(y) and "node_modules" not in str(y)]
+        yaml_files = [
+            y
+            for y in list(REPO_ROOT.glob("**/*.yaml"))
+            + list(REPO_ROOT.glob("**/*.yml"))
+            if ".git" not in str(y) and "node_modules" not in str(y)
+        ]
         yaml_errors = []
         for yf in yaml_files:
             try:
@@ -1042,49 +1358,110 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                 yaml_errors.append(f"{yf.name}: {e}")
         if yaml_errors:
             log("❌", f"Invalid YAML in {len(yaml_errors)} files: {yaml_errors[0]}")
-            evidence.append({"tier": 3, "name": "YAML/OpenAPI Safe Load", "passed": False, "count": len(yaml_files), "errors": yaml_errors})
+            evidence.append(
+                {
+                    "tier": 3,
+                    "name": "YAML/OpenAPI Safe Load",
+                    "passed": False,
+                    "count": len(yaml_files),
+                    "errors": yaml_errors,
+                }
+            )
             return False, evidence
-        evidence.append({"tier": 3, "name": "YAML/OpenAPI Safe Load", "passed": True, "count": len(yaml_files)})
+        evidence.append(
+            {
+                "tier": 3,
+                "name": "YAML/OpenAPI Safe Load",
+                "passed": True,
+                "count": len(yaml_files),
+            }
+        )
     else:
-        evidence.append({"tier": 3, "name": "YAML/OpenAPI Safe Load", "passed": False, "skipped": True, "reason": "PyYAML not installed"})
+        evidence.append(
+            {
+                "tier": 3,
+                "name": "YAML/OpenAPI Safe Load",
+                "passed": False,
+                "skipped": True,
+                "reason": "PyYAML not installed",
+            }
+        )
 
     # 4. Self-test smoke checks (P6 validation)
     try:
         res_code, _, _ = run_cmd(["__test_nonexistent_binary_xyz_123__"])
         if res_code != 127:
-            evidence.append({"tier": 4, "name": "Missing Binary Fail-Honest Guard", "passed": False, "exit_code": res_code})
+            evidence.append(
+                {
+                    "tier": 4,
+                    "name": "Missing Binary Fail-Honest Guard",
+                    "passed": False,
+                    "exit_code": res_code,
+                }
+            )
             return False, evidence
-        evidence.append({"tier": 4, "name": "Missing Binary Fail-Honest Guard (Code 127)", "passed": True})
+        evidence.append(
+            {
+                "tier": 4,
+                "name": "Missing Binary Fail-Honest Guard (Code 127)",
+                "passed": True,
+            }
+        )
 
         try:
             build_task_contract("test", task_type="INVALID_TYPE")
-            evidence.append({"tier": 5, "name": "Task Contract Fail-Closed Guard", "passed": False})
+            evidence.append(
+                {"tier": 5, "name": "Task Contract Fail-Closed Guard", "passed": False}
+            )
             return False, evidence
         except ValueError:
-            evidence.append({"tier": 5, "name": "Task Contract Fail-Closed Guard (ValueError)", "passed": True})
+            evidence.append(
+                {
+                    "tier": 5,
+                    "name": "Task Contract Fail-Closed Guard (ValueError)",
+                    "passed": True,
+                }
+            )
 
         # Tier 6 (#63): group registry fail-closed guard — invented group names rejected
         try:
             build_task_contract("group-guard-test", group="not-a-canonical-group")
-            evidence.append({"tier": 6, "name": "Group Registry Fail-Closed Guard", "passed": False})
+            evidence.append(
+                {"tier": 6, "name": "Group Registry Fail-Closed Guard", "passed": False}
+            )
             return False, evidence
         except ValueError:
-            evidence.append({"tier": 6, "name": "Group Registry Fail-Closed Guard (ValueError)", "passed": True})
+            evidence.append(
+                {
+                    "tier": 6,
+                    "name": "Group Registry Fail-Closed Guard (ValueError)",
+                    "passed": True,
+                }
+            )
 
         # Tier 7 (#63): envelope determinism — identical inputs produce byte-identical contracts
         _c1 = build_task_contract("env-test", issue="0", group=DEFAULT_GROUP)
         _c2 = build_task_contract("env-test", issue="0", group=DEFAULT_GROUP)
         if json.dumps(_c1, sort_keys=True) != json.dumps(_c2, sort_keys=True):
-            evidence.append({"tier": 7, "name": "Envelope Determinism", "passed": False})
+            evidence.append(
+                {"tier": 7, "name": "Envelope Determinism", "passed": False}
+            )
             return False, evidence
-        evidence.append({"tier": 7, "name": "Envelope Determinism (byte-identical rebuild)", "passed": True})
+        evidence.append(
+            {
+                "tier": 7,
+                "name": "Envelope Determinism (byte-identical rebuild)",
+                "passed": True,
+            }
+        )
 
         # Tier 8: Hardcoded Machine Path Guard (P6 Defect Class Prevention)
         # Rejects absolute host drive paths (e.g. F:/, C:/, \Users\) hardcoded into operational source
         machine_path_pattern = re.compile(r'["\'](?:[A-Za-z]:[\\/]|\\\\Users\\\\)')
         path_violations = []
         scan_targets = [
-            f for f in REPO_ROOT.glob("**/*")
+            f
+            for f in REPO_ROOT.glob("**/*")
             if f.suffix in {".py", ".ts", ".js"}
             and "node_modules" not in f.parts
             and ".git" not in f.parts
@@ -1098,25 +1475,49 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                     if stripped.startswith(("#", "//", "/*", "*")):
                         continue
                     if machine_path_pattern.search(line):
-                        path_violations.append(f"{target.relative_to(REPO_ROOT)}:{line_idx}")
+                        path_violations.append(
+                            f"{target.relative_to(REPO_ROOT)}:{line_idx}"
+                        )
             except Exception:
                 pass
 
         if path_violations:
-            log("❌", f"Hardcoded machine paths detected in source: {path_violations[:3]}")
-            evidence.append({"tier": 8, "name": "Machine Path Isolation Guard", "passed": False, "violations": path_violations})
+            log(
+                "❌",
+                f"Hardcoded machine paths detected in source: {path_violations[:3]}",
+            )
+            evidence.append(
+                {
+                    "tier": 8,
+                    "name": "Machine Path Isolation Guard",
+                    "passed": False,
+                    "violations": path_violations,
+                }
+            )
             return False, evidence
-        evidence.append({"tier": 8, "name": "Machine Path Isolation Guard", "passed": True, "files_scanned": len(scan_targets)})
+        evidence.append(
+            {
+                "tier": 8,
+                "name": "Machine Path Isolation Guard",
+                "passed": True,
+                "files_scanned": len(scan_targets),
+            }
+        )
     except Exception as e:
         log("❌", f"Self-test verification failed: {e}")
         return False, evidence
 
     tier_count = len({e["tier"] for e in evidence})
-    log("✅", f"{tier_count}-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
+    log(
+        "✅",
+        f"{tier_count}-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.",
+    )
     return True, evidence
 
 
-def pre_push_rebase_and_verify(branch: str, remote: str = "origin") -> tuple[bool, str, list[dict[str, Any]] | None]:
+def pre_push_rebase_and_verify(
+    branch: str, remote: str = "origin"
+) -> tuple[bool, str, list[dict[str, Any]] | None]:
     """Pre-Push Rebase Invariant (#514, docs/INGRESS_SECURITY_POLICY.md §2).
 
     1. Measures divergence against remote/main (git rev-list --count HEAD..remote/main).
@@ -1125,29 +1526,48 @@ def pre_push_rebase_and_verify(branch: str, remote: str = "origin") -> tuple[boo
     4. On successful rebase, re-runs Step 6 verification tiers to guarantee that
        newly landed commits on main did not introduce logical regressions.
     """
-    log("🔄", f"[Pre-Push Invariant] Checking branch freshness against {remote}/main...")
+    log(
+        "🔄", f"[Pre-Push Invariant] Checking branch freshness against {remote}/main..."
+    )
     fetch_code, _, fetch_err = run_cmd(["git", "fetch", remote, "main"], check=False)
     if fetch_code != 0:
         log("⚠️", f"Warning: git fetch {remote} main exited {fetch_code}: {fetch_err}")
 
     # Check how many commits HEAD is behind remote/main
-    behind_code, behind_out, _ = run_cmd(["git", "rev-list", "--count", f"HEAD..{remote}/main"], check=False)
+    behind_code, behind_out, _ = run_cmd(
+        ["git", "rev-list", "--count", f"HEAD..{remote}/main"], check=False
+    )
     behind = 0
     if behind_code == 0 and behind_out.strip().isdigit():
         behind = int(behind_out.strip())
 
     if behind > 0:
-        log("⚠️", f"Branch '{branch}' is {behind} commit(s) behind {remote}/main! Auto-rebasing onto latest main...")
-        rebase_code, _, rebase_err = run_cmd(["git", "rebase", f"{remote}/main"], check=False)
+        log(
+            "⚠️",
+            f"Branch '{branch}' is {behind} commit(s) behind {remote}/main! Auto-rebasing onto latest main...",
+        )
+        rebase_code, _, rebase_err = run_cmd(
+            ["git", "rebase", f"{remote}/main"], check=False
+        )
         if rebase_code != 0:
-            log("❌", f"Rebase failed with conflicts: {rebase_err}. Aborting rebase to preserve workspace...")
+            log(
+                "❌",
+                f"Rebase failed with conflicts: {rebase_err}. Aborting rebase to preserve workspace...",
+            )
             run_cmd(["git", "rebase", "--abort"], check=False)
             return False, f"Rebase conflict against {remote}/main ({rebase_err})", None
 
-        log("🧪", "Rebase successful! Re-running Step 6 verification tiers on newly rebased tree...")
+        log(
+            "🧪",
+            "Rebase successful! Re-running Step 6 verification tiers on newly rebased tree...",
+        )
         passed, re_evidence = step_6_verify()
         if not passed:
-            return False, "Verification failed on rebased tree against latest main commits", None
+            return (
+                False,
+                "Verification failed on rebased tree against latest main commits",
+                None,
+            )
         log("✅", "Post-rebase verification tiers passed cleanly!")
         return True, f"Rebased past {behind} commits and verified", re_evidence
 
@@ -1168,9 +1588,13 @@ def push_branch_to_fork(fork_owner: str, branch: str) -> tuple[bool, str]:
     if fork_code != 0:
         return False, f"fork ensure failed ({fork_code}): {fork_err or fork_out}"
     push_code, push_out, push_err = run_cmd(
-        ["git", "push", "--force-with-lease",
-         f"https://github.com/{fork_owner}/{UPSTREAM_REPO.split('/')[-1]}.git",
-         f"{branch}:{branch}"],
+        [
+            "git",
+            "push",
+            "--force-with-lease",
+            f"https://github.com/{fork_owner}/{UPSTREAM_REPO.split('/')[-1]}.git",
+            f"{branch}:{branch}",
+        ],
         check=False,
     )
     if push_code != 0:
@@ -1207,7 +1631,11 @@ def pre_push_rebase_guard() -> tuple[bool, int, str]:
         check=False,
     )
     if fetch_code != 0:
-        return False, 0, f"pre-push fetch of upstream main failed: {fetch_err or 'unknown'}"
+        return (
+            False,
+            0,
+            f"pre-push fetch of upstream main failed: {fetch_err or 'unknown'}",
+        )
     count_code, count_out, count_err = run_cmd(
         ["git", "rev-list", "--count", "HEAD..FETCH_HEAD"], check=False
     )
@@ -1219,12 +1647,23 @@ def pre_push_rebase_guard() -> tuple[bool, int, str]:
         return False, 0, f"unparseable behind-count: {count_out!r}"
     if behind <= 0:
         return True, 0, "fresh base (0 commits behind upstream main)"
-    log("⚠️", f"Target branch advanced by {behind} commit(s). Rebasing onto latest main... (#514)")
+    log(
+        "⚠️",
+        f"Target branch advanced by {behind} commit(s). Rebasing onto latest main... (#514)",
+    )
     rebase_code, _, rebase_err = run_cmd(["git", "rebase", "FETCH_HEAD"], check=False)
     if rebase_code != 0:
         run_cmd(["git", "rebase", "--abort"], check=False)
-        return False, behind, f"rebase onto latest main failed — aborted, push blocked (#514): {rebase_err or ''}"
-    return True, behind, f"rebased onto latest main (+{behind} commit(s)) — re-verify before pushing"
+        return (
+            False,
+            behind,
+            f"rebase onto latest main failed — aborted, push blocked (#514): {rebase_err or ''}",
+        )
+    return (
+        True,
+        behind,
+        f"rebased onto latest main (+{behind} commit(s)) — re-verify before pushing",
+    )
 
 
 def step_7_record(
@@ -1246,13 +1685,22 @@ def step_7_record(
         # re-verification; fresh evidence replaces the pre-rebase set).
         fresh, behind, guard_detail = pre_push_rebase_guard()
         if not fresh:
-            log("❌", f"[Fail-Closed Gate] Pre-push rebase guard blocked the push (#514): {guard_detail}")
+            log(
+                "❌",
+                f"[Fail-Closed Gate] Pre-push rebase guard blocked the push (#514): {guard_detail}",
+            )
             return False
         if behind > 0:
-            log("🧪", f"[#514] Rebased (+{behind}) — re-running verification tiers on the rebased tree...")
+            log(
+                "🧪",
+                f"[#514] Rebased (+{behind}) — re-running verification tiers on the rebased tree...",
+            )
             reverrify_ok, reverrified_evidence = step_6_verify()
             if not reverrify_ok:
-                log("❌", "[Fail-Closed Gate] Post-rebase re-verification failed (#514) — push blocked.")
+                log(
+                    "❌",
+                    "[Fail-Closed Gate] Post-rebase re-verification failed (#514) — push blocked.",
+                )
                 return False
             evidence = reverrified_evidence
             log("✅", f"[#514] Post-rebase re-verification passed ({guard_detail}).")
@@ -1266,7 +1714,9 @@ def step_7_record(
         ),
         "alternatives_rejected": list(task.get("alternatives_rejected") or []),
     }
-    pr_body = build_pr_body(task, contract=contract, evidence=evidence, reflection=reflection)
+    pr_body = build_pr_body(
+        task, contract=contract, evidence=evidence, reflection=reflection
+    )
 
     if auto_pr:
         head_ref = branch
@@ -1284,14 +1734,24 @@ def step_7_record(
                 log("❌", f"[Fail-Closed Gate] Branch push failed: {push_detail}")
                 return False
 
-        log("🚀", f"Opening Pull Request against {UPSTREAM_REPO}:main (head: {head_ref})...")
+        log(
+            "🚀",
+            f"Opening Pull Request against {UPSTREAM_REPO}:main (head: {head_ref})...",
+        )
         cmd = [
-            "gh", "pr", "create",
-            "--repo", UPSTREAM_REPO,
-            "--base", "main",
-            "--head", head_ref,
-            "--title", f"feat(open): {task.get('title')}",
-            "--body", pr_body
+            "gh",
+            "pr",
+            "create",
+            "--repo",
+            UPSTREAM_REPO,
+            "--base",
+            "main",
+            "--head",
+            head_ref,
+            "--title",
+            f"feat(open): {task.get('title')}",
+            "--body",
+            pr_body,
         ]
         code, out, err = run_cmd(cmd)
         if code == 0:
@@ -1299,7 +1759,9 @@ def step_7_record(
             return True
         else:
             log("❌", f"PR creation via gh CLI failed ({code}): {err}")
-            print(f"   Submit manually at: https://github.com/{UPSTREAM_REPO}/compare/main...{branch}")
+            print(
+                f"   Submit manually at: https://github.com/{UPSTREAM_REPO}/compare/main...{branch}"
+            )
             return False
 
     return True
@@ -1308,13 +1770,27 @@ def step_7_record(
 def step_8_return() -> None:
     """Step 8: Fresh-board re-check and clean exit."""
     log("🔄", "[Step 8/8: Return] Checking board freshness & cycle completed.")
-    code, out, _ = run_cmd(["gh", "pr", "list", "--repo", UPSTREAM_REPO, "--limit", "5", "--json", "number,title,headRefName"])
+    code, out, _ = run_cmd(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            UPSTREAM_REPO,
+            "--limit",
+            "5",
+            "--json",
+            "number,title,headRefName",
+        ]
+    )
     if code == 0 and out.strip() != "[]":
         try:
             prs = json.loads(out)
             log("📋", "Active Open PRs on upstream board:")
             for p in prs:
-                print(f"   #{p.get('number')} ({p.get('headRefName')}): {p.get('title')}")
+                print(
+                    f"   #{p.get('number')} ({p.get('headRefName')}): {p.get('title')}"
+                )
         except Exception:
             pass
     print("----------------------------------------------------------------------")
@@ -1327,6 +1803,7 @@ def step_8_return() -> None:
 # EXISTING dispatcher in place; no new loop script is introduced). All lines
 # below are pure additions; upstream lines are left unmodified.
 # ============================================================================
+
 
 def _utc_now_stamp() -> str:
     """UTC ISO-8601 timestamp for scheduler log lines."""
@@ -1346,7 +1823,9 @@ def print_cron_entry(minutes: int) -> None:
     """Print a ready-to-paste crontab entry for the requested cadence."""
     print(f"# continuous_agent_loop.py --print-cron (generated {_utc_now_stamp()})")
     print(f"# cadence: every {minutes} min — {cron_expression(minutes)}")
-    print(f"{cron_expression(minutes)} cd {REPO_ROOT} && python3 scripts/agents/continuous_agent_loop.py --schedule {minutes} >> .agent_loop_schedule.log 2>&1")
+    print(
+        f"{cron_expression(minutes)} cd {REPO_ROOT} && python3 scripts/agents/continuous_agent_loop.py --schedule {minutes} >> .agent_loop_schedule.log 2>&1"
+    )
 
 
 def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
@@ -1361,23 +1840,39 @@ def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
     Returns 0 when a role was dispatched (healthy idle tick), 1 otherwise.
     """
     if not schedule_minutes or schedule_minutes <= 0:
-        log("⚠️", "[Role Dispatch] Board empty — a manual run carries no schedule event; "
-                  "matrix DENY (fail-closed). Auditor dispatch fires on --schedule ticks.")
+        log(
+            "⚠️",
+            "[Role Dispatch] Board empty — a manual run carries no schedule event; "
+            "matrix DENY (fail-closed). Auditor dispatch fires on --schedule ticks.",
+        )
         return 1
-    decision = dispatch(DispatchSignal(
-        event_type="event:schedule.ecosystem_scan",
-        payload={"schedule_kind": "cron", "schedule_expr": cron_expression(schedule_minutes)},
-    ))
+    decision = dispatch(
+        DispatchSignal(
+            event_type="event:schedule.ecosystem_scan",
+            payload={
+                "schedule_kind": "cron",
+                "schedule_expr": cron_expression(schedule_minutes),
+            },
+        )
+    )
     if decision.decision == DECISION_DISPATCH and decision.role_id:
-        log("🌱", f"[Role Dispatch] Board empty → {decision.role_id} (auditor family) dispatched "
-                  f"via S09 matrix (event:schedule.ecosystem_scan, schedule={cron_expression(schedule_minutes)}). "
-                  f"Run the ecosystem escort: health sweep + board sweep + scout report.")
+        log(
+            "🌱",
+            f"[Role Dispatch] Board empty → {decision.role_id} (auditor family) dispatched "
+            f"via S09 matrix (event:schedule.ecosystem_scan, schedule={cron_expression(schedule_minutes)}). "
+            f"Run the ecosystem escort: health sweep + board sweep + scout report.",
+        )
         return 0
-    log("⚠️", f"[Role Dispatch] Board empty; matrix DENY ({decision.reason}) — fail-closed.")
+    log(
+        "⚠️",
+        f"[Role Dispatch] Board empty; matrix DENY ({decision.reason}) — fail-closed.",
+    )
     return 1
 
 
-def _run_one_scheduled_tick(args: argparse.Namespace, exclude: set[str] | list[str] | None = None) -> tuple[int, str | None]:
+def _run_one_scheduled_tick(
+    args: argparse.Namespace, exclude: set[str] | list[str] | None = None
+) -> tuple[int, str | None]:
     """One scheduled dispatch — reuses upstream's own single-cycle paths."""
     if args.verify_only:
         passed, _ = step_6_verify()
@@ -1424,7 +1919,10 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
             if cycle_no > 0:
                 delay = next_start - time.monotonic()
                 if delay < 0:
-                    log("⚠️", f"[Scheduled Mode] overrun by {int(-delay)}s — running catch-up tick immediately (start-to-start anchor preserved).")
+                    log(
+                        "⚠️",
+                        f"[Scheduled Mode] overrun by {int(-delay)}s — running catch-up tick immediately (start-to-start anchor preserved).",
+                    )
                 elif delay > 0:
                     time.sleep(delay)
             cycle_no += 1
@@ -1436,11 +1934,20 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
                 dispatched.add(str(dispatched_id))
             if rc != 0:
                 failures += 1
-                log("⚠️", f"[Scheduled Mode] cycle {label} exited {rc} — one failed tick is not a stalled clock; schedule continues.")
+                log(
+                    "⚠️",
+                    f"[Scheduled Mode] cycle {label} exited {rc} — one failed tick is not a stalled clock; schedule continues.",
+                )
     except KeyboardInterrupt:
-        log("🛑", f"[Scheduled Mode] interrupted — clean stop after {cycle_no} cycle(s) ({failures} failed tick(s)).")
+        log(
+            "🛑",
+            f"[Scheduled Mode] interrupted — clean stop after {cycle_no} cycle(s) ({failures} failed tick(s)).",
+        )
         return 130
-    log("🏁", f"[Scheduled Mode] finished: {cycle_no} cycle(s), {failures} failed tick(s).")
+    log(
+        "🏁",
+        f"[Scheduled Mode] finished: {cycle_no} cycle(s), {failures} failed tick(s).",
+    )
     return 0 if failures == 0 else 1
 
 
@@ -1461,10 +1968,19 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
     assigned_role = args.role or classify_task_role(
         task.get("title", ""), task.get("labels", []), task.get("body", "")
     )
-    log("🎯", f"Classified Task Role: '{assigned_role.upper()}' ({ROLES.get(assigned_role, '')})")
+    log(
+        "🎯",
+        f"Classified Task Role: '{assigned_role.upper()}' ({ROLES.get(assigned_role, '')})",
+    )
 
-    touching_files = [f.strip() for f in args.touching_files.split(",")] if args.touching_files else []
-    resolved_group = resolve_group(args.group, task)  # #63: canonical taxonomy, fail-closed
+    touching_files = (
+        [f.strip() for f in args.touching_files.split(",")]
+        if args.touching_files
+        else []
+    )
+    resolved_group = resolve_group(
+        args.group, task
+    )  # #63: canonical taxonomy, fail-closed
     contract = build_task_contract(
         task_id=f"task-{task.get('id', 'adhoc')}",
         issue=task.get("id"),
@@ -1490,8 +2006,19 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
         log("❌", "Verification failed. Please fix errors before proceeding.")
         return 1
 
-    fork_owner = getattr(args, "fork_owner", None) or os.environ.get("SUPREMEAI_FORK_OWNER", "").strip() or None
-    if not step_7_record(task, branch, contract=contract, evidence=evidence, auto_pr=args.auto_pr, fork_owner=fork_owner):
+    fork_owner = (
+        getattr(args, "fork_owner", None)
+        or os.environ.get("SUPREMEAI_FORK_OWNER", "").strip()
+        or None
+    )
+    if not step_7_record(
+        task,
+        branch,
+        contract=contract,
+        evidence=evidence,
+        auto_pr=args.auto_pr,
+        fork_owner=fork_owner,
+    ):
         log("❌", "Step 7 (Record) failed! Halting before completion return.")
         return 1
 
@@ -1500,38 +2027,122 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="SupremeAI Continuous Agent Loop — Lazy Team Leader & Dispatcher")
-    parser.add_argument("--issue", type=str, help="Specific GitHub issue number to claim and resolve")
-    parser.add_argument("--pick-next", action="store_true", help="Automatically pick highest priority open issue from upstream board")
-    parser.add_argument("--loop", action="store_true", help="Continuous mode: process eligible issues sequentially")
-    parser.add_argument("--max-tasks", type=int, default=5, help="Maximum number of tasks to process in loop mode (default: 5)")
-    parser.add_argument("--role", type=str, help=f"Force specific agent role: {', '.join(ROLES.keys())}")
-    parser.add_argument("--task-envelope", action="store_true", help="Emit the unified deterministic Task Envelope (canonical single payload, #63) and exit")
-    parser.add_argument("--group", type=str, default=None, help="Canonical group from the VALID_GROUPS registry (agent-orchestration, mcp-tower, core-engine, schemas-contracts, infra-ops)")
-    parser.add_argument("--emit-prompt", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
-    parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
-    parser.add_argument("--verify-only", action="store_true", help="Only run the verification tiers and exit")
-    parser.add_argument("--emit-contract", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
-    parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
-    parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")
-    parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
-    parser.add_argument("--allow-adhoc", action="store_true", help="Allow adhoc task execution without --issue (offline testing only)")
-    parser.add_argument("--force", action="store_true", help="Bypass dirty workspace isolation gate (not recommended)")
-    parser.add_argument("--offline", action="store_true",
-                        help="Offline escape hatch (#567): skip every git call in the rules freshness "
-                             "gate and verify local constitution presence only (explicit "
-                             "stale-context risk; env fallback: SUPREMEAI_OFFLINE=1).")
-    parser.add_argument("--fork-owner", type=str, default=None,
-                        help="Pathway 2: GitHub owner of your fork; step 7 pushes the branch "
-                             "there and opens the PR with head '<owner>:<branch>' "
-                             "(env fallback: SUPREMEAI_FORK_OWNER)")
+    parser = argparse.ArgumentParser(
+        description="SupremeAI Continuous Agent Loop — Lazy Team Leader & Dispatcher"
+    )
+    parser.add_argument(
+        "--issue", type=str, help="Specific GitHub issue number to claim and resolve"
+    )
+    parser.add_argument(
+        "--pick-next",
+        action="store_true",
+        help="Automatically pick highest priority open issue from upstream board",
+    )
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Continuous mode: process eligible issues sequentially",
+    )
+    parser.add_argument(
+        "--max-tasks",
+        type=int,
+        default=5,
+        help="Maximum number of tasks to process in loop mode (default: 5)",
+    )
+    parser.add_argument(
+        "--role", type=str, help=f"Force specific agent role: {', '.join(ROLES.keys())}"
+    )
+    parser.add_argument(
+        "--task-envelope",
+        action="store_true",
+        help="Emit the unified deterministic Task Envelope (canonical single payload, #63) and exit",
+    )
+    parser.add_argument(
+        "--group",
+        type=str,
+        default=None,
+        help="Canonical group from the VALID_GROUPS registry (agent-orchestration, mcp-tower, core-engine, schemas-contracts, infra-ops)",
+    )
+    parser.add_argument(
+        "--emit-prompt",
+        action="store_true",
+        help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning",
+    )
+    parser.add_argument(
+        "--auto-pr",
+        action="store_true",
+        help="Automatically submit PR via gh CLI upon test pass",
+    )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Only run the verification tiers and exit",
+    )
+    parser.add_argument(
+        "--emit-contract",
+        action="store_true",
+        help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning",
+    )
+    parser.add_argument(
+        "--touching-files",
+        type=str,
+        help="Comma-separated list of touching files for declared scope",
+    )
+    parser.add_argument(
+        "--task-type",
+        type=str,
+        default="IMPLEMENT",
+        help="Task type (default: IMPLEMENT)",
+    )
+    parser.add_argument(
+        "--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)"
+    )
+    parser.add_argument(
+        "--allow-adhoc",
+        action="store_true",
+        help="Allow adhoc task execution without --issue (offline testing only)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass dirty workspace isolation gate (not recommended)",
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Offline escape hatch (#567): skip every git call in the rules freshness "
+        "gate and verify local constitution presence only (explicit "
+        "stale-context risk; env fallback: SUPREMEAI_OFFLINE=1).",
+    )
+    parser.add_argument(
+        "--fork-owner",
+        type=str,
+        default=None,
+        help="Pathway 2: GitHub owner of your fork; step 7 pushes the branch "
+        "there and opens the PR with head '<owner>:<branch>' "
+        "(env fallback: SUPREMEAI_FORK_OWNER)",
+    )
     # --- contributor additions: scheduled mode (cron-like start-to-start loop) ---
-    parser.add_argument("--schedule", type=int, nargs="?", const=30, default=None, metavar="MINUTES",
-                        help="Scheduled mode: dispatch every MINUTES minutes (default: 30). Anchored on cycle START like a true cron tick, so cycle duration never accumulates drift.")
-    parser.add_argument("--cycles", type=int, default=0,
-                        help="Stop after N scheduled cycles (default: 0 = run indefinitely; requires --schedule).")
-    parser.add_argument("--print-cron", action="store_true",
-                        help="Print the equivalent crontab entry for --schedule and exit (does not run the loop).")
+    parser.add_argument(
+        "--schedule",
+        type=int,
+        nargs="?",
+        const=30,
+        default=None,
+        metavar="MINUTES",
+        help="Scheduled mode: dispatch every MINUTES minutes (default: 30). Anchored on cycle START like a true cron tick, so cycle duration never accumulates drift.",
+    )
+    parser.add_argument(
+        "--cycles",
+        type=int,
+        default=0,
+        help="Stop after N scheduled cycles (default: 0 = run indefinitely; requires --schedule).",
+    )
+    parser.add_argument(
+        "--print-cron",
+        action="store_true",
+        help="Print the equivalent crontab entry for --schedule and exit (does not run the loop).",
+    )
     args = parser.parse_args()
 
     banner = (
@@ -1552,7 +2163,10 @@ def main() -> int:
     # --print-cron): zero/negative intervals and negative cycle counts are
     # configuration errors, rejected before anything runs (fail-fast).
     if args.schedule is not None and args.schedule <= 0:
-        log("❌", f"--schedule must be a positive number of minutes (got {args.schedule}).")
+        log(
+            "❌",
+            f"--schedule must be a positive number of minutes (got {args.schedule}).",
+        )
         return 1
     if args.cycles < 0:
         log("❌", f"--cycles must be >= 0 (0 = run indefinitely; got {args.cycles}).")
@@ -1571,7 +2185,9 @@ def main() -> int:
         # mutating the tree — report-only mode (drift is printed, never
         # reverted; governance PRs intentionally carry constitution changes).
         # Infrastructure failures still fail closed (test_22 semantics).
-        rules_ok = step_2_rules(auto_sync=False, offline=getattr(args, "offline", False))
+        rules_ok = step_2_rules(
+            auto_sync=False, offline=getattr(args, "offline", False)
+        )
         passed, _ = step_6_verify()
         # #67 parity marker — final stdout line, byte-identical across the
         # public and private copies (grep target for cross-repo parity check).
@@ -1579,14 +2195,20 @@ def main() -> int:
         return 0 if (passed and rules_ok) else 1
 
     if args.emit_prompt or args.emit_contract:
-        print("⚠️  DEPRECATION WARNING (#63): --emit-prompt / --emit-contract are deprecated.", file=sys.stderr)
+        print(
+            "⚠️  DEPRECATION WARNING (#63): --emit-prompt / --emit-contract are deprecated.",
+            file=sys.stderr,
+        )
         print("    Use the canonical unified payload: --task-envelope", file=sys.stderr)
 
     if args.task_envelope or args.emit_prompt or args.emit_contract:
         return emit_task_envelope(args)
 
     if args.loop:
-        log("🔄", f"[Continuous Loop Mode] Starting task runner (max tasks: {args.max_tasks})...")
+        log(
+            "🔄",
+            f"[Continuous Loop Mode] Starting task runner (max tasks: {args.max_tasks})...",
+        )
         processed = 0
         dispatched: set[str] = set()
         while processed < args.max_tasks:
@@ -1594,11 +2216,17 @@ def main() -> int:
             if not next_issue:
                 log("🏁", "No more eligible open issues in queue. Loop finished.")
                 break
-            log("🚀", f"Dispatching Task #{next_issue} ({processed + 1}/{args.max_tasks})...")
+            log(
+                "🚀",
+                f"Dispatching Task #{next_issue} ({processed + 1}/{args.max_tasks})...",
+            )
             dispatched.add(str(next_issue))
             rc = run_cycle(args, next_issue)
             if rc != 0:
-                log("⚠️", f"Task #{next_issue} halted with code {rc}. Stopping continuous loop.")
+                log(
+                    "⚠️",
+                    f"Task #{next_issue} halted with code {rc}. Stopping continuous loop.",
+                )
                 return rc
             processed += 1
             time.sleep(2)  # Short cooldown between dispatches

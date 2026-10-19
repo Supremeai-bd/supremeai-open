@@ -6,10 +6,10 @@ deterministic sha256 receipts. UNIT runs offline; CONTRACT skips until live.
 
 Run: pytest tests/test_s04_tool_consolidation.py  OR  python3 tests/test_s04_tool_consolidation.py
 """
+
 from __future__ import annotations
 
 import hashlib
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -19,8 +19,8 @@ REF_DIR = HERE.parent / "scripts" / "tower"
 if str(REF_DIR) not in sys.path:
     sys.path.insert(0, str(REF_DIR))
 
-import tool_consolidation_reference as s04  # noqa: E402
-import work_claim_reference as s01  # noqa: E402  (heartbeat-via-claim SSOT)
+import tool_consolidation_reference as s04
+import work_claim_reference as s01
 
 
 class UnitMappingCoverage(unittest.TestCase):
@@ -64,10 +64,12 @@ class UnitMappingCoverage(unittest.TestCase):
 
     def test_11_registry_edit_breaks_suite(self):
         # simulate a future bad edit: a mapping to a non-core target must fail the gate
-        bad = s04.Mapping("system_summary", "rogue_tool", 'rogue()', "MERGED")
+        bad = s04.Mapping("system_summary", "rogue_tool", "rogue()", "MERGED")
         saved = s04.REGISTRY
         try:
-            s04.REGISTRY = tuple(m for m in saved if m.legacy != "system_summary") + (bad,)
+            s04.REGISTRY = tuple(m for m in saved if m.legacy != "system_summary") + (
+                bad,
+            )
             with self.assertRaises(s04.ConsolidationError):
                 s04.assert_no_regression()
         finally:
@@ -78,8 +80,11 @@ class UnitHeartbeatSemantics(unittest.TestCase):
     def test_12_claim_renew_is_presence_via_s01_matrix(self):
         # SSOT: heartbeat absorbed by work.claim — renewal path proves presence
         from datetime import datetime, timedelta, timezone
+
         t0 = datetime(2026, 10, 17, 4, 0, 0, tzinfo=timezone.utc)
-        stale = s01.Claim(issue=1, agent="zai", ts=t0 - timedelta(minutes=s01.TTL_MINUTES + 1))
+        stale = s01.Claim(
+            issue=1, agent="zai", ts=t0 - timedelta(minutes=s01.TTL_MINUTES + 1)
+        )
         self.assertEqual(s01.evaluate_claim(stale, 1, "zai", t0), s01.GRANT_RENEW)
 
 

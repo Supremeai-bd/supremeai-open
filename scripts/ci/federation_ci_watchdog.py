@@ -17,13 +17,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -32,7 +31,7 @@ if hasattr(sys.stderr, "reconfigure"):
 
 OPEN_REPO = "Supremeai-bd/supremeai-open"
 
-FEDERATION_REPOS: Tuple[str, ...] = (
+FEDERATION_REPOS: tuple[str, ...] = (
     "Supremeai-bd/supremeai",
     "Supremeai-bd/supremeai-command",
     "Supremeai-bd/supremeai-skills",
@@ -52,7 +51,7 @@ def repo_short_name(repo: str) -> str:
     """Extract short name from 'Supremeai-bd/supremeai-<name>' or 'Supremeai-bd/supremeai'."""
     name = repo.split("/")[-1].lower()
     if name.startswith("supremeai-"):
-        return name[len("supremeai-"):]
+        return name[len("supremeai-") :]
     if name == "supremeai":
         return "monorepo"
     return name
@@ -113,12 +112,14 @@ Workflow **{workflow_name}** failed on repository `{repo}` (branch `{branch}`).
 """
 
 
-def build_issue_title(workflow_name: str, repo: str, branch: str, run_id: int | str) -> str:
+def build_issue_title(
+    workflow_name: str, repo: str, branch: str, run_id: int | str
+) -> str:
     short_repo = repo_short_name(repo)
     return f"fix(ci): [{short_repo}] {workflow_name} failed on {branch} (Run #{run_id})"
 
 
-def build_issue_labels(repo: str) -> List[str]:
+def build_issue_labels(repo: str) -> list[str]:
     short_repo = repo_short_name(repo)
     return [
         "status:unclaimed",
@@ -135,7 +136,9 @@ def build_issue_labels(repo: str) -> List[str]:
     ]
 
 
-def find_mirror_in_items(items: List[Dict[str, Any]], repo: str, run_id: int | str) -> Optional[int]:
+def find_mirror_in_items(
+    items: list[dict[str, Any]], repo: str, run_id: int | str
+) -> int | None:
     """Pure scan: find the OPEN issue carrying this run's mirror marker.
 
     The /issues list endpoint mixes pull requests into its items; PRs can
@@ -183,13 +186,17 @@ def get_default_token() -> str:
 
 def gh_api(
     endpoint: str,
-    token: Optional[str] = None,
+    token: str | None = None,
     method: str = "GET",
-    data: Optional[Dict[str, Any]] = None,
-) -> Tuple[int, Any]:
+    data: dict[str, Any] | None = None,
+) -> tuple[int, Any]:
     """Execute authenticated GitHub REST API request."""
     tok = token or get_default_token()
-    url = endpoint if endpoint.startswith("http") else f"https://api.github.com/{endpoint.lstrip('/')}"
+    url = (
+        endpoint
+        if endpoint.startswith("http")
+        else f"https://api.github.com/{endpoint.lstrip('/')}"
+    )
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "SupremeAI-Federation-Watchdog/1.0",
@@ -215,7 +222,9 @@ def gh_api(
         return 0, {"error": str(e)}
 
 
-def check_existing_mirror(repo: str, run_id: int | str, token: Optional[str] = None) -> Optional[int]:
+def check_existing_mirror(
+    repo: str, run_id: int | str, token: str | None = None
+) -> int | None:
     """Check if an OPEN issue on supremeai-open already carries this run's marker.
 
     Paginates up to 3 pages of 100 OPEN items (PRs excluded inside
@@ -246,7 +255,7 @@ def mirror_failure(
     branch: str = "main",
     commit_sha: str = "",
     error_summary: str = "",
-    token: Optional[str] = None,
+    token: str | None = None,
 ) -> bool:
     """Create a mirrored issue on supremeai-open if not already existing."""
     existing = check_existing_mirror(repo, run_id, token=token)
@@ -255,7 +264,9 @@ def mirror_failure(
         return True
 
     title = build_issue_title(workflow_name, repo, branch, run_id)
-    body = build_issue_body(repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary)
+    body = build_issue_body(
+        repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
+    )
     labels = build_issue_labels(repo)
 
     data = {
@@ -264,22 +275,28 @@ def mirror_failure(
         "labels": labels,
     }
 
-    code, resp = gh_api(f"repos/{OPEN_REPO}/issues", token=token, method="POST", data=data)
+    code, resp = gh_api(
+        f"repos/{OPEN_REPO}/issues", token=token, method="POST", data=data
+    )
     if code == 201:
         issue_num = resp.get("number")
         issue_url = resp.get("html_url")
-        print(f"✅ [watchdog] Mirrored CI failure from {repo} to {OPEN_REPO}#{issue_num}: {issue_url}")
+        print(
+            f"✅ [watchdog] Mirrored CI failure from {repo} to {OPEN_REPO}#{issue_num}: {issue_url}"
+        )
         return True
     else:
-        print(f"❌ [watchdog] Failed to create mirror issue on {OPEN_REPO} (HTTP {code}): {resp}")
+        print(
+            f"❌ [watchdog] Failed to create mirror issue on {OPEN_REPO} (HTTP {code}): {resp}"
+        )
         return False
 
 
 def poll_federation_failures(
-    token: Optional[str] = None,
+    token: str | None = None,
     limit_per_repo: int = 3,
     max_age_hours: int = 24,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Audit all 12 federation repositories for RECENT failed runs.
 
     Returns (mirrored_count, failed_mirror_count) so callers can exit
@@ -289,10 +306,15 @@ def poll_federation_failures(
     mirrored_count = 0
     failed_count = 0
     now_utc = datetime.now(timezone.utc)
-    print(f"🔍 [watchdog] Auditing {len(FEDERATION_REPOS)} federation repositories for CI failures...")
+    print(
+        f"🔍 [watchdog] Auditing {len(FEDERATION_REPOS)} federation repositories for CI failures..."
+    )
 
     for repo in FEDERATION_REPOS:
-        code, resp = gh_api(f"repos/{repo}/actions/runs?status=failure&per_page={limit_per_repo}", token=token)
+        code, resp = gh_api(
+            f"repos/{repo}/actions/runs?status=failure&per_page={limit_per_repo}",
+            token=token,
+        )
         if code != 200 or not isinstance(resp, dict):
             print(f"  [skip] {repo}: could not fetch runs (HTTP {code})")
             failed_count += 1
@@ -314,7 +336,9 @@ def poll_federation_failures(
                 continue
 
             if not is_fresh_run(r.get("created_at", ""), now_utc, max_age_hours):
-                print(f"  [skip-stale] {repo} run {run_id}: older than {max_age_hours}h - not a current incident")
+                print(
+                    f"  [skip-stale] {repo} run {run_id}: older than {max_age_hours}h - not a current incident"
+                )
                 continue
 
             success = mirror_failure(
@@ -339,7 +363,9 @@ def self_test() -> int:
     print("[self-test] Running Federation CI Watchdog offline contract test...")
 
     # 1. Repos registry verification
-    assert len(FEDERATION_REPOS) == 12, f"Expected 12 federation repos, got {len(FEDERATION_REPOS)}"
+    assert len(FEDERATION_REPOS) == 12, (
+        f"Expected 12 federation repos, got {len(FEDERATION_REPOS)}"
+    )
     assert "Supremeai-bd/supremeai" in FEDERATION_REPOS
     assert "Supremeai-bd/supremeai-command" in FEDERATION_REPOS
     assert "Supremeai-bd/supremeai-skills" in FEDERATION_REPOS
@@ -352,10 +378,15 @@ def self_test() -> int:
 
     # 3. Marker generation
     marker = build_mirror_marker("Supremeai-bd/supremeai-command", 123456)
-    assert marker == "<!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/123456 -->"
+    assert (
+        marker
+        == "<!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/123456 -->"
+    )
 
     # 4. Issue formatting
-    title = build_issue_title("CI Pipeline", "Supremeai-bd/supremeai-command", "main", 123456)
+    title = build_issue_title(
+        "CI Pipeline", "Supremeai-bd/supremeai-command", "main", 123456
+    )
     assert title == "fix(ci): [command] CI Pipeline failed on main (Run #123456)"
 
     body = build_issue_body(
@@ -382,12 +413,25 @@ def self_test() -> int:
 
     # 5. Dedup scan: PRs are excluded, real mirror issues are found
     fake_items = [
-        {"number": 700, "pull_request": {"url": "x"}, "body": f"<!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/{123456} -->"},
-        {"number": 701, "body": f"prefix <!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/{123456} --> suffix"},
+        {
+            "number": 700,
+            "pull_request": {"url": "x"},
+            "body": f"<!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/{123456} -->",
+        },
+        {
+            "number": 701,
+            "body": f"prefix <!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/{123456} --> suffix",
+        },
         {"number": 702, "body": "no marker"},
     ]
-    assert find_mirror_in_items(fake_items, "Supremeai-bd/supremeai-command", 123456) == 701
-    assert find_mirror_in_items(fake_items, "Supremeai-bd/supremeai-command", 111111) is None
+    assert (
+        find_mirror_in_items(fake_items, "Supremeai-bd/supremeai-command", 123456)
+        == 701
+    )
+    assert (
+        find_mirror_in_items(fake_items, "Supremeai-bd/supremeai-command", 111111)
+        is None
+    )
 
     # 6. Recency gate: fresh/stale/malformed boundaries
     now = datetime(2026, 10, 18, 12, 0, 0, tzinfo=timezone.utc)
@@ -402,12 +446,31 @@ def self_test() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Federation-wide CI Failure Watchdog")
-    parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
-    parser.add_argument("--poll", action="store_true", help="Poll all 12 federation repositories for recent failures")
-    parser.add_argument("--max-age-hours", type=int, default=24, help="Ignore failed runs older than this many hours (poll mode)")
-    parser.add_argument("--payload", type=str, help="JSON payload string or path to JSON file for event-driven mirror")
-    parser.add_argument("--repo", type=str, help="Repository name (e.g. Supremeai-bd/supremeai-command)")
-    parser.add_argument("--workflow", type=str, default="CI Workflow", help="Workflow name")
+    parser.add_argument(
+        "--self-test", action="store_true", help="Run offline contract assertions"
+    )
+    parser.add_argument(
+        "--poll",
+        action="store_true",
+        help="Poll all 12 federation repositories for recent failures",
+    )
+    parser.add_argument(
+        "--max-age-hours",
+        type=int,
+        default=24,
+        help="Ignore failed runs older than this many hours (poll mode)",
+    )
+    parser.add_argument(
+        "--payload",
+        type=str,
+        help="JSON payload string or path to JSON file for event-driven mirror",
+    )
+    parser.add_argument(
+        "--repo", type=str, help="Repository name (e.g. Supremeai-bd/supremeai-command)"
+    )
+    parser.add_argument(
+        "--workflow", type=str, default="CI Workflow", help="Workflow name"
+    )
     parser.add_argument("--run-id", type=int, help="Workflow run ID")
     parser.add_argument("--url", type=str, default="", help="Workflow run HTML URL")
     parser.add_argument("--branch", type=str, default="main", help="Branch name")
@@ -419,17 +482,24 @@ def main() -> int:
     if args.self_test:
         return self_test()
 
-    token = os.environ.get("OPEN_SYNC_PAT") or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = (
+        os.environ.get("OPEN_SYNC_PAT")
+        or os.environ.get("GH_TOKEN")
+        or os.environ.get("GITHUB_TOKEN")
+    )
 
     if args.payload:
         raw = args.payload
         if os.path.exists(raw):
-            raw = open(raw, encoding="utf-8").read()
+            with open(raw, encoding="utf-8") as _f:
+                raw = _f.read()
         data = json.loads(raw)
         client = data.get("client_payload") or data
         success = mirror_failure(
             repo=client.get("repo", client.get("repository", "")),
-            workflow_name=client.get("workflow", client.get("workflow_name", "CI Workflow")),
+            workflow_name=client.get(
+                "workflow", client.get("workflow_name", "CI Workflow")
+            ),
             run_id=client.get("run_id", 0),
             html_url=client.get("run_url", client.get("html_url", "")),
             branch=client.get("branch", client.get("head_branch", "main")),
@@ -444,7 +514,8 @@ def main() -> int:
             repo=args.repo,
             workflow_name=args.workflow,
             run_id=args.run_id,
-            html_url=args.url or f"https://github.com/{args.repo}/actions/runs/{args.run_id}",
+            html_url=args.url
+            or f"https://github.com/{args.repo}/actions/runs/{args.run_id}",
             branch=args.branch,
             commit_sha=args.commit,
             error_summary=args.error,
@@ -453,7 +524,9 @@ def main() -> int:
         return 0 if success else 1
 
     if args.poll:
-        _mirrored, _failed = poll_federation_failures(token=token, max_age_hours=args.max_age_hours)
+        _mirrored, _failed = poll_federation_failures(
+            token=token, max_age_hours=args.max_age_hours
+        )
         return 1 if _failed else 0
 
     parser.print_help()

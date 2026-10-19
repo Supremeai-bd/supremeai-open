@@ -29,13 +29,13 @@ Deterministic contract enforced here (fail-closed everywhere):
 
 Pure stdlib. Run: python3 scripts/agents/ecosystem_scout_reference.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict, dataclass, field
-from types import MappingProxyType
-from typing import Any, Final, Mapping
+from dataclasses import dataclass
+from typing import Any, Final
 
 # ---------------------------------------------------------------------------
 # Doctrine constants
@@ -212,7 +212,8 @@ def provenance_header(repository: str, license_name: str) -> str:
     if not repository or not license_name:
         raise DossierError("provenance header requires repository and license")
     return PROVENANCE_HEADER_TEMPLATE.format(
-        repository=repository, license=license_name)
+        repository=repository, license=license_name
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -223,23 +224,29 @@ def provenance_header(repository: str, license_name: str) -> str:
 def validate_dossier(dossier: EcosystemDossier) -> None:
     """Full fail-closed dossier validation (all four phases consolidated)."""
     if dossier.verdict not in VERDICTS:
-        raise DossierError(f"verdict must be one of {VERDICTS}, "
-                           f"got {dossier.verdict!r}")
+        raise DossierError(
+            f"verdict must be one of {VERDICTS}, got {dossier.verdict!r}"
+        )
 
     t = dossier.target
     if not t.repository or not t.core_purpose:
         raise DossierError("target.repository and target.core_purpose are mandatory")
     if not t.tech_stack:
-        raise DossierError("target.tech_stack is mandatory (runtime truth, "
-                           "never marketing pages)")
+        raise DossierError(
+            "target.tech_stack is mandatory (runtime truth, never marketing pages)"
+        )
 
     c = dossier.comparative_analysis
     if not c.superior_capabilities:
-        raise DossierError("comparative_analysis.superior_capabilities is empty — "
-                           "'ওরা কোথায় বেটার' must be answered")
+        raise DossierError(
+            "comparative_analysis.superior_capabilities is empty — "
+            "'ওরা কোথায় বেটার' must be answered"
+        )
     if not c.supremeai_advantages:
-        raise DossierError("comparative_analysis.supremeai_advantages is empty — "
-                           "SupremeAI's own strengths must be stated")
+        raise DossierError(
+            "comparative_analysis.supremeai_advantages is empty — "
+            "SupremeAI's own strengths must be stated"
+        )
     if not c.token_and_resource_impact:
         raise DossierError("comparative_analysis.token_and_resource_impact is empty")
 
@@ -247,27 +254,36 @@ def validate_dossier(dossier: EcosystemDossier) -> None:
 
     a = dossier.actionable_takeaways
     if not a.architectural_patterns or not a.reusable_components:
-        raise DossierError("actionable_takeaways requires architectural_patterns "
-                           "and reusable_components")
+        raise DossierError(
+            "actionable_takeaways requires architectural_patterns "
+            "and reusable_components"
+        )
     if not a.target_satellites:
-        raise DossierError("actionable_takeaways.target_satellites is empty — "
-                           "route the RFC to the 11-satellite federation")
+        raise DossierError(
+            "actionable_takeaways.target_satellites is empty — "
+            "route the RFC to the 11-satellite federation"
+        )
     for action in a.target_satellites:
         if action.action_type not in ACTION_TYPES:
             raise DossierError(
-                f"action_type must be one of {ACTION_TYPES}, "
-                f"got {action.action_type!r}")
+                f"action_type must be one of {ACTION_TYPES}, got {action.action_type!r}"
+            )
         if not action.rationale:
             raise DossierError(
-                f"satellite action for {action.satellite!r} needs a rationale")
+                f"satellite action for {action.satellite!r} needs a rationale"
+            )
 
     w = dossier.watchouts_and_risks
     if not w.anti_patterns:
-        raise DossierError("watchouts_and_risks.anti_patterns is empty — "
-                           "'কী করা যাবে না' must be answered")
+        raise DossierError(
+            "watchouts_and_risks.anti_patterns is empty — "
+            "'কী করা যাবে না' must be answered"
+        )
     if not w.security_or_compliance_concerns:
-        raise DossierError("watchouts_and_risks.security_or_compliance_concerns "
-                           "is empty — fingerprint/bloat/boundary risks mandatory")
+        raise DossierError(
+            "watchouts_and_risks.security_or_compliance_concerns "
+            "is empty — fingerprint/bloat/boundary risks mandatory"
+        )
     if not w.prohibited_practices:
         raise DossierError("watchouts_and_risks.prohibited_practices is empty")
 
@@ -276,7 +292,8 @@ def validate_dossier(dossier: EcosystemDossier) -> None:
         if t.license in ("", "unknown", "UNKNOWN", "none"):
             raise DossierError(
                 "ADOPT_IMMEDIATELY requires a known upstream license "
-                "(attribution hygiene)")
+                "(attribution hygiene)"
+            )
         if dossier.surgical_extraction.full_repo_vending_prohibited is not True:
             raise DossierError("adoption still requires surgical extraction")
     if dossier.verdict == "REJECT" and not w.prohibited_practices:
@@ -310,7 +327,8 @@ def validate_phase_evidence(evidence: PhaseEvidence) -> None:
         if any(m in joined for m in ("marketing", "landing page only")):
             raise PhaseError(
                 "Phase 1 must extract manifests/contracts/runtime truth — "
-                "marketing-only evidence is rejected (zero-hype)")
+                "marketing-only evidence is rejected (zero-hype)"
+            )
     if evidence.phase == PHASE_4_RFC and not evidence.artifact:
         raise PhaseError("Phase 4 (RFC) must emit the standardized dossier artifact")
 
@@ -357,7 +375,8 @@ def scout_analyze_repository(inputs: ScoutInputs) -> EcosystemDossier:
     if not inputs.manifest_yaml and not inputs.manifest_json:
         raise DossierError(
             "Phase 1 requires a package manifest (manifest_yaml or "
-            "manifest_json) — zero-hype truth, not landing pages")
+            "manifest_json) — zero-hype truth, not landing pages"
+        )
     if not inputs.file_tree:
         raise DossierError("Phase 1 requires the file tree for runtime graph")
 
@@ -383,8 +402,11 @@ def scout_analyze_repository(inputs: ScoutInputs) -> EcosystemDossier:
     if not tech_stack:
         raise DossierError("manifest parsed to an empty tech stack — refuse to guess")
 
-    heavy = [d for d in tech_stack if any(
-        marker in d for marker in ("java", "jvm", "cargo", "rustc", "ghidra"))]
+    heavy = [
+        d
+        for d in tech_stack
+        if any(marker in d for marker in ("java", "jvm", "cargo", "rustc", "ghidra"))
+    ]
 
     return EcosystemDossier(
         target=Target(
@@ -395,34 +417,46 @@ def scout_analyze_repository(inputs: ScoutInputs) -> EcosystemDossier:
         ),
         comparative_analysis=ComparativeAnalysis(
             superior_capabilities=(
-                "external runtime strengths recorded during Phase 2 dissection",),
+                "external runtime strengths recorded during Phase 2 dissection",
+            ),
             supremeai_advantages=(
-                "zero-bloat satellite doctrine; zero-admin self-healing loop",),
+                "zero-bloat satellite doctrine; zero-admin self-healing loop",
+            ),
             token_and_resource_impact=(
                 f"file tree shows {len(inputs.file_tree)} entries; "
-                + (f"heavy runtime deps detected: {heavy}" if heavy
-                   else "no heavy runtime deps detected")),
+                + (
+                    f"heavy runtime deps detected: {heavy}"
+                    if heavy
+                    else "no heavy runtime deps detected"
+                )
+            ),
         ),
         surgical_extraction=SurgicalExtraction(
             exact_components_needed=(
-                "Gold Pearl component identified in Phase 2 — 20-100 line slice",),
+                "Gold Pearl component identified in Phase 2 — 20-100 line slice",
+            ),
             adaptation_blueprint=(
                 "Transcribe the Gold Pearl natively in python with "
-                "fail-closed error handling; zero new dependencies."),
+                "fail-closed error handling; zero new dependencies."
+            ),
             full_repo_vending_prohibited=True,
         ),
         actionable_takeaways=ActionableTakeaways(
             architectural_patterns=("pattern recorded in Phase 2",),
             reusable_components=("component recorded in Phase 2",),
-            target_satellites=(SatelliteAction(
-                satellite=CANONICAL_SATELLITES[0],
-                action_type="replicate_pattern",
-                rationale="skeleton dossier — route after human review"),),
+            target_satellites=(
+                SatelliteAction(
+                    satellite=CANONICAL_SATELLITES[0],
+                    action_type="replicate_pattern",
+                    rationale="skeleton dossier — route after human review",
+                ),
+            ),
         ),
         watchouts_and_risks=WatchoutsAndRisks(
             anti_patterns=("wholesale vendoring",),
             security_or_compliance_concerns=(
-                "license verification pending — do not adopt before review",),
+                "license verification pending — do not adopt before review",
+            ),
             prohibited_practices=("blind adoption of hype",),
         ),
         verdict="MONITOR",
@@ -444,7 +478,8 @@ def render_dossier_markdown(dossier: EcosystemDossier) -> str:
     a = dossier.actionable_takeaways
     routing = "\n".join(
         f"- **{s.satellite}** — `{s.action_type}`: {s.rationale}"
-        for s in a.target_satellites)
+        for s in a.target_satellites
+    )
     return (
         f"# Ecosystem Dossier — {dossier.target.repository}\n\n"
         f"**Verdict:** `{dossier.verdict}` · **License:** {dossier.target.license}\n\n"
@@ -484,29 +519,41 @@ def render_dossier_markdown(dossier: EcosystemDossier) -> str:
 
 def _valid_dossier(**overrides: Any) -> EcosystemDossier:
     parts: dict[str, Any] = dict(
-        target=Target(repository="example/org-repo", license="MIT",
-                      tech_stack=("node:24", "dep:zod"),
-                      core_purpose="reverse-engineering evidence ledger"),
+        target=Target(
+            repository="example/org-repo",
+            license="MIT",
+            tech_stack=("node:24", "dep:zod"),
+            core_purpose="reverse-engineering evidence ledger",
+        ),
         comparative_analysis=ComparativeAnalysis(
             superior_capabilities=("streaming pagination under 10 MiB frames",),
             supremeai_advantages=("zero-dep python runtime",),
-            token_and_resource_impact="30% token reduction on ledger dumps"),
+            token_and_resource_impact="30% token reduction on ledger dumps",
+        ),
         surgical_extraction=SurgicalExtraction(
             exact_components_needed=("EvidenceRecord interface + sha256 fingerprint",),
-            adaptation_blueprint=("Transcribe natively in python with "
-                                  "fail-closed errors; zero dependencies."),
-            full_repo_vending_prohibited=True),
+            adaptation_blueprint=(
+                "Transcribe natively in python with "
+                "fail-closed errors; zero dependencies."
+            ),
+            full_repo_vending_prohibited=True,
+        ),
         actionable_takeaways=ActionableTakeaways(
             architectural_patterns=("evidence ledger",),
             reusable_components=("EvidenceRecord record type",),
-            target_satellites=(SatelliteAction(
-                satellite="supremeai-mcp-control-plane",
-                action_type="replicate_pattern",
-                rationale="ledger parity with tower tooling"),)),
+            target_satellites=(
+                SatelliteAction(
+                    satellite="supremeai-mcp-control-plane",
+                    action_type="replicate_pattern",
+                    rationale="ledger parity with tower tooling",
+                ),
+            ),
+        ),
         watchouts_and_risks=WatchoutsAndRisks(
             anti_patterns=("wholesale vendoring",),
             security_or_compliance_concerns=("MIT attribution mandatory",),
-            prohibited_practices=("blind hype adoption",)),
+            prohibited_practices=("blind hype adoption",),
+        ),
         verdict="EXTRACT_PATTERNS_ONLY",
     )
     parts.update(overrides)
@@ -526,24 +573,42 @@ def self_test() -> bool:
     bad_cases = (
         _valid_dossier(verdict="SHIP_IT"),
         _valid_dossier(target=replace_target(repository="")),
-        _valid_dossier(comparative_analysis=replace_comparative(superior_capabilities=())),
-        _valid_dossier(comparative_analysis=replace_comparative(supremeai_advantages=())),
-        _valid_dossier(surgical_extraction=replace_surgical(full_repo_vending_prohibited=False)),
-        _valid_dossier(surgical_extraction=replace_surgical(exact_components_needed=())),
+        _valid_dossier(
+            comparative_analysis=replace_comparative(superior_capabilities=())
+        ),
+        _valid_dossier(
+            comparative_analysis=replace_comparative(supremeai_advantages=())
+        ),
+        _valid_dossier(
+            surgical_extraction=replace_surgical(full_repo_vending_prohibited=False)
+        ),
+        _valid_dossier(
+            surgical_extraction=replace_surgical(exact_components_needed=())
+        ),
         _valid_dossier(surgical_extraction=replace_surgical(adaptation_blueprint="")),
-        _valid_dossier(surgical_extraction=replace_surgical(
-            adaptation_blueprint="git clone the whole repository")),
+        _valid_dossier(
+            surgical_extraction=replace_surgical(
+                adaptation_blueprint="git clone the whole repository"
+            )
+        ),
         _valid_dossier(actionable_takeaways=replace_takeaways(target_satellites=())),
-        _valid_dossier(actionable_takeaways=replace_takeaways(
-            target_satellites=(SatelliteAction("sat", "fork_it", "why"),))),
+        _valid_dossier(
+            actionable_takeaways=replace_takeaways(
+                target_satellites=(SatelliteAction("sat", "fork_it", "why"),)
+            )
+        ),
         _valid_dossier(watchouts_and_risks=replace_watchouts(anti_patterns=())),
-        _valid_dossier(watchouts_and_risks=replace_watchouts(
-            security_or_compliance_concerns=())),
+        _valid_dossier(
+            watchouts_and_risks=replace_watchouts(security_or_compliance_concerns=())
+        ),
         _valid_dossier(watchouts_and_risks=replace_watchouts(prohibited_practices=())),
-        _valid_dossier(verdict="ADOPT_IMMEDIATELY",
-                       target=replace_target(license="unknown")),
-        _valid_dossier(verdict="REJECT",
-                       watchouts_and_risks=replace_watchouts(prohibited_practices=())),
+        _valid_dossier(
+            verdict="ADOPT_IMMEDIATELY", target=replace_target(license="unknown")
+        ),
+        _valid_dossier(
+            verdict="REJECT",
+            watchouts_and_risks=replace_watchouts(prohibited_practices=()),
+        ),
     )
     for bad in bad_cases:
         try:
@@ -571,21 +636,28 @@ def self_test() -> bool:
         pass
 
     # Methodology pipeline.
-    chain = tuple(PhaseEvidence(p, ("finding",),
-                                artifact="dossier.md" if p == PHASE_4_RFC else "")
-                  for p in PHASES)
+    chain = tuple(
+        PhaseEvidence(
+            p, ("finding",), artifact="dossier.md" if p == PHASE_4_RFC else ""
+        )
+        for p in PHASES
+    )
     assert run_methodology(chain) == "dossier.md"
     for broken in (
         tuple(PhaseEvidence(p, ("f",)) for p in PHASES[1:]),
         tuple(PhaseEvidence(p, ("f",)) for p in reversed(PHASES)),
-        (PhaseEvidence(PHASE_1_EXTRACTION, ("marketing landing page only",)),
-         PhaseEvidence(PHASE_2_DISSECTION, ("f",)),
-         PhaseEvidence(PHASE_3_AUDIT, ("f",)),
-         PhaseEvidence(PHASE_4_RFC, ("f",), artifact="d.md")),
-        (PhaseEvidence(PHASE_1_EXTRACTION, ("f",)),
-         PhaseEvidence(PHASE_2_DISSECTION, ("f",)),
-         PhaseEvidence(PHASE_3_AUDIT, ("f",)),
-         PhaseEvidence(PHASE_4_RFC, ("f",))),
+        (
+            PhaseEvidence(PHASE_1_EXTRACTION, ("marketing landing page only",)),
+            PhaseEvidence(PHASE_2_DISSECTION, ("f",)),
+            PhaseEvidence(PHASE_3_AUDIT, ("f",)),
+            PhaseEvidence(PHASE_4_RFC, ("f",), artifact="d.md"),
+        ),
+        (
+            PhaseEvidence(PHASE_1_EXTRACTION, ("f",)),
+            PhaseEvidence(PHASE_2_DISSECTION, ("f",)),
+            PhaseEvidence(PHASE_3_AUDIT, ("f",)),
+            PhaseEvidence(PHASE_4_RFC, ("f",)),
+        ),
     ):
         try:
             run_methodology(broken)  # type: ignore[arg-type]
@@ -594,12 +666,15 @@ def self_test() -> bool:
             pass
 
     # MCP core: manifest-driven, fail-closed.
-    d2 = scout_analyze_repository(ScoutInputs(
-        repository="example/org-repo", license="MIT",
-        manifest_json='{"dependencies": {"zod": "^3"}, '
-                      '"engines": {"node": "24"}}',
-        file_tree=("src/index.ts", "src/ledger.ts"),
-        readme_headline="evidence ledger"))
+    d2 = scout_analyze_repository(
+        ScoutInputs(
+            repository="example/org-repo",
+            license="MIT",
+            manifest_json='{"dependencies": {"zod": "^3"}, "engines": {"node": "24"}}',
+            file_tree=("src/index.ts", "src/ledger.ts"),
+            readme_headline="evidence ledger",
+        )
+    )
     assert d2.target.tech_stack[0] == "node:24"
     assert any(dep == "dep:zod" for dep in d2.target.tech_stack)
     assert d2.verdict == "MONITOR"
@@ -608,12 +683,9 @@ def self_test() -> bool:
         ScoutInputs(repository=""),
         ScoutInputs(repository="x"),
         ScoutInputs(repository="x", manifest_yaml="a: 1"),
-        ScoutInputs(repository="x", manifest_yaml="- fastapi",
-                    file_tree=()),
-        ScoutInputs(repository="x", manifest_json="{bad json",
-                    file_tree=("a",)),
-        ScoutInputs(repository="x", manifest_yaml="a: 1",
-                    file_tree=("a",)),
+        ScoutInputs(repository="x", manifest_yaml="- fastapi", file_tree=()),
+        ScoutInputs(repository="x", manifest_json="{bad json", file_tree=("a",)),
+        ScoutInputs(repository="x", manifest_yaml="a: 1", file_tree=("a",)),
     ):
         try:
             scout_analyze_repository(broken_inputs)
@@ -625,8 +697,12 @@ def self_test() -> bool:
 
 
 def replace_target(**kw: Any) -> Target:
-    base = Target(repository="example/org-repo", license="MIT",
-                  tech_stack=("node:24",), core_purpose="p")
+    base = Target(
+        repository="example/org-repo",
+        license="MIT",
+        tech_stack=("node:24",),
+        core_purpose="p",
+    )
     return Target(**{**base.__dict__, **kw})
 
 
@@ -642,8 +718,8 @@ def replace_surgical(**kw: Any) -> SurgicalExtraction:
 
 def replace_takeaways(**kw: Any) -> ActionableTakeaways:
     base = ActionableTakeaways(
-        ("p",), ("r",),
-        (SatelliteAction("supremeai-open", "replicate_pattern", "why"),))
+        ("p",), ("r",), (SatelliteAction("supremeai-open", "replicate_pattern", "why"),)
+    )
     return ActionableTakeaways(**{**base.__dict__, **kw})
 
 

@@ -11,6 +11,7 @@ Usage:
     GH_TOKEN=ghp_xxx python scripts/ops/actions_quota_check.py
     GH_TOKEN=... python scripts/ops/actions_quota_check.py --year 2026 --month 10 --threshold 0.8
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,21 +28,31 @@ PLAN_MONTHLY_LIMIT = 2000.0  # Free org: 2,000 Actions minutes/month (private re
 def main() -> int:
     ap = argparse.ArgumentParser(description="SupremeAI Actions quota guard (#68)")
     ap.add_argument("--year", type=int, default=_dt.datetime.now(_dt.timezone.utc).year)
-    ap.add_argument("--month", type=int, default=_dt.datetime.now(_dt.timezone.utc).month)
-    ap.add_argument("--threshold", type=float, default=0.8, help="alert ratio (default 0.8 = 80%%)")
+    ap.add_argument(
+        "--month", type=int, default=_dt.datetime.now(_dt.timezone.utc).month
+    )
+    ap.add_argument(
+        "--threshold", type=float, default=0.8, help="alert ratio (default 0.8 = 80%%)"
+    )
     args = ap.parse_args()
 
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     if not token:
-        print("❌ [quota-guard] GH_TOKEN/GITHUB_TOKEN missing in env — fail-closed.", file=sys.stderr)
+        print(
+            "❌ [quota-guard] GH_TOKEN/GITHUB_TOKEN missing in env — fail-closed.",
+            file=sys.stderr,
+        )
         return 1
 
     url = f"https://api.github.com/organizations/{ORG_ID}/settings/billing/usage?year={args.year}&month={args.month}"
-    req = urllib.request.Request(url, headers={
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "SupremeAI-quota-guard",
-    })
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "SupremeAI-quota-guard",
+        },
+    )
     with urllib.request.urlopen(req, timeout=30) as resp:
         payload = json.load(resp)
 
@@ -60,8 +71,11 @@ def main() -> int:
         "threshold": args.threshold,
         "alert": alert,
     }
-    print(f"[quota-guard] {verdict['month']}: {verdict['minutes_used']}/{int(PLAN_MONTHLY_LIMIT)} min "
-          f"({verdict['ratio'] * 100:.1f}%) — {'⚠️ ALERT' if alert else 'ok'}", file=sys.stderr)
+    print(
+        f"[quota-guard] {verdict['month']}: {verdict['minutes_used']}/{int(PLAN_MONTHLY_LIMIT)} min "
+        f"({verdict['ratio'] * 100:.1f}%) — {'⚠️ ALERT' if alert else 'ok'}",
+        file=sys.stderr,
+    )
     print(json.dumps(verdict, indent=2))
     return 1 if alert else 0
 

@@ -5,7 +5,8 @@ a credential vault, multi-account SSO runner, and a FastAPI bridge server.
 
 Transit surface for the supremeai-browser satellite (browser/ghost_tower/*).
 """
+
 __all__ = [
-    "GeminiWebEngine",
     "CredentialVault",
+    "GeminiWebEngine",
 ]

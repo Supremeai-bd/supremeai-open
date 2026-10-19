@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -18,7 +18,7 @@ class StreamEvent:
 
     event: str
     data: str
-    id: Optional[str] = None
+    id: str | None = None
     parsed: Any = None
     is_done: bool = False
 
@@ -28,14 +28,14 @@ class SSEListener:
 
     def __init__(self) -> None:
         self._buffer = ""
-        self._data_lines: List[str] = []
+        self._data_lines: list[str] = []
         self._event_name = ""
-        self._event_id: Optional[str] = None
+        self._event_id: str | None = None
 
-    def feed(self, chunk: str) -> List[StreamEvent]:
+    def feed(self, chunk: str) -> list[StreamEvent]:
         """Consume raw text and return every event it completes."""
         self._buffer += chunk
-        events: List[StreamEvent] = []
+        events: list[StreamEvent] = []
         while True:
             match_index = -1
             separator_length = 0
@@ -58,21 +58,20 @@ class SSEListener:
                 events.append(event)
         return events
 
-    def finish(self) -> List[StreamEvent]:
+    def finish(self) -> list[StreamEvent]:
         """Flush trailing state at end-of-stream."""
         event = self._flush_event()
         self._buffer = ""
         return [event] if event is not None else []
 
-    def _consume_line(self, line: str) -> Optional[StreamEvent]:
+    def _consume_line(self, line: str) -> StreamEvent | None:
         if line == "":
             return self._flush_event()
         if line.startswith(":"):
             return None
         if ":" in line:
             field, _, value = line.partition(":")
-            if value.startswith(" "):
-                value = value[1:]
+            value = value.removeprefix(" ")
         else:
             field, value = line, ""
         if field == "data":
@@ -83,7 +82,7 @@ class SSEListener:
             self._event_id = value
         return None
 
-    def _flush_event(self) -> Optional[StreamEvent]:
+    def _flush_event(self) -> StreamEvent | None:
         if not self._data_lines and not self._event_name:
             return None
         data = "\n".join(self._data_lines)

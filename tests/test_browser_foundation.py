@@ -6,6 +6,7 @@ Covers (issue #502 contract, minimum 10):
 
 ZERO network, ZERO browser launches, stdlib-only.
 """
+
 from __future__ import annotations
 
 import sys
@@ -16,56 +17,56 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:
-    from browser.runtime.config import get_profile, profile_names  # noqa: E402
-    from browser.runtime.content_pruner import ContentPruner, link_density  # noqa: E402
-    from browser.runtime.cookie_bridge import (  # noqa: E402
+    from browser.runtime.config import get_profile, profile_names
+    from browser.runtime.content_pruner import ContentPruner, link_density
+    from browser.runtime.cookie_bridge import (
         CookieBridge,
         CookieRecord,
         WalledGardenViolation,
     )
-    from browser.runtime.infinite_scanner import (  # noqa: E402
+    from browser.runtime.infinite_scanner import (
+        SCROLL_AND_EXPAND_JS,
         FeedExpander,
         ScrollPlan,
-        SCROLL_AND_EXPAND_JS,
     )
-    from browser.runtime.semantic_extractor import (  # noqa: E402
+    from browser.runtime.semantic_extractor import (
         estimate_tokens,
         extract_semantic_tree,
     )
-    from browser.runtime.session_manager import (  # noqa: E402
+    from browser.runtime.session_manager import (
         BrowserSessionManager,
         RuntimeCapabilityError,
         playwright_available,
     )
-    from browser.runtime.stealth_profile import (  # noqa: E402
+    from browser.runtime.stealth_profile import (
         StealthProfile,
         bezier_path,
         generate,
         webgl_pairs,
     )
 except ImportError:
-    from runtime.config import get_profile, profile_names  # noqa: E402
-    from runtime.content_pruner import ContentPruner, link_density  # noqa: E402
-    from runtime.cookie_bridge import (  # noqa: E402
+    from runtime.config import get_profile, profile_names
+    from runtime.content_pruner import ContentPruner, link_density
+    from runtime.cookie_bridge import (
         CookieBridge,
         CookieRecord,
         WalledGardenViolation,
     )
-    from runtime.infinite_scanner import (  # noqa: E402
+    from runtime.infinite_scanner import (
+        SCROLL_AND_EXPAND_JS,
         FeedExpander,
         ScrollPlan,
-        SCROLL_AND_EXPAND_JS,
     )
-    from runtime.semantic_extractor import (  # noqa: E402
+    from runtime.semantic_extractor import (
         estimate_tokens,
         extract_semantic_tree,
     )
-    from runtime.session_manager import (  # noqa: E402
+    from runtime.session_manager import (
         BrowserSessionManager,
         RuntimeCapabilityError,
         playwright_available,
     )
-    from runtime.stealth_profile import (  # noqa: E402
+    from runtime.stealth_profile import (
         StealthProfile,
         bezier_path,
         generate,
@@ -136,7 +137,9 @@ def test_semantic_extractor_drops_layout_wrappers() -> None:
 
 
 def test_semantic_outline_token_budget() -> None:
-    body = " ".join(f"Paragraph number {i} with some sentence content." for i in range(40))
+    body = " ".join(
+        f"Paragraph number {i} with some sentence content." for i in range(40)
+    )
     html = f"<main><p>{body}</p></main>"
     tree = extract_semantic_tree(html)
     raw_tokens = estimate_tokens(html)
@@ -236,7 +239,8 @@ def test_cookie_bridge_fail_closed_default() -> None:
     bridge = CookieBridge(allowlist=[])
     with pytest.raises(WalledGardenViolation):
         bridge.import_json(
-            [{"name": "auth", "value": "s3cret", "domain": "twitter.com"}], "twitter.com"
+            [{"name": "auth", "value": "s3cret", "domain": "twitter.com"}],
+            "twitter.com",
         )
     strict = CookieBridge(allowlist=["twitter.com"])
     with pytest.raises(WalledGardenViolation):
@@ -252,7 +256,13 @@ def test_cookie_bridge_netscape_roundtrip() -> None:
     accepted = bridge.import_json(
         [
             {"name": "session", "value": "abc123", "domain": "reddit.com", "path": "/"},
-            {"name": "prefs", "value": "dark", "domain": "www.reddit.com", "path": "/", "secure": False},
+            {
+                "name": "prefs",
+                "value": "dark",
+                "domain": "www.reddit.com",
+                "path": "/",
+                "secure": False,
+            },
         ],
         "reddit.com",
     )

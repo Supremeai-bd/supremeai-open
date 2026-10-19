@@ -5,6 +5,7 @@
     from gateway.main import create_app
     from gateway.config import load_config, parse_routing_policy
 """
+
 from .config import (
     ALLOWED_PROVIDERS,
     ALLOWED_SCOPES,
@@ -23,10 +24,10 @@ __version__ = GATEWAY_VERSION
 __all__ = [
     "ALLOWED_PROVIDERS",
     "ALLOWED_SCOPES",
+    "GATEWAY_VERSION",
     "AttemptResult",
     "ConfigError",
     "Endpoint",
-    "GATEWAY_VERSION",
     "GatewayConfig",
     "ProviderChainExhausted",
     "RateDecision",

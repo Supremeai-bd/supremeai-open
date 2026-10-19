@@ -13,9 +13,9 @@ __version__ = "0.1.0"
 
 __all__ = [
     "AsyncSupremeAIClient",
-    "SupremeAIClient",
     "GatewayError",
     "SSEListener",
     "StreamEvent",
+    "SupremeAIClient",
     "__version__",
 ]

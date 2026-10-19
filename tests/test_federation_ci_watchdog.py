@@ -4,7 +4,6 @@ Hermetic tests for issue formatting, contract markers, short name mapping,
 deduplication logic, and payload handling without network calls.
 """
 
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -49,15 +48,24 @@ class TestFederationCiWatchdog(unittest.TestCase):
         self.assertEqual(repo_short_name("Supremeai-bd/supremeai"), "monorepo")
         self.assertEqual(repo_short_name("Supremeai-bd/supremeai-command"), "command")
         self.assertEqual(repo_short_name("Supremeai-bd/supremeai-studio"), "studio")
-        self.assertEqual(repo_short_name("Supremeai-bd/supremeai-mcp-control-plane"), "mcp-control-plane")
+        self.assertEqual(
+            repo_short_name("Supremeai-bd/supremeai-mcp-control-plane"),
+            "mcp-control-plane",
+        )
 
     def test_mirror_marker_uniqueness(self):
         m1 = build_mirror_marker("Supremeai-bd/supremeai-api", 999)
-        self.assertEqual(m1, "<!-- MIRROR_RUN: Supremeai-bd/supremeai-api/actions/runs/999 -->")
+        self.assertEqual(
+            m1, "<!-- MIRROR_RUN: Supremeai-bd/supremeai-api/actions/runs/999 -->"
+        )
 
     def test_issue_title_and_labels(self):
-        title = build_issue_title("Deploy Pipeline", "Supremeai-bd/supremeai-studio", "main", 555)
-        self.assertEqual(title, "fix(ci): [studio] Deploy Pipeline failed on main (Run #555)")
+        title = build_issue_title(
+            "Deploy Pipeline", "Supremeai-bd/supremeai-studio", "main", 555
+        )
+        self.assertEqual(
+            title, "fix(ci): [studio] Deploy Pipeline failed on main (Run #555)"
+        )
 
         labels = build_issue_labels("Supremeai-bd/supremeai-studio")
         self.assertIn("status:unclaimed", labels)
@@ -80,13 +88,18 @@ class TestFederationCiWatchdog(unittest.TestCase):
             {"number": 902, "body": "no marker here"},
             {"number": 903, "body": None},
         ]
-        self.assertEqual(find_mirror_in_items(items, "Supremeai-bd/supremeai-api", 999), 901)
-        self.assertIsNone(find_mirror_in_items(items, "Supremeai-bd/supremeai-api", 404))
+        self.assertEqual(
+            find_mirror_in_items(items, "Supremeai-bd/supremeai-api", 999), 901
+        )
+        self.assertIsNone(
+            find_mirror_in_items(items, "Supremeai-bd/supremeai-api", 404)
+        )
         self.assertIsNone(find_mirror_in_items([], "Supremeai-bd/supremeai-api", 999))
         self.assertIsNone(find_mirror_in_items(None, "Supremeai-bd/supremeai-api", 999))
 
     def test_is_fresh_run_recency_gate(self):
         from datetime import datetime, timezone
+
         now = datetime(2026, 10, 18, 12, 0, 0, tzinfo=timezone.utc)
         # Fresh: inside the 24h window.
         self.assertTrue(is_fresh_run("2026-10-18T11:59:59Z", now, 24))
@@ -112,7 +125,9 @@ class TestFederationCiWatchdog(unittest.TestCase):
         self.assertIn("Supremeai-bd/supremeai-skills", body)
         self.assertIn("P0-critical", body)
         self.assertIn("agent-orchestration", body)
-        self.assertIn("<!-- MIRROR_RUN: Supremeai-bd/supremeai-skills/actions/runs/888 -->", body)
+        self.assertIn(
+            "<!-- MIRROR_RUN: Supremeai-bd/supremeai-skills/actions/runs/888 -->", body
+        )
         self.assertIn("AssertionError: 5 != 6", body)
 
 

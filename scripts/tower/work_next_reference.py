@@ -7,24 +7,24 @@ snapshot, claimability via the S0.1 decision matrix (imported from
 work_claim_reference — extraction SSOT, never copied), race guard via the
 in-flight WO flag (U4 no-duplicates).
 """
+
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from work_claim_reference import (  # noqa: E402
-    Claim,
+from work_claim_reference import (
     GRANT_NEW,
     GRANT_RENEW,
     GRANT_TAKEOVER,
+    Claim,
     evaluate_claim,
 )
 
 # --- Single sources of truth (imported by tests; never copy) ----------------
-PRIORITY_TIERS: Dict[str, int] = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+PRIORITY_TIERS: dict[str, int] = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 DEFAULT_TIER = 3
 RUNNER_UP_COUNT = 3
 DECISION_HORIZON_MINUTES = 30  # retry horizon for E_QUEUE_EMPTY agents
@@ -39,14 +39,15 @@ class WorkNextError(Exception):
 @dataclass
 class IssueState:
     """One row of the board snapshot the tower feeds to work.next()."""
+
     number: int
     title: str
-    state: str = "open"                 # open | closed
-    labels: Tuple[str, ...] = ()
-    claim: Optional[Claim] = None       # parsed from the atomic-claim marker (S0.1 ledger)
-    has_inflight_wo: bool = False       # WO queued / PR open targeting this issue
-    blocked_label: bool = False         # sequence-hold / handoff block
-    is_task_issue: bool = True          # False for bridge WOs
+    state: str = "open"  # open | closed
+    labels: tuple[str, ...] = ()
+    claim: Claim | None = None  # parsed from the atomic-claim marker (S0.1 ledger)
+    has_inflight_wo: bool = False  # WO queued / PR open targeting this issue
+    blocked_label: bool = False  # sequence-hold / handoff block
+    is_task_issue: bool = True  # False for bridge WOs
 
     @property
     def priority(self) -> str:
@@ -73,13 +74,13 @@ class Pick:
 @dataclass(frozen=True)
 class WorkNextResult:
     pick: Pick
-    runner_ups: Tuple[Pick, ...]
+    runner_ups: tuple[Pick, ...]
     evaluated: int
-    excluded: Dict[str, int]
+    excluded: dict[str, int]
     computed_ts: str
 
 
-def _decide(issue: IssueState, agent_id: str, now: datetime) -> Optional[str]:
+def _decide(issue: IssueState, agent_id: str, now: datetime) -> str | None:
     """Return a claim_decision code if claimable, else None (fail-closed)."""
     if issue.state != "open":
         return None
@@ -115,9 +116,9 @@ def _to_pick(issue: IssueState, decision: str) -> Pick:
 
 
 def work_next(
-    snapshot: List[IssueState],
+    snapshot: list[IssueState],
     agent_id: str,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> WorkNextResult:
     """The computed queue (spec sections 3-4). Pure; input never mutated."""
     if now is None:
@@ -128,7 +129,7 @@ def work_next(
         raise WorkNextError("E_BOARD_UNAVAILABLE", "empty snapshot is not a board")
 
     excluded = {"closed": 0, "live_foreign_claim": 0, "inflight": 0, "non_task": 0}
-    claimable: List[Tuple[int, int, Pick]] = []  # (tier, number, pick)
+    claimable: list[tuple[int, int, Pick]] = []  # (tier, number, pick)
 
     for issue in snapshot:
         decision = _decide(issue, agent_id, now)
@@ -154,7 +155,7 @@ def work_next(
     picks = [p for _, _, p in claimable]
     return WorkNextResult(
         pick=picks[0],
-        runner_ups=tuple(picks[1:1 + RUNNER_UP_COUNT]),
+        runner_ups=tuple(picks[1 : 1 + RUNNER_UP_COUNT]),
         evaluated=len(snapshot),
         excluded=excluded,
         computed_ts=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -165,12 +166,21 @@ def demo() -> int:
     t0 = datetime(2026, 10, 17, 4, 0, 0, tzinfo=timezone.utc)
     board = [
         IssueState(459, "[S0.4] consolidate 9 MCP tools", labels=("P2-medium",)),
-        IssueState(402, "[Seq 0.2] failover chain", labels=("P0-critical",), has_inflight_wo=True),
+        IssueState(
+            402,
+            "[Seq 0.2] failover chain",
+            labels=("P0-critical",),
+            has_inflight_wo=True,
+        ),
         IssueState(413, "old P1 task", labels=("P1-high",), state="closed"),
         IssueState(458, "[S0.3] work.next computed queue", labels=("P1-high",)),
         IssueState(387, "ancient unlabeled task", labels=()),
-        IssueState(453, "observability r1", labels=("P1-high",),
-                   claim=Claim(453, "fleet-bot", t0.replace(year=2020))),
+        IssueState(
+            453,
+            "observability r1",
+            labels=("P1-high",),
+            claim=Claim(453, "fleet-bot", t0.replace(year=2020)),
+        ),
     ]
     res = work_next(board, "zai-agent", now=t0)
     print("pick:", res.pick.issue, res.pick.priority, "-", res.pick.claim_decision)

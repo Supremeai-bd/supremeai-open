@@ -6,33 +6,83 @@ Usage:
     python validate_record.py records.jsonl
 Prints one JSON result per record and exits 1 if any record is invalid.
 """
+
 import json
 import re
 import sys
 
 KINDS = {"fact", "opinion", "hypothesis", "recommendation", "lesson"}
 METHODS = {"copy_paste", "api", "mcp", "agent", "human", "own_analysis"}
-EVID_TYPES = {"primary_source", "test_result", "documentation", "data", "reasoning_only", "other_ai_claim"}
+EVID_TYPES = {
+    "primary_source",
+    "test_result",
+    "documentation",
+    "data",
+    "reasoning_only",
+    "other_ai_claim",
+}
 QUALITY = {"strong", "moderate", "weak"}
 STATUS = {"unverified", "corroborated", "verified", "disputed", "superseded"}
 IMPACT = {"low", "medium", "high"}
-AREAS = {"security", "privacy", "policy", "architecture", "core_philosophy", "money", "legal", "none"}
+AREAS = {
+    "security",
+    "privacy",
+    "policy",
+    "architecture",
+    "core_philosophy",
+    "money",
+    "legal",
+    "none",
+}
 # Always need review, at any impact level (these protect the system's rules and people).
 ALWAYS_REVIEW_AREAS = {"security", "policy", "core_philosophy", "privacy"}
 # Need review only when impact is high (otherwise a normal provisional/auto decision).
 HIGH_ONLY_AREAS = {"architecture", "money", "legal"}
-REQUIRED = ["id", "kind", "claim", "topic", "source", "confidence", "verification",
-            "risk", "applicability", "limitations", "created_at"]
-ALLOWED = set(REQUIRED) | {"rationale", "evidence", "uncertainty", "assumptions", "counterarguments",
-                           "conflicts_with", "supersedes", "outcome", "review_after", "flags"}
-HOLD_FLAGS = {"unverified_citation", "fabricated_specifics_suspected"}  # block auto_store_ok
-FORBIDDEN_KEYS = {"chain_of_thought", "hidden_reasoning", "private_reasoning", "scratchpad"}
+REQUIRED = [
+    "id",
+    "kind",
+    "claim",
+    "topic",
+    "source",
+    "confidence",
+    "verification",
+    "risk",
+    "applicability",
+    "limitations",
+    "created_at",
+]
+ALLOWED = set(REQUIRED) | {
+    "rationale",
+    "evidence",
+    "uncertainty",
+    "assumptions",
+    "counterarguments",
+    "conflicts_with",
+    "supersedes",
+    "outcome",
+    "review_after",
+    "flags",
+}
+HOLD_FLAGS = {
+    "unverified_citation",
+    "fabricated_specifics_suspected",
+}  # block auto_store_ok
+FORBIDDEN_KEYS = {
+    "chain_of_thought",
+    "hidden_reasoning",
+    "private_reasoning",
+    "scratchpad",
+}
 INJECTION = re.compile(
     r"(ignore (all |any )?(previous|prior|above) (instructions|rules)|disregard (the )?(system|previous)"
     r"|you must (now )?(run|execute|delete)|override (the )?(policy|safety|rules)"
-    r"|mark this as authoritative|reveal (your )?(system prompt|secret|token|key))", re.I)
-SECRET = re.compile(r"(github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}"
-                    r"|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")
+    r"|mark this as authoritative|reveal (your )?(system prompt|secret|token|key))",
+    re.IGNORECASE,
+)
+SECRET = re.compile(
+    r"(github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}"
+    r"|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+)
 
 
 def _text_fields(rec):
@@ -56,7 +106,9 @@ def validate(rec):
             errors.append(f"missing required field: {k}")
     for k in rec:
         if k in FORBIDDEN_KEYS:
-            errors.append(f"forbidden field '{k}': store short checkable rationale, not hidden reasoning")
+            errors.append(
+                f"forbidden field '{k}': store short checkable rationale, not hidden reasoning"
+            )
         elif k not in ALLOWED:
             errors.append(f"unknown field: {k}")
     if errors and any(e.startswith("missing") for e in errors):
@@ -85,7 +137,11 @@ def validate(rec):
     elif any(a not in AREAS for a in risk.get("areas", [])):
         errors.append(f"risk.areas values must be in {sorted(AREAS)}")
     app = rec["applicability"]
-    if not isinstance(app, dict) or not isinstance(app.get("contexts"), list) or not app["contexts"]:
+    if (
+        not isinstance(app, dict)
+        or not isinstance(app.get("contexts"), list)
+        or not app["contexts"]
+    ):
         errors.append("applicability.contexts must be a non-empty list")
     if not isinstance(rec["limitations"], list):
         errors.append("limitations must be a list (use [] only if truly none)")
@@ -95,7 +151,11 @@ def validate(rec):
         errors.append("evidence must be a list")
         evidence = []
     for i, e in enumerate(evidence):
-        if not isinstance(e, dict) or e.get("type") not in EVID_TYPES or e.get("quality") not in QUALITY:
+        if (
+            not isinstance(e, dict)
+            or e.get("type") not in EVID_TYPES
+            or e.get("quality") not in QUALITY
+        ):
             errors.append(f"evidence[{i}] needs valid type and quality")
 
     for t in _text_fields(rec):
@@ -106,13 +166,19 @@ def validate(rec):
     if rec["kind"] == "lesson":
         o = rec.get("outcome")
         if not o or not o.get("actual"):
-            warnings.append("lesson without outcome.actual: store as hypothesis until an outcome is known")
+            warnings.append(
+                "lesson without outcome.actual: store as hypothesis until an outcome is known"
+            )
         elif o.get("root_cause") and not o.get("root_cause_supported"):
-            warnings.append("root_cause stated but not marked supported: treat as hypothesis")
+            warnings.append(
+                "root_cause stated but not marked supported: treat as hypothesis"
+            )
     if rec["kind"] in {"fact", "lesson"} and not evidence:
         warnings.append("no evidence listed for a fact/lesson")
     if not app.get("not_applicable") if isinstance(app, dict) else False:
-        warnings.append("applicability.not_applicable is empty: say where this does NOT apply")
+        warnings.append(
+            "applicability.not_applicable is empty: say where this does NOT apply"
+        )
 
     if errors:
         return errors, warnings, None
@@ -131,7 +197,9 @@ def triage(rec, evidence, warnings):
         reasons.append("protected area: " + ", ".join(sorted(always)))
     flags = rec.get("flags") or []
     if "injection_suspected" in flags:
-        reasons.append("flagged injection_suspected: source content contained instructions aimed at the assistant")
+        reasons.append(
+            "flagged injection_suspected: source content contained instructions aimed at the assistant"
+        )
     if any(INJECTION.search(t) for t in _text_fields(rec)):
         reasons.append("instruction-like text found (possible prompt injection)")
     if reasons:
@@ -149,10 +217,18 @@ def triage(rec, evidence, warnings):
         reasons.append("open conflict with: " + ", ".join(rec["conflicts_with"]))
     if rec["confidence"] < 0.8:
         reasons.append("confidence below 0.8")
-    strong = [e for e in evidence if e["quality"] == "strong" and e["type"] != "other_ai_claim"]
-    indep = [e for e in evidence if e.get("independent") and e["type"] != "other_ai_claim"]
+    strong = [
+        e
+        for e in evidence
+        if e["quality"] == "strong" and e["type"] != "other_ai_claim"
+    ]
+    indep = [
+        e for e in evidence if e.get("independent") and e["type"] != "other_ai_claim"
+    ]
     if not strong and len(indep) < 2:
-        reasons.append("no strong non-AI evidence and fewer than 2 independent confirmations")
+        reasons.append(
+            "no strong non-AI evidence and fewer than 2 independent confirmations"
+        )
     if risk["impact"] == "medium":
         reasons.append("medium impact")
     if any("lesson without outcome" in w for w in warnings):
@@ -180,13 +256,23 @@ def main(argv):
         try:
             records = load(path)
         except (OSError, json.JSONDecodeError) as exc:
-            print(json.dumps({"file": path, "valid": False, "errors": [str(exc)]}, ensure_ascii=False))
+            print(
+                json.dumps(
+                    {"file": path, "valid": False, "errors": [str(exc)]},
+                    ensure_ascii=False,
+                )
+            )
             bad = True
             continue
         for rec in records:
             errors, warnings, result = validate(rec)
-            out = {"file": path, "id": rec.get("id") if isinstance(rec, dict) else None,
-                   "valid": not errors, "errors": errors, "warnings": warnings}
+            out = {
+                "file": path,
+                "id": rec.get("id") if isinstance(rec, dict) else None,
+                "valid": not errors,
+                "errors": errors,
+                "warnings": warnings,
+            }
             if result:
                 out.update(result)
             print(json.dumps(out, ensure_ascii=False))

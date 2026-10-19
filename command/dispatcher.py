@@ -21,7 +21,7 @@ import socket
 import ssl
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
@@ -38,8 +38,8 @@ class TowerDispatcher:
         self.base_url = base_url.rstrip("/")
         self.timeout_s = timeout_s
 
-    def _rpc(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {"jsonrpc": "2.0", "id": 1, "method": method}
+    def _rpc(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"jsonrpc": "2.0", "id": 1, "method": method}
         if params is not None:
             payload["params"] = params
         req = urllib.request.Request(
@@ -69,10 +69,8 @@ class TowerDispatcher:
             raise DispatcherError("tower RPC error: %s" % data["error"])
         return data.get("result", {})
 
-    def call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> str:
-        result = self._rpc(
-            "tools/call", {"name": name, "arguments": arguments or {}}
-        )
+    def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> str:
+        result = self._rpc("tools/call", {"name": name, "arguments": arguments or {}})
         chunks = [
             c.get("text", "")
             for c in result.get("content", [])
@@ -92,18 +90,20 @@ class TowerDispatcher:
             queue = "(queue unavailable: %s)" % exc
         lines = [
             "🏰 Control Tower: reachable",
-            "🧰 tools: %d (%s)" % (len(names), ", ".join(names[:6]) + ("…" if len(names) > 6 else "")),
+            "🧰 tools: %d (%s)"
+            % (len(names), ", ".join(names[:6]) + ("…" if len(names) > 6 else "")),
             "🌉 queued work orders: %s" % (queue or "?"),
         ]
         return "\n".join(lines)
 
     def dispatch_issue(self, issue_url: str) -> str:
         """Relay a GitHub issue URL into the agent-loop intake lane."""
-        if not issue_url.startswith("https://github.com/") or "/issues/" not in issue_url:
+        if (
+            not issue_url.startswith("https://github.com/")
+            or "/issues/" not in issue_url
+        ):
             raise DispatcherError("issue_url must be a github.com issue URL")
-        out = self.call_tool(
-            "bridge_dispatch_issue", {"issueUrl": issue_url}
-        )
+        out = self.call_tool("bridge_dispatch_issue", {"issueUrl": issue_url})
         return "🛰️ dispatch relayed: %s" % (out or issue_url)
 
 
@@ -132,7 +132,7 @@ class KillSwitchUnavailable(Exception):
 class MiniRedis:
     """Tiny RESP client: SET key val EX ttl / GET / DEL only."""
 
-    def __init__(self, url: Optional[str], timeout_s: float = 5.0) -> None:
+    def __init__(self, url: str | None, timeout_s: float = 5.0) -> None:
         if not url:
             raise KillSwitchUnavailable("REDIS_URL is not configured")
         parsed = urlparse(url)
@@ -182,7 +182,9 @@ class MiniRedis:
         return parse_resp_line(line)
 
     def _command(self, *args: bytes) -> str:
-        raw_sock = socket.create_connection((self.host, self.port), timeout=self.timeout_s)
+        raw_sock = socket.create_connection(
+            (self.host, self.port), timeout=self.timeout_s
+        )
         try:
             if self.is_ssl:
                 ctx = ssl.create_default_context()
@@ -193,13 +195,20 @@ class MiniRedis:
                 sock.settimeout(self.timeout_s)
                 if self.password:
                     if self.username:
-                        auth_cmd = encode_resp(b"AUTH", self.username.encode("utf-8"), self.password.encode("utf-8"))
+                        auth_cmd = encode_resp(
+                            b"AUTH",
+                            self.username.encode("utf-8"),
+                            self.password.encode("utf-8"),
+                        )
                     else:
                         auth_cmd = encode_resp(b"AUTH", self.password.encode("utf-8"))
                     sock.sendall(auth_cmd)
                     auth_resp = sock.recv(4096)
                     if auth_resp.startswith(b"-"):
-                        raise DispatcherError("Redis AUTH failed: %s" % parse_resp_line(auth_resp.split(CRLF)[0]))
+                        raise DispatcherError(
+                            "Redis AUTH failed: %s"
+                            % parse_resp_line(auth_resp.split(CRLF)[0])
+                        )
                 sock.sendall(encode_resp(*args))
                 data = self._recv_reply(sock)
             if not data:
@@ -213,14 +222,19 @@ class MiniRedis:
             raise
 
     def set_ex(self, key: str, value: str, ttl_s: int) -> str:
-        return self._command(b"SET", key.encode("utf-8"), value.encode("utf-8"),
-                             b"EX", str(int(ttl_s)).encode("utf-8"))
+        return self._command(
+            b"SET",
+            key.encode("utf-8"),
+            value.encode("utf-8"),
+            b"EX",
+            str(int(ttl_s)).encode("utf-8"),
+        )
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         raw = self._command(b"GET", key.encode("utf-8"))
         if raw.startswith("$-1") or raw in ("(nil)", ""):
             return None
-        return raw[1:] if raw.startswith("$") else raw
+        return raw.removeprefix("$")
 
     def delete(self, key: str) -> str:
         return self._command(b"DEL", key.encode("utf-8"))
@@ -232,7 +246,7 @@ KILL_SWITCH_KEY = "supremeai:command:kill_switch"
 class KillSwitch:
     """Persistent emergency kill-switch backed by MiniRedis."""
 
-    def __init__(self, redis: Optional[MiniRedis], ttl_s: int = 86400) -> None:
+    def __init__(self, redis: MiniRedis | None, ttl_s: int = 86400) -> None:
         if redis is None:
             raise KillSwitchUnavailable(
                 "kill-switch requires REDIS_URL; refusing to fake persistence"

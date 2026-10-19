@@ -5,9 +5,9 @@ UNIT layer runs today, offline, against scripts/tower/pr_evidence_envelope.py.
 
 Run: pytest tests/test_s02_evidence_envelope.py  OR  python3 tests/test_s02_evidence_envelope.py
 """
+
 from __future__ import annotations
 
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -17,7 +17,7 @@ REF_DIR = HERE.parent / "scripts" / "tower"
 if str(REF_DIR) not in sys.path:
     sys.path.insert(0, str(REF_DIR))
 
-import pr_evidence_envelope as env_mod  # noqa: E402
+import pr_evidence_envelope as env_mod
 
 
 def make_env(**overrides):
@@ -26,7 +26,10 @@ def make_env(**overrides):
         claim_marker_id="atomic-claim:issue=457,agent=zai,ts=2026-10-17T03:30:00Z,ttl=30m",
         reflection_why="structured assertions replace brittle regex ladders on PR bodies",
         alternatives_rejected=["keep regex ladders", "external validation service"],
-        scope_paths=["docs/S02_STRUCTURED_EVIDENCE_SPEC.md", "scripts/tower/pr_evidence_envelope.py"],
+        scope_paths=[
+            "docs/S02_STRUCTURED_EVIDENCE_SPEC.md",
+            "scripts/tower/pr_evidence_envelope.py",
+        ],
     )
     base.update(overrides)
     return env_mod.EvidenceEnvelope(**base)
@@ -40,8 +43,10 @@ class UnitRoundTrip(unittest.TestCase):
         self.assertIsNotNone(back)
         self.assertEqual(back.task_issue_ref, 457)  # type: ignore[union-attr]
         self.assertEqual(back.scope_paths, env.scope_paths)  # type: ignore[union-attr]
-        self.assertEqual(back.schema if hasattr(back, "schema") else env_mod.SCHEMA_VERSION,
-                         env_mod.SCHEMA_VERSION)
+        self.assertEqual(
+            back.schema if hasattr(back, "schema") else env_mod.SCHEMA_VERSION,
+            env_mod.SCHEMA_VERSION,
+        )
 
     def test_02_no_envelope_is_none(self):
         self.assertIsNone(env_mod.parse_envelope("just prose, no markers"))
@@ -51,7 +56,9 @@ class UnitRoundTrip(unittest.TestCase):
         self.assertIsNone(env_mod.parse_envelope(bad))
 
     def test_04_wrong_schema_is_none(self):
-        block = env_mod.build_envelope(make_env()).replace(env_mod.SCHEMA_VERSION, "pr-evidence-envelope/9")
+        block = env_mod.build_envelope(make_env()).replace(
+            env_mod.SCHEMA_VERSION, "pr-evidence-envelope/9"
+        )
         self.assertIsNone(env_mod.parse_envelope(block))
 
     def test_05_missing_close_marker_is_none(self):
@@ -69,23 +76,43 @@ class UnitValidation(unittest.TestCase):
             self.assertIn("E_BAD_ISSUE_REF", codes)
 
     def test_08_empty_why_short_and_long(self):
-        self.assertIn("E_EMPTY_WHY", env_mod.validate(make_env(reflection_why="too short")))
-        self.assertIn("E_EMPTY_WHY", env_mod.validate(make_env(reflection_why="x" * 501)))
+        self.assertIn(
+            "E_EMPTY_WHY", env_mod.validate(make_env(reflection_why="too short"))
+        )
+        self.assertIn(
+            "E_EMPTY_WHY", env_mod.validate(make_env(reflection_why="x" * 501))
+        )
 
     def test_09_no_alternatives(self):
-        self.assertIn("E_NO_ALTERNATIVES", env_mod.validate(make_env(alternatives_rejected=[])))
-        self.assertIn("E_NO_ALTERNATIVES",
-                      env_mod.validate(make_env(alternatives_rejected=["a"] * 6)))
+        self.assertIn(
+            "E_NO_ALTERNATIVES", env_mod.validate(make_env(alternatives_rejected=[]))
+        )
+        self.assertIn(
+            "E_NO_ALTERNATIVES",
+            env_mod.validate(make_env(alternatives_rejected=["a"] * 6)),
+        )
 
     def test_10_protected_paths_detected(self):
-        for p in (".github/workflows/pipeline.yml", "docs/ledger/x.md", "docs/master_docs/y.md",
-                  "prisma/schema.prisma", ".env", "config/credentials.json", "certs/server.pem",
-                  "secrets/api_key.p12"):
+        for p in (
+            ".github/workflows/pipeline.yml",
+            "docs/ledger/x.md",
+            "docs/master_docs/y.md",
+            "prisma/schema.prisma",
+            ".env",
+            "config/credentials.json",
+            "certs/server.pem",
+            "secrets/api_key.p12",
+        ):
             self.assertTrue(env_mod.check_protected(p), p)
 
     def test_11_safe_paths_allowed(self):
-        for p in ("scripts/tower/x.py", "scripts/ci/y.py", "docs/S02_SPEC.md",
-                  "tests/test_x.py", "examples/curl-tests/z.sh"):
+        for p in (
+            "scripts/tower/x.py",
+            "scripts/ci/y.py",
+            "docs/S02_SPEC.md",
+            "tests/test_x.py",
+            "examples/curl-tests/z.sh",
+        ):
             self.assertFalse(env_mod.check_protected(p), p)
 
     def test_12_protected_scope_errors(self):
@@ -98,12 +125,22 @@ class UnitValidation(unittest.TestCase):
 
     def test_14_good_digests_pass(self):
         hex64 = "a" * 64
-        self.assertEqual(env_mod.validate(make_env(file_digests={"docs/x.md": hex64})), [])
-        self.assertEqual(env_mod.validate(make_env(file_digests={"docs/x.md": "sha256:" + hex64})), [])
+        self.assertEqual(
+            env_mod.validate(make_env(file_digests={"docs/x.md": hex64})), []
+        )
+        self.assertEqual(
+            env_mod.validate(make_env(file_digests={"docs/x.md": "sha256:" + hex64})),
+            [],
+        )
 
     def test_15_bad_timestamp(self):
-        self.assertIn("E_BAD_TIMESTAMP", env_mod.validate(make_env(created_ts="2026-10-17 03:30:00")))
-        self.assertEqual(env_mod.validate(make_env(created_ts="2026-10-17T03:30:00Z")), [])
+        self.assertIn(
+            "E_BAD_TIMESTAMP",
+            env_mod.validate(make_env(created_ts="2026-10-17 03:30:00")),
+        )
+        self.assertEqual(
+            env_mod.validate(make_env(created_ts="2026-10-17T03:30:00Z")), []
+        )
 
 
 class UnitGuardIntegration(unittest.TestCase):
@@ -125,12 +162,15 @@ class UnitGuardIntegration(unittest.TestCase):
         self.assertEqual(env_mod.SCHEMA_VERSION, "pr-evidence-envelope/1")
 
     def test_19_deterministic_serialization(self):
-        self.assertEqual(env_mod.build_envelope(make_env()), env_mod.build_envelope(make_env()))
+        self.assertEqual(
+            env_mod.build_envelope(make_env()), env_mod.build_envelope(make_env())
+        )
 
     def test_20_extra_fields_forward_compat(self):
         # unknown keys are ignored by the parser (spec: fail-closed only on known fields)
         block = env_mod.build_envelope(make_env()).replace(
-            '{\n  "agent_id"', '{\n  "custom_future_field": 1,\n  "agent_id"')
+            '{\n  "agent_id"', '{\n  "custom_future_field": 1,\n  "agent_id"'
+        )
         back = env_mod.parse_envelope(block)
         self.assertIsNotNone(back)
 

@@ -14,17 +14,18 @@ Marker comment format (single line, the comment IS the ledger):
 Doctrine: parsers unescape only, never strip HTML comment tags (doctrine x);
 constants live here and are imported by tests, never copied (extraction SSOT).
 """
+
 from __future__ import annotations
 
 import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Protocol
+from typing import Protocol
 
 # --- Single sources of truth (imported by the test suite; never copy) ------
-TTL_MINUTES = 30            # AUTONOMOUS_TRANSIT_PIPELINE.md stale-claim expiry
-MAX_ACTIVE_CLAIMS = 3       # per-agent concurrent live claims
+TTL_MINUTES = 30  # AUTONOMOUS_TRANSIT_PIPELINE.md stale-claim expiry
+MAX_ACTIVE_CLAIMS = 3  # per-agent concurrent live claims
 MARKER_PREFIX = "<!-- atomic-claim:"
 
 MARKER_RE = re.compile(
@@ -64,7 +65,9 @@ class Claim:
         return now < self.expires_at
 
 
-def build_marker(issue: int, agent: str, ts: datetime, ttl_minutes: int = TTL_MINUTES) -> str:
+def build_marker(
+    issue: int, agent: str, ts: datetime, ttl_minutes: int = TTL_MINUTES
+) -> str:
     """Render the single-line marker comment. Fail-closed on bad input."""
     if issue <= 0:
         raise ClaimError("ISSUE_NOT_FOUND", "issue number must be positive")
@@ -74,7 +77,7 @@ def build_marker(issue: int, agent: str, ts: datetime, ttl_minutes: int = TTL_MI
     return f"<!-- atomic-claim:issue={issue},agent={agent},ts={ts_text},ttl={ttl_minutes}m -->"
 
 
-def parse_marker(text: str) -> Optional[Claim]:
+def parse_marker(text: str) -> Claim | None:
     """Parse a marker comment. Unescape-only parsing, never tag-stripping.
 
     Returns None for any non-marker or malformed input (fail-closed:
@@ -86,7 +89,9 @@ def parse_marker(text: str) -> Optional[Claim]:
     m = MARKER_RE.match(candidate)
     if not m:
         return None
-    ts = datetime.strptime(m.group("ts"), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    ts = datetime.strptime(m.group("ts"), "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=timezone.utc
+    )
     return Claim(
         issue=int(m.group("issue")),
         agent=m.group("agent"),
@@ -95,9 +100,9 @@ def parse_marker(text: str) -> Optional[Claim]:
     )
 
 
-def latest_claim(comments: List[str]) -> Optional[Claim]:
+def latest_claim(comments: list[str]) -> Claim | None:
     """Newest well-formed marker wins; malformed markers are ignored."""
-    best: Optional[Claim] = None
+    best: Claim | None = None
     for text in comments:
         c = parse_marker(text or "")
         if c is not None and (best is None or c.ts > best.ts):
@@ -106,7 +111,7 @@ def latest_claim(comments: List[str]) -> Optional[Claim]:
 
 
 def evaluate_claim(
-    current: Optional[Claim],
+    current: Claim | None,
     issue_number: int,
     agent_id: str,
     now: datetime,
@@ -127,8 +132,8 @@ def evaluate_claim(
 
 # --- Adapter seam: the tower GitHub App implements this ---------------------
 class TowerAdapter(Protocol):
-    def get_issue(self, number: int) -> Dict[str, object]: ...
-    def list_comments(self, number: int) -> List[str]: ...
+    def get_issue(self, number: int) -> dict[str, object]: ...
+    def list_comments(self, number: int) -> list[str]: ...
     def add_label(self, number: int, label: str) -> None: ...
     def remove_label(self, number: int, label: str) -> None: ...
     def post_comment(self, number: int, body: str) -> None: ...
@@ -139,18 +144,18 @@ class TowerAdapter(Protocol):
 class SimulatedAdapter:
     """In-memory tower stand-in for offline tests and local dry-runs."""
 
-    issues: Dict[int, Dict[str, object]] = field(default_factory=dict)
-    comments: Dict[int, List[str]] = field(default_factory=dict)
-    audit: List[str] = field(default_factory=list)
-    fail_label: bool = False       # inject step-2 failure (atomicity drill)
-    fail_comment: bool = False     # inject step-3 failure (rollback drill)
+    issues: dict[int, dict[str, object]] = field(default_factory=dict)
+    comments: dict[int, list[str]] = field(default_factory=dict)
+    audit: list[str] = field(default_factory=list)
+    fail_label: bool = False  # inject step-2 failure (atomicity drill)
+    fail_comment: bool = False  # inject step-3 failure (rollback drill)
 
-    def get_issue(self, number: int) -> Dict[str, object]:
+    def get_issue(self, number: int) -> dict[str, object]:
         if number not in self.issues:
             raise ClaimError("ISSUE_NOT_FOUND")
         return self.issues[number]
 
-    def list_comments(self, number: int) -> List[str]:
+    def list_comments(self, number: int) -> list[str]:
         return list(self.comments.get(number, []))
 
     def add_label(self, number: int, label: str) -> None:
@@ -174,7 +179,9 @@ class SimulatedAdapter:
         self.audit.append(entry)
 
 
-def work_claim(adapter: TowerAdapter, issue_number: int, agent_id: str, now: datetime) -> str:
+def work_claim(
+    adapter: TowerAdapter, issue_number: int, agent_id: str, now: datetime
+) -> str:
     """The atomic transaction (spec section 2). All-or-nothing by rollback.
 
     Raises ClaimError with a spec-section-5 code on every terminal path.
@@ -188,20 +195,22 @@ def work_claim(adapter: TowerAdapter, issue_number: int, agent_id: str, now: dat
         raise ClaimError("CLAIM_CONFLICT_OTHER")
     marker = build_marker(issue_number, agent_id, now)
     had_label = "status:claimed" in set(issue.get("labels", []))  # type: ignore[arg-type]
-    adapter.add_label(issue_number, "status:claimed")            # step 2
+    adapter.add_label(issue_number, "status:claimed")  # step 2
     try:
-        adapter.post_comment(issue_number, marker)               # step 3
+        adapter.post_comment(issue_number, marker)  # step 3
     except ClaimError:
-        if not had_label:                                        # rollback
+        if not had_label:  # rollback
             adapter.remove_label(issue_number, "status:claimed")
         raise
-    if "status:unclaimed" in set(issue.get("labels", [])):       # step 4
+    if "status:unclaimed" in set(issue.get("labels", [])):  # step 4
         adapter.remove_label(issue_number, "status:unclaimed")
-    adapter.append_audit(f"claim:{decision}:{issue_number}:{agent_id}:{now.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+    adapter.append_audit(
+        f"claim:{decision}:{issue_number}:{agent_id}:{now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    )
     return decision
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     """Dry-run CLI: simulate the decision matrix without any network I/O."""
     usage = (
         "usage: work_claim_reference.py demo\n"

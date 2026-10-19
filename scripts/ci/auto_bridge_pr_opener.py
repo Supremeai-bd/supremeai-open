@@ -48,14 +48,23 @@ def run_cmd(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
 
 def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
     """Scan for bridge work orders with queued labels that lack an open PR."""
-    code, out, err = run_cmd([
-        "gh", "issue", "list",
-        "--repo", UPSTREAM_REPO,
-        "--label", "bridge:queued",
-        "--state", "open",
-        "--limit", "30",
-        "--json", "number,title,body,labels",
-    ])
+    code, out, err = run_cmd(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            UPSTREAM_REPO,
+            "--label",
+            "bridge:queued",
+            "--state",
+            "open",
+            "--limit",
+            "30",
+            "--json",
+            "number,title,body,labels",
+        ]
+    )
     if code != 0:
         print(f"❌ Failed to query bridge work orders: {err}", file=sys.stderr)
         return []
@@ -80,13 +89,21 @@ def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
         branch = branch_match.group(1).strip()
 
         # Check if an open PR exists for this branch
-        pr_code, pr_out, _ = run_cmd([
-            "gh", "pr", "list",
-            "--repo", UPSTREAM_REPO,
-            "--head", branch,
-            "--state", "open",
-            "--json", "number",
-        ])
+        pr_code, pr_out, _ = run_cmd(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--repo",
+                UPSTREAM_REPO,
+                "--head",
+                branch,
+                "--state",
+                "open",
+                "--json",
+                "number",
+            ]
+        )
         if pr_code == 0:
             try:
                 prs = json.loads(pr_out)
@@ -95,12 +112,14 @@ def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
             except Exception:
                 pass
 
-        stranded.append({
-            "issue_number": issue.get("number"),
-            "title": issue.get("title", ""),
-            "branch": branch,
-            "body": body,
-        })
+        stranded.append(
+            {
+                "issue_number": issue.get("number"),
+                "title": issue.get("title", ""),
+                "branch": branch,
+                "body": body,
+            }
+        )
 
     return stranded
 
@@ -109,23 +128,40 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
     """Fetch, rebase onto origin/main, and open PR for stranded bridge branch."""
     issue_num = item["issue_number"]
     branch = item["branch"]
-    title = item["title"].replace("🌉 Bridge Work Order — ", "").replace("🌉 Bridge Work Order: ", "").strip()
+    title = (
+        item["title"]
+        .replace("🌉 Bridge Work Order — ", "")
+        .replace("🌉 Bridge Work Order: ", "")
+        .strip()
+    )
 
     print(f"\n🔍 Processing stranded work order #{issue_num} on branch '{branch}'...")
 
     if dry_run:
-        print(f"   [DRY-RUN] Would rebase '{branch}' onto origin/main and open PR against main.")
+        print(
+            f"   [DRY-RUN] Would rebase '{branch}' onto origin/main and open PR against main."
+        )
         return True
 
     # 1. Fetch branch and origin/main
-    fetch_code, _, fetch_err = run_cmd(["git", "fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}", "main"])
+    fetch_code, _, fetch_err = run_cmd(
+        [
+            "git",
+            "fetch",
+            "origin",
+            f"+refs/heads/{branch}:refs/remotes/origin/{branch}",
+            "main",
+        ]
+    )
     if fetch_code != 0:
         print(f"   ❌ Failed to fetch branch {branch}: {fetch_err}")
         return False
 
     # 2. Checkout local temporary tracking branch
     run_cmd(["git", "branch", "-D", f"tmp-{issue_num}"])
-    co_code, _, co_err = run_cmd(["git", "checkout", "-b", f"tmp-{issue_num}", f"origin/{branch}"])
+    co_code, _, co_err = run_cmd(
+        ["git", "checkout", "-b", f"tmp-{issue_num}", f"origin/{branch}"]
+    )
     if co_code != 0:
         print(f"   ❌ Failed to checkout tmp branch for {branch}: {co_err}")
         return False
@@ -145,13 +181,15 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
             return False
         # Push rebased branch back to remote
         print(f"   🚀 Pushing rebased branch to origin/{branch}...")
-        push_code, _, push_err = run_cmd(["git", "push", "--force-with-lease", "origin", f"tmp-{issue_num}:{branch}"])
+        push_code, _, push_err = run_cmd(
+            ["git", "push", "--force-with-lease", "origin", f"tmp-{issue_num}:{branch}"]
+        )
         if push_code != 0:
             print(f"   ❌ Failed to push rebased branch: {push_err}")
             run_cmd(["git", "checkout", "-"])
             return False
     else:
-        print(f"   ✅ Branch is fresh (0 commits behind origin/main).")
+        print("   ✅ Branch is fresh (0 commits behind origin/main).")
 
     # 4. Open PR
     pr_body = (
@@ -167,14 +205,23 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
         f"- [x] `git revert`-safe pure patch\n"
     )
 
-    pr_code, pr_out, pr_err = run_cmd([
-        "gh", "pr", "create",
-        "--repo", UPSTREAM_REPO,
-        "--base", "main",
-        "--head", branch,
-        "--title", f"feat(bridge): {title}",
-        "--body", pr_body,
-    ])
+    pr_code, pr_out, pr_err = run_cmd(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--repo",
+            UPSTREAM_REPO,
+            "--base",
+            "main",
+            "--head",
+            branch,
+            "--title",
+            f"feat(bridge): {title}",
+            "--body",
+            pr_body,
+        ]
+    )
 
     run_cmd(["git", "checkout", "-"])
     run_cmd(["git", "branch", "-D", f"tmp-{issue_num}"])
@@ -188,9 +235,19 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Auto Bridge PR Opener for SupremeAI Federation")
-    parser.add_argument("--auto-open", action="store_true", help="Automatically fetch, rebase, and open PRs for stranded work orders")
-    parser.add_argument("--dry-run", action="store_true", help="Scan and report stranded work orders without modifying git or GitHub")
+    parser = argparse.ArgumentParser(
+        description="Auto Bridge PR Opener for SupremeAI Federation"
+    )
+    parser.add_argument(
+        "--auto-open",
+        action="store_true",
+        help="Automatically fetch, rebase, and open PRs for stranded work orders",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Scan and report stranded work orders without modifying git or GitHub",
+    )
     args = parser.parse_args()
 
     print("======================================================================")
@@ -200,7 +257,9 @@ def main() -> int:
 
     stranded = find_stranded_bridge_work_orders()
     if not stranded:
-        print("✅ No stranded bridge work orders detected. Transit pipeline is 100% clean!")
+        print(
+            "✅ No stranded bridge work orders detected. Transit pipeline is 100% clean!"
+        )
         return 0
 
     print(f"ℹ️ Found {len(stranded)} stranded bridge work order(s):")
@@ -216,7 +275,9 @@ def main() -> int:
         if open_pr_for_work_order(s, dry_run=args.dry_run):
             success_count += 1
 
-    print(f"\n🏁 Finished: {success_count}/{len(stranded)} work orders processed successfully.")
+    print(
+        f"\n🏁 Finished: {success_count}/{len(stranded)} work orders processed successfully."
+    )
     return 0
 
 

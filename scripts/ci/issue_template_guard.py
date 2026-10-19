@@ -26,6 +26,7 @@ protected path for the bridge lane.
 
 Self-test: python3 issue_template_guard.py --self-test
 """
+
 from __future__ import annotations
 
 import json
@@ -34,21 +35,46 @@ import sys
 
 CONVENTIONAL_TITLE = re.compile(
     r"^(?P<type>feat|fix|plan|chore|docs|ops|refactor|test|ci|perf)"
-    r"(\((?P<scope>[a-zA-Z0-9_\-.\/]+)\))?:\s+(?P<subject>\S.+)$")
+    r"(\((?P<scope>[a-zA-Z0-9_\-.\/]+)\))?:\s+(?P<subject>\S.+)$"
+)
 PRIORITY_BRACKET = re.compile(r"\[(?:P0|P1|P2|P3)\]")
 SECTION_MARKER = re.compile(
     r"(?im)^(?:#{1,6}\s+.*|.*\b(context|summary|task contract|"
-    r"acceptance criteria|steps)\b.*$)")
+    r"acceptance criteria|steps)\b.*$)"
+)
 MIN_BODY_CHARS = 50
 
 PLACEHOLDER_TITLES = {
-    "test", "tests", "asdf", "asdfgh", "bug", "bugfix", "untitled",
-    "wip", "tmp", "temp", "misc", "stuff", "issue", "fix", "update",
-    "hello", "sample", "example", "t", "x", "n/a", "na", "none",
+    "test",
+    "tests",
+    "asdf",
+    "asdfgh",
+    "bug",
+    "bugfix",
+    "untitled",
+    "wip",
+    "tmp",
+    "temp",
+    "misc",
+    "stuff",
+    "issue",
+    "fix",
+    "update",
+    "hello",
+    "sample",
+    "example",
+    "t",
+    "x",
+    "n/a",
+    "na",
+    "none",
 }
 BOT_AUTHORS = {
-    "dependabot[bot]", "github-actions[bot]", "renovate[bot]",
-    "copilot-pull-request-reviewer[bot]", "renovate-release[bot]",
+    "dependabot[bot]",
+    "github-actions[bot]",
+    "renovate[bot]",
+    "copilot-pull-request-reviewer[bot]",
+    "renovate-release[bot]",
 }
 
 LABEL_PASS = ["status:unclaimed", "bridge:queued"]
@@ -67,19 +93,31 @@ def _reject(reasons: list, issue_number, title: str) -> dict:
         f"{MIN_BODY_CHARS} chars with sections such as Context, "
         "Summary, Task Contract, Acceptance Criteria, or Steps.\n\n"
         "This issue is closed as not_planned. Please reopen a "
-        "well-formed issue.")
-    return {"verdict": "reject", "issue": issue_number, "title": title,
-            "reasons": reasons, "labels_to_add": list(LABEL_REJECT),
-            "comment": comment,
-            "close": {"state": "closed", "reason": "not_planned"}}
+        "well-formed issue."
+    )
+    return {
+        "verdict": "reject",
+        "issue": issue_number,
+        "title": title,
+        "reasons": reasons,
+        "labels_to_add": list(LABEL_REJECT),
+        "comment": comment,
+        "close": {"state": "closed", "reason": "not_planned"},
+    }
 
 
-def _pass(issue_number, title: str, note: str | None = None,
-          add_labels: bool = True) -> dict:
-    return {"verdict": "pass", "issue": issue_number, "title": title,
-            "reasons": [note] if note else [],
-            "labels_to_add": list(LABEL_PASS) if add_labels else [],
-            "comment": None, "close": None}
+def _pass(
+    issue_number, title: str, note: str | None = None, add_labels: bool = True
+) -> dict:
+    return {
+        "verdict": "pass",
+        "issue": issue_number,
+        "title": title,
+        "reasons": [note] if note else [],
+        "labels_to_add": list(LABEL_PASS) if add_labels else [],
+        "comment": None,
+        "close": None,
+    }
 
 
 def validate_issue(payload: dict) -> dict:
@@ -104,19 +142,27 @@ def validate_issue(payload: dict) -> dict:
     conv = CONVENTIONAL_TITLE.match(stripped)
     has_priority = bool(PRIORITY_BRACKET.search(stripped))
     if not conv and not has_priority:
-        reasons.append("title is neither conventional (type(scope): subject) "
-                       "nor priority-bracketed [P0..P3]")
+        reasons.append(
+            "title is neither conventional (type(scope): subject) "
+            "nor priority-bracketed [P0..P3]"
+        )
     elif conv and conv.group("subject").strip().lower() in PLACEHOLDER_TITLES:
         reasons.append(f"placeholder title subject: {conv.group('subject').strip()!r}")
-    elif not conv and has_priority and stripped.strip("[]0123456789Pp ").lower() in PLACEHOLDER_TITLES:
+    elif (
+        not conv
+        and has_priority
+        and stripped.strip("[]0123456789Pp ").lower() in PLACEHOLDER_TITLES
+    ):
         reasons.append(f"placeholder title: {stripped!r}")
 
     if len(body) < MIN_BODY_CHARS:
         reasons.append(f"body too short ({len(body)} < {MIN_BODY_CHARS} chars)")
     elif not SECTION_MARKER.search(body):
-        reasons.append("body lacks markdown headers or required section "
-                       "markers (Context/Summary/Task Contract/"
-                       "Acceptance Criteria/Steps)")
+        reasons.append(
+            "body lacks markdown headers or required section "
+            "markers (Context/Summary/Task Contract/"
+            "Acceptance Criteria/Steps)"
+        )
 
     if reasons:
         return _reject(reasons, number, title)
@@ -124,11 +170,14 @@ def validate_issue(payload: dict) -> dict:
 
 
 def _self_test() -> int:
-    good = {"number": 1, "author": "someone",
-            "title": "feat(gateway): [P1] unified shield",
-            "body": "## Context\nNeed one-key SSOT across the federation "
-                    "gateway and downstream apps.\n## Acceptance Criteria\n"
-                    "OpenAPI valid; tests pass."}
+    good = {
+        "number": 1,
+        "author": "someone",
+        "title": "feat(gateway): [P1] unified shield",
+        "body": "## Context\nNeed one-key SSOT across the federation "
+        "gateway and downstream apps.\n## Acceptance Criteria\n"
+        "OpenAPI valid; tests pass.",
+    }
     v = validate_issue(good)
     assert v["verdict"] == "pass", v
     assert v["labels_to_add"] == ["status:unclaimed", "bridge:queued"]
@@ -142,26 +191,31 @@ def _self_test() -> int:
 
     # Invalid cases.
     r1 = validate_issue({**good, "title": "asdf"})
-    assert r1["verdict"] == "reject" and any("neither conventional" in r
-                                             for r in r1["reasons"]), r1
+    assert r1["verdict"] == "reject" and any(
+        "neither conventional" in r for r in r1["reasons"]
+    ), r1
     r2 = validate_issue({**good, "title": "fix: asdf"})
-    assert r2["verdict"] == "reject" and any("placeholder" in r
-                                             for r in r2["reasons"]), r2
+    assert r2["verdict"] == "reject" and any(
+        "placeholder" in r for r in r2["reasons"]
+    ), r2
     r3 = validate_issue({**good, "body": "short"})
-    assert r3["verdict"] == "reject" and any("too short" in r
-                                             for r in r3["reasons"]), r3
+    assert r3["verdict"] == "reject" and any("too short" in r for r in r3["reasons"]), (
+        r3
+    )
     long_unstructured = "x" * 60
     r4 = validate_issue({**good, "body": long_unstructured})
-    assert r4["verdict"] == "reject" and any("lacks" in r
-                                             for r in r4["reasons"]), r4
+    assert r4["verdict"] == "reject" and any("lacks" in r for r in r4["reasons"]), r4
     # Reject plan shape: label + close not_planned + comment.
     assert r1["close"] == {"state": "closed", "reason": "not_planned"}
     assert r1["labels_to_add"] == ["invalid"] and r1["comment"]
 
     # Bot bypass passes without labels.
     b = validate_issue({**good, "title": "asdf", "author": "dependabot[bot]"})
-    assert b["verdict"] == "pass" and b["labels_to_add"] == [] and \
-        b["reasons"] == ["bot_bypass:dependabot[bot]"], b
+    assert (
+        b["verdict"] == "pass"
+        and b["labels_to_add"] == []
+        and b["reasons"] == ["bot_bypass:dependabot[bot]"]
+    ), b
 
     # Fail-closed on malformed payloads.
     for bad in (None, {}, {"number": 1}, {"title": 7, "body": "x"}):
@@ -169,8 +223,9 @@ def _self_test() -> int:
         assert out["verdict"] == "reject", (bad, out)
 
     # Section markers recognized case-insensitively.
-    v4 = validate_issue({**good, "body": "task contract: deliver the "
-                                         "guard plus offline self-tests."})
+    v4 = validate_issue(
+        {**good, "body": "task contract: deliver the guard plus offline self-tests."}
+    )
     assert v4["verdict"] == "pass", v4
     print("self-test OK: issue_template_guard")
     return 0

@@ -142,7 +142,10 @@ ws.onmessage = (ev) => {
 # zero-extra-deps sketch: any RFC 6455 client works; the wire contract is
 # plain JSON text messages validated against websocket-events.schema.json.
 import json, websocket  # pip install websocket-client — transport only
-ws = websocket.create_connection("wss://supremeai-mcp-tower.onrender.com/ws?client=demo-py")
+
+ws = websocket.create_connection(
+    "wss://supremeai-mcp-tower.onrender.com/ws?client=demo-py"
+)
 ws.send(json.dumps({"action": "subscribe", "task_id": "task-40"}))
 for raw in ws:
     frame = json.loads(raw)

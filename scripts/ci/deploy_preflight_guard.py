@@ -25,8 +25,6 @@ import argparse
 import json
 import os
 import py_compile
-import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -46,6 +44,8 @@ try:
         calculate_monthly_build_minutes,
         evaluate_deployment_mode,
         fetch_account_services,
+    )
+    from render_build_quota_guard import (
         load_env as load_render_env,
     )
 except ImportError:
@@ -60,7 +60,7 @@ except ImportError:
 def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]]:
     """Step 1 (< 10s): Fast lint and syntax compilation across all target code."""
     errors: list[str] = []
-    
+
     if targets is None:
         scan_paths = [
             REPO_ROOT / "core",
@@ -76,7 +76,12 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
         for sp in scan_paths:
             if sp.is_dir():
                 for f in sp.rglob("*"):
-                    if f.is_file() and ".git" not in f.parts and "node_modules" not in f.parts and "__pycache__" not in f.parts:
+                    if (
+                        f.is_file()
+                        and ".git" not in f.parts
+                        and "node_modules" not in f.parts
+                        and "__pycache__" not in f.parts
+                    ):
                         files_to_check.append(f)
     else:
         files_to_check = targets
@@ -94,7 +99,9 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
             try:
                 py_compile.compile(str(file_path), doraise=True)
             except py_compile.PyCompileError as e:
-                errors.append(f"Python Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}")
+                errors.append(
+                    f"Python Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}"
+                )
 
         # 2. JSON Validation
         elif ext == ".json":
@@ -103,7 +110,9 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
                 with file_path.open("r", encoding="utf-8") as jf:
                     json.load(jf)
             except Exception as e:
-                errors.append(f"JSON Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}")
+                errors.append(
+                    f"JSON Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}"
+                )
 
         # 3. YAML Validation
         elif ext in {".yaml", ".yml"} and yaml is not None:
@@ -112,12 +121,18 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
                 with file_path.open("r", encoding="utf-8") as yf:
                     yaml.safe_load(yf)
             except Exception as e:
-                errors.append(f"YAML Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}")
+                errors.append(
+                    f"YAML Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}"
+                )
 
     passed = len(errors) == 0
-    print(f"[Step 1: Syntax & Lint] Checked: {py_count} Python, {json_count} JSON, {yaml_count} YAML files.")
+    print(
+        f"[Step 1: Syntax & Lint] Checked: {py_count} Python, {json_count} JSON, {yaml_count} YAML files."
+    )
     if passed:
-        print("[Step 1: Syntax & Lint] PASS: All files compiled cleanly with 0 syntax errors.")
+        print(
+            "[Step 1: Syntax & Lint] PASS: All files compiled cleanly with 0 syntax errors."
+        )
     else:
         print(f"[Step 1: Syntax & Lint] FAIL: Found {len(errors)} syntax errors:")
         for err in errors[:5]:
@@ -128,7 +143,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
 def run_step2_secrets(required_keys: list[str] | None = None) -> tuple[bool, list[str]]:
     """Step 2 (< 15s): Verify presence and validity of required secrets without logging secrets."""
     errors: list[str] = []
-    
+
     # Check environment + .env file
     env = dict(os.environ)
     env_file = REPO_ROOT / ".env"
@@ -154,7 +169,9 @@ def run_step2_secrets(required_keys: list[str] | None = None) -> tuple[bool, lis
         if not val:
             # RENDER_API_KEY_5 may be optional if Gateway uses static webhook or direct deploy
             if key == "RENDER_API_KEY_5":
-                print(f"[Step 2: Secrets Presence] INFO: '{key}' not set in local env (will use GitHub Secrets in landing CI).")
+                print(
+                    f"[Step 2: Secrets Presence] INFO: '{key}' not set in local env (will use GitHub Secrets in landing CI)."
+                )
                 continue
             errors.append(f"Missing required secret or environment variable: '{key}'")
         elif val.startswith("<") and val.endswith(">"):
@@ -163,9 +180,13 @@ def run_step2_secrets(required_keys: list[str] | None = None) -> tuple[bool, lis
             found_keys.append(key)
 
     passed = len(errors) == 0
-    print(f"[Step 2: Secrets Presence] Verified {len(found_keys)} / {len(check_keys)} required environment keys.")
+    print(
+        f"[Step 2: Secrets Presence] Verified {len(found_keys)} / {len(check_keys)} required environment keys."
+    )
     if passed:
-        print("[Step 2: Secrets Presence] PASS: All required environment secrets are configured.")
+        print(
+            "[Step 2: Secrets Presence] PASS: All required environment secrets are configured."
+        )
     else:
         print(f"[Step 2: Secrets Presence] WARNING: {len(errors)} secrets missing:")
         for err in errors:
@@ -173,10 +194,14 @@ def run_step2_secrets(required_keys: list[str] | None = None) -> tuple[bool, lis
     return passed, errors
 
 
-def run_step3_quota(target_service: str | None = None, threshold: float = SAFE_BUILD_THRESHOLD_MINUTES) -> tuple[bool, dict[str, Any]]:
+def run_step3_quota(
+    target_service: str | None = None, threshold: float = SAFE_BUILD_THRESHOLD_MINUTES
+) -> tuple[bool, dict[str, Any]]:
     """Step 3: Render Account Quota Evaluation (< 450m check)."""
     if not calculate_monthly_build_minutes or not fetch_account_services:
-        print("[Step 3: Quota Guard] Skipped: render_build_quota_guard module not found.")
+        print(
+            "[Step 3: Quota Guard] Skipped: render_build_quota_guard module not found."
+        )
         return True, {"skipped": True}
 
     env = dict(os.environ)
@@ -189,15 +214,23 @@ def run_step3_quota(target_service: str | None = None, threshold: float = SAFE_B
     api_key = env.get(key_var)
 
     if not api_key:
-        print(f"[Step 3: Quota Guard] WARNING: Key '{key_var}' not found in environment. Proceeding with caution.")
+        print(
+            f"[Step 3: Quota Guard] WARNING: Key '{key_var}' not found in environment. Proceeding with caution."
+        )
         return True, {"service": target, "warning": True, "reason": "No API key"}
 
     try:
         services = fetch_account_services(api_key)
         svc = next((s for s in services if s.get("name") == target), None)
         if not svc:
-            print(f"[Step 3: Quota Guard] WARNING: Service '{target}' not found under key '{key_var}'.")
-            return True, {"service": target, "warning": True, "reason": "Service not found"}
+            print(
+                f"[Step 3: Quota Guard] WARNING: Service '{target}' not found under key '{key_var}'."
+            )
+            return True, {
+                "service": target,
+                "warning": True,
+                "reason": "Service not found",
+            }
 
         svc_id = svc.get("id", "")
         build_mins, deploys = calculate_monthly_build_minutes(svc_id, api_key)
@@ -205,9 +238,13 @@ def run_step3_quota(target_service: str | None = None, threshold: float = SAFE_B
         eval_res["service"] = target
         eval_res["monthly_deploys"] = deploys
 
-        print(f"[Step 3: Quota Guard] Service: {target} | Monthly Build: {build_mins}m / 500m (Threshold: {threshold}m)")
-        print(f"[Step 3: Quota Guard] Action: {eval_res['mode']} | autoDeploy Permitted: {eval_res['allow_render_native_build']}")
-        
+        print(
+            f"[Step 3: Quota Guard] Service: {target} | Monthly Build: {build_mins}m / 500m (Threshold: {threshold}m)"
+        )
+        print(
+            f"[Step 3: Quota Guard] Action: {eval_res['mode']} | autoDeploy Permitted: {eval_res['allow_render_native_build']}"
+        )
+
         return not eval_res["warning"], eval_res
     except Exception as e:
         print(f"[Step 3: Quota Guard] Quota check failed: {e}")
@@ -238,20 +275,50 @@ def run_self_test() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="SupremeAI Deploy Preflight Guard")
-    parser.add_argument("--all", action="store_true", help="Run Step 1, Step 2, and Step 3 sequentially")
-    parser.add_argument("--step1-syntax", action="store_true", help="Run Step 1 (Lint & Syntax Compilation)")
-    parser.add_argument("--step2-secrets", action="store_true", help="Run Step 2 (Secrets Presence & Format)")
-    parser.add_argument("--step3-quota", action="store_true", help="Run Step 3 (Render Account Quota Guard)")
-    parser.add_argument("--service", type=str, default="supremeai-primary-node", help="Render service name for quota evaluation")
-    parser.add_argument("--threshold", type=float, default=SAFE_BUILD_THRESHOLD_MINUTES, help="Build minutes threshold (default: 450.0)")
-    parser.add_argument("--self-test", action="store_true", help="Run offline deterministic self-test")
-    parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+    parser.add_argument(
+        "--all", action="store_true", help="Run Step 1, Step 2, and Step 3 sequentially"
+    )
+    parser.add_argument(
+        "--step1-syntax",
+        action="store_true",
+        help="Run Step 1 (Lint & Syntax Compilation)",
+    )
+    parser.add_argument(
+        "--step2-secrets",
+        action="store_true",
+        help="Run Step 2 (Secrets Presence & Format)",
+    )
+    parser.add_argument(
+        "--step3-quota",
+        action="store_true",
+        help="Run Step 3 (Render Account Quota Guard)",
+    )
+    parser.add_argument(
+        "--service",
+        type=str,
+        default="supremeai-primary-node",
+        help="Render service name for quota evaluation",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=SAFE_BUILD_THRESHOLD_MINUTES,
+        help="Build minutes threshold (default: 450.0)",
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="Run offline deterministic self-test"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Output results in JSON format"
+    )
     args = parser.parse_args()
 
     if args.self_test:
         return run_self_test()
 
-    run_all = args.all or not (args.step1_syntax or args.step2_secrets or args.step3_quota)
+    run_all = args.all or not (
+        args.step1_syntax or args.step2_secrets or args.step3_quota
+    )
 
     results: dict[str, Any] = {}
     overall_pass = True
@@ -273,7 +340,9 @@ def main() -> int:
 
     # Step 3: Quota
     if run_all or args.step3_quota:
-        s3_pass, s3_data = run_step3_quota(target_service=args.service, threshold=args.threshold)
+        s3_pass, s3_data = run_step3_quota(
+            target_service=args.service, threshold=args.threshold
+        )
         results["step3_quota"] = s3_data
 
     if args.json:

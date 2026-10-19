@@ -19,7 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 
-import rejected_wo_rescue as rwr  # noqa: E402
+import rejected_wo_rescue as rwr
 
 MODULE_PATH = REPO_ROOT / "scripts" / "ci" / "rejected_wo_rescue.py"
 
@@ -57,7 +57,6 @@ def _secret_marker() -> str:
 
 
 class TestClassifierHealable(unittest.TestCase):
-
     def test_wo546_patch_apply_conflict(self):
         t = rwr.triage(FIX_546, 546)
         self.assertTrue(t["healable"])
@@ -67,15 +66,15 @@ class TestClassifierHealable(unittest.TestCase):
 
     def test_wo546_rescue_plan_drops_colliding_paths(self):
         t = rwr.triage(FIX_546, 546)
-        self.assertEqual(t["rescuePlan"]["dropPaths"],
-                         ["AGENTS.md", "README.md"])
+        self.assertEqual(t["rescuePlan"]["dropPaths"], ["AGENTS.md", "README.md"])
         self.assertEqual(t["rescuePlan"]["action"], "resubmit_pure_new_files")
 
     def test_wo523_pre_existing_loop_file(self):
         t = rwr.triage(FIX_523, 523)
         self.assertEqual(t["mode"], rwr.MODE_PATCH_APPLY_CONFLICT)
-        self.assertEqual(t["conflictPaths"],
-                         ["scripts/agents/continuous_agent_loop.py"])
+        self.assertEqual(
+            t["conflictPaths"], ["scripts/agents/continuous_agent_loop.py"]
+        )
         self.assertIn("appendix", t["rescuePlan"]["doctrine"])
 
     def test_all_seven_unparseable_wos_classified(self):
@@ -88,22 +87,23 @@ class TestClassifierHealable(unittest.TestCase):
 
     def test_unparseable_label_plan_routes_ci_fixer(self):
         t = rwr.triage(FIX_UNPARSEABLE, 511)
-        self.assertEqual(t["labelPlan"]["apply"],
-                         [rwr.LABEL_HANDOFF, rwr.LABEL_UNCLAIMED])
+        self.assertEqual(
+            t["labelPlan"]["apply"], [rwr.LABEL_HANDOFF, rwr.LABEL_UNCLAIMED]
+        )
         self.assertIn(rwr.LABEL_REJECTED_AUDIT, t["labelPlan"]["keep"])
 
     def test_behind_main_mode(self):
         t = rwr.triage("branch is behind origin/main (stale base)")
         self.assertEqual(t["mode"], rwr.MODE_BEHIND_MAIN)
         self.assertEqual(t["rescuePlan"]["action"], "rebase_and_resubmit")
-        self.assertIn("abort + quarantine on any conflict",
-                      t["rescuePlan"]["steps"])
+        self.assertIn("abort + quarantine on any conflict", t["rescuePlan"]["steps"])
 
     def test_missing_reflection_mode(self):
         t = rwr.triage("work order missing reflection evidence section")
         self.assertEqual(t["mode"], rwr.MODE_MISSING_REFLECTION)
-        self.assertEqual(t["rescuePlan"]["requiredSection"],
-                         rwr.REFLECTION_SECTION_HEADER)
+        self.assertEqual(
+            t["rescuePlan"]["requiredSection"], rwr.REFLECTION_SECTION_HEADER
+        )
         self.assertEqual(t["rescuePlan"]["maxChars"], 4000)
 
     def test_pr_ci_failed_mode(self):
@@ -113,7 +113,6 @@ class TestClassifierHealable(unittest.TestCase):
 
 
 class TestClassifierFatal(unittest.TestCase):
-
     def test_fatal_secret(self):
         t = rwr.triage(_secret_marker())
         self.assertEqual(t["classification"], rwr.CLASS_FATAL)
@@ -153,37 +152,38 @@ class TestClassifierFatal(unittest.TestCase):
 
 
 class TestLabelPlanInvariants(unittest.TestCase):
-
     def test_audit_provenance_never_removed(self):
         self.assertIn(rwr.LABEL_REJECTED_AUDIT, rwr.HEALABLE_LABEL_PLAN["keep"])
-        self.assertNotIn(rwr.LABEL_REJECTED_AUDIT,
-                         rwr.HEALABLE_LABEL_PLAN["remove"])
+        self.assertNotIn(rwr.LABEL_REJECTED_AUDIT, rwr.HEALABLE_LABEL_PLAN["remove"])
 
     def test_healable_plan_exactly_spec_labels(self):
-        self.assertEqual(rwr.HEALABLE_LABEL_PLAN["apply"],
-                         ["handoff:ci-fixer", "status:unclaimed"])
+        self.assertEqual(
+            rwr.HEALABLE_LABEL_PLAN["apply"], ["handoff:ci-fixer", "status:unclaimed"]
+        )
 
     def test_fatal_plan_has_no_apply(self):
         self.assertEqual(rwr.FATAL_LABEL_PLAN["apply"], [])
 
 
 class TestTaskIdBuilder(unittest.TestCase):
-
     def test_deterministic(self):
         a = rwr.build_task_id("feat(core): DAG planner seed", "20261017")
         b = rwr.build_task_id("feat(core): DAG planner seed", "20261017")
         self.assertEqual(a, b)
 
     def test_format_contract(self):
-        tid = rwr.build_task_id("feat(core): [seed-foundation] Initialize "
-                                "SupremeAI Core Decision Moat", "20261017")
+        tid = rwr.build_task_id(
+            "feat(core): [seed-foundation] Initialize SupremeAI Core Decision Moat",
+            "20261017",
+        )
         self.assertTrue(rwr.is_valid_task_id(tid))
         self.assertTrue(tid.startswith("bridge-20261017-"))
         self.assertLessEqual(len(tid), 72)
 
     def test_special_chars_sanitized(self):
-        tid = rwr.build_task_id("feat(api): gateway/router — fallback & brokering",
-                                "20261017")
+        tid = rwr.build_task_id(
+            "feat(api): gateway/router — fallback & brokering", "20261017"
+        )
         self.assertTrue(rwr.is_valid_task_id(tid))
         self.assertNotIn("/", tid)
         self.assertNotIn("&", tid)
@@ -198,11 +198,9 @@ class TestTaskIdBuilder(unittest.TestCase):
 
 
 class TestRescueFlowStateMachine(unittest.TestCase):
-
     def test_full_sequence_valid(self):
         steps = rwr.RESCUE_FLOW_STEPS
-        self.assertEqual(steps, ["INSPECT", "REBASE", "RETROFIT", "VERIFY",
-                                 "RESUBMIT"])
+        self.assertEqual(steps, ["INSPECT", "REBASE", "RETROFIT", "VERIFY", "RESUBMIT"])
         for i in range(len(steps) - 1):
             self.assertTrue(rwr.validate_transition(steps[i], steps[i + 1]))
 
@@ -219,14 +217,14 @@ class TestRescueFlowStateMachine(unittest.TestCase):
 
 
 class TestTriggerContract(unittest.TestCase):
-
     def test_events_exact(self):
-        self.assertEqual(rwr.CI_FIXER_TRIGGER_CONTRACT["events"],
-                         ["event:pr.ci_failed", "event:bridge.rejected"])
+        self.assertEqual(
+            rwr.CI_FIXER_TRIGGER_CONTRACT["events"],
+            ["event:pr.ci_failed", "event:bridge.rejected"],
+        )
 
     def test_label_matcher(self):
-        self.assertEqual(rwr.CI_FIXER_TRIGGER_CONTRACT["labels"],
-                         ["handoff:ci-fixer"])
+        self.assertEqual(rwr.CI_FIXER_TRIGGER_CONTRACT["labels"], ["handoff:ci-fixer"])
 
     def test_fail_closed_role(self):
         self.assertEqual(rwr.CI_FIXER_TRIGGER_CONTRACT["role"], "ci-fixer")
@@ -235,7 +233,6 @@ class TestTriggerContract(unittest.TestCase):
 
 
 class TestIdempotencyAndSSOT(unittest.TestCase):
-
     def test_same_input_same_verdict(self):
         a = rwr.triage(FIX_546, 546)
         b = rwr.triage(FIX_546, 546)
@@ -249,11 +246,13 @@ class TestIdempotencyAndSSOT(unittest.TestCase):
 
 
 class TestSelfTestAndCLI(unittest.TestCase):
-
     def test_module_self_test_passes(self):
         proc = subprocess.run(
             [sys.executable, str(MODULE_PATH), "--self-test"],
-            capture_output=True, text=True, encoding="utf-8", timeout=60,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("ALL PASS", proc.stdout)
@@ -263,9 +262,19 @@ class TestSelfTestAndCLI(unittest.TestCase):
         try:
             tmp.write_text(FIX_546, encoding="utf-8")
             proc = subprocess.run(
-                [sys.executable, str(MODULE_PATH), "--comment-file",
-                 str(tmp), "--issue", "546", "--json"],
-                capture_output=True, text=True, encoding="utf-8", timeout=60,
+                [
+                    sys.executable,
+                    str(MODULE_PATH),
+                    "--comment-file",
+                    str(tmp),
+                    "--issue",
+                    "546",
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=60,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             payload = json.loads(proc.stdout)
@@ -281,7 +290,10 @@ class TestSelfTestAndCLI(unittest.TestCase):
             tmp.write_text("novel failure text", encoding="utf-8")
             proc = subprocess.run(
                 [sys.executable, str(MODULE_PATH), "--comment-file", str(tmp)],
-                capture_output=True, text=True, encoding="utf-8", timeout=60,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=60,
             )
             self.assertEqual(proc.returncode, 2)
         finally:
@@ -290,9 +302,16 @@ class TestSelfTestAndCLI(unittest.TestCase):
 
     def test_cli_missing_file_exit_3(self):
         proc = subprocess.run(
-            [sys.executable, str(MODULE_PATH), "--comment-file",
-             str(REPO_ROOT / "no_such_file_xyz.txt")],
-            capture_output=True, text=True, encoding="utf-8", timeout=60,
+            [
+                sys.executable,
+                str(MODULE_PATH),
+                "--comment-file",
+                str(REPO_ROOT / "no_such_file_xyz.txt"),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
         )
         self.assertEqual(proc.returncode, 3)
 

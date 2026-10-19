@@ -6,10 +6,10 @@ Constants and rules are imported from the reference module (SSOT) —
 never duplicated. Sample sources are assembled at runtime via chr()/
 repr() so this suite stays clean under the guard's own scan.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import subprocess  # noqa: F401  (imported to prove import-parity; never called)
 import sys
 import unittest
@@ -17,10 +17,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "ci"))
 
-import cross_platform_invariant_guard as guard  # noqa: E402
+import cross_platform_invariant_guard as guard
 
-BS = chr(92)   # backslash
-FS = chr(47)   # forward slash
+BS = chr(92)  # backslash
+FS = chr(47)  # forward slash
 CRLF = chr(13) + chr(10)
 
 
@@ -48,35 +48,38 @@ class TestR1Utf8Encoding(unittest.TestCase):
             self.assertEqual(rules(src), set(), enc)
 
     def test_open_non_utf8_flagged(self):
-        self.assertEqual(rules("open('f.txt', encoding='cp1252')\n"),
-                         {"R1-utf8-encoding"})
+        self.assertEqual(
+            rules("open('f.txt', encoding='cp1252')\n"), {"R1-utf8-encoding"}
+        )
 
     def test_io_and_codecs_open_covered(self):
+        self.assertEqual(rules("import io\nio.open('f.txt')\n"), {"R1-utf8-encoding"})
         self.assertEqual(
-            rules("import io\nio.open('f.txt')\n"), {"R1-utf8-encoding"})
+            rules("import codecs\ncodecs.open('f.txt', 'r')\n"), {"R1-utf8-encoding"}
+        )
         self.assertEqual(
-            rules("import codecs\ncodecs.open('f.txt', 'r')\n"),
-            {"R1-utf8-encoding"})
-        self.assertEqual(
-            rules("import codecs\ncodecs.open('f.txt', 'r', 'utf-8')\n"), set())
+            rules("import codecs\ncodecs.open('f.txt', 'r', 'utf-8')\n"), set()
+        )
 
     def test_read_text_write_text_flagged_without_encoding(self):
         self.assertEqual(rules("p.read_text()\n"), {"R1-utf8-encoding"})
         self.assertEqual(rules("p.write_text(data)\n"), {"R1-utf8-encoding"})
-        self.assertEqual(
-            rules("p.write_text(data, encoding='utf-8')\n"), set())
+        self.assertEqual(rules("p.write_text(data, encoding='utf-8')\n"), set())
 
     def test_subprocess_text_mode_requires_encoding(self):
-        self.assertEqual(rules("subprocess.run(cmd, text=True)\n"),
-                         {"R1-utf8-encoding", "R2-subprocess-timeout"})
+        self.assertEqual(
+            rules("subprocess.run(cmd, text=True)\n"),
+            {"R1-utf8-encoding", "R2-subprocess-timeout"},
+        )
         self.assertEqual(
             rules("subprocess.run(cmd, universal_newlines=True)\n"),
-            {"R1-utf8-encoding", "R2-subprocess-timeout"})
+            {"R1-utf8-encoding", "R2-subprocess-timeout"},
+        )
         self.assertEqual(
             rules("subprocess.run(cmd, text=True, encoding='utf-8')\n"),
-            {"R2-subprocess-timeout"})
-        self.assertEqual(rules("subprocess.run(cmd)\n"),
-                         {"R2-subprocess-timeout"})
+            {"R2-subprocess-timeout"},
+        )
+        self.assertEqual(rules("subprocess.run(cmd)\n"), {"R2-subprocess-timeout"})
 
     def test_dynamic_mode_is_treated_as_text(self):
         self.assertEqual(rules("open(name, mode)\n"), {"R1-utf8-encoding"})
@@ -84,12 +87,12 @@ class TestR1Utf8Encoding(unittest.TestCase):
 
 class TestR2SubprocessTimeout(unittest.TestCase):
     def test_run_without_timeout_flagged(self):
-        self.assertEqual(rules("subprocess.run(cmd)\n"),
-                         {"R2-subprocess-timeout"})
+        self.assertEqual(rules("subprocess.run(cmd)\n"), {"R2-subprocess-timeout"})
 
     def test_timeout_none_flagged(self):
-        self.assertEqual(rules("subprocess.run(cmd, timeout=None)\n"),
-                         {"R2-subprocess-timeout"})
+        self.assertEqual(
+            rules("subprocess.run(cmd, timeout=None)\n"), {"R2-subprocess-timeout"}
+        )
 
     def test_all_timeout_required_funcs_covered(self):
         for name in ("run", "call", "check_output", "check_call"):
@@ -100,19 +103,17 @@ class TestR2SubprocessTimeout(unittest.TestCase):
         self.assertEqual(rules("subprocess.run(cmd, timeout=60)\n"), set())
 
     def test_popen_communicate_chain_tracked(self):
-        src = ("import subprocess\n"
-               "p = subprocess.Popen(cmd)\n"
-               "out = p.communicate()\n")
+        src = "import subprocess\np = subprocess.Popen(cmd)\nout = p.communicate()\n"
         self.assertEqual(rules(src), {"R2-subprocess-timeout"})
-        fixed = ("import subprocess\n"
-                 "p = subprocess.Popen(cmd)\n"
-                 "out = p.communicate(timeout=10)\n")
+        fixed = (
+            "import subprocess\n"
+            "p = subprocess.Popen(cmd)\n"
+            "out = p.communicate(timeout=10)\n"
+        )
         self.assertEqual(rules(fixed), set())
 
     def test_popen_wait_chain_tracked(self):
-        src = ("import subprocess\n"
-               "p = subprocess.Popen(cmd)\n"
-               "code = p.wait()\n")
+        src = "import subprocess\np = subprocess.Popen(cmd)\ncode = p.wait()\n"
         self.assertIn("R2-subprocess-timeout", rules(src))
 
 
@@ -124,7 +125,8 @@ class TestR3CrlfPurge(unittest.TestCase):
 
     def test_lf_clean(self):
         self.assertEqual(
-            guard.scan_record(guard.SourceRecord("run.sh", "echo hi\n")), [])
+            guard.scan_record(guard.SourceRecord("run.sh", "echo hi\n")), []
+        )
 
     def test_covered_suffixes(self):
         for ext in (".py", ".sh", ".ts", ".md", ".tsx", ".js", ".mjs", ".cjs"):
@@ -136,7 +138,9 @@ class TestR3CrlfPurge(unittest.TestCase):
         self.assertEqual(found, [])
 
     def test_every_crlf_line_reported(self):
-        found = guard.scan_record(guard.SourceRecord("a.py", "x = 1" + CRLF + "y = 2" + CRLF))
+        found = guard.scan_record(
+            guard.SourceRecord("a.py", "x = 1" + CRLF + "y = 2" + CRLF)
+        )
         self.assertEqual(len(found), 2)
         self.assertEqual([v.line for v in found], [1, 2])
 
@@ -158,17 +162,14 @@ class TestR4PosixPath(unittest.TestCase):
         self.assertEqual(rules(src), set())
 
     def test_separator_join_flagged(self):
-        self.assertIn("R4-posix-path",
-                      rules("p = " + repr(FS) + ".join(parts)\n"))
-        self.assertIn("R4-posix-path",
-                      rules("p = " + repr(BS) + ".join(parts)\n"))
+        self.assertIn("R4-posix-path", rules("p = " + repr(FS) + ".join(parts)\n"))
+        self.assertIn("R4-posix-path", rules("p = " + repr(BS) + ".join(parts)\n"))
 
     def test_split_separator_flagged(self):
-        self.assertIn("R4-posix-path",
-                      rules("parts = p.split(" + repr(FS) + ")\n"))
+        self.assertIn("R4-posix-path", rules("parts = p.split(" + repr(FS) + ")\n"))
 
     def test_mixed_separator_literal_flagged(self):
-        src = "cmd(" + repr('C:' + BS + 'dir' + FS + 'file') + ")\n"
+        src = "cmd(" + repr("C:" + BS + "dir" + FS + "file") + ")\n"
         self.assertIn("R4-posix-path", rules(src))
 
     def test_url_scheme_literal_exempt(self):
@@ -180,40 +181,44 @@ class TestR4PosixPath(unittest.TestCase):
         self.assertIn("R4-posix-path", rules(src))
 
     def test_fstring_separator_flagged(self):
-        src = "p = f\"dir" + FS + "\" + name\n"
+        src = 'p = f"dir' + FS + '" + name\n'
         self.assertIn("R4-posix-path", rules(src))
 
 
 class TestR5CliPresence(unittest.TestCase):
     def test_which_guard_clean(self):
-        src = ("import shutil, subprocess\n"
-               "if shutil.which('git') is None:\n"
-               "    raise SystemExit(127)\n"
-               "subprocess.run(['git', 'status'], timeout=30)\n")
+        src = (
+            "import shutil, subprocess\n"
+            "if shutil.which('git') is None:\n"
+            "    raise SystemExit(127)\n"
+            "subprocess.run(['git', 'status'], timeout=30)\n"
+        )
         self.assertEqual(rules(src), set())
 
     def test_missing_which_flagged(self):
-        src = ("import subprocess\n"
-               "subprocess.run(['git', 'status'], timeout=30)\n")
+        src = "import subprocess\nsubprocess.run(['git', 'status'], timeout=30)\n"
         self.assertIn("R5-cli-presence", rules(src))
 
     def test_filenotfound_handler_clean(self):
-        src = ("import subprocess\n"
-               "def go():\n"
-               "    try:\n"
-               "        subprocess.run(['gh', 'pr'], timeout=30)\n"
-               "    except FileNotFoundError:\n"
-               "        return 127\n")
+        src = (
+            "import subprocess\n"
+            "def go():\n"
+            "    try:\n"
+            "        subprocess.run(['gh', 'pr'], timeout=30)\n"
+            "    except FileNotFoundError:\n"
+            "        return 127\n"
+        )
         self.assertEqual(rules(src), set())
 
     def test_shell_string_command_covered(self):
-        src = ("import subprocess\n"
-               "subprocess.run('docker ps', timeout=30)\n")
+        src = "import subprocess\nsubprocess.run('docker ps', timeout=30)\n"
         self.assertIn("R5-cli-presence", rules(src))
 
     def test_path_prefixed_binary_resolved(self):
-        src = ("import subprocess\n"
-               "subprocess.run([" + repr('/usr/bin/git') + ", 'status'], timeout=30)\n")
+        src = (
+            "import subprocess\n"
+            "subprocess.run([" + repr("/usr/bin/git") + ", 'status'], timeout=30)\n"
+        )
         self.assertIn("R5-cli-presence", rules(src))
 
 
@@ -263,7 +268,8 @@ class TestScanRecords(unittest.TestCase):
         by_rule = {v.rule for v in found}
         self.assertEqual(by_rule, {"R1-utf8-encoding", "R3-crlf-purge"})
         self.assertEqual(
-            [v.path for v in found if v.rule == "R1-utf8-encoding"], ["a.py"])
+            [v.path for v in found if v.rule == "R1-utf8-encoding"], ["a.py"]
+        )
 
     def test_empty_input_clean(self):
         self.assertEqual(guard.scan_records([]), [])
@@ -271,9 +277,11 @@ class TestScanRecords(unittest.TestCase):
 
 class TestAutofix(unittest.TestCase):
     def test_fix_adds_encoding_and_timeout(self):
-        dirty = ("with open('a.txt') as fh:\n"
-                 "    data = fh.read()\n"
-                 "subprocess.run(['git', 'status'])\n")
+        dirty = (
+            "with open('a.txt') as fh:\n"
+            "    data = fh.read()\n"
+            "subprocess.run(['git', 'status'])\n"
+        )
         fixed, notes = guard.autofix_records([guard.SourceRecord("d.py", dirty)])
         self.assertIn("encoding='utf-8'", fixed[0].content)
         self.assertIn("timeout=30", fixed[0].content)
@@ -283,13 +291,15 @@ class TestAutofix(unittest.TestCase):
 
     def test_fix_never_touches_binary_mode(self):
         fixed, notes = guard.autofix_records(
-            [guard.SourceRecord("b.py", "open('x', 'wb')\n")])
+            [guard.SourceRecord("b.py", "open('x', 'wb')\n")]
+        )
         self.assertEqual(fixed[0].content, "open('x', 'wb')\n")
         self.assertEqual(notes, [])
 
     def test_fix_rewrites_crlf(self):
         fixed, notes = guard.autofix_records(
-            [guard.SourceRecord("run.sh", "echo hi" + CRLF)])
+            [guard.SourceRecord("run.sh", "echo hi" + CRLF)]
+        )
         self.assertEqual(fixed[0].content, "echo hi\n")
         self.assertEqual(notes, ["run.sh: R3 rewrote CRLF to LF"])
 
@@ -303,7 +313,8 @@ class TestAutofix(unittest.TestCase):
     def test_fixer_rejects_invalid_roundtrip(self):
         # A file that does not parse yields no fixes and no crash.
         fixed, notes = guard.autofix_records(
-            [guard.SourceRecord("broken.py", "def broken(:\n")])
+            [guard.SourceRecord("broken.py", "def broken(:\n")]
+        )
         self.assertEqual(fixed[0].content, "def broken(:\n")
         self.assertEqual(notes, [])
 
@@ -345,10 +356,15 @@ class TestSelfTestAndCli(unittest.TestCase):
 
 def subprocess_run_guard(*cli_args: str):
     import subprocess as sp
+
     module = Path(guard.__file__).resolve()
     return sp.run(
         [sys.executable, str(module), *cli_args],
-        capture_output=True, text=True, encoding="utf-8", timeout=60)
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
 
 
 if __name__ == "__main__":

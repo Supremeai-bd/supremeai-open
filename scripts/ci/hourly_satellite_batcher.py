@@ -34,13 +34,15 @@ deterministic. Pure stdlib.
 
 Run: python3 scripts/ci/hourly_satellite_batcher.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
 import datetime as _dt
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Final, Mapping
+from typing import Final
 
 # ---------------------------------------------------------------------------
 # Registry & cadence (Tier 2)
@@ -216,7 +218,9 @@ def in_batch_window(landed_at: str, window_start: str, window_end: str) -> bool:
     start = _parse_iso(window_start)
     end = _parse_iso(window_end)
     if end <= start:
-        raise BatchError(f"window_end must be after window_start; got {window_start!r}..{window_end!r}")
+        raise BatchError(
+            f"window_end must be after window_start; got {window_start!r}..{window_end!r}"
+        )
     return start <= ts < end
 
 
@@ -253,7 +257,7 @@ def three_way_check(
     base_sha: str,
     target_head: str,
     parents: Mapping[str, str],
-    commit_files: Mapping[str, ],
+    commit_files: Mapping[str,],
 ) -> tuple[str, ...]:
     """Files touched by BOTH the batch and the target since `base_sha`.
 
@@ -308,7 +312,7 @@ def plan_batches(
     last_synced: Mapping[str, str] | None = None,
     target_heads: Mapping[str, str] | None = None,
     parents: Mapping[str, str] | None = None,
-    commit_files: Mapping[str, ] | None = None,
+    commit_files: Mapping[str,] | None = None,
 ) -> BatchPlan:
     """Aggregate windowed + urgent commits into one batch per satellite.
 
@@ -343,7 +347,9 @@ def plan_batches(
                 if path not in monorepo:
                     monorepo.append(path)
                 continue
-            bucket = grouped.setdefault(target, {"shas": [], "files": [], "urgent": False})
+            bucket = grouped.setdefault(
+                target, {"shas": [], "files": [], "urgent": False}
+            )
             if commit.sha not in bucket["shas"]:
                 bucket["shas"].append(commit.sha)
             if path not in bucket["files"]:
@@ -360,7 +366,9 @@ def plan_batches(
                 "freshness bookkeeping requires parents + commit_files maps"
             )
             if is_descendant(head, last, parents):
-                conflicts = three_way_check(bucket["files"], last, head, parents, commit_files)
+                conflicts = three_way_check(
+                    bucket["files"], last, head, parents, commit_files
+                )
                 if conflicts:
                     raise BatchConflict(
                         f"satellite {satellite}: batch conflicts with target changes "
@@ -475,26 +483,46 @@ def self_test() -> bool:
     a1, a2, b1 = "a" * 40, "b" * 40, "c" * 40
     plan = plan_batches(
         [
-            LandedCommit(a1, ("studio/app.tsx", "docs/ledger/x.md"), "2026-10-17T08:10:00Z"),
-            LandedCommit(a2, ("browser/sandbox.ts", "unrouted.bin"), "2026-10-17T08:20:00Z"),
-            LandedCommit(b1, ("api/gateway.ts",), "2026-10-17T07:00:00Z", frozenset({"fast-track"})),
-            LandedCommit("d" * 40, ("api/gateway.ts",), "2026-10-17T07:30:00Z"),  # outside window
+            LandedCommit(
+                a1, ("studio/app.tsx", "docs/ledger/x.md"), "2026-10-17T08:10:00Z"
+            ),
+            LandedCommit(
+                a2, ("browser/sandbox.ts", "unrouted.bin"), "2026-10-17T08:20:00Z"
+            ),
+            LandedCommit(
+                b1,
+                ("api/gateway.ts",),
+                "2026-10-17T07:00:00Z",
+                frozenset({"fast-track"}),
+            ),
+            LandedCommit(
+                "d" * 40, ("api/gateway.ts",), "2026-10-17T07:30:00Z"
+            ),  # outside window
         ],
         hour_ago,
         now,
     )
-    assert [b.satellite for b in plan.batches] == ["api", "archive", "browser", "studio"]  # sorted
+    assert [b.satellite for b in plan.batches] == [
+        "api",
+        "archive",
+        "browser",
+        "studio",
+    ]  # sorted
     api_batch = plan.batches[0]
     assert api_batch.shas == (b1,) and api_batch.urgent is True  # bypassed the window
     assert api_batch.files == ("api/gateway.ts",)
     archive_batch = plan.batches[1]
-    assert archive_batch.satellite == "archive"  # §3.1: docs/ledger/** → archive, not monorepo
+    assert (
+        archive_batch.satellite == "archive"
+    )  # §3.1: docs/ledger/** → archive, not monorepo
     assert archive_batch.files == ("docs/ledger/x.md",)
     studio_batch = plan.batches[3]
     assert studio_batch.shas == (a1,) and studio_batch.urgent is False
     assert studio_batch.files == ("studio/app.tsx",)
     assert plan.unrouted == ((a2, "unrouted.bin"),)
-    assert plan.monorepo_paths == ()  # docs/ledger/** routes to archive, not the monorepo
+    assert (
+        plan.monorepo_paths == ()
+    )  # docs/ledger/** routes to archive, not the monorepo
     # consolidated, not micro-commits: one batch per satellite
     assert len(plan.batches) == len({b.satellite for b in plan.batches})
 
@@ -517,13 +545,18 @@ def self_test() -> bool:
     # 3-way ingestion guard
     commit_files = {a2: ("browser/sandbox.ts",), "e" * 40: ("browser/other.ts",)}
     parents3 = {"e" * 40: a2, a2: "0" * 40}
-    assert three_way_check(("browser/fresh.ts",), "0" * 40, "e" * 40, parents3, commit_files) == ()
-    assert three_way_check(("browser/sandbox.ts",), "0" * 40, "e" * 40, parents3, commit_files) == (
-        "browser/sandbox.ts",
+    assert (
+        three_way_check(
+            ("browser/fresh.ts",), "0" * 40, "e" * 40, parents3, commit_files
+        )
+        == ()
     )
-    assert three_way_check(("browser/other.ts",), "0" * 40, "e" * 40, parents3, commit_files) == (
-        "browser/other.ts",
-    )
+    assert three_way_check(
+        ("browser/sandbox.ts",), "0" * 40, "e" * 40, parents3, commit_files
+    ) == ("browser/sandbox.ts",)
+    assert three_way_check(
+        ("browser/other.ts",), "0" * 40, "e" * 40, parents3, commit_files
+    ) == ("browser/other.ts",)
     # plan-level conflict → fail-closed whole batch
     try:
         plan_batches(
@@ -558,8 +591,12 @@ def self_test() -> bool:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Hourly Satellite Batcher (issue #514)")
-    parser.add_argument("--self-test", action="store_true", help="offline guard-the-guard")
+    parser = argparse.ArgumentParser(
+        description="Hourly Satellite Batcher (issue #514)"
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="offline guard-the-guard"
+    )
     args = parser.parse_args(argv)
     if args.self_test:
         return 0 if self_test() else 1

@@ -58,8 +58,8 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 OPEN_REPO = "Supremeai-bd/supremeai-open"
 
@@ -116,7 +116,7 @@ class SatelliteReport:
         )
 
 
-def _http_get_json(url: str, token: Optional[str] = None, timeout: int = 30) -> list:
+def _http_get_json(url: str, token: str | None = None, timeout: int = 30) -> list:
     headers = {
         "User-Agent": "supremeai-satellite-board-guard",
         "Accept": "application/vnd.github+json",
@@ -129,7 +129,9 @@ def _http_get_json(url: str, token: Optional[str] = None, timeout: int = 30) -> 
             return json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            raise UnreachableError(f"HTTP 404 — repository absent or private plane") from exc
+            raise UnreachableError(
+                "HTTP 404 — repository absent or private plane"
+            ) from exc
         if exc.code == 403:
             raise RateLimitError(
                 "HTTP 403 — API rate limit likely exhausted on the current credential plane"
@@ -144,7 +146,9 @@ def _issues_url(org: str, repo: str) -> str:
     return f"https://api.github.com/repos/{org}/{repo}/issues?state=open&per_page=100"
 
 
-def default_fetch_open_items(org: str, repo: str, token: Optional[str] = None) -> list[dict]:
+def default_fetch_open_items(
+    org: str, repo: str, token: str | None = None
+) -> list[dict]:
     """Fetch the combined open issues+PRs list for one satellite.
 
     Uses the GitHub REST combined listing (one request per satellite, see
@@ -176,8 +180,8 @@ def classify_items(items: list) -> tuple[int, int, list[str]]:
 def audit_satellite(
     repo: str,
     org: str = DEFAULT_ORG,
-    token: Optional[str] = None,
-    fetch: Optional[Callable[..., list]] = None,
+    token: str | None = None,
+    fetch: Callable[..., list] | None = None,
 ) -> SatelliteReport:
     """Audit one satellite for the zero-issue / zero-PR mandate."""
     fetch = fetch or default_fetch_open_items
@@ -189,9 +193,11 @@ def audit_satellite(
         return SatelliteReport(repo, VERDICT_UNREACHABLE, reason=str(exc))
     if not isinstance(items, list):
         return SatelliteReport(
-            repo, VERDICT_UNREACHABLE,
+            repo,
+            VERDICT_UNREACHABLE,
             reason="malformed payload: expected a JSON list of open items, got "
-                   f"{type(items).__name__}")
+            f"{type(items).__name__}",
+        )
     issues, prs, details = classify_items(items)
     if issues == 0 and prs == 0:
         return SatelliteReport(repo, VERDICT_CLEAN)
@@ -200,11 +206,13 @@ def audit_satellite(
 
 def audit_all(
     org: str = DEFAULT_ORG,
-    token: Optional[str] = None,
-    fetch: Optional[Callable[..., list]] = None,
+    token: str | None = None,
+    fetch: Callable[..., list] | None = None,
     satellites: tuple[str, ...] = SATELLITES,
 ) -> list[SatelliteReport]:
-    return [audit_satellite(repo, org=org, token=token, fetch=fetch) for repo in satellites]
+    return [
+        audit_satellite(repo, org=org, token=token, fetch=fetch) for repo in satellites
+    ]
 
 
 def decide_exit_code(reports: list[SatelliteReport]) -> int:
@@ -240,7 +248,7 @@ def build_json(reports: list[SatelliteReport], org: str) -> dict:
     }
 
 
-def _env_token() -> Optional[str]:
+def _env_token() -> str | None:
     import os
 
     for name in ("GH_TOKEN", "GITHUB_TOKEN"):
@@ -262,7 +270,10 @@ def self_test() -> bool:
 
     # 1. clean satellite
     r = audit_satellite("studio", fetch=lambda o, r_, t: [])
-    check("clean satellite -> CLEAN with zero counts", r.verdict == VERDICT_CLEAN and r.open_issues == 0 and r.open_prs == 0)
+    check(
+        "clean satellite -> CLEAN with zero counts",
+        r.verdict == VERDICT_CLEAN and r.open_issues == 0 and r.open_prs == 0,
+    )
 
     # 2. violation with mixed items
     mixed = [
@@ -273,7 +284,10 @@ def self_test() -> bool:
     r = audit_satellite("api", fetch=lambda o, r_, t: mixed)
     check(
         "mixed stray items -> VIOLATION 2 issues / 1 pr",
-        r.verdict == VERDICT_VIOLATION and r.open_issues == 2 and r.open_prs == 1 and len(r.violating) == 3,
+        r.verdict == VERDICT_VIOLATION
+        and r.open_issues == 2
+        and r.open_prs == 1
+        and len(r.violating) == 3,
     )
 
     # 3. unreachable paths
@@ -290,26 +304,50 @@ def self_test() -> bool:
 
     # 4. exit-code mapping
     clean = [SatelliteReport(x, VERDICT_CLEAN) for x in ("a", "b")]
-    viol = [SatelliteReport("a", VERDICT_CLEAN), SatelliteReport("b", VERDICT_VIOLATION)]
+    viol = [
+        SatelliteReport("a", VERDICT_CLEAN),
+        SatelliteReport("b", VERDICT_VIOLATION),
+    ]
     dead = [SatelliteReport(x, VERDICT_UNREACHABLE) for x in ("a", "b")]
     check(
         "exit codes 0 / 1 / 2 mapping",
-        decide_exit_code(clean) == 0 and decide_exit_code(viol) == 1 and decide_exit_code(dead) == 2,
+        decide_exit_code(clean) == 0
+        and decide_exit_code(viol) == 1
+        and decide_exit_code(dead) == 2,
     )
 
     ok = all(passed for _, passed in checks)
-    print(f"self-test: {sum(1 for _, p in checks if p)}/{len(checks)} checks {'PASS' if ok else 'FAIL'}")
+    print(
+        f"self-test: {sum(1 for _, p in checks if p)}/{len(checks)} checks {'PASS' if ok else 'FAIL'}"
+    )
     return ok
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Zero-Issue Satellite Mandate Guard (#626)")
+    parser = argparse.ArgumentParser(
+        description="Zero-Issue Satellite Mandate Guard (#626)"
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--check", action="store_true", help="gate mode: audit + documented exit codes")
-    mode.add_argument("--report", action="store_true", help="human-readable audit matrix")
-    mode.add_argument("--json", dest="as_json", action="store_true", help="machine-readable JSON output")
-    mode.add_argument("--self-test", action="store_true", help="offline self-test, zero network")
-    parser.add_argument("--org", default=DEFAULT_ORG, help=f"GitHub organization (default: {DEFAULT_ORG})")
+    mode.add_argument(
+        "--check", action="store_true", help="gate mode: audit + documented exit codes"
+    )
+    mode.add_argument(
+        "--report", action="store_true", help="human-readable audit matrix"
+    )
+    mode.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="machine-readable JSON output",
+    )
+    mode.add_argument(
+        "--self-test", action="store_true", help="offline self-test, zero network"
+    )
+    parser.add_argument(
+        "--org",
+        default=DEFAULT_ORG,
+        help=f"GitHub organization (default: {DEFAULT_ORG})",
+    )
     args = parser.parse_args()
 
     if args.self_test:
@@ -321,7 +359,9 @@ def main() -> int:
     if args.as_json:
         print(json.dumps(build_json(reports, args.org), indent=2))
     else:
-        print(f"Zero-Issue Satellite Mandate audit — org {args.org} (doctrine #626, docs/FEDERATION_CHARTER.md)")
+        print(
+            f"Zero-Issue Satellite Mandate audit — org {args.org} (doctrine #626, docs/FEDERATION_CHARTER.md)"
+        )
         for r in reports:
             print(f"  {r.summary()}")
             for v in r.violating:
@@ -329,9 +369,13 @@ def main() -> int:
         clean = sum(1 for r in reports if r.verdict == VERDICT_CLEAN)
         viol = sum(1 for r in reports if r.verdict == VERDICT_VIOLATION)
         unreach = sum(1 for r in reports if r.verdict == VERDICT_UNREACHABLE)
-        print(f"  totals: {clean} clean / {viol} violations / {unreach} unreachable of {len(reports)}")
+        print(
+            f"  totals: {clean} clean / {viol} violations / {unreach} unreachable of {len(reports)}"
+        )
         if unreach:
-            print("  note: UNREACHABLE entries are skipped with warning (private plane / rate limit), never silent.")
+            print(
+                "  note: UNREACHABLE entries are skipped with warning (private plane / rate limit), never silent."
+            )
 
     return decide_exit_code(reports)
 

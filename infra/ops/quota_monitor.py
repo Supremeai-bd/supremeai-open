@@ -5,7 +5,6 @@ per docs/OPS_ACTIONS_QUOTA_RUNBOOK.md to prevent runaway runner burnout.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -17,7 +16,7 @@ class QuotaEvaluation:
     daily_burn_rate: float
     projected_month_end_minutes: float
     status: str  # HEALTHY, WARNING, CRITICAL, EXHAUSTED
-    alert_message: Optional[str] = None
+    alert_message: str | None = None
 
 
 @dataclass
@@ -27,7 +26,7 @@ class JobRuntimeEvaluation:
     max_allowed_seconds: float
     is_runaway: bool
     status: str
-    recommendation: Optional[str] = None
+    recommendation: str | None = None
 
 
 class QuotaMonitor:
@@ -63,7 +62,10 @@ class QuotaMonitor:
         if used_minutes >= self.monthly_budget:
             status = "EXHAUSTED"
             msg = f"EMERGENCY: Monthly runner quota exhausted ({used_minutes:.1f}/{self.monthly_budget:.1f}m)."
-        elif used_minutes >= self.critical_threshold or projected > self.monthly_budget * 1.2:
+        elif (
+            used_minutes >= self.critical_threshold
+            or projected > self.monthly_budget * 1.2
+        ):
             status = "CRITICAL"
             msg = (
                 f"CRITICAL: Quota burn rate ({daily_burn:.1f}m/day) projects {projected:.1f}m "
@@ -72,7 +74,7 @@ class QuotaMonitor:
         elif used_minutes >= self.warning_threshold or projected > self.monthly_budget:
             status = "WARNING"
             msg = (
-                f"WARNING: Quota usage at {used_minutes:.1f}m ({used_minutes/self.monthly_budget*100:.1f}%). "
+                f"WARNING: Quota usage at {used_minutes:.1f}m ({used_minutes / self.monthly_budget * 100:.1f}%). "
                 f"Projected month-end: {projected:.1f}m."
             )
         else:

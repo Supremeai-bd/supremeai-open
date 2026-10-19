@@ -7,14 +7,16 @@ zero silent fallback (doctrine shared with core/routing dynamic router, WO
 deterministically offline; the default transport is stdlib asyncio HTTP (same
 honest core as sdk/python — no third-party client dependency).
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import ssl
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from .config import Endpoint
 
@@ -83,11 +85,13 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
         opener = asyncio.open_connection(host, port)
     reader, writer = await asyncio.wait_for(opener, timeout=30.0)
     try:
-        body = json.dumps({
-            "model": endpoint.model,
-            "messages": json.loads(payload).get("messages", []),
-            "stream": False,
-        }).encode()
+        body = json.dumps(
+            {
+                "model": endpoint.model,
+                "messages": json.loads(payload).get("messages", []),
+                "stream": False,
+            }
+        ).encode()
         head = (
             f"POST /{path} HTTP/1.1\r\n"
             f"Host: {host_port}\r\n"
@@ -99,7 +103,9 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
         writer.write(head.encode("latin-1") + body)
         await writer.drain()
         status_line = (await reader.readline()).decode("latin-1")
-        status = int(status_line.split(" ")[1]) if len(status_line.split(" ")) > 1 else 0
+        status = (
+            int(status_line.split(" ")[1]) if len(status_line.split(" ")) > 1 else 0
+        )
         headers: dict[str, str] = {}
         while True:
             line = (await reader.readline()).decode("latin-1")
@@ -157,15 +163,21 @@ async def execute_chain(
             result = await attempt(endpoint, payload)
         except Exception as exc:  # transport-level failure — honest ledger entry
             ledger.record(
-                index=idx, provider=endpoint.provider, model=endpoint.model,
-                outcome="transport_error", detail=str(exc)[:200],
+                index=idx,
+                provider=endpoint.provider,
+                model=endpoint.model,
+                outcome="transport_error",
+                detail=str(exc)[:200],
             )
             last = None
             continue
         ledger.record(
-            index=idx, provider=endpoint.provider, model=endpoint.model,
+            index=idx,
+            provider=endpoint.provider,
+            model=endpoint.model,
             outcome="success" if result.status < 400 else "provider_error",
-            status=result.status, latency_ms=result.latency_ms,
+            status=result.status,
+            latency_ms=result.latency_ms,
         )
         if result.status < 400:
             return result

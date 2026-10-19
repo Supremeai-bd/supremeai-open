@@ -11,10 +11,11 @@ Security invariants:
   - Cookie values never appear in logs or reprs (redacted).
   - Netscape cookies.txt round-trips byte-stably for exported domains.
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
 
 __all__ = ["CookieBridge", "CookieRecord", "WalledGardenViolation"]
 
@@ -37,7 +38,7 @@ class CookieRecord:
     http_only: bool = True
     expires: int = 0  # 0 = session cookie
 
-    def redacted(self) -> Dict[str, object]:
+    def redacted(self) -> dict[str, object]:
         """Safe view: value length only, never the value itself."""
         return {
             "name": self.name,
@@ -54,9 +55,11 @@ class CookieBridge:
     """Allowlist-scoped cookie store with JSON/Netscape import-export."""
 
     def __init__(self, allowlist: Iterable[str]) -> None:
-        domains = {self._normalize(d) for d in (allowlist or ()) if d and str(d).strip()}
+        domains = {
+            self._normalize(d) for d in (allowlist or ()) if d and str(d).strip()
+        }
         self._allowlist = frozenset(domains)
-        self._cookies: Dict[str, Dict[str, CookieRecord]] = {}
+        self._cookies: dict[str, dict[str, CookieRecord]] = {}
 
     # -- allowlist -----------------------------------------------------------
     @staticmethod
@@ -67,7 +70,7 @@ class CookieBridge:
         return d
 
     @property
-    def allowlist(self) -> Tuple[str, ...]:
+    def allowlist(self) -> tuple[str, ...]:
         return tuple(sorted(self._allowlist))
 
     def domain_allowed(self, domain: str) -> bool:
@@ -88,7 +91,7 @@ class CookieBridge:
         return d
 
     # -- import ---------------------------------------------------------------
-    def import_json(self, cookies: List[dict], domain: str) -> int:
+    def import_json(self, cookies: list[dict], domain: str) -> int:
         """Import cookie dicts (browser-export shape) for one allowlisted domain."""
         d = self._guard(domain)
         if not isinstance(cookies, list):
@@ -122,24 +125,28 @@ class CookieBridge:
     def import_netscape(self, text: str, domain: str) -> int:
         """Parse Netscape cookies.txt lines scoped to one allowlisted domain."""
         d = self._guard(domain)
-        cookies: List[dict] = []
+        cookies: list[dict] = []
         for line in (text or "").splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             parts = line.split("\t")
             if len(parts) != 7:
-                raise ValueError(f"malformed netscape line ({len(parts)} fields): <redacted>")
+                raise ValueError(
+                    f"malformed netscape line ({len(parts)} fields): <redacted>"
+                )
             c_domain, _flag, c_path, _secure_flag, expires, name, value = parts
-            cookies.append({
-                "domain": c_domain,
-                "path": c_path,
-                "secure": c_domain.startswith("."),
-                "expires": int(expires) if expires.isdigit() else 0,
-                "name": name,
-                "value": value,
-                "httpOnly": False,
-            })
+            cookies.append(
+                {
+                    "domain": c_domain,
+                    "path": c_path,
+                    "secure": c_domain.startswith("."),
+                    "expires": int(expires) if expires.isdigit() else 0,
+                    "name": name,
+                    "value": value,
+                    "httpOnly": False,
+                }
+            )
         return self.import_json(cookies, d)
 
     # -- export -----------------------------------------------------------------
@@ -152,21 +159,28 @@ class CookieBridge:
             c = bucket[key]
             domain_field = "." + c.domain if c.secure else c.domain
             lines.append(
-                "\t".join([
-                    domain_field, "TRUE", c.path, "TRUE" if c.secure else "FALSE",
-                    str(c.expires), c.name, c.value,
-                ])
+                "\t".join(
+                    [
+                        domain_field,
+                        "TRUE",
+                        c.path,
+                        "TRUE" if c.secure else "FALSE",
+                        str(c.expires),
+                        c.name,
+                        c.value,
+                    ]
+                )
             )
         return "\n".join(lines) + "\n"
 
     # -- introspection ------------------------------------------------------------
-    def count(self, domain: Optional[str] = None) -> int:
+    def count(self, domain: str | None = None) -> int:
         if domain is None:
             return sum(len(v) for v in self._cookies.values())
         d = self._normalize(domain)
         return len(self._cookies.get(d, {}))
 
-    def summary(self) -> Dict[str, object]:
+    def summary(self) -> dict[str, object]:
         """Redacted operational summary (safe to log)."""
         return {
             "allowlist": list(self.allowlist),

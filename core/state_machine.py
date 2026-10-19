@@ -3,10 +3,10 @@ Deterministic Agent Finite State Machine (FSM) — Core Decision Moat.
 """
 
 from __future__ import annotations
+
+import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set
-import time
 
 
 class AgentState(str, Enum):
@@ -21,7 +21,6 @@ class AgentState(str, Enum):
 
 class InvalidStateTransitionError(ValueError):
     """Raised when an illegal state transition is attempted."""
-    pass
 
 
 @dataclass(frozen=True)
@@ -38,20 +37,31 @@ class AgentStateMachine:
     Maintains an immutable audit ledger of transitions.
     """
 
-    ALLOWED_TRANSITIONS: Dict[AgentState, Set[AgentState]] = {
+    ALLOWED_TRANSITIONS: dict[AgentState, set[AgentState]] = {
         AgentState.IDLE: {AgentState.PLANNING, AgentState.CLAIMED},
         AgentState.PLANNING: {AgentState.CLAIMED, AgentState.IDLE, AgentState.REJECTED},
-        AgentState.CLAIMED: {AgentState.EXECUTING, AgentState.REJECTED, AgentState.IDLE},
+        AgentState.CLAIMED: {
+            AgentState.EXECUTING,
+            AgentState.REJECTED,
+            AgentState.IDLE,
+        },
         AgentState.EXECUTING: {AgentState.VERIFYING, AgentState.REJECTED},
-        AgentState.VERIFYING: {AgentState.TERMINATED, AgentState.EXECUTING, AgentState.REJECTED},
+        AgentState.VERIFYING: {
+            AgentState.TERMINATED,
+            AgentState.EXECUTING,
+            AgentState.REJECTED,
+        },
         AgentState.TERMINATED: set(),  # Terminal state
-        AgentState.REJECTED: {AgentState.PLANNING, AgentState.IDLE},  # Can be re-planned
+        AgentState.REJECTED: {
+            AgentState.PLANNING,
+            AgentState.IDLE,
+        },  # Can be re-planned
     }
 
     def __init__(self, agent_id: str, initial_state: AgentState = AgentState.IDLE):
         self.agent_id = agent_id
         self._state = initial_state
-        self._history: List[TransitionRecord] = []
+        self._history: list[TransitionRecord] = []
 
     @property
     def current_state(self) -> AgentState:
@@ -62,7 +72,7 @@ class AgentStateMachine:
         return self._state == AgentState.TERMINATED
 
     @property
-    def history(self) -> List[TransitionRecord]:
+    def history(self) -> list[TransitionRecord]:
         return list(self._history)
 
     def transition_to(self, new_state: AgentState, reason: str = "") -> None:
@@ -76,6 +86,8 @@ class AgentStateMachine:
                 f"Valid targets: {[s.value for s in valid_targets]}"
             )
 
-        record = TransitionRecord(from_state=self._state, to_state=new_state, reason=reason)
+        record = TransitionRecord(
+            from_state=self._state, to_state=new_state, reason=reason
+        )
         self._history.append(record)
         self._state = new_state

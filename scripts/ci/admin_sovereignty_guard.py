@@ -30,13 +30,15 @@ Exit codes: 0 = allow; 2 = deny (fail-closed); 3 = malformed input.
 
 Pure stdlib. Run: python3 scripts/ci/admin_sovereignty_guard.py --self-test
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Mapping, Sequence
+from typing import Final
 
 ADMIN_ONLY_LABEL: Final = "authority:admin-only"
 DENIAL_CODE: Final = "CLAIM_DENIED_ADMIN_ONLY"
@@ -45,7 +47,8 @@ LANE_SWARM: Final = "swarm"
 LANE_ADMIN: Final = "admin-only"
 LABEL_COLOR: Final = "B60205"
 LABEL_DESCRIPTION: Final = (
-    "Admin manual execution only - autonomous agents strictly quarantined")
+    "Admin manual execution only - autonomous agents strictly quarantined"
+)
 
 EXIT_ALLOW: Final = 0
 EXIT_DENY: Final = 2
@@ -55,7 +58,7 @@ EXIT_MALFORMED: Final = 3
 @dataclass(frozen=True)
 class Decision:
     allowed: bool
-    code: str            # GRANT_CODE or DENIAL_CODE
+    code: str  # GRANT_CODE or DENIAL_CODE
     message: str
     execution_lane: str  # LANE_SWARM or LANE_ADMIN
 
@@ -82,15 +85,19 @@ def quarantine_decision(labels: Sequence[str] | None, issue_number: int) -> Deci
         return Decision(
             allowed=False,
             code=DENIAL_CODE,
-            message=(f"CLAIM_DENIED_ADMIN_ONLY: Issue #{issue_number} is "
-                     "strictly reserved for human Admin execution. "
-                     "Autonomous bots cannot claim."),
-            execution_lane=LANE_ADMIN)
+            message=(
+                f"CLAIM_DENIED_ADMIN_ONLY: Issue #{issue_number} is "
+                "strictly reserved for human Admin execution. "
+                "Autonomous bots cannot claim."
+            ),
+            execution_lane=LANE_ADMIN,
+        )
     return Decision(
         allowed=True,
         code=GRANT_CODE,
         message=f"Issue #{issue_number} is swarm-claimable.",
-        execution_lane=LANE_SWARM)
+        execution_lane=LANE_SWARM,
+    )
 
 
 def filter_pick_next(
@@ -109,15 +116,17 @@ def filter_pick_next(
             continue
         labels = candidate.get("labels")
         number = candidate.get("number")
-        if not isinstance(number, int) or isinstance(number, bool) \
-                or not isinstance(labels, list):
-            quarantined.append({
-                "candidate": {"number": number},
-                "reason": "malformed"})
+        if (
+            not isinstance(number, int)
+            or isinstance(number, bool)
+            or not isinstance(labels, list)
+        ):
+            quarantined.append({"candidate": {"number": number}, "reason": "malformed"})
             continue
         if is_admin_only(labels):
-            quarantined.append({"candidate": {"number": number},
-                                "reason": ADMIN_ONLY_LABEL})
+            quarantined.append(
+                {"candidate": {"number": number}, "reason": ADMIN_ONLY_LABEL}
+            )
             continue
         eligible.append(candidate)
     return eligible, quarantined
@@ -139,9 +148,11 @@ def ci_claim_gate(
     labels = closes_issue_labels if closes_issue_labels is not None else []
     if opener_is_agent and is_admin_only(labels):
         suffix = f" (issue #{issue_number})" if issue_number else ""
-        return False, ("CI CLAIM GATE: PR blocked - it closes an "
-                       f"authority:admin-only issue{suffix}; manual Admin "
-                       "approval is required before autonomous merge.")
+        return False, (
+            "CI CLAIM GATE: PR blocked - it closes an "
+            f"authority:admin-only issue{suffix}; manual Admin "
+            "approval is required before autonomous merge."
+        )
     return True, "CI claim gate: allow"
 
 
@@ -153,15 +164,20 @@ def self_test() -> bool:
     d = quarantine_decision(admin, 42)
     assert not d.allowed and d.code == DENIAL_CODE
     assert d.execution_lane == LANE_ADMIN
-    assert d.message == ("CLAIM_DENIED_ADMIN_ONLY: Issue #42 is strictly "
-                         "reserved for human Admin execution. Autonomous "
-                         "bots cannot claim."), d.message
+    assert d.message == (
+        "CLAIM_DENIED_ADMIN_ONLY: Issue #42 is strictly "
+        "reserved for human Admin execution. Autonomous "
+        "bots cannot claim."
+    ), d.message
     ok = quarantine_decision(swarm, 43)
     assert ok.allowed and ok.code == GRANT_CODE and ok.execution_lane == LANE_SWARM
 
     # Fail-closed casing variants
-    for variant in ("Authority:Admin-Only", "AUTHORITY:ADMIN-ONLY",
-                    " authority:admin-only "):
+    for variant in (
+        "Authority:Admin-Only",
+        "AUTHORITY:ADMIN-ONLY",
+        " authority:admin-only ",
+    ):
         assert not quarantine_decision([variant], 44).allowed, variant
 
     # D2 pick-next filter
@@ -180,17 +196,18 @@ def self_test() -> bool:
     assert filter_pick_next([]) == ([], [])
 
     # D3 queue marking
-    assert work_queue_marking(admin) == {"claimable": False,
-                                         "executionLane": LANE_ADMIN}
-    assert work_queue_marking(swarm) == {"claimable": True,
-                                         "executionLane": LANE_SWARM}
+    assert work_queue_marking(admin) == {
+        "claimable": False,
+        "executionLane": LANE_ADMIN,
+    }
+    assert work_queue_marking(swarm) == {"claimable": True, "executionLane": LANE_SWARM}
 
     # D4 CI claim gate
     blocked, msg = ci_claim_gate(True, admin, 42)
     assert not blocked and "CI CLAIM GATE" in msg and "42" in msg
-    assert ci_claim_gate(False, admin, 42)[0] is True      # admin's own PR
-    assert ci_claim_gate(True, swarm, 43)[0] is True        # not admin-only
-    assert ci_claim_gate(True, None)[0] is True             # no labels
+    assert ci_claim_gate(False, admin, 42)[0] is True  # admin's own PR
+    assert ci_claim_gate(True, swarm, 43)[0] is True  # not admin-only
+    assert ci_claim_gate(True, None)[0] is True  # no labels
 
     # Malformed labels fail closed
     captured: list[str] = []
@@ -214,12 +231,16 @@ def _parse_labels(raw: str) -> list[str]:
 def _cli(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--check", action="store_true",
-                        help="decide one issue: --labels-json + --issue")
+    parser.add_argument(
+        "--check", action="store_true", help="decide one issue: --labels-json + --issue"
+    )
     parser.add_argument("--labels-json", help="JSON list of label strings")
     parser.add_argument("--issue", type=int, default=0)
-    parser.add_argument("--filter", action="store_true",
-                        help="filter a pick-next queue from --queue-json or stdin")
+    parser.add_argument(
+        "--filter",
+        action="store_true",
+        help="filter a pick-next queue from --queue-json or stdin",
+    )
     parser.add_argument("--queue-json", help="JSON list of {number, labels}")
     args = parser.parse_args(argv)
     if args.self_test:
@@ -228,14 +249,19 @@ def _cli(argv: Sequence[str] | None = None) -> int:
         return EXIT_ALLOW
     try:
         if args.check:
-            decision = quarantine_decision(_parse_labels(args.labels_json or "[]"),
-                                           args.issue)
-            print(json.dumps({
-                "allowed": decision.allowed,
-                "code": decision.code,
-                "message": decision.message,
-                "executionLane": decision.execution_lane,
-            }))
+            decision = quarantine_decision(
+                _parse_labels(args.labels_json or "[]"), args.issue
+            )
+            print(
+                json.dumps(
+                    {
+                        "allowed": decision.allowed,
+                        "code": decision.code,
+                        "message": decision.message,
+                        "executionLane": decision.execution_lane,
+                    }
+                )
+            )
             return EXIT_ALLOW if decision.allowed else EXIT_DENY
         if args.filter:
             raw = args.queue_json if args.queue_json else sys.stdin.read()
@@ -243,10 +269,15 @@ def _cli(argv: Sequence[str] | None = None) -> int:
             if not isinstance(data, list):
                 raise ValueError("expected a JSON list of candidates")
             eligible, quarantined = filter_pick_next(data)
-            print(json.dumps({
-                "eligible": [c.get("number") for c in eligible],
-                "quarantined": quarantined,
-            }, default=str))
+            print(
+                json.dumps(
+                    {
+                        "eligible": [c.get("number") for c in eligible],
+                        "quarantined": quarantined,
+                    },
+                    default=str,
+                )
+            )
             return EXIT_ALLOW
     except (ValueError, json.JSONDecodeError) as exc:
         print(f"MALFORMED INPUT (fail-closed): {exc}")

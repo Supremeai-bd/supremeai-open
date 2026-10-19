@@ -36,7 +36,7 @@ from ci.rejected_wo_rescue import triage  # landed module
 
 verdict = triage(rejection_comment, issue_number=wo_number, task_title=wo_title)
 if verdict["healable"]:
-    apply_labels = verdict["labelPlan"]["apply"]   # handoff:ci-fixer, status:unclaimed
+    apply_labels = verdict["labelPlan"]["apply"]  # handoff:ci-fixer, status:unclaimed
     # NOTE: bridge:rejected is NEVER removed (audit provenance per #545)
     post_comment(json.dumps(verdict["rescuePlan"], indent=2))  # ci-fixer reads this
 ```
@@ -68,8 +68,8 @@ Append to the ci-fixer RoleContract triggers (fragment SSOT:
 
 ```python
 # issue #545: bridge rejection rescue routing
-"event:pr.ci_failed",        # in-flight PR repair
-"event:bridge.rejected",     # bridge intake rescue
+("event:pr.ci_failed",)  # in-flight PR repair
+("event:bridge.rejected",)  # bridge intake rescue
 # label matcher handled in dispatch: "handoff:ci-fixer"
 ```
 

@@ -9,7 +9,6 @@ offending variable — the process must never half-start with partial auth.
 from __future__ import annotations
 
 import os
-from typing import Dict, Optional
 
 DEFAULT_TOWER_MCP_URL = "https://supremeai-mcp-tower.onrender.com/mcp"
 DEFAULT_WEBHOOK_BIND_HOST = "127.0.0.1"
@@ -37,7 +36,7 @@ class CommandConfig:
         telegram_bot_token: str,
         superadmin_chat_id: str,
         hmac_secret: str,
-        redis_url: Optional[str] = None,
+        redis_url: str | None = None,
         tower_mcp_url: str = DEFAULT_TOWER_MCP_URL,
         webhook_bind_host: str = DEFAULT_WEBHOOK_BIND_HOST,
         webhook_port: int = DEFAULT_WEBHOOK_PORT,
@@ -47,10 +46,13 @@ class CommandConfig:
         if not telegram_bot_token or not telegram_bot_token.strip():
             errors.append("TELEGRAM_BOT_TOKEN must be a non-empty bot token")
         if not superadmin_chat_id or not str(superadmin_chat_id).strip().isdigit():
-            errors.append("TELEGRAM_SUPERADMIN_CHAT_ID must be a numeric Telegram chat id")
+            errors.append(
+                "TELEGRAM_SUPERADMIN_CHAT_ID must be a numeric Telegram chat id"
+            )
         if not hmac_secret or len(hmac_secret) < MIN_HMAC_SECRET_LEN:
             errors.append(
-                "COMMAND_HMAC_SECRET must be at least %d characters" % MIN_HMAC_SECRET_LEN
+                "COMMAND_HMAC_SECRET must be at least %d characters"
+                % MIN_HMAC_SECRET_LEN
             )
         if errors:
             raise CommandConfigError("; ".join(errors))
@@ -64,8 +66,8 @@ class CommandConfig:
         self.request_timeout_s = float(request_timeout_s)
 
     @classmethod
-    def from_env(cls, env: Optional[Dict[str, str]] = None) -> "CommandConfig":
-        source: Dict[str, str] = dict(os.environ if env is None else env)
+    def from_env(cls, env: dict[str, str] | None = None) -> CommandConfig:
+        source: dict[str, str] = dict(os.environ if env is None else env)
         missing = [v for v in REQUIRED_VARS if not source.get(v)]
         if missing:
             raise CommandConfigError(
@@ -77,7 +79,9 @@ class CommandConfig:
             hmac_secret=source.get("COMMAND_HMAC_SECRET", ""),
             redis_url=source.get("REDIS_URL") or None,
             tower_mcp_url=source.get("TOWER_MCP_URL", DEFAULT_TOWER_MCP_URL),
-            webhook_bind_host=source.get("WEBHOOK_BIND_HOST", DEFAULT_WEBHOOK_BIND_HOST),
+            webhook_bind_host=source.get(
+                "WEBHOOK_BIND_HOST", DEFAULT_WEBHOOK_BIND_HOST
+            ),
             webhook_port=source.get("WEBHOOK_PORT", DEFAULT_WEBHOOK_PORT),
             request_timeout_s=float(source.get("COMMAND_REQUEST_TIMEOUT_S", "30")),
         )

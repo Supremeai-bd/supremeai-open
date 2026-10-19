@@ -18,6 +18,7 @@ client end-to-end (health, tool call, SSE frames, all four error statuses).
 Exit code 0 = harness passed. (A pytest test_*.py file would sit outside the
 Touching Files boundary; this harness is the boundary-respecting equivalent.)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,9 +28,9 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import AsyncIterator, Iterator
 
 DEFAULT_BASE_URL = "https://supremeai-mcp-tower.onrender.com"
 DEFAULT_CLIENT_NAME = "sdk-py-client"
@@ -39,6 +40,7 @@ MCP_ACCEPT = "application/json, text/event-stream"
 # ---------------------------------------------------------------------------
 # Error taxonomy (honest failures; status codes carried)
 # ---------------------------------------------------------------------------
+
 
 class SdkError(RuntimeError):
     """সব SDK-ত্রুটির মূল — status_code বহন করে।"""
@@ -72,14 +74,15 @@ class SdkRateLimited(SdkError):
 # Typed contracts (dataclasses, frozen+slots; task-router / websocket aligned)
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class TaskDispatchRequest:
     task_id: str
     issue: str
     objective: str
     touching_files: tuple[str, ...]
-    tier: str | None = None            # fast_light | coding_reasoning | complex_architecture
-    priority: str | None = None        # P0..P3
+    tier: str | None = None  # fast_light | coding_reasoning | complex_architecture
+    priority: str | None = None  # P0..P3
     metadata: dict[str, str | int | bool] = field(default_factory=dict)
 
 
@@ -87,7 +90,7 @@ class TaskDispatchRequest:
 class TaskDispatchResult:
     task_id: str
     tier: str
-    route: tuple[dict, ...]            # [{provider, model}, ...] primary first
+    route: tuple[dict, ...]  # [{provider, model}, ...] primary first
     accepted: bool
     reason: str | None = None
 
@@ -96,14 +99,14 @@ class TaskDispatchResult:
 class ToolInvocation:
     tool: str
     arguments: dict
-    invocation_id: str = ""            # auto-filled when empty
+    invocation_id: str = ""  # auto-filled when empty
 
 
 @dataclass(frozen=True, slots=True)
 class ToolResult:
     tool: str
     invocation_id: str
-    status: str                        # ok | error
+    status: str  # ok | error
     result: object | None = None
     error: dict | None = None
     duration_ms: int | None = None
@@ -111,7 +114,7 @@ class ToolResult:
 
 @dataclass(frozen=True, slots=True)
 class StatusFrame:
-    frame_type: str                    # event | heartbeat
+    frame_type: str  # event | heartbeat
     seq: int
     timestamp: str
     event: str | None = None
@@ -125,7 +128,10 @@ class StatusFrame:
 # Async HTTP core (raw asyncio streams — zero third-party dependencies)
 # ---------------------------------------------------------------------------
 
-async def _read_response(reader: asyncio.StreamReader) -> tuple[int, dict[str, str], bytes]:
+
+async def _read_response(
+    reader: asyncio.StreamReader,
+) -> tuple[int, dict[str, str], bytes]:
     status_line = (await reader.readline()).decode("latin-1").strip()
     parts = status_line.split(" ", 2)
     status = int(parts[1]) if len(parts) > 1 else 0
@@ -151,9 +157,14 @@ async def _read_response(reader: asyncio.StreamReader) -> tuple[int, dict[str, s
     return status, headers, body
 
 
-async def _request(method: str, url: str, *, body: bytes | None = None,
-                   headers: dict[str, str] | None = None,
-                   timeout: float = 30.0) -> tuple[int, dict[str, str], bytes]:
+async def _request(
+    method: str,
+    url: str,
+    *,
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 30.0,
+) -> tuple[int, dict[str, str], bytes]:
     """One honest HTTP/1.1 round-trip over asyncio streams (keep-alive off)."""
     assert url.startswith("http://") or url.startswith("https://")
     rest = url.split("://", 1)[1]
@@ -162,6 +173,7 @@ async def _request(method: str, url: str, *, body: bytes | None = None,
     port = int(port_s) if port_s else (443 if url.startswith("https") else 80)
     if url.startswith("https"):
         import ssl
+
         opener = asyncio.open_connection(host, port, ssl=ssl.create_default_context())
     else:
         opener = asyncio.open_connection(host, port)
@@ -177,9 +189,11 @@ async def _request(method: str, url: str, *, body: bytes | None = None,
             req_headers["Content-Length"] = str(len(body))
         for k, v in (headers or {}).items():
             req_headers[k] = v
-        head = f"{method} /{path} HTTP/1.1\r\n" + "".join(
-            f"{k}: {v}\r\n" for k, v in req_headers.items()
-        ) + "\r\n"
+        head = (
+            f"{method} /{path} HTTP/1.1\r\n"
+            + "".join(f"{k}: {v}\r\n" for k, v in req_headers.items())
+            + "\r\n"
+        )
         writer.write(head.encode("latin-1") + (body or b""))
         await writer.drain()
         status, resp_headers, resp_body = await asyncio.wait_for(
@@ -206,7 +220,7 @@ def _raise_for_status(status: int, headers: dict[str, str], body: bytes) -> None
         ra = headers.get("retry-after")
         raise SdkRateLimited(
             f"429 rate limited (Retry-After: {ra or 'unknown'}s) — {detail}",
-            float(ra) if ra and ra.replace('.', '', 1).isdigit() else None,
+            float(ra) if ra and ra.replace(".", "", 1).isdigit() else None,
         )
     if status >= 400:
         raise SdkError(f"HTTP {status} — {detail}", status)
@@ -216,12 +230,16 @@ def _raise_for_status(status: int, headers: dict[str, str], body: bytes) -> None
 # Client
 # ---------------------------------------------------------------------------
 
+
 class SupremeAIClient:
     """Async zero-dependency client for the SupremeAI MCP Tower."""
 
-    def __init__(self, base_url: str = DEFAULT_BASE_URL,
-                 client_name: str = DEFAULT_CLIENT_NAME,
-                 api_key: str | None = None):
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        client_name: str = DEFAULT_CLIENT_NAME,
+        api_key: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.client_name = client_name
         self._api_key = api_key
@@ -255,7 +273,8 @@ class SupremeAIClient:
         if req.priority:
             payload["priority"] = req.priority
         status, headers, body = await _request(
-            "POST", self._url("/tasks/dispatch"),
+            "POST",
+            self._url("/tasks/dispatch"),
             body=json.dumps(payload).encode(),
             headers=self._auth_headers(),
         )
@@ -282,7 +301,8 @@ class SupremeAIClient:
         self._next_id += 1
         try:
             status, headers, body = await _request(
-                "POST", self._url("/mcp"),
+                "POST",
+                self._url("/mcp"),
                 body=json.dumps(payload).encode(),
                 headers=self._auth_headers(),
             )
@@ -296,9 +316,11 @@ class SupremeAIClient:
                         tool=inv.tool,
                         invocation_id=invocation_id,
                         status="error",
-                        error={"code": "tool_failed",
-                               "message": str(rpc_err.get("message", rpc_err)),
-                               "retryable": False},
+                        error={
+                            "code": "tool_failed",
+                            "message": str(rpc_err.get("message", rpc_err)),
+                            "retryable": False,
+                        },
                         duration_ms=int((time.monotonic() - started) * 1000),
                     )
                 result = envelope.get("result")
@@ -312,14 +334,21 @@ class SupremeAIClient:
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
         except SdkError as exc:
-            code = {401: "auth_failure", 403: "forbidden", 404: "not_found",
-                    429: "rate_limited"}.get(exc.status_code or 0, "tool_failed")
+            code = {
+                401: "auth_failure",
+                403: "forbidden",
+                404: "not_found",
+                429: "rate_limited",
+            }.get(exc.status_code or 0, "tool_failed")
             return ToolResult(
                 tool=inv.tool,
                 invocation_id=invocation_id,
                 status="error",
-                error={"code": code, "message": str(exc),
-                       "retryable": (exc.status_code in (429, 503))},
+                error={
+                    "code": code,
+                    "message": str(exc),
+                    "retryable": (exc.status_code in (429, 503)),
+                },
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
         except OSError as exc:
@@ -328,8 +357,11 @@ class SupremeAIClient:
                 tool=inv.tool,
                 invocation_id=invocation_id,
                 status="error",
-                error={"code": "transport_error", "message": str(exc),
-                       "retryable": True},
+                error={
+                    "code": "transport_error",
+                    "message": str(exc),
+                    "retryable": True,
+                },
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
 
@@ -347,8 +379,10 @@ class SupremeAIClient:
         port = int(port_s) if port_s else (443 if secure else 80)
         if secure:
             import ssl
+
             reader, writer = await asyncio.open_connection(
-                host, port, ssl=ssl.create_default_context())
+                host, port, ssl=ssl.create_default_context()
+            )
         else:
             reader, writer = await asyncio.open_connection(host, port)
         try:
@@ -357,7 +391,11 @@ class SupremeAIClient:
                 f"Host: {host_port}\r\n"
                 "Accept: text/event-stream\r\n"
                 "Connection: close\r\n"
-                + (f"Authorization: Bearer {self._api_key}\r\n" if self._api_key else "")
+                + (
+                    f"Authorization: Bearer {self._api_key}\r\n"
+                    if self._api_key
+                    else ""
+                )
                 + "\r\n"
             )
             writer.write(head.encode("latin-1"))
@@ -385,7 +423,8 @@ class SupremeAIClient:
                             frame_type=frame.get("frame_type", "event"),
                             seq=frame.get("seq", 0),
                             timestamp=frame.get("timestamp", ""),
-                            event=frame.get("event") or event_name,  # SSE event: fallback
+                            event=frame.get("event")
+                            or event_name,  # SSE event: fallback
                             task_id=frame.get("task_id"),
                             agent_id=frame.get("agent_id"),
                             payload=frame.get("payload"),
@@ -409,6 +448,7 @@ class SupremeAIClient:
 # ---------------------------------------------------------------------------
 # Mock MCP server + embedded test harness (offline, stdlib-only)
 # ---------------------------------------------------------------------------
+
 
 class _MockMcpHandler(BaseHTTPRequestHandler):
     """Minimal mock of the Tower surface for harness runs (localhost only)."""
@@ -437,14 +477,30 @@ class _MockMcpHandler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
             frames = [
-                {"frame_type": "event", "seq": 1, "timestamp": "2026-02-14T09:30:00Z",
-                 "event": "agent:started", "task_id": "task-33", "agent_id": "agent-1",
-                 "payload": {"goal": "harness"}},
-                {"frame_type": "heartbeat", "seq": 2, "timestamp": "2026-02-14T09:30:05Z",
-                 "heartbeat": {"kind": "ping", "interval_seconds": 30}},
-                {"frame_type": "event", "seq": 3, "timestamp": "2026-02-14T09:30:10Z",
-                 "event": "agent:done", "task_id": "task-33", "agent_id": "agent-1",
-                 "payload": {"summary": "harness complete"}},
+                {
+                    "frame_type": "event",
+                    "seq": 1,
+                    "timestamp": "2026-02-14T09:30:00Z",
+                    "event": "agent:started",
+                    "task_id": "task-33",
+                    "agent_id": "agent-1",
+                    "payload": {"goal": "harness"},
+                },
+                {
+                    "frame_type": "heartbeat",
+                    "seq": 2,
+                    "timestamp": "2026-02-14T09:30:05Z",
+                    "heartbeat": {"kind": "ping", "interval_seconds": 30},
+                },
+                {
+                    "frame_type": "event",
+                    "seq": 3,
+                    "timestamp": "2026-02-14T09:30:10Z",
+                    "event": "agent:done",
+                    "task_id": "task-33",
+                    "agent_id": "agent-1",
+                    "payload": {"summary": "harness complete"},
+                },
             ]
             for f in frames:
                 self.wfile.write(f"data: {json.dumps(f)}\n\n".encode())
@@ -455,8 +511,7 @@ class _MockMcpHandler(BaseHTTPRequestHandler):
         elif self.path.startswith("/gone"):
             self._send_json(404, {"error": "not found"})
         else:
-            self._send_json(429, {"error": "rate limit exceeded"},
-                            {"Retry-After": "2"})
+            self._send_json(429, {"error": "rate limit exceeded"}, {"Retry-After": "2"})
         self.close_connection = True
 
     def do_POST(self):
@@ -464,25 +519,38 @@ class _MockMcpHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
         if self.path.startswith("/tasks/dispatch"):
             req = json.loads(body)
-            self._send_json(200, {
-                "task_id": req["task_id"],
-                "tier": "coding_reasoning",
-                "route": [{"provider": "anthropic", "model": "claude-sonnet-4-5"}],
-                "accepted": True,
-            })
+            self._send_json(
+                200,
+                {
+                    "task_id": req["task_id"],
+                    "tier": "coding_reasoning",
+                    "route": [{"provider": "anthropic", "model": "claude-sonnet-4-5"}],
+                    "accepted": True,
+                },
+            )
         elif self.path.startswith("/mcp"):
             req = json.loads(body)
             if req["params"]["name"] == "boom":
-                self._send_json(200, {
-                    "jsonrpc": "2.0", "id": req.get("id"),
-                    "error": {"code": -32601, "message": "unknown tool: boom"},
-                })
+                self._send_json(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req.get("id"),
+                        "error": {"code": -32601, "message": "unknown tool: boom"},
+                    },
+                )
             else:
-                self._send_json(200, {
-                    "jsonrpc": "2.0", "id": req.get("id"),
-                    "result": {"tool": req["params"]["name"],
-                               "echo": req["params"]["arguments"]},
-                })
+                self._send_json(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req.get("id"),
+                        "result": {
+                            "tool": req["params"]["name"],
+                            "echo": req["params"]["arguments"],
+                        },
+                    },
+                )
         else:
             self._send_json(404, {"error": "not found"})
         self.close_connection = True
@@ -510,23 +578,47 @@ def _self_test() -> int:
         health = await client.health()
         checks.append(("health probe", health.get("status") == "ok"))
 
-        res = await client.dispatch_task(TaskDispatchRequest(
-            task_id="task-33", issue="33", objective="harness",
-            touching_files=("examples/sdk-client-py/client.py",),
-        ))
-        checks.append(("task dispatch round-trip",
-                       res.accepted and res.tier == "coding_reasoning" and res.route[0]["provider"] == "anthropic"))
+        res = await client.dispatch_task(
+            TaskDispatchRequest(
+                task_id="task-33",
+                issue="33",
+                objective="harness",
+                touching_files=("examples/sdk-client-py/client.py",),
+            )
+        )
+        checks.append(
+            (
+                "task dispatch round-trip",
+                res.accepted
+                and res.tier == "coding_reasoning"
+                and res.route[0]["provider"] == "anthropic",
+            )
+        )
 
-        tr = await client.invoke_tool(ToolInvocation(tool="repo_read", arguments={"path": "docs/"}))
-        checks.append(("tool call + echo", tr.status == "ok" and tr.result["echo"]["path"] == "docs/"))
-        checks.append(("invocation_id auto-filled", tr.invocation_id.startswith("inv-")))
+        tr = await client.invoke_tool(
+            ToolInvocation(tool="repo_read", arguments={"path": "docs/"})
+        )
+        checks.append(
+            (
+                "tool call + echo",
+                tr.status == "ok" and tr.result["echo"]["path"] == "docs/",
+            )
+        )
+        checks.append(
+            ("invocation_id auto-filled", tr.invocation_id.startswith("inv-"))
+        )
 
         frames = [f async for f in client.stream_sse("task-33")]
         checks.append(("SSE 3 frames", len(frames) == 3))
         checks.append(("SSE seq monotonic", [f.seq for f in frames] == [1, 2, 3]))
         checks.append(("SSE terminal frame ends", frames[-1].event == "agent:done"))
-        checks.append(("SSE heartbeat frame typed", frames[1].heartbeat is not None
-                       and frames[1].heartbeat["kind"] == "ping"))
+        checks.append(
+            (
+                "SSE heartbeat frame typed",
+                frames[1].heartbeat is not None
+                and frames[1].heartbeat["kind"] == "ping",
+            )
+        )
 
         for name, path, exc_cls in (
             ("401 → SdkAuthError", "/private", SdkAuthError),
@@ -547,20 +639,29 @@ def _self_test() -> int:
             checks.append(("429 → SdkRateLimited", exc.retry_after_s == 2.0))
 
         tr_boom = await client.invoke_tool(ToolInvocation(tool="boom", arguments={}))
-        checks.append(("JSON-RPC error → honest envelope",
-                       tr_boom.status == "error" and tr_boom.error["code"] == "tool_failed"
-                       and tr_boom.error["retryable"] is False))
+        checks.append(
+            (
+                "JSON-RPC error → honest envelope",
+                tr_boom.status == "error"
+                and tr_boom.error["code"] == "tool_failed"
+                and tr_boom.error["retryable"] is False,
+            )
+        )
 
         # Transport-level honest envelope: bogus port → OSError → retryable error.
         bad = SupremeAIClient("http://127.0.0.1:1", "harness-client")
         tr_err = await bad.invoke_tool(ToolInvocation(tool="x", arguments={}))
-        checks.append(("transport error → retryable envelope",
-                       tr_err.status == "error"
-                       and tr_err.error["code"] == "transport_error"
-                       and tr_err.error["retryable"] is True))
+        checks.append(
+            (
+                "transport error → retryable envelope",
+                tr_err.status == "error"
+                and tr_err.error["code"] == "transport_error"
+                and tr_err.error["retryable"] is True,
+            )
+        )
 
         # offline SSE parser unit check
-        parsed = list(_parse_sse_frames(b"data: {\"a\": 1}\n\ndata: {\"b\": 2}\n\n"))
+        parsed = list(_parse_sse_frames(b'data: {"a": 1}\n\ndata: {"b": 2}\n\n'))
         checks.append(("SSE parser helper", len(parsed) == 2))
 
     try:
@@ -573,16 +674,26 @@ def _self_test() -> int:
     for name, passed in checks:
         print(f"  {'PASS' if passed else 'FAIL'} | {name}")
         ok &= passed
-    print(f"Self-test (mock MCP harness): {sum(1 for _, p in checks if p)}/{len(checks)} checks passed")
+    print(
+        f"Self-test (mock MCP harness): {sum(1 for _, p in checks if p)}/{len(checks)} checks passed"
+    )
     return 0 if ok else 1
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="SupremeAI async Python SDK (issue #33)")
-    parser.add_argument("--self-test", action="store_true",
-                        help="run the embedded mock-MCP-server harness (offline)")
-    parser.add_argument("--health", action="store_true",
-                        help="probe GET /health on the configured Tower (network)")
+    parser = argparse.ArgumentParser(
+        description="SupremeAI async Python SDK (issue #33)"
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="run the embedded mock-MCP-server harness (offline)",
+    )
+    parser.add_argument(
+        "--health",
+        action="store_true",
+        help="probe GET /health on the configured Tower (network)",
+    )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--client-name", default=DEFAULT_CLIENT_NAME)
     args = parser.parse_args(argv)
@@ -594,7 +705,9 @@ def main(argv: list[str]) -> int:
         print(json.dumps(asyncio.run(client.health()), indent=2))
         return 0
     print(__doc__.strip())
-    print("\nUsage: client.py --self-test | --health [--base-url URL] [--client-name NAME]")
+    print(
+        "\nUsage: client.py --self-test | --health [--base-url URL] [--client-name NAME]"
+    )
     return 0
 
 

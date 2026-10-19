@@ -19,11 +19,11 @@ Pure functions only; network adapters stay in the opener.
 
 Self-test: python3 bridge_opener_hardening_reference.py --self-test
 """
+
 from __future__ import annotations
 
 import re
 import sys
-from typing import Dict, List, Optional
 
 # --- Single sources of truth (imported by the test suite; never copy) ------
 REFLECTION_RE = re.compile(r"Reflection\s*[:\u2014\u2013-]\s*\S", re.IGNORECASE)
@@ -48,11 +48,11 @@ def extract_evidence_sections(wo_body: str) -> str:
     blank line, ready to append to the PR body. Missing sections yield
     an empty string — the PR body then keeps its original shape.
     """
-    sections: List[str] = []
+    sections: list[str] = []
     lines = (wo_body or "").splitlines()
     for heading in EVIDENCE_HEADINGS:
         capture = False
-        buf: List[str] = []
+        buf: list[str] = []
         for line in lines:
             stripped = line.strip()
             # Prefix match: real WOs use "## Reflection Evidence (why +
@@ -70,7 +70,7 @@ def extract_evidence_sections(wo_body: str) -> str:
     return "\n\n".join(sections)
 
 
-def fresh_base_verdict(compare_status: Optional[str]) -> str:
+def fresh_base_verdict(compare_status: str | None) -> str:
     """Map a GitHub compare (main...branch) status to a base verdict.
 
     ahead/identical -> "fresh"; behind/diverged -> "stale";
@@ -84,7 +84,7 @@ def fresh_base_verdict(compare_status: Optional[str]) -> str:
     return "unknown"
 
 
-def rebase_plan(branch: str, verdict: str, clean: Optional[bool]) -> Dict[str, object]:
+def rebase_plan(branch: str, verdict: str, clean: bool | None) -> dict[str, object]:
     """Deterministic stale-base plan (#485 fix 4). Data-only output.
 
     fresh            -> {"action": "none"}
@@ -96,25 +96,35 @@ def rebase_plan(branch: str, verdict: str, clean: Optional[bool]) -> Dict[str, o
     if verdict == "fresh":
         return {"branch": branch, "action": "none"}
     if clean is True:
-        return {"branch": branch, "action": "rebase_and_push",
-                "commands": [f"git fetch origin main",
-                             f"git rebase origin/main {branch}",
-                             "git push --force-with-lease origin {branch}"]}
-    return {"branch": branch, "action": "skip",
-            "reason": "stale-base-conflict" if clean is False else "base-unknown"}
+        return {
+            "branch": branch,
+            "action": "rebase_and_push",
+            "commands": [
+                "git fetch origin main",
+                f"git rebase origin/main {branch}",
+                "git push --force-with-lease origin {branch}",
+            ],
+        }
+    return {
+        "branch": branch,
+        "action": "skip",
+        "reason": "stale-base-conflict" if clean is False else "base-unknown",
+    }
 
 
-def detect_concurrent_claims(claim_events: List[dict], now_iso: str,
-                             max_active: int = MAX_ACTIVE_CLAIMS) -> List[dict]:
+def detect_concurrent_claims(
+    claim_events: list[dict], now_iso: str, max_active: int = MAX_ACTIVE_CLAIMS
+) -> list[dict]:
     """Flag agents exceeding the active-claim quota (#485 test bullet 3,
     enforcing #479). Events: {agent, issue, ts, expires_at}. An event is
     active when ts <= now < expires_at. Deterministic output, ascending
     agent ids. TTL-expired and closed-issue events do not count.
     """
     if not isinstance(now_iso, str) or not re.fullmatch(
-            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", now_iso or ""):
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", now_iso or ""
+    ):
         raise ValueError("now_iso must be an ISO-8601 Z timestamp")
-    counts: Dict[str, List[int]] = {}
+    counts: dict[str, list[int]] = {}
     for ev in claim_events or []:
         agent = ev.get("agent")
         issue = ev.get("issue")
@@ -128,8 +138,9 @@ def detect_concurrent_claims(claim_events: List[dict], now_iso: str,
     for agent in sorted(counts):
         issues = sorted(set(counts[agent]))
         if len(issues) > max_active:
-            flagged.append({"agent": agent, "active_claims": issues,
-                            "limit": max_active})
+            flagged.append(
+                {"agent": agent, "active_claims": issues, "limit": max_active}
+            )
     return flagged
 
 
@@ -146,15 +157,22 @@ def _self_test() -> int:
     ]
     for body in variants:
         assert has_reflection_evidence(body), body
-    for body in ("", None, "no reflection here", "Reflections: plural noun",
-                 "Reflection\t\n"):
+    for body in (
+        "",
+        None,
+        "no reflection here",
+        "Reflections: plural noun",
+        "Reflection\t\n",
+    ):
         assert not has_reflection_evidence(body), repr(body)
 
     # fix 3: lossless section transfer
-    wo = ("### Task ID\nbridge-x\n\n## Test Evidence\n- a: 1\n- b: 2\n\n"
-          "## Reflection Evidence (why + alternatives_rejected)\n"
-          "- **why:** speed\n- **alternatives_rejected:** slow path\n\n"
-          "## Rollback\nrevert")
+    wo = (
+        "### Task ID\nbridge-x\n\n## Test Evidence\n- a: 1\n- b: 2\n\n"
+        "## Reflection Evidence (why + alternatives_rejected)\n"
+        "- **why:** speed\n- **alternatives_rejected:** slow path\n\n"
+        "## Rollback\nrevert"
+    )
     out = extract_evidence_sections(wo)
     assert "## Test Evidence" in out and "- a: 1" in out and "- b: 2" in out
     assert "## Reflection Evidence (why + alternatives_rejected)" in out
@@ -185,24 +203,49 @@ def _self_test() -> int:
 
     # fix 1: concurrency detection (#479 enforcement cross-check)
     events = [
-        {"agent": "a", "issue": 900, "ts": "2026-10-17T06:00:00Z",
-         "expires_at": "2026-10-17T06:30:00Z"},
-        {"agent": "a", "issue": 901, "ts": "2026-10-17T06:05:00Z",
-         "expires_at": "2026-10-17T06:35:00Z"},
-        {"agent": "b", "issue": 905, "ts": "2026-10-17T06:00:00Z",
-         "expires_at": "2026-10-17T06:30:00Z"},
+        {
+            "agent": "a",
+            "issue": 900,
+            "ts": "2026-10-17T06:00:00Z",
+            "expires_at": "2026-10-17T06:30:00Z",
+        },
+        {
+            "agent": "a",
+            "issue": 901,
+            "ts": "2026-10-17T06:05:00Z",
+            "expires_at": "2026-10-17T06:35:00Z",
+        },
+        {
+            "agent": "b",
+            "issue": 905,
+            "ts": "2026-10-17T06:00:00Z",
+            "expires_at": "2026-10-17T06:30:00Z",
+        },
     ]
     flagged = detect_concurrent_claims(events, "2026-10-17T06:10:00Z")
     assert flagged == [{"agent": "a", "active_claims": [900, 901], "limit": 1}], flagged
     # expired lease does not count
     assert detect_concurrent_claims(events, "2026-10-17T06:40:00Z") == []
     # closed issues do not count
-    closed = events + [{"agent": "c", "issue": 910, "ts": "2026-10-17T06:00:00Z",
-                        "expires_at": "2026-10-17T06:30:00Z", "state": "closed"}]
+    closed = events + [
+        {
+            "agent": "c",
+            "issue": 910,
+            "ts": "2026-10-17T06:00:00Z",
+            "expires_at": "2026-10-17T06:30:00Z",
+            "state": "closed",
+        }
+    ]
     assert detect_concurrent_claims(closed, "2026-10-17T06:10:00Z") == flagged
     # deterministic ascending agents
-    two = events + [{"agent": "b", "issue": 906, "ts": "2026-10-17T06:05:00Z",
-                     "expires_at": "2026-10-17T06:35:00Z"}]
+    two = events + [
+        {
+            "agent": "b",
+            "issue": 906,
+            "ts": "2026-10-17T06:05:00Z",
+            "expires_at": "2026-10-17T06:35:00Z",
+        }
+    ]
     got = [f["agent"] for f in detect_concurrent_claims(two, "2026-10-17T06:10:00Z")]
     assert got == ["a", "b"], got
 

@@ -4,9 +4,11 @@ launch_manual_login.py — One-Time Interactive Google Login Window
 Launches Microsoft Edge directly connected to the sovereign profile
 `~/.gemini_isolated_session` without any automation timeouts or locks.
 """
+
 import os
 import subprocess
 import sys
+
 
 def main():
     profile_dir = os.path.expanduser(r"~\.gemini_isolated_session")
@@ -17,7 +19,7 @@ def main():
         r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
         os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
     ]
-    
+
     edge_bin = None
     for path in edge_candidates:
         if os.path.exists(path):
@@ -28,7 +30,11 @@ def main():
         print("[ERROR] Microsoft Edge executable not found.")
         sys.exit(1)
 
-    login_url = sys.argv[1] if len(sys.argv) > 1 else "https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app"
+    login_url = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else "https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app"
+    )
 
     print("=================================================================")
     print("   SupremeAI: One-Time Manual Google Login")
@@ -41,13 +47,16 @@ def main():
     print("Your session will be saved permanently for all future AI requests!")
     print("=================================================================\n")
 
-    subprocess.Popen([
-        edge_bin,
-        f"--user-data-dir={profile_dir}",
-        "--no-first-run",
-        "--no-default-browser-check",
-        login_url
-    ])
+    subprocess.Popen(
+        [
+            edge_bin,
+            f"--user-data-dir={profile_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            login_url,
+        ]
+    )
+
 
 if __name__ == "__main__":
     main()

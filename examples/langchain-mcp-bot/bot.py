@@ -27,6 +27,7 @@ Optional live run (network + deps):
     export SUPREMEAI_API_KEY=...            # Tower credential, header-only
     python bot.py --live --base-url https://supremeai-mcp-tower.onrender.com
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,9 +38,10 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, AsyncIterator
+from typing import Any
 
 DEFAULT_BASE_URL = "https://supremeai-mcp-tower.onrender.com"
 DEFAULT_CLIENT_NAME = "langchain-mcp-bot"
@@ -59,7 +61,10 @@ except ImportError:  # honest fallback path
 # Minimal stdlib asyncio HTTP core (keep-alive off; honest errors)
 # ---------------------------------------------------------------------------
 
-async def _read_response(reader: asyncio.StreamReader) -> tuple[int, dict[str, str], bytes]:
+
+async def _read_response(
+    reader: asyncio.StreamReader,
+) -> tuple[int, dict[str, str], bytes]:
     status_line = (await reader.readline()).decode("latin-1").strip()
     parts = status_line.split(" ", 2)
     status = int(parts[1]) if len(parts) > 1 else 0
@@ -84,8 +89,9 @@ class McpProtocolError(RuntimeError):
     """The Tower answered, but not with a usable MCP envelope."""
 
 
-async def _post(url: str, body: bytes, *, token: str | None = None,
-                timeout: float = 20.0) -> tuple[int, dict[str, str], bytes]:
+async def _post(
+    url: str, body: bytes, *, token: str | None = None, timeout: float = 20.0
+) -> tuple[int, dict[str, str], bytes]:
     assert url.startswith("http://") or url.startswith("https://")
     rest = url.split("://", 1)[1]
     host_port, _, path = rest.partition("/")
@@ -93,6 +99,7 @@ async def _post(url: str, body: bytes, *, token: str | None = None,
     port = int(port_s) if port_s else (443 if url.startswith("https") else 80)
     if url.startswith("https"):
         import ssl
+
         opener = asyncio.open_connection(host, port, ssl=ssl.create_default_context())
     else:
         opener = asyncio.open_connection(host, port)
@@ -110,8 +117,11 @@ async def _post(url: str, body: bytes, *, token: str | None = None,
         }
         if token:
             head["Authorization"] = f"Bearer {token}"
-        raw = f"POST /{path} HTTP/1.1\r\n" + "".join(
-            f"{k}: {v}\r\n" for k, v in head.items()) + "\r\n"
+        raw = (
+            f"POST /{path} HTTP/1.1\r\n"
+            + "".join(f"{k}: {v}\r\n" for k, v in head.items())
+            + "\r\n"
+        )
         writer.write(raw.encode("latin-1") + body)
         await writer.drain()
         return await asyncio.wait_for(_read_response(reader), timeout=timeout)
@@ -123,8 +133,9 @@ async def _post(url: str, body: bytes, *, token: str | None = None,
             pass
 
 
-async def _sse_endpoint(url: str, *, token: str | None = None,
-                        timeout: float = 15.0) -> tuple[str, asyncio.StreamReader, asyncio.StreamWriter]:
+async def _sse_endpoint(
+    url: str, *, token: str | None = None, timeout: float = 15.0
+) -> tuple[str, asyncio.StreamReader, asyncio.StreamWriter]:
     """GET /sse and return (message_endpoint_url, reader, writer).
 
     MCP-over-SSE: the server streams `event: endpoint` with the POST URL that
@@ -137,6 +148,7 @@ async def _sse_endpoint(url: str, *, token: str | None = None,
     port = int(port_s) if port_s else (443 if url.startswith("https") else 80)
     if url.startswith("https"):
         import ssl
+
         opener = asyncio.open_connection(host, port, ssl=ssl.create_default_context())
     else:
         opener = asyncio.open_connection(host, port)
@@ -151,23 +163,34 @@ async def _sse_endpoint(url: str, *, token: str | None = None,
     }
     if token:
         head["Authorization"] = f"Bearer {token}"
-    raw = f"GET /{path} HTTP/1.1\r\n" + "".join(
-        f"{k}: {v}\r\n" for k, v in head.items()) + "\r\n"
+    raw = (
+        f"GET /{path} HTTP/1.1\r\n"
+        + "".join(f"{k}: {v}\r\n" for k, v in head.items())
+        + "\r\n"
+    )
     writer.write(raw.encode("latin-1"))
     await writer.drain()
     try:
-        status_line = (await asyncio.wait_for(reader.readline(), timeout)).decode("latin-1")
-        status = int(status_line.split(" ")[1]) if len(status_line.split(" ")) > 1 else 0
+        status_line = (await asyncio.wait_for(reader.readline(), timeout)).decode(
+            "latin-1"
+        )
+        status = (
+            int(status_line.split(" ")[1]) if len(status_line.split(" ")) > 1 else 0
+        )
         if status != 200:
             raise McpProtocolError(f"SSE handshake returned HTTP {status}")
         while True:  # skip response headers
-            line = (await asyncio.wait_for(reader.readline(), timeout)).decode("latin-1")
+            line = (await asyncio.wait_for(reader.readline(), timeout)).decode(
+                "latin-1"
+            )
             if line in ("\r\n", "\n", ""):
                 break
         event_name: str | None = None
         data_lines: list[str] = []
         while True:  # first framed event must be the endpoint announcement
-            raw_line = (await asyncio.wait_for(reader.readline(), timeout)).decode("utf-8", "replace")
+            raw_line = (await asyncio.wait_for(reader.readline(), timeout)).decode(
+                "utf-8", "replace"
+            )
             text = raw_line.rstrip("\r\n")
             if text == "":
                 if event_name == "endpoint" and data_lines:
@@ -190,9 +213,11 @@ async def _sse_endpoint(url: str, *, token: str | None = None,
 # MCP client (session over SSE + POST JSON-RPC, dual-mode response)
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class McpToolDeclaration:
     """One `tools/list` entry: name, description, JSON-Schema inputSchema."""
+
     name: str
     description: str
     input_schema: dict[str, Any] = field(default_factory=dict)
@@ -201,6 +226,7 @@ class McpToolDeclaration:
 @dataclass(frozen=True, slots=True)
 class ToolCallResult:
     """Honest per-call outcome; errors are data, not exceptions."""
+
     name: str
     invocation_id: str
     ok: bool
@@ -212,15 +238,20 @@ class ToolCallResult:
 class McpSseClient:
     """Minimal MCP client over the SSE transport (one session)."""
 
-    def __init__(self, base_url: str = DEFAULT_BASE_URL,
-                 client_name: str = DEFAULT_CLIENT_NAME,
-                 token: str | None = None):
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        client_name: str = DEFAULT_CLIENT_NAME,
+        token: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.client_name = client_name
         self._token = token
         self._next_id = 1
 
-    def _rpc(self, method: str, params: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+    def _rpc(
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> tuple[int, dict[str, Any]]:
         rpc_id = self._next_id
         self._next_id += 1
         payload: dict[str, Any] = {"jsonrpc": "2.0", "id": rpc_id, "method": method}
@@ -228,7 +259,9 @@ class McpSseClient:
             payload["params"] = params
         return rpc_id, payload
 
-    async def _exchange(self, message_url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _exchange(
+        self, message_url: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         body = json.dumps(payload).encode()
         status, _, resp = await _post(message_url, body, token=self._token)
         if status != 200:
@@ -244,7 +277,9 @@ class McpSseClient:
             raise McpProtocolError("response is not a JSON-RPC 2.0 envelope")
         if envelope.get("error") is not None:
             err = envelope["error"]
-            raise McpProtocolError(f"JSON-RPC error {err.get('code')}: {err.get('message')}")
+            raise McpProtocolError(
+                f"JSON-RPC error {err.get('code')}: {err.get('message')}"
+            )
         return envelope.get("result", {})
 
     async def list_tools(self, message_url: str) -> list[McpToolDeclaration]:
@@ -255,15 +290,18 @@ class McpSseClient:
         for t in tools:
             if not isinstance(t, dict) or "name" not in t:
                 raise McpProtocolError(f"malformed tool declaration: {t!r}")
-            decls.append(McpToolDeclaration(
-                name=t["name"],
-                description=str(t.get("description", "")),
-                input_schema=t.get("inputSchema") or {},
-            ))
+            decls.append(
+                McpToolDeclaration(
+                    name=t["name"],
+                    description=str(t.get("description", "")),
+                    input_schema=t.get("inputSchema") or {},
+                )
+            )
         return decls
 
-    async def call_tool(self, message_url: str, name: str,
-                        arguments: dict[str, Any]) -> ToolCallResult:
+    async def call_tool(
+        self, message_url: str, name: str, arguments: dict[str, Any]
+    ) -> ToolCallResult:
         started = time.monotonic()
         invocation_id = f"inv-{uuid.uuid4().hex[:12]}"
         _, payload = self._rpc("tools/call", {"name": name, "arguments": arguments})
@@ -271,22 +309,32 @@ class McpSseClient:
             result = await self._exchange(message_url, payload)
         except (TransportError, McpProtocolError) as exc:
             return ToolCallResult(
-                name=name, invocation_id=invocation_id, ok=False,
-                error={"code": "transport_or_protocol", "message": str(exc),
-                       "retryable": isinstance(exc, TransportError)},
+                name=name,
+                invocation_id=invocation_id,
+                ok=False,
+                error={
+                    "code": "transport_or_protocol",
+                    "message": str(exc),
+                    "retryable": isinstance(exc, TransportError),
+                },
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
         # MCP tools/call result: {content: [...], isError?: bool}
-        is_error = bool(result.get("isError", False)) if isinstance(result, dict) else False
+        is_error = (
+            bool(result.get("isError", False)) if isinstance(result, dict) else False
+        )
         return ToolCallResult(
-            name=name, invocation_id=invocation_id, ok=not is_error,
+            name=name,
+            invocation_id=invocation_id,
+            ok=not is_error,
             result=result,
             error={"code": "tool_is_error", "message": "tools/call reported isError"}
-            if is_error else None,
+            if is_error
+            else None,
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 
-    async def session(self) -> AsyncIterator[tuple[str, "McpSseSession"]]:
+    async def session(self) -> AsyncIterator[tuple[str, McpSseSession]]:
         """Open the SSE session and yield (message_url, session-view)."""
         sse_url = f"{self.base_url}/sse?client={self.client_name}"
         message_url, reader, writer = await _sse_endpoint(sse_url, token=self._token)
@@ -318,9 +366,11 @@ class McpSseSession:
 # MCP → LangChain adapter (graceful, honest fallback)
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class SimpleTool:
     """Offline stand-in with the StructuredTool surface this demo needs."""
+
     name: str
     description: str
     args_schema: dict[str, Any]
@@ -330,8 +380,9 @@ class SimpleTool:
     def args(self) -> list[str]:
         return list(self.args_schema.get("properties", {}).keys())
 
-    async def ainvoke(self, input: dict[str, Any] | None = None,
-                      **kwargs: Any) -> dict[str, Any]:
+    async def ainvoke(
+        self, input: dict[str, Any] | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
         """LangChain-Runnable-shaped call: ainvoke({...}) positional dict."""
         call_args = {**(input or {}), **kwargs}
         res = await self._invoke(**call_args)
@@ -349,9 +400,13 @@ def schema_to_args(schema: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, spec in props.items():
         json_type = spec.get("type", "string") if isinstance(spec, dict) else "string"
-        py_type = {"string": str, "integer": int, "number": float,
-                   "boolean": bool}.get(json_type, str)
-        out[key] = (py_type, spec.get("description", "") if isinstance(spec, dict) else "")
+        py_type = {"string": str, "integer": int, "number": float, "boolean": bool}.get(
+            json_type, str
+        )
+        out[key] = (
+            py_type,
+            spec.get("description", "") if isinstance(spec, dict) else "",
+        )
     return out
 
 
@@ -369,8 +424,12 @@ def to_structured_tool(decl: McpToolDeclaration, session: McpSseSession) -> Any:
 
     def _to_outcome(res: ToolCallResult) -> dict[str, Any]:
         """JSON-friendly dict view for LangChain consumers."""
-        return {"ok": res.ok, "invocation_id": res.invocation_id,
-                "result": res.result, "error": res.error}
+        return {
+            "ok": res.ok,
+            "invocation_id": res.invocation_id,
+            "result": res.result,
+            "error": res.error,
+        }
 
     if LANGCHAIN_AVAILABLE and StructuredTool is not None:
         # langchain-core is installed: build a real StructuredTool. A pydantic
@@ -421,29 +480,43 @@ SAMPLE_PLAN = [
 async def run_demo(session: McpSseSession) -> list[ToolCallResult]:
     """Discover tools, convert, then execute a sample multi-tool loop."""
     declarations = await session.list_tools()
-    print(f"discovered {len(declarations)} MCP tool(s): "
-          + ", ".join(d.name for d in declarations))
+    print(
+        f"discovered {len(declarations)} MCP tool(s): "
+        + ", ".join(d.name for d in declarations)
+    )
     bound = {d.name: to_structured_tool(d, session) for d in declarations}
 
     results: list[ToolCallResult] = []
     for tool_name, args in SAMPLE_PLAN:
         tool = bound.get(tool_name)
         if tool is None:
-            results.append(ToolCallResult(
-                name=tool_name, invocation_id="-", ok=False,
-                error={"code": "unknown_tool",
-                       "message": f"tower does not declare '{tool_name}'"}))
+            results.append(
+                ToolCallResult(
+                    name=tool_name,
+                    invocation_id="-",
+                    ok=False,
+                    error={
+                        "code": "unknown_tool",
+                        "message": f"tower does not declare '{tool_name}'",
+                    },
+                )
+            )
             continue
         # Uniform LangChain Runnable surface: ainvoke(input: dict) — identical
         # call shape for StructuredTool and the SimpleTool fallback.
         outcome = await tool.ainvoke(args)
-        outcome = outcome if isinstance(outcome, dict) else {"ok": True, "result": outcome}
-        results.append(ToolCallResult(
-            name=tool_name,
-            invocation_id=str(outcome.get("invocation_id", "-")),
-            ok=bool(outcome.get("ok", False)),
-            result=outcome.get("result"),
-            error=outcome.get("error")))
+        outcome = (
+            outcome if isinstance(outcome, dict) else {"ok": True, "result": outcome}
+        )
+        results.append(
+            ToolCallResult(
+                name=tool_name,
+                invocation_id=str(outcome.get("invocation_id", "-")),
+                ok=bool(outcome.get("ok", False)),
+                result=outcome.get("result"),
+                error=outcome.get("error"),
+            )
+        )
     return results
 
 
@@ -451,20 +524,28 @@ async def run_demo(session: McpSseSession) -> list[ToolCallResult]:
 # Mock MCP Tower + embedded offline harness
 # ---------------------------------------------------------------------------
 
+
 class _MockTowerHandler(BaseHTTPRequestHandler):
     """Minimal mock Tower: SSE announce + tools/list + tools/call."""
 
     server_version = "MockTower/1.0"
     TOOLS = [
-        {"name": "repo_read",
-         "description": "Read a file from the repository.",
-         "inputSchema": {"type": "object",
-                         "properties": {"path": {"type": "string",
-                                                 "description": "repo-relative path"}},
-                         "required": ["path"]}},
-        {"name": "agent_status",
-         "description": "Report tower agent status.",
-         "inputSchema": {"type": "object", "properties": {}}},
+        {
+            "name": "repo_read",
+            "description": "Read a file from the repository.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "repo-relative path"}
+                },
+                "required": ["path"],
+            },
+        },
+        {
+            "name": "agent_status",
+            "description": "Report tower agent status.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
     ]
 
     def log_message(self, *args):  # silence request logging
@@ -498,29 +579,57 @@ class _MockTowerHandler(BaseHTTPRequestHandler):
         method = req.get("method")
         rpc_id = req.get("id")
         if method == "tools/list":
-            self._send_json(200, {"jsonrpc": "2.0", "id": rpc_id,
-                                  "result": {"tools": self.TOOLS}})
+            self._send_json(
+                200, {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": self.TOOLS}}
+            )
         elif method == "tools/call":
             name = req["params"]["name"]
             args = req["params"].get("arguments", {})
             if name == "repo_read":
                 content = f"(mock) contents of {args.get('path', '?')}"
-                self._send_json(200, {"jsonrpc": "2.0", "id": rpc_id,
-                                      "result": {"content": [{"type": "text",
-                                                              "text": content}],
-                                                 "isError": False}})
+                self._send_json(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "result": {
+                            "content": [{"type": "text", "text": content}],
+                            "isError": False,
+                        },
+                    },
+                )
             elif name == "agent_status":
-                self._send_json(200, {"jsonrpc": "2.0", "id": rpc_id,
-                                      "result": {"content": [{"type": "text",
-                                                              "text": "3 agents, all green"}],
-                                                 "isError": False}})
+                self._send_json(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "result": {
+                            "content": [
+                                {"type": "text", "text": "3 agents, all green"}
+                            ],
+                            "isError": False,
+                        },
+                    },
+                )
             else:
-                self._send_json(200, {"jsonrpc": "2.0", "id": rpc_id,
-                                      "result": {"content": [], "isError": True}})
+                self._send_json(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "result": {"content": [], "isError": True},
+                    },
+                )
         else:
-            self._send_json(200, {"jsonrpc": "2.0", "id": rpc_id,
-                                  "error": {"code": -32601,
-                                            "message": f"unknown method {method}"}})
+            self._send_json(
+                200,
+                {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {"code": -32601, "message": f"unknown method {method}"},
+                },
+            )
 
 
 def _self_test() -> int:
@@ -536,38 +645,69 @@ def _self_test() -> int:
         agen = client.session()
         message_url, session = await agen.__anext__()
         try:
-            checks.append(("SSE endpoint announced",
-                           message_url.startswith("http://127.0.0.1:")
-                           and "/messages" in message_url
-                           and "session=" in message_url))
+            checks.append(
+                (
+                    "SSE endpoint announced",
+                    message_url.startswith("http://127.0.0.1:")
+                    and "/messages" in message_url
+                    and "session=" in message_url,
+                )
+            )
 
             decls = await session.list_tools()
-            checks.append(("tools/list discovered 2",
-                           [d.name for d in decls] == ["repo_read", "agent_status"]))
-            checks.append(("inputSchema carried",
-                           decls[0].input_schema.get("required") == ["path"]))
+            checks.append(
+                (
+                    "tools/list discovered 2",
+                    [d.name for d in decls] == ["repo_read", "agent_status"],
+                )
+            )
+            checks.append(
+                (
+                    "inputSchema carried",
+                    decls[0].input_schema.get("required") == ["path"],
+                )
+            )
 
             bound = {d.name: to_structured_tool(d, session) for d in decls}
             if LANGCHAIN_AVAILABLE:
-                checks.append(("LangChain StructuredTool conversion",
-                               all(type(t).__name__ == "StructuredTool"
-                                   for t in bound.values())))
+                checks.append(
+                    (
+                        "LangChain StructuredTool conversion",
+                        all(
+                            type(t).__name__ == "StructuredTool" for t in bound.values()
+                        ),
+                    )
+                )
             else:
-                checks.append(("fallback SimpleTool conversion",
-                               all(isinstance(t, SimpleTool) for t in bound.values())))
-                checks.append(("fallback args surface",
-                               bound["repo_read"].args == ["path"]))
+                checks.append(
+                    (
+                        "fallback SimpleTool conversion",
+                        all(isinstance(t, SimpleTool) for t in bound.values()),
+                    )
+                )
+                checks.append(
+                    ("fallback args surface", bound["repo_read"].args == ["path"])
+                )
 
             results = await run_demo(session)
-            checks.append(("multi-tool loop executed 3 calls",
-                           len(results) == 3))
-            checks.append(("loop results honest ok",
-                           all(r.ok for r in results)))
-            checks.append(("repo_read echoed path",
-                           "docs/MCP_CONNECT.md" in json.dumps(results[-1].result)))
-            checks.append(("invocation ids correlated",
-                           all(r.invocation_id.startswith("inv-") for r in results
-                               if r.invocation_id != "-")))
+            checks.append(("multi-tool loop executed 3 calls", len(results) == 3))
+            checks.append(("loop results honest ok", all(r.ok for r in results)))
+            checks.append(
+                (
+                    "repo_read echoed path",
+                    "docs/MCP_CONNECT.md" in json.dumps(results[-1].result),
+                )
+            )
+            checks.append(
+                (
+                    "invocation ids correlated",
+                    all(
+                        r.invocation_id.startswith("inv-")
+                        for r in results
+                        if r.invocation_id != "-"
+                    ),
+                )
+            )
 
             bad = await session.call_tool("no_such_tool", {})
             checks.append(("unknown tool → honest isError", bad.ok is False))
@@ -593,18 +733,31 @@ def _self_test() -> int:
     for name, passed in checks:
         print(f"  {'PASS' if passed else 'FAIL'} | {name}")
         ok &= passed
-    mode = "LangChain StructuredTool" if LANGCHAIN_AVAILABLE else "SimpleTool fallback (offline)"
-    print(f"Self-test (mock MCP tower): {sum(1 for _, p in checks if p)}/{len(checks)} checks passed — mode: {mode}")
+    mode = (
+        "LangChain StructuredTool"
+        if LANGCHAIN_AVAILABLE
+        else "SimpleTool fallback (offline)"
+    )
+    print(
+        f"Self-test (mock MCP tower): {sum(1 for _, p in checks if p)}/{len(checks)} checks passed — mode: {mode}"
+    )
     return 0 if ok else 1
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="SupremeAI × LangChain MCP reference bot (issue #42)")
-    parser.add_argument("--self-test", action="store_true",
-                        help="run the embedded mock-tower harness (offline)")
-    parser.add_argument("--live", action="store_true",
-                        help="run the sample loop against the real tower (network)")
+        description="SupremeAI × LangChain MCP reference bot (issue #42)"
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="run the embedded mock-tower harness (offline)",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="run the sample loop against the real tower (network)",
+    )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--client-name", default=DEFAULT_CLIENT_NAME)
     args = parser.parse_args(argv)

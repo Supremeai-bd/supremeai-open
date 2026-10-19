@@ -14,6 +14,7 @@ for #470. Data-only output: returns plans; callers execute against GitHub.
 
 Self-test: python3 self_healing_reporter.py --self-test
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -69,17 +70,25 @@ def dedup_guard(new_events: list, existing_issues: list) -> dict:
     for ev in new_events or []:
         fp = fingerprint_event(ev)
         if fp in seen:
-            suppressed.append({"fingerprint": fp, "issue": seen[fp],
-                               "key": ev["key"], "reason": "duplicate_of_open_issue"})
+            suppressed.append(
+                {
+                    "fingerprint": fp,
+                    "issue": seen[fp],
+                    "key": ev["key"],
+                    "reason": "duplicate_of_open_issue",
+                }
+            )
         else:
-            to_open.append({
-                "fingerprint": fp,
-                "title": event_title(ev),
-                "kind": ev["kind"],
-                "repo": ev["repo"],
-                "key": ev["key"],
-                "body_marker": f"<!-- {FP_MARKER}:{fp} -->",
-            })
+            to_open.append(
+                {
+                    "fingerprint": fp,
+                    "title": event_title(ev),
+                    "kind": ev["kind"],
+                    "repo": ev["repo"],
+                    "key": ev["key"],
+                    "body_marker": f"<!-- {FP_MARKER}:{fp} -->",
+                }
+            )
             seen[fp] = None  # same-fingerprint duplicates inside one batch also dedup
     return {"to_open": to_open, "suppressed": suppressed}
 
@@ -105,8 +114,9 @@ def compute_strikes(history: list, issue: int) -> int:
     return strikes
 
 
-def quarantine_decisions(history: list, quarantined: set | None = None,
-                         threshold: int = QUARANTINE_THRESHOLD) -> dict:
+def quarantine_decisions(
+    history: list, quarantined: set | None = None, threshold: int = QUARANTINE_THRESHOLD
+) -> dict:
     """Rule 26 plan: issues crossing the strike threshold (idempotent)."""
     locked = set(quarantined or ())
     issues = sorted({h["issue"] for h in (history or [])})
@@ -117,19 +127,29 @@ def quarantine_decisions(history: list, quarantined: set | None = None,
         strikes = compute_strikes(history, n)
         updates.append({"issue": n, "strikes": strikes})
         if strikes >= threshold:
-            quarantine.append({"issue": n, "strikes": strikes,
-                               "action": "lock", "label": "status:quarantine"})
-    return {"quarantine": quarantine, "strike_updates": updates,
-            "threshold": threshold}
+            quarantine.append(
+                {
+                    "issue": n,
+                    "strikes": strikes,
+                    "action": "lock",
+                    "label": "status:quarantine",
+                }
+            )
+    return {"quarantine": quarantine, "strike_updates": updates, "threshold": threshold}
 
 
-def report_plan(events: list, existing_issues: list, history: list,
-                quarantined: set | None = None) -> dict:
+def report_plan(
+    events: list, existing_issues: list, history: list, quarantined: set | None = None
+) -> dict:
     """Combined Rule 16 + Rule 26 plan (deterministic order)."""
     d16 = dedup_guard(events, existing_issues)
     d26 = quarantine_decisions(history, quarantined)
-    return {"to_open": d16["to_open"], "suppressed": d16["suppressed"],
-            "quarantine": d26["quarantine"], "strike_updates": d26["strike_updates"]}
+    return {
+        "to_open": d16["to_open"],
+        "suppressed": d16["suppressed"],
+        "quarantine": d26["quarantine"],
+        "strike_updates": d26["strike_updates"],
+    }
 
 
 def _self_test() -> int:
@@ -142,8 +162,10 @@ def _self_test() -> int:
         raise AssertionError("expected kind rejection")
     except ValueError:
         pass
-    d = dedup_guard([ev, ev], [{"number": 5, "state": "open",
-                                "body": f"note <!-- {FP_MARKER}:{fp1} -->"}])
+    d = dedup_guard(
+        [ev, ev],
+        [{"number": 5, "state": "open", "body": f"note <!-- {FP_MARKER}:{fp1} -->"}],
+    )
     assert not d["to_open"] and len(d["suppressed"]) == 2, d
     d2 = dedup_guard([ev], [])
     assert len(d2["to_open"]) == 1 and not d2["suppressed"]
@@ -158,11 +180,13 @@ def _self_test() -> int:
     assert compute_strikes(hist, 9) == 1, "pass resets strikes"
     hist2 = hist[:2]
     assert compute_strikes(hist2, 9) == 2
-    q = quarantine_decisions([
-        {"issue": 9, "outcome": "fail", "ts": "T1"},
-        {"issue": 9, "outcome": "unclaim", "ts": "T2"},
-        {"issue": 9, "outcome": "fail", "ts": "T3"},
-    ])
+    q = quarantine_decisions(
+        [
+            {"issue": 9, "outcome": "fail", "ts": "T1"},
+            {"issue": 9, "outcome": "unclaim", "ts": "T2"},
+            {"issue": 9, "outcome": "fail", "ts": "T3"},
+        ]
+    )
     assert len(q["quarantine"]) == 1 and q["quarantine"][0]["strikes"] == 3
     q2 = quarantine_decisions(hist2)
     assert not q2["quarantine"], "2 strikes must not quarantine"

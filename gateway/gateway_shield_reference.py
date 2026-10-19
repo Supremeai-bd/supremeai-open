@@ -17,6 +17,7 @@ Executable spec for the unified provider gateway (supremeai-api):
 Pure-stdlib, deterministic, offline-testable, fail-closed.
 Self-test: python3 gateway_shield_reference.py --self-test
 """
+
 from __future__ import annotations
 
 import json
@@ -28,10 +29,15 @@ ROUTES = ("/v1/models", "/v1/chat/completions")
 SSOT_KEY_NAME = "SUPREMEAI_API_KEY"
 SSOT_HEADER = "X-SupremeAI-Key"
 DEFAULT_CHAIN = ("groq", "gemini", "fallback")
-PROVIDER_ENV_NAMES = frozenset({
-    "GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY",
-    "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
-})
+PROVIDER_ENV_NAMES = frozenset(
+    {
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "OPENROUTER_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+    }
+)
 
 
 class GatewayError(Exception):
@@ -50,22 +56,27 @@ def authenticate(headers: dict, env: dict) -> dict:
     """
     ssot = env.get(SSOT_KEY_NAME)
     if not ssot or not isinstance(ssot, str) or len(ssot) < 16:
-        raise GatewayError(500, "ssot_unconfigured",
-                           "gateway has no SUPREMEAI_API_KEY configured")
+        raise GatewayError(
+            500, "ssot_unconfigured", "gateway has no SUPREMEAI_API_KEY configured"
+        )
     presented = None
     authz = headers.get("authorization") or headers.get("Authorization")
     if authz and authz.startswith("Bearer "):
-        presented = authz[len("Bearer "):].strip()
+        presented = authz[len("Bearer ") :].strip()
     elif headers.get(SSOT_HEADER):
         presented = headers[SSOT_HEADER].strip()
     if not presented:
-        raise GatewayError(401, "missing_credential",
-                           f"present Bearer token or {SSOT_HEADER} header")
+        raise GatewayError(
+            401, "missing_credential", f"present Bearer token or {SSOT_HEADER} header"
+        )
     if presented != ssot:
         if presented.lower().startswith(("gsk_", "aiza=", "sk-or-", "sk-ant")):
-            raise GatewayError(401, "provider_key_rejected",
-                               "direct provider credentials are never "
-                               "accepted at the gateway (Rule 19/21)")
+            raise GatewayError(
+                401,
+                "provider_key_rejected",
+                "direct provider credentials are never "
+                "accepted at the gateway (Rule 19/21)",
+            )
         raise GatewayError(401, "invalid_credential", "SSOT key mismatch")
     return {"authenticated": True, "scheme": "ssot"}
 
@@ -84,10 +95,14 @@ def next_target(chain: tuple = DEFAULT_CHAIN, failed: tuple = ()) -> str | None:
 def failover_decision(chain: tuple = DEFAULT_CHAIN, failed: tuple = ()) -> dict:
     """Deterministic Rule 20 decision record for a request lifecycle."""
     target = next_target(chain, failed)
-    return {"chain": list(chain), "failed_hops": list(failed or ()),
-            "target": target, "exhausted": target is None,
-            "status": 503 if target is None else 200,
-            "served_by_header": target}
+    return {
+        "chain": list(chain),
+        "failed_hops": list(failed or ()),
+        "target": target,
+        "exhausted": target is None,
+        "status": 503 if target is None else 200,
+        "served_by_header": target,
+    }
 
 
 def quota_check(tenant: dict, counters: dict, now_ts: float) -> dict:
@@ -98,8 +113,11 @@ def quota_check(tenant: dict, counters: dict, now_ts: float) -> dict:
     Mutates counters (append + prune). Deterministic.
     """
     name = tenant.get("tenant")
-    if not name or not isinstance(tenant.get("rps"), int) or \
-            not isinstance(tenant.get("rpm"), int):
+    if (
+        not name
+        or not isinstance(tenant.get("rps"), int)
+        or not isinstance(tenant.get("rpm"), int)
+    ):
         raise GatewayError(500, "bad_tenant_config", "tenant/rps/rpm required")
     sec = [t for t in counters.get("second_bucket", []) if now_ts - t < 1.0]
     minute = [t for t in counters.get("minute_bucket", []) if now_ts - t < 60.0]
@@ -108,20 +126,27 @@ def quota_check(tenant: dict, counters: dict, now_ts: float) -> dict:
         sec.append(now_ts)
         minute.append(now_ts)
     counters["second_bucket"], counters["minute_bucket"] = sec, minute
-    return {"tenant": name, "allowed": allowed,
-            "limit": {"rps": tenant["rps"], "rpm": tenant["rpm"]},
-            "usage": {"rps_window": len(sec), "rpm_window": len(minute)}}
+    return {
+        "tenant": name,
+        "allowed": allowed,
+        "limit": {"rps": tenant["rps"], "rpm": tenant["rpm"]},
+        "usage": {"rps_window": len(sec), "rpm_window": len(minute)},
+    }
 
 
-def attribution_event(tenant: str, model: str, provider: str,
-                      tokens: int, now: datetime | None = None) -> dict:
+def attribution_event(
+    tenant: str, model: str, provider: str, tokens: int, now: datetime | None = None
+) -> dict:
     """Rule 22: usage telemetry attribution (key-plane safe: no secrets)."""
     if tokens < 0:
         raise GatewayError(500, "bad_usage", "negative tokens")
-    return {"tenant": tenant, "model": model, "provider": provider,
-            "total_tokens": tokens,
-            "ts": (now or datetime.now(timezone.utc)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ")}
+    return {
+        "tenant": tenant,
+        "model": model,
+        "provider": provider,
+        "total_tokens": tokens,
+        "ts": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
 
 
 def no_provider_key_material(text: str) -> bool:
@@ -140,9 +165,12 @@ def _self_test() -> int:
     env = {SSOT_KEY_NAME: "ssot-key-0123456789abcdef"}  # gitleaks:allow
     assert authenticate({"Authorization": "Bearer ssot-key-0123456789abcdef"}, env)
     assert authenticate({SSOT_HEADER: "ssot-key-0123456789abcdef"}, env)
-    for h in ({}, {"Authorization": "Basic abc"},
-              {"Authorization": "Bearer wrong-key-0123456789"},
-              {SSOT_HEADER: "wrong-key-0123456789abcdef"}):
+    for h in (
+        {},
+        {"Authorization": "Basic abc"},
+        {"Authorization": "Bearer wrong-key-0123456789"},
+        {SSOT_HEADER: "wrong-key-0123456789abcdef"},
+    ):
         try:
             authenticate(h, env)
             raise AssertionError("expected 401")
@@ -193,6 +221,13 @@ def _self_test() -> int:
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(_self_test())
-    print(json.dumps({"routes": ROUTES, "chain": list(DEFAULT_CHAIN),
-                      "ssot": {"env": SSOT_KEY_NAME, "header": SSOT_HEADER}}))
+    print(
+        json.dumps(
+            {
+                "routes": ROUTES,
+                "chain": list(DEFAULT_CHAIN),
+                "ssot": {"env": SSOT_KEY_NAME, "header": SSOT_HEADER},
+            }
+        )
+    )
     sys.exit(0)

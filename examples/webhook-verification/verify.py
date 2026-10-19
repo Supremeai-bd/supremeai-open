@@ -34,13 +34,27 @@ DECLARED_EVENTS = (
     ("pr.opened", "info", "PR #193 opened: declare autonomy-loop integration contract"),
     ("pr.merged", "success", "PR #192 merged via Merge Gate at commit 3832c85"),
     ("ci.failure", "error", "tower-verify job failed on main (typecheck: 2 errors)"),
-    ("deployment.completed", "success", "mcp-tower deployed to production (revision 4177)"),
+    (
+        "deployment.completed",
+        "success",
+        "mcp-tower deployed to production (revision 4177)",
+    ),
 )
 
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "api-schemas" / "webhook-notification.schema.json"
+SCHEMA_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "api-schemas"
+    / "webhook-notification.schema.json"
+)
 
 
-def build_notification(event: str, message: str, link: str, service: str = "supremeai-mcp-tower", timestamp: str = "2026-10-15T23:07:00Z") -> dict[str, str]:
+def build_notification(
+    event: str,
+    message: str,
+    link: str,
+    service: str = "supremeai-mcp-tower",
+    timestamp: str = "2026-10-15T23:07:00Z",
+) -> dict[str, str]:
     """Build a schema-conforming notification payload."""
     severity_map = {
         "pr.opened": "info",
@@ -49,7 +63,9 @@ def build_notification(event: str, message: str, link: str, service: str = "supr
         "deployment.completed": "success",
     }
     if event not in severity_map:
-        raise ValueError(f"undeclared event: {event} (v1 contract allows only {sorted(severity_map)})")
+        raise ValueError(
+            f"undeclared event: {event} (v1 contract allows only {sorted(severity_map)})"
+        )
     return {
         "event": event,
         "service": service,
@@ -85,27 +101,47 @@ def run_self_test(secret: str = "demo-webhook-signing-secret") -> None:
     # 1+2. build + sign + verify round trip for every declared event
     payloads: list[dict[str, Any]] = []
     for event, _, message in DECLARED_EVENTS:
-        payload = build_notification(event=event, message=message, link="https://github.com/Supremeai-bd/supremeai-open/actions/runs/987654321")
+        payload = build_notification(
+            event=event,
+            message=message,
+            link="https://github.com/Supremeai-bd/supremeai-open/actions/runs/987654321",
+        )
         raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
         header_value = sign_payload(raw, secret)
-        _check(f"roundtrip verify ({event})", verify_signature(raw, secret, header_value))
+        _check(
+            f"roundtrip verify ({event})", verify_signature(raw, secret, header_value)
+        )
         payloads.append(payload)
 
     # 3. fail-closed rejection matrix
-    raw0 = json.dumps(payloads[0], separators=(",", ":"), sort_keys=True).encode("utf-8")
+    raw0 = json.dumps(payloads[0], separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
     good_header = sign_payload(raw0, secret)
-    tampered = json.dumps({**payloads[0], "message": "tampered"}, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    tampered = json.dumps(
+        {**payloads[0], "message": "tampered"}, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
     _check("reject tampered body", not verify_signature(tampered, secret, good_header))
-    _check("reject wrong prefix", not verify_signature(raw0, secret, "md5=" + good_header[len(SIGNATURE_PREFIX):]))
+    _check(
+        "reject wrong prefix",
+        not verify_signature(
+            raw0, secret, "md5=" + good_header[len(SIGNATURE_PREFIX) :]
+        ),
+    )
     _check("reject missing header", not verify_signature(raw0, secret, None))
     _check("reject missing secret", not verify_signature(raw0, "", good_header))
-    _check("reject header of different body", not verify_signature(raw0, secret, sign_payload(tampered, secret)))
+    _check(
+        "reject header of different body",
+        not verify_signature(raw0, secret, sign_payload(tampered, secret)),
+    )
 
     # 4. schema validation (real check when jsonschema is importable)
     try:
         import jsonschema
     except ImportError:
-        print("SKIP: schema validation (jsonschema not installed — signature checks above still ran)")
+        print(
+            "SKIP: schema validation (jsonschema not installed — signature checks above still ran)"
+        )
         return
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     validator = jsonschema.Draft202012Validator(schema)
@@ -113,7 +149,16 @@ def run_self_test(secret: str = "demo-webhook-signing-secret") -> None:
         errors = sorted(validator.iter_errors(payload), key=lambda e: e.path)
         _check(f"schema-valid payload ({payload['event']})", not errors)
     try:
-        validator.validate({"event": "unknown.event", "service": "x", "severity": "info", "message": "m", "link": "https://a.b", "timestamp": "2026-10-15T23:07:00Z"})
+        validator.validate(
+            {
+                "event": "unknown.event",
+                "service": "x",
+                "severity": "info",
+                "message": "m",
+                "link": "https://a.b",
+                "timestamp": "2026-10-15T23:07:00Z",
+            }
+        )
         _check("schema rejects undeclared event", False)
     except jsonschema.ValidationError:
         _check("schema rejects undeclared event", True)

@@ -4,11 +4,11 @@ Monitors post-deployment verification and triggers instant reversion
 if health checks fail to prevent broken states from persisting.
 """
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-import logging
-from typing import Callable, List, Optional
 
 logger = logging.getLogger("infra.automated_rollback")
 
@@ -40,10 +40,10 @@ class AutomatedRollback:
 
     def __init__(
         self,
-        revert_action: Optional[Callable[[str, str], bool]] = None,
+        revert_action: Callable[[str, str], bool] | None = None,
     ):
         self._revert_action = revert_action or self._default_revert_action
-        self.history: List[RollbackEvent] = []
+        self.history: list[RollbackEvent] = []
         self.current_status: RollbackStatus = RollbackStatus.IDLE
 
     def _default_revert_action(self, deployment_id: str, rollback_version: str) -> bool:
@@ -102,6 +102,6 @@ class AutomatedRollback:
         self.history.append(event)
         return self.current_status
 
-    def get_latest_event(self) -> Optional[RollbackEvent]:
+    def get_latest_event(self) -> RollbackEvent | None:
         """Returns the most recent rollback event."""
         return self.history[-1] if self.history else None

@@ -22,6 +22,7 @@ Usage:
 CLI self-test (offline):
     python logger.py --self-test
 """
+
 from __future__ import annotations
 
 import io
@@ -75,23 +76,39 @@ def _metric(name: str, value: float, attributes: dict | None) -> dict:
             "extend the schema enum first, dashboards must not drift"
         )
     instrument, unit = CANONICAL_METRICS[name]
-    return {"metric": name, "value": value, "unit": unit, "instrument": instrument,
-            "attributes": attributes or {}}
+    return {
+        "metric": name,
+        "value": value,
+        "unit": unit,
+        "instrument": instrument,
+        "attributes": attributes or {},
+    }
 
 
 class TelemetryLogger:
     """Emits schema-conforming JSONL records to stdout or a file object."""
 
-    def __init__(self, service_name: str, component: str,
-                 agent_id: str | None = None, sink=None, trace_id: str | None = None):
+    def __init__(
+        self,
+        service_name: str,
+        component: str,
+        agent_id: str | None = None,
+        sink=None,
+        trace_id: str | None = None,
+    ):
         self.service_name = service_name
         self.component = component
         self.agent_id = agent_id
         self.sink = sink or sys.stdout
         self.trace_id = trace_id or _new_trace_id()
 
-    def _emit(self, level: str, message: str, context: dict | None,
-              metrics: list | None = None) -> dict:
+    def _emit(
+        self,
+        level: str,
+        message: str,
+        context: dict | None,
+        metrics: list | None = None,
+    ) -> dict:
         if level not in LEVELS:
             raise TelemetryError(f"level '{level}' not in {LEVELS}")
         if not message:
@@ -141,11 +158,15 @@ def _self_test() -> int:
     checks: list = []
 
     buf = io.StringIO()
-    log = TelemetryLogger("mcp-tower", "gate", agent_id="agent-1", sink=buf,
-                          trace_id="0af7651916cd43dd8448eb211c80319c")
+    log = TelemetryLogger(
+        "mcp-tower",
+        "gate",
+        agent_id="agent-1",
+        sink=buf,
+        trace_id="0af7651916cd43dd8448eb211c80319c",
+    )
     r1 = log.info("gate merged PR", context={"pr": 315, "issue": 36})
-    log.metric(metric_latency(42.5, {"provider": "anthropic"}),
-               metric_tokens(1337))
+    log.metric(metric_latency(42.5, {"provider": "anthropic"}), metric_tokens(1337))
     try:
         log._emit("LOUD", "bad level", {})
         checks.append(("bad level rejected", False))
@@ -161,10 +182,24 @@ def _self_test() -> int:
     checks.append(("records parse as JSONL", len(records) == 2))
     required = {"timestamp", "level", "trace_id", "component", "message", "context"}
     checks.append(("required fields present", all(required <= set(r) for r in records)))
-    checks.append(("trace_id is 32 hex", all(len(r["trace_id"]) == 32 and all(c in "0123456789abcdef" for c in r["trace_id"]) for r in records)))
+    checks.append(
+        (
+            "trace_id is 32 hex",
+            all(
+                len(r["trace_id"]) == 32
+                and all(c in "0123456789abcdef" for c in r["trace_id"])
+                for r in records
+            ),
+        )
+    )
     checks.append(("level vocabulary", all(r["level"] in LEVELS for r in records)))
-    checks.append(("metric catalog pinned", records[1]["metrics"][0]["metric"] == "supremeai.request.latency"
-                   and records[1]["metrics"][0]["unit"] == "ms"))
+    checks.append(
+        (
+            "metric catalog pinned",
+            records[1]["metrics"][0]["metric"] == "supremeai.request.latency"
+            and records[1]["metrics"][0]["unit"] == "ms",
+        )
+    )
     checks.append(("correlation fields", r1["context"].get("issue") == 36))
 
     ok = True

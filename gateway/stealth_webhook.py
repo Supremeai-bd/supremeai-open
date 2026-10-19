@@ -10,23 +10,25 @@ Transport is stdlib asyncio (no third-party client) so the gateway stays
 dependency-light and offline-testable. The function is injectable into
 create_app so tests can stub it deterministically.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import ssl
 import time
-from typing import Any, Awaitable, Callable, Optional, Tuple
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-ForwardFn = Callable[[str, Optional[str], bytes, float], Awaitable[Tuple[int, Any, int]]]
+ForwardFn = Callable[[str, str | None, bytes, float], Awaitable[tuple[int, Any, int]]]
 
 
 async def forward_stealth_webhook(
     url: str,
-    secret: Optional[str],
+    secret: str | None,
     body: bytes,
     timeout: float = 10.0,
-) -> Tuple[int, Any, int]:
+) -> tuple[int, Any, int]:
     """Forward a chat-completion request to the stealth (browser) relay.
 
     Returns (http_status, parsed_json_or_None, latency_ms). On transport
@@ -46,7 +48,7 @@ async def forward_stealth_webhook(
         base = base.rsplit("/", 1)[0].rstrip("/")
     if not base.endswith("/v1/chat/completions"):
         base = base + "/v1/chat/completions"
-    full = base + (full[len(full.split("?", 1)[0]):] if "?" in full else "")
+    full = base + (full[len(full.split("?", 1)[0]) :] if "?" in full else "")
     rest = full.split("://", 1)[1]
     host_port, _, path = rest.partition("/")
     host, _, port_s = host_port.partition(":")
@@ -56,7 +58,9 @@ async def forward_stealth_webhook(
 
     try:
         if secure:
-            opener = asyncio.open_connection(host, port, ssl=ssl.create_default_context())
+            opener = asyncio.open_connection(
+                host, port, ssl=ssl.create_default_context()
+            )
         else:
             opener = asyncio.open_connection(host, port)
         reader, writer = await asyncio.wait_for(opener, timeout=timeout)
@@ -77,12 +81,16 @@ async def forward_stealth_webhook(
         writer.write(headers.encode("latin-1") + body)
         await writer.drain()
 
-        status_line = (await asyncio.wait_for(reader.readline(), timeout=timeout)).decode("latin-1")
+        status_line = (
+            await asyncio.wait_for(reader.readline(), timeout=timeout)
+        ).decode("latin-1")
         parts = status_line.split(" ")
         status = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
         resp_headers: dict[str, str] = {}
         while True:
-            line = (await asyncio.wait_for(reader.readline(), timeout=timeout)).decode("latin-1")
+            line = (await asyncio.wait_for(reader.readline(), timeout=timeout)).decode(
+                "latin-1"
+            )
             if line in ("\r\n", "\n", ""):
                 break
             k, _, v = line.partition(":")

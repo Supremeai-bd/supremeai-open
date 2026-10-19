@@ -1,14 +1,17 @@
-import os
 import sys
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from core.state_machine import AgentStateMachine, AgentState, InvalidStateTransitionError
-from core.dag_planner import DAGPlanner, TaskNode, CycleDetectedError
-from core.decision_engine import DecisionEngine, AgentRole
-from core.context_synthesizer import ContextSynthesizer, ContextStage
+from core.context_synthesizer import ContextStage, ContextSynthesizer
+from core.dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+from core.decision_engine import AgentRole, DecisionEngine
+from core.state_machine import (
+    AgentState,
+    AgentStateMachine,
+    InvalidStateTransitionError,
+)
 
 
 class TestAgentStateMachine(unittest.TestCase):
@@ -61,7 +64,9 @@ class TestDAGPlanner(unittest.TestCase):
         planner = DAGPlanner()
         planner.add_task(TaskNode("base1", "Base 1", "sdk"))
         planner.add_task(TaskNode("base2", "Base 2", "api"))
-        planner.add_task(TaskNode("mid", "Mid Layer", "core", dependencies={"base1", "base2"}))
+        planner.add_task(
+            TaskNode("mid", "Mid Layer", "core", dependencies={"base1", "base2"})
+        )
         planner.add_task(TaskNode("top", "Top Layer", "studio", dependencies={"mid"}))
 
         tiers = planner.compute_execution_tiers()
@@ -70,19 +75,25 @@ class TestDAGPlanner(unittest.TestCase):
 
 class TestDecisionEngine(unittest.TestCase):
     def test_critical_path_classification(self):
-        classification = DecisionEngine.classify_task("P0: hotfix auth token", ["core/state_machine.py"])
+        classification = DecisionEngine.classify_task(
+            "P0: hotfix auth token", ["core/state_machine.py"]
+        )
         self.assertEqual(classification.recommended_role, AgentRole.AUDITOR)
         self.assertEqual(classification.risk_tier, "L3")
         self.assertTrue(classification.requires_approval)
 
     def test_docs_only_classification(self):
-        classification = DecisionEngine.classify_task("docs: update runbook", ["docs/architecture.md"])
+        classification = DecisionEngine.classify_task(
+            "docs: update runbook", ["docs/architecture.md"]
+        )
         self.assertEqual(classification.recommended_role, AgentRole.SCOUT)
         self.assertEqual(classification.risk_tier, "L1")
         self.assertFalse(classification.requires_approval)
 
     def test_standard_feature_classification(self):
-        classification = DecisionEngine.classify_task("feat(api): add route", ["gateway/routes.py"])
+        classification = DecisionEngine.classify_task(
+            "feat(api): add route", ["gateway/routes.py"]
+        )
         self.assertEqual(classification.recommended_role, AgentRole.CODER)
         self.assertEqual(classification.risk_tier, "L2")
 
@@ -90,13 +101,17 @@ class TestDecisionEngine(unittest.TestCase):
 class TestContextSynthesizer(unittest.TestCase):
     def test_stage1_discovery_budget(self):
         huge_text = "A" * 10000
-        fitted = ContextSynthesizer.fit_context(ContextStage.STAGE1_DISCOVERY, huge_text)
+        fitted = ContextSynthesizer.fit_context(
+            ContextStage.STAGE1_DISCOVERY, huge_text
+        )
         self.assertLessEqual(len(fitted), 4000 + 100)
         self.assertIn("TRUNCATED", fitted)
 
     def test_small_text_not_truncated(self):
         small_text = "Brief summary"
-        fitted = ContextSynthesizer.fit_context(ContextStage.STAGE1_DISCOVERY, small_text)
+        fitted = ContextSynthesizer.fit_context(
+            ContextStage.STAGE1_DISCOVERY, small_text
+        )
         self.assertEqual(fitted, small_text)
 
 

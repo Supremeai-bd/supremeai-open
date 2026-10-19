@@ -12,6 +12,7 @@ Marker format: exactly one fenced block
     { ...json... }
     <!-- /pr-evidence-envelope -->
 """
+
 from __future__ import annotations
 
 import json
@@ -19,7 +20,6 @@ import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
 
 # --- Single sources of truth (imported by tests; never copy) ---------------
 SCHEMA_VERSION = "pr-evidence-envelope/1"
@@ -27,7 +27,13 @@ MARKER_OPEN = "<!-- pr-evidence-envelope v1 -->"
 MARKER_CLOSE = "<!-- /pr-evidence-envelope -->"
 REFLECTION_HEADING = "## Reflection Evidence (why + alternatives_rejected)"
 
-PROTECTED_PREFIXES = (".github/", "docs/ledger/", "docs/master_docs/", "prisma/", ".env")
+PROTECTED_PREFIXES = (
+    ".github/",
+    "docs/ledger/",
+    "docs/master_docs/",
+    "prisma/",
+    ".env",
+)
 PROTECTED_NAME_PATTERNS = (
     re.compile(r"(?i)(^|/)\.env"),
     re.compile(r"(?i)credential"),
@@ -49,16 +55,20 @@ class EvidenceEnvelope:
     task_issue_ref: int
     claim_marker_id: str
     reflection_why: str
-    alternatives_rejected: List[str]
-    scope_paths: List[str]
-    file_digests: Dict[str, str] = field(default_factory=dict)
-    rollback_path: str = "git revert bridge branch commits; additive scoped changes only."
+    alternatives_rejected: list[str]
+    scope_paths: list[str]
+    file_digests: dict[str, str] = field(default_factory=dict)
+    rollback_path: str = (
+        "git revert bridge branch commits; additive scoped changes only."
+    )
     agent_id: str = "unknown-agent"
     created_ts: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        default_factory=lambda: datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
     )
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "schema": SCHEMA_VERSION,
             "task_issue_ref": self.task_issue_ref,
@@ -79,7 +89,7 @@ def build_envelope(env: EvidenceEnvelope) -> str:
     return f"{MARKER_OPEN}\n{payload}\n{MARKER_CLOSE}"
 
 
-def parse_envelope(body: str) -> Optional[EvidenceEnvelope]:
+def parse_envelope(body: str) -> EvidenceEnvelope | None:
     """Find + parse the envelope. Fail-closed: None for everything invalid."""
     if not body or MARKER_OPEN not in body:
         return None
@@ -117,9 +127,9 @@ def check_protected(path: str) -> bool:
     return any(p.search(path) for p in PROTECTED_NAME_PATTERNS)
 
 
-def validate(env: EvidenceEnvelope) -> List[str]:
+def validate(env: EvidenceEnvelope) -> list[str]:
     """Return a list of error codes; empty list == valid. Fail-closed."""
-    errors: List[str] = []
+    errors: list[str] = []
     if not isinstance(env.task_issue_ref, int) or env.task_issue_ref <= 0:
         errors.append("E_BAD_ISSUE_REF")
     if not env.claim_marker_id or not env.claim_marker_id.strip():
@@ -144,7 +154,9 @@ def validate(env: EvidenceEnvelope) -> List[str]:
     if not TS_RE.match(env.created_ts or ""):
         errors.append("E_BAD_TIMESTAMP")
     if not (env.rollback_path or "").strip():
-        errors.append("E_NO_ENVELOPE")  # rollback must be stated; reuse no-envelope code family
+        errors.append(
+            "E_NO_ENVELOPE"
+        )  # rollback must be stated; reuse no-envelope code family
     return errors
 
 
@@ -173,7 +185,10 @@ def demo() -> int:
         claim_marker_id="atomic-claim:issue=457,agent=zai,ts=2026-10-17T03:30:00Z,ttl=30m",
         reflection_why="structured assertions replace brittle regex ladders on PR bodies",
         alternatives_rejected=["keep regex ladders", "external validation service"],
-        scope_paths=["docs/S02_STRUCTURED_EVIDENCE_SPEC.md", "scripts/tower/pr_evidence_envelope.py"],
+        scope_paths=[
+            "docs/S02_STRUCTURED_EVIDENCE_SPEC.md",
+            "scripts/tower/pr_evidence_envelope.py",
+        ],
         file_digests={},
     )
     block = build_envelope(env)
@@ -181,8 +196,15 @@ def demo() -> int:
     errs = validate(env)
     print("round-trip ok:", back is not None and back.task_issue_ref == 457)
     print("validate:", errs or "VALID (0 errors)")
-    print("reflection heading present:", REFLECTION_HEADING in render_reflection_section(env))
-    print("protected catch:", check_protected("prisma/schema.prisma"), check_protected("scripts/tower/x.py"))
+    print(
+        "reflection heading present:",
+        REFLECTION_HEADING in render_reflection_section(env),
+    )
+    print(
+        "protected catch:",
+        check_protected("prisma/schema.prisma"),
+        check_protected("scripts/tower/x.py"),
+    )
     return 0
 
 

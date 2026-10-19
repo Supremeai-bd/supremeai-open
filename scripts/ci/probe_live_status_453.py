@@ -28,6 +28,7 @@ Usage:
 
 Issue #453 (r1) · base 8e5ed59 · pure-new file, no existing-path hunks.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -56,16 +57,19 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _fetch(url: str, method: str = "GET", origin: str | None = None,
-           timeout: int = TIMEOUT_S) -> dict:
+def _fetch(
+    url: str, method: str = "GET", origin: str | None = None, timeout: int = TIMEOUT_S
+) -> dict:
     """One HTTP round-trip, fully measured. Never raises."""
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json, */*"}
     if origin:
-        headers.update({
-            "Origin": origin,
-            "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "authorization, content-type",
-        })
+        headers.update(
+            {
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization, content-type",
+            }
+        )
     req = urllib.request.Request(url, headers=headers, method=method)
     t0 = time.monotonic()
     try:
@@ -84,7 +88,9 @@ def _fetch(url: str, method: str = "GET", origin: str | None = None,
             "status": e.code,
             "latency_ms": round((time.monotonic() - t0) * 1000, 1),
             "headers": {k.lower(): v for k, v in (e.headers or {}).items()},
-            "body": (e.read(2048) if hasattr(e, "read") else b"").decode("utf-8", "replace"),
+            "body": (e.read(2048) if hasattr(e, "read") else b"").decode(
+                "utf-8", "replace"
+            ),
             "error": f"HTTP {e.code}",
         }
     except Exception as e:  # noqa: BLE001 — probe must never crash
@@ -107,7 +113,12 @@ def check_timestamp_parity(payload: dict) -> list[str]:
 
     if not git_sha or str(git_sha).strip().lower() in ("unknown", "null", "none", ""):
         problems.append(f"git_sha missing/unknown (got {git_sha!r})")
-    if not deployed_at or str(deployed_at).strip().lower() in ("unknown", "null", "none", ""):
+    if not deployed_at or str(deployed_at).strip().lower() in (
+        "unknown",
+        "null",
+        "none",
+        "",
+    ):
         problems.append(f"deployed_at missing/unknown (got {deployed_at!r})")
     else:
         if not ISO_RE.match(str(deployed_at).strip()):
@@ -137,11 +148,17 @@ def check_cors_preflight(res: dict, origin: str) -> list[str]:
         problems.append(f"origin {origin}: unreachable ({res.get('error')})")
         return problems
     if res.get("status") != 200:
-        problems.append(f"origin {origin}: preflight HTTP {res.get('status')} (want 200)")
+        problems.append(
+            f"origin {origin}: preflight HTTP {res.get('status')} (want 200)"
+        )
     if acao not in ("*", origin):
-        problems.append(f"origin {origin}: access-control-allow-origin={acao!r} does not echo origin")
+        problems.append(
+            f"origin {origin}: access-control-allow-origin={acao!r} does not echo origin"
+        )
     if acam and "POST" not in acam.upper():
-        problems.append(f"origin {origin}: access-control-allow-methods lacks POST (got {acam!r})")
+        problems.append(
+            f"origin {origin}: access-control-allow-methods lacks POST (got {acam!r})"
+        )
     return problems
 
 
@@ -175,11 +192,15 @@ def run_probe(gateway_url: str, cors_origins: list[str], timeout: int) -> dict:
             except json.JSONDecodeError:
                 entry["body_not_json"] = True
         if body_json is not None:
-            parity = check_timestamp_parity(body_json if isinstance(body_json, dict) else {})
+            parity = check_timestamp_parity(
+                body_json if isinstance(body_json, dict) else {}
+            )
             entry["parity_problems"] = parity
             report["failures"].extend(parity)
             if res.get("status") != 200:
-                report["failures"].append(f"GET {path}: HTTP {res.get('status')} (want 200)")
+                report["failures"].append(
+                    f"GET {path}: HTTP {res.get('status')} (want 200)"
+                )
         else:
             # Gateway down / non-JSON: status + reachability still recorded.
             if not res.get("ok") or res.get("status") != 200:
@@ -188,21 +209,33 @@ def run_probe(gateway_url: str, cors_origins: list[str], timeout: int) -> dict:
                     " (want 200 with JSON payload)"
                 )
             if body_json is None and res.get("ok"):
-                entry["parity_problems"] = ["body is not JSON — parity contract unverifiable"]
-                report["failures"].append(f"GET {path}: body is not JSON — parity contract unverifiable")
+                entry["parity_problems"] = [
+                    "body is not JSON — parity contract unverifiable"
+                ]
+                report["failures"].append(
+                    f"GET {path}: body is not JSON — parity contract unverifiable"
+                )
         report["checks"].append(entry)
-        report["metrics"][f"probe.{path.strip('/').replace('/', '_')}.latency_ms"] = res.get("latency_ms")
+        report["metrics"][f"probe.{path.strip('/').replace('/', '_')}.latency_ms"] = (
+            res.get("latency_ms")
+        )
 
     for origin in cors_origins:
-        res = _fetch(gateway_url.rstrip("/") + "/v1/chat/completions",
-                     method="OPTIONS", origin=origin, timeout=timeout)
+        res = _fetch(
+            gateway_url.rstrip("/") + "/v1/chat/completions",
+            method="OPTIONS",
+            origin=origin,
+            timeout=timeout,
+        )
         problems = check_cors_preflight(res, origin)
-        report["checks"].append({
-            "check": f"OPTIONS /v1/chat/completions (Origin: {origin})",
-            "status": res.get("status"),
-            "latency_ms": res.get("latency_ms"),
-            "parity_problems": problems,
-        })
+        report["checks"].append(
+            {
+                "check": f"OPTIONS /v1/chat/completions (Origin: {origin})",
+                "status": res.get("status"),
+                "latency_ms": res.get("latency_ms"),
+                "parity_problems": problems,
+            }
+        )
         report["failures"].extend(problems)
         report["metrics"][f"probe.cors.{origin}.latency_ms"] = res.get("latency_ms")
 
@@ -217,7 +250,9 @@ def selftest() -> int:
     good = {"git_sha": "8e5ed59abc", "deployed_at": now_iso(), "version": "1.2.3"}
     if check_timestamp_parity(good):
         failures.append("selftest: good payload flagged")
-    if check_timestamp_parity({"git_sha": "unknown", "deployed_at": "unknown", "version": "unknown"}):
+    if check_timestamp_parity(
+        {"git_sha": "unknown", "deployed_at": "unknown", "version": "unknown"}
+    ):
         pass
     else:
         failures.append("selftest: unknown-payload not flagged")
@@ -227,9 +262,13 @@ def selftest() -> int:
     bad = {"git_sha": "abc", "deployed_at": "not-a-date"}
     if not any("ISO" in p for p in check_timestamp_parity(bad)):
         failures.append("selftest: non-ISO deployed_at not flagged")
-    ok_cors = {"status": 200, "headers": {
-        "access-control-allow-origin": "https://a.example",
-        "access-control-allow-methods": "POST, OPTIONS"}}
+    ok_cors = {
+        "status": 200,
+        "headers": {
+            "access-control-allow-origin": "https://a.example",
+            "access-control-allow-methods": "POST, OPTIONS",
+        },
+    }
     if check_cors_preflight(ok_cors, "https://a.example"):
         failures.append("selftest: good CORS flagged")
     no_cors = {"status": 200, "headers": {}}
@@ -249,9 +288,13 @@ def selftest() -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--gateway-url", default=None, help="override GATEWAY_URL")
-    ap.add_argument("--cors-origin", action="append", default=[],
-                    help="Studio origin for CORS preflight (repeatable; "
-                         "or CORS_ORIGINS env, comma-separated)")
+    ap.add_argument(
+        "--cors-origin",
+        action="append",
+        default=[],
+        help="Studio origin for CORS preflight (repeatable; "
+        "or CORS_ORIGINS env, comma-separated)",
+    )
     ap.add_argument("--timeout", type=int, default=TIMEOUT_S)
     ap.add_argument("--json-out", default=None, help="also write report JSON here")
     ap.add_argument("--selftest", action="store_true", help="offline battery, exit 0/1")
@@ -260,8 +303,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.selftest:
         return selftest()
 
-    url = (args.gateway_url or __import__("os").environ.get("GATEWAY_URL")
-           or DEFAULT_GATEWAY_URL).strip().rstrip("/")
+    url = (
+        (
+            args.gateway_url
+            or __import__("os").environ.get("GATEWAY_URL")
+            or DEFAULT_GATEWAY_URL
+        )
+        .strip()
+        .rstrip("/")
+    )
     if not url.lower().startswith(("http://", "https://")):
         print(f"CONFIG ERROR: gateway url must be http(s): {url!r}", file=sys.stderr)
         return 2

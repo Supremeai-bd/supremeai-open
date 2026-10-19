@@ -7,16 +7,16 @@ Modules:
     dispatcher      - MCP Control Tower relay + minimal Redis kill-switch
 """
 
-from .config import CommandConfig, CommandConfigError  # noqa: F401
-from .dispatcher import (  # noqa: F401
+from .config import CommandConfig, CommandConfigError
+from .dispatcher import (
     DispatcherError,
     KillSwitch,
     KillSwitchUnavailable,
     MiniRedis,
     TowerDispatcher,
 )
-from .telegram_bot import CommandRouter, TelegramUpdate  # noqa: F401
-from .webhook_ingress import WebhookIngress, verify_hmac  # noqa: F401
+from .telegram_bot import CommandRouter, TelegramUpdate
+from .webhook_ingress import WebhookIngress, verify_hmac
 
 __all__ = [
     "CommandConfig",

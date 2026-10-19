@@ -8,17 +8,16 @@ streaming iterator.
 
 import asyncio
 import json
+import os
+import sys
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import sys
-import os
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
-from supremeai import AsyncSupremeAIClient, GatewayError, SupremeAIClient  # noqa: E402
-from supremeai.sse_listener import SSEListener  # noqa: E402
+from supremeai import AsyncSupremeAIClient, GatewayError, SupremeAIClient
+from supremeai.sse_listener import SSEListener
 
 SSE_BODY = (
     "event: token\n"
@@ -69,10 +68,16 @@ class MockGateway(BaseHTTPRequestHandler):
         if self.path == "/v1/runs":
             self._send_json(
                 201,
-                {"id": "run_123", "status": "queued", "task": state["last_body"].get("task", "")},
+                {
+                    "id": "run_123",
+                    "status": "queued",
+                    "task": state["last_body"].get("task", ""),
+                },
             )
         else:
-            self._send_json(404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}})
+            self._send_json(
+                404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}}
+            )
 
     def do_GET(self):
         state = self.server.state  # type: ignore[attr-defined]
@@ -83,11 +88,15 @@ class MockGateway(BaseHTTPRequestHandler):
                 state["flaky_hits"] += 1
                 should_fail = state["flaky_hits"] <= 2
             if should_fail:
-                self._send_json(503, {"error": {"code": "UPSTREAM_BUSY", "message": "try again"}})
+                self._send_json(
+                    503, {"error": {"code": "UPSTREAM_BUSY", "message": "try again"}}
+                )
             else:
                 self._send_json(200, {"ok": True, "attempts": state["flaky_hits"]})
         elif self.path == "/v1/always-503":
-            self._send_json(503, {"error": {"code": "UPSTREAM_BUSY", "message": "never recovers"}})
+            self._send_json(
+                503, {"error": {"code": "UPSTREAM_BUSY", "message": "never recovers"}}
+            )
         elif self.path.endswith("/stream"):
             body = SSE_BODY.encode("utf-8")
             self.send_response(200)
@@ -96,7 +105,9 @@ class MockGateway(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         else:
-            self._send_json(404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}})
+            self._send_json(
+                404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}}
+            )
 
 
 class MockGatewayServer(ThreadingHTTPServer):
@@ -104,7 +115,12 @@ class MockGatewayServer(ThreadingHTTPServer):
 
     def __init__(self):
         super().__init__(("127.0.0.1", 0), MockGateway)
-        self.state = {"lock": threading.Lock(), "flaky_hits": 0, "last_auth": None, "last_body": None}
+        self.state = {
+            "lock": threading.Lock(),
+            "flaky_hits": 0,
+            "last_auth": None,
+            "last_body": None,
+        }
 
     @property
     def base_url(self):
@@ -130,7 +146,9 @@ class TestSupremeAISDK(unittest.TestCase):
         self.gateway.server_close()
 
     def test_header_signing_and_run_submission(self):
-        response = self.client.run_task("summarize", {"text": "hello"}, idempotency_key="abc")
+        response = self.client.run_task(
+            "summarize", {"text": "hello"}, idempotency_key="abc"
+        )
         self.assertEqual(response["id"], "run_123")
         self.assertEqual(response["status"], "queued")
         self.assertEqual(self.gateway.state["last_auth"], "Bearer test-key-123")

@@ -4,6 +4,6 @@ Cross-cutting helpers with zero business authority:
     audio_cache - ephemeral SHA-256 keyed audio cache (memory or temp-file)
 """
 
-from .audio_cache import AudioCache, AudioCacheError  # noqa: F401
+from .audio_cache import AudioCache, AudioCacheError
 
 __all__ = ["AudioCache", "AudioCacheError"]

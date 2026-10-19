@@ -13,6 +13,7 @@ Transports (verified against infrastructure/mcp-control-plane/src/index.ts):
 - GET /sse               — Server-Sent Events (text/event-stream)
 - GET /health            — public smoke probe
 """
+
 from __future__ import annotations
 
 import json
@@ -51,6 +52,7 @@ class TowerSessionLost(TowerError):
 # ---------------------------------------------------------------------------
 # HTTP core
 # ---------------------------------------------------------------------------
+
 
 def _request(
     method: str,
@@ -99,10 +101,13 @@ def _request(
 # Streamable HTTP transport (/mcp)
 # ---------------------------------------------------------------------------
 
+
 class McpHttpClient:
     """Stateful MCP client: initialize → tools/list → tools/call → delete."""
 
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, client_name: str = DEFAULT_CLIENT_NAME):
+    def __init__(
+        self, base_url: str = DEFAULT_BASE_URL, client_name: str = DEFAULT_CLIENT_NAME
+    ):
         self.base_url = base_url.rstrip("/")
         self.client_name = client_name
         self.session_id: str | None = None
@@ -121,7 +126,9 @@ class McpHttpClient:
         headers: dict = {}
         if self.session_id is not None:
             headers["Mcp-Session-Id"] = self.session_id
-        _, resp_headers, raw = _request("POST", self._url(), body=payload, headers=headers)
+        _, resp_headers, raw = _request(
+            "POST", self._url(), body=payload, headers=headers
+        )
         sid = resp_headers.get("Mcp-Session-Id") or resp_headers.get("mcp-session-id")
         if sid:
             self.session_id = sid
@@ -189,8 +196,13 @@ class McpHttpClient:
 # SSE transport (/sse)
 # ---------------------------------------------------------------------------
 
-def sse_read(base_url: str = DEFAULT_BASE_URL, client_name: str = DEFAULT_CLIENT_NAME,
-             max_frames: int = 5, timeout: float = 30.0) -> list:
+
+def sse_read(
+    base_url: str = DEFAULT_BASE_URL,
+    client_name: str = DEFAULT_CLIENT_NAME,
+    max_frames: int = 5,
+    timeout: float = 30.0,
+) -> list:
     """Read the first SSE frames from /sse (text/event-stream).
 
     Returns a list of {"event": ..., "data": ...} frames. NOTE: this call
@@ -212,7 +224,9 @@ def sse_read(base_url: str = DEFAULT_BASE_URL, client_name: str = DEFAULT_CLIENT
                 text = line.decode("utf-8", errors="replace").rstrip("\r\n")
                 if text == "":
                     if data_lines:
-                        frames.append({"event": event_name, "data": "\n".join(data_lines)})
+                        frames.append(
+                            {"event": event_name, "data": "\n".join(data_lines)}
+                        )
                     event_name, data_lines = None, []
                 elif text.startswith("event:"):
                     event_name = text.split(":", 1)[1].strip()
@@ -221,7 +235,8 @@ def sse_read(base_url: str = DEFAULT_BASE_URL, client_name: str = DEFAULT_CLIENT
     except urllib.error.HTTPError as exc:
         if exc.code == 503:
             raise TowerError(
-                "503 SSE session table full — back off and reconnect later", status_code=503
+                "503 SSE session table full — back off and reconnect later",
+                status_code=503,
             ) from exc
         raise TowerError(f"HTTP {exc.code} on /sse", status_code=exc.code) from exc
     return frames
@@ -230,6 +245,7 @@ def sse_read(base_url: str = DEFAULT_BASE_URL, client_name: str = DEFAULT_CLIENT
 # ---------------------------------------------------------------------------
 # Health probe
 # ---------------------------------------------------------------------------
+
 
 def health(base_url: str = DEFAULT_BASE_URL) -> dict:
     """GET /health — public, credential-free smoke probe."""
@@ -243,6 +259,7 @@ def health(base_url: str = DEFAULT_BASE_URL) -> dict:
 # ---------------------------------------------------------------------------
 # CLI (network only on explicit action)
 # ---------------------------------------------------------------------------
+
 
 def main(argv: list) -> int:
     actions = {
@@ -271,15 +288,20 @@ def main(argv: list) -> int:
     try:
         init = client.initialize()
         server_info = (init.get("result") or {}).get("serverInfo", {})
-        print(f"# connected as '{client.client_name}' — server: "
-              f"{server_info.get('name', '?')} {server_info.get('version', '')}")
+        print(
+            f"# connected as '{client.client_name}' — server: "
+            f"{server_info.get('name', '?')} {server_info.get('version', '')}"
+        )
         print(f"# session: {client.session_id}")
         if action == "tools":
             for tool in client.list_tools():
                 print(f"- {tool.get('name')}: {tool.get('description', '')[:80]}")
         elif action == "call":
             if len(argv) < 2:
-                print("usage: client.py call <tool-name> [json-arguments]", file=sys.stderr)
+                print(
+                    "usage: client.py call <tool-name> [json-arguments]",
+                    file=sys.stderr,
+                )
                 return 2
             args = json.loads(argv[2]) if len(argv) > 2 else {}
             result = client.call_tool(argv[1], args)

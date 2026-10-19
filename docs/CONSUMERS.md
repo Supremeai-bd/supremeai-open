@@ -211,9 +211,12 @@ secret   : vault-ফিড env — কখনো কোড/git/log-এ নয় 
 ## §৪. Python client (zero-dependency)
 
 ```python
-import sys; sys.path.insert(0, "examples")
+import sys
+
+sys.path.insert(0, "examples")
 from gateway_client import chat
-out = chat([{"role": "user", "content": "ping"}])   # env: SUPREMEAI_API_KEY
+
+out = chat([{"role": "user", "content": "ping"}])  # env: SUPREMEAI_API_KEY
 print(out["choices"][0]["message"]["content"])
 ```
 
