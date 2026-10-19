@@ -181,11 +181,13 @@ Implemented so far:
 - Pilot skill extracted: `skills/agent-cadence-dispatcher/` (SKILL.md + scripts/dispatch.py) wrapping the cadence helpers; parity test `skills/tests/test_agent_cadence_skill.py`.
 - Controller-side evidence verifier: `scripts/ci/controller_evidence_verify.py` (git diff scope, SHA-256 digests, controller-run tests; fail-closed). Tests: `tests/test_controller_evidence.py` (10 passed).
 - Learning feedback loop: `scripts/agents/learning_feedback.py` (record verified solutions to JSONL, promote to skill draft). Tests: `tests/test_learning_feedback.py` (6 passed).
-- Execution bridge: `scripts/agents/execution_bridge.py` (validate task envelope, dry-run dispatch record, --execute fail-closed until MCP wired). Tests: `tests/test_execution_bridge.py` (12 passed).
-- Tests: `tests/test_agent_cadence.py` (11 passed) + `skills/tests/test_agent_cadence_skill.py` (3 passed) + `tests/test_controller_evidence.py` (10 passed) + `tests/test_learning_feedback.py` (6 passed) + existing suites green.
+- Execution bridge: `scripts/agents/execution_bridge.py` (validate task envelope, dry-run dispatch record, --execute runs safe executor). Tests: `tests/test_execution_bridge.py` (12 passed).
+- Execution executor: `scripts/agents/execution_executor.py` (null/verify executors, mcp reserved fail-closed). Tests: `tests/test_execution_executor.py` (10 passed).
+- Test parity guard: `scripts/ci/test_parity_guard.py` (every non-allowlisted loop/CI script must have a test). Tests: `tests/test_test_parity_guard.py` (3 passed).
+- Tests: `tests/test_agent_cadence.py` (11) + `skills/tests/test_agent_cadence_skill.py` (3) + `tests/test_controller_evidence.py` (10) + `tests/test_learning_feedback.py` (6) + `tests/test_execution_bridge.py` (12) + `tests/test_execution_executor.py` (10) + `tests/test_test_parity_guard.py` (3) + existing suites green.
 
 Pending (next iterations):
-- Auto-execution bridge (MCP) for task envelopes — requires MCP Tower integration; design documented in AGENTS.md §2 (Pathway 1/3). Implementation deferred to a dedicated task.
+- MCP auto-execution bridge (actual executor) — requires MCP Tower integration; contract/design documented in AGENTS.md §2 (Pathway 1/3). The dry-run bridge + safe executor above provide the dispatch-intent/execution-result contract an MCP executor can consume.
 
 
 1. Test & commit the pending audit remediation (current uncommitted diff).

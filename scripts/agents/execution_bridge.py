@@ -113,26 +113,39 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Execution bridge for task envelopes")
     parser.add_argument("--envelope", required=True, help="path to task envelope JSON")
     parser.add_argument("--queue", default=".dispatch_queue", help="queue directory")
+    parser.add_argument("--results", default=".execution_results", help="results directory (used with --execute)")
     parser.add_argument("--dry-run", action="store_true", default=True, help="record only (default)")
-    parser.add_argument("--execute", action="store_true", help="execute (not yet wired; fail-closed)")
+    parser.add_argument("--execute", action="store_true", help="run safe executor (verify) on the dispatch record")
+    parser.add_argument("--executor", default="verify", choices=("null", "verify"), help="executor for --execute")
+    parser.add_argument("--repo-root", default=".", help="repository root")
     args = parser.parse_args()
 
+    import sys as _sys
+    root = Path(args.repo_root).resolve()
     env = load_envelope(Path(args.envelope))
     if env is None:
-        print("ERROR: cannot load envelope", file=__import__("sys").stderr)
+        print("ERROR: cannot load envelope", file=_sys.stderr)
         return 1
     errs = validate_envelope(env)
     if errs:
-        print("ERROR: invalid envelope:", errs, file=__import__("sys").stderr)
+        print("ERROR: invalid envelope:", errs, file=_sys.stderr)
         return 1
-    rec_path = dispatch(env, Path(args.queue), dry_run=not args.execute, execute=args.execute)
+
+    rec_path = dispatch(env, Path(args.queue), dry_run=not args.execute, execute=False)
     if rec_path is None:
-        if args.execute:
-            print("ERROR: --execute not wired yet (fail-closed)", file=__import__("sys").stderr)
-        else:
-            print("ERROR: dispatch failed", file=__import__("sys").stderr)
+        print("ERROR: dispatch failed", file=_sys.stderr)
         return 1
     print(f"dispatch recorded: {rec_path}")
+
+    if args.execute:
+        _sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import execution_executor as _ee
+        res_path = _ee.run(rec_path, Path(args.results), args.executor, root)
+        if res_path is None:
+            print("ERROR: execution failed", file=_sys.stderr)
+            return 1
+        print(f"execution result recorded: {res_path}")
+
     return 0
 
 
