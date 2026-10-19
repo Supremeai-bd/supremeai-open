@@ -331,12 +331,22 @@ export function buildAccountRegistry(): ProviderAccount[] {
   ];
 }
 
+export const ADMIN_ONLY_GITHUB_REPOS = new Set([
+  "supremeai",
+  "supremeai-api",
+  "supremeai-core",
+  "supremeai-command",
+  "supremeai-infrastructure",
+  "supremeai-mcp-control-plane",
+  "github-org-supremeai-bd",
+]);
+
 /**
  * Role-aware repository & account filter:
  * - Admin & supremeadmin (rank >= 4): see all accounts (core monorepo, org monitor, satellites).
- * - Agent / repo_viewer / restricted_viewer (rank 1..3): see only satellite / federation accounts;
- *   core monorepo ('supremeai'), API gateway ('supremeai-api'), and org monitor are excluded.
- * - Viewer / guest (rank 0): only see public-safe accounts ('supremeai-open' for GitHub).
+ * - Agent / repo_viewer (rank 2..3): see only open satellite repositories;
+ *   core monorepo ('supremeai'), API gateway ('supremeai-api'), command bot, core, infra, and org monitor are strictly excluded.
+ * - Viewer / guest / restricted_viewer (rank <= 1): only see public-safe SSOT repository ('supremeai-open' for GitHub).
  */
 export function getAccountsForRole(role?: UserRole): ProviderAccount[] {
   const allAccounts = buildAccountRegistry();
@@ -358,14 +368,21 @@ export function getAccountsForRole(role?: UserRole): ProviderAccount[] {
     if (account.id === "github-primary" || account.url?.endsWith("/supremeai")) {
       return false;
     }
-    // Cloaked repo: admin-only
-    if (account.id.includes("supremeai-api") || account.url?.endsWith("/supremeai-api")) {
+
+    // Extract repo name
+    const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(account.url ?? "");
+    const repoName = (match ? match[2].replace(/\.git$/, "") : account.id.replace(/^github-pay-/, "")).toLowerCase();
+
+    // Admin-only core and operational infrastructure repos
+    if (ADMIN_ONLY_GITHUB_REPOS.has(repoName)) {
       return false;
     }
-    // Guest viewer: only public repo supremeai-open
-    if (rank === 0) {
-      return account.id.includes("supremeai-open") || account.url?.endsWith("/supremeai-open");
+
+    // Guest viewer / restricted viewer: strictly only public SSOT repo supremeai-open
+    if (rank <= 1) {
+      return repoName === "supremeai-open" || account.id.includes("supremeai-open");
     }
+
     return true;
   });
 }

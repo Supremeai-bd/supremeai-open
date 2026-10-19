@@ -367,7 +367,8 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "Get a high-level summary of all SupremeAI services — availability, roles, and capabilities",
     {},
     async () => {
-      const registry = buildAccountRegistry();
+      const store = RequestContextStore.get();
+      const registry = getAccountsForRole(store?.role);
       const byProvider = registry.reduce(
         (acc, r) => {
           const key = r.provider;

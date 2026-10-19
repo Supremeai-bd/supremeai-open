@@ -187,6 +187,10 @@ assert.ok(adminAccs.some((a) => a.id === "github-org-supremeai-bd"), "admin must
 const agentAccs = getAccountsForRole("agent");
 assert.ok(!agentAccs.some((a) => a.id === "github-primary"), "agent must NOT see github-primary");
 assert.ok(!agentAccs.some((a) => a.id === "github-org-supremeai-bd"), "agent must NOT see github-org-supremeai-bd");
+assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-api")), "agent must NOT see supremeai-api");
+assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-core")), "agent must NOT see supremeai-core");
+assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-command")), "agent must NOT see supremeai-command");
+assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-infrastructure")), "agent must NOT see supremeai-infrastructure");
 assert.ok(agentAccs.some((a) => a.id.includes("supremeai-open")), "agent must see supremeai-open");
 
 const viewerAccs = getAccountsForRole("viewer");
