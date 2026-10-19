@@ -21,7 +21,7 @@ The SupremeAI platform consists of specialized repositories under the **`Supreme
 | Repository | Visibility & License | Scope & Responsibility | What Can Be Changed From Here |
 |---|---|---|---|
 | **`supremeai-open`** *(Current)* | **Public · MIT** | **Public Boundary & Ambassador.** Holds public contracts, client SDKs, examples, and agent instructions. | Direct PRs / Issues on this repository. |
-| **`supremeai-studio`** | **Public · MIT** | **Web UI & Experience.** React/Vite dashboard, design tokens, and frontend shell components. Live UI: [https://supremeai-studio-live.vercel.app](https://supremeai-studio-live.vercel.app) | UI components, design tokens, and user experience fixes. |
+| **`supremeai-studio`** | **Public · MIT** | **Web UI & Experience.** React/Vite dashboard, design tokens, and frontend shell components. Live UI: [https://supremeai-studio.vercel.app](https://supremeai-studio.vercel.app) | UI components, design tokens, and user experience fixes. |
 | **`supremeai-sdk`** | **Public · MIT** | **Stable External Contracts.** API/event/task schemas, protos, and client libraries (`pip`/`npm`) for external integrators. | Contract PRs and schema proposals on the SDK repository. |
 | **`supremeai-vscode`** | **Public · MIT** | **Developer Experience.** Official VS Code Extension for agent interaction and autonomous workflows. | Extension client contracts and editor hooks. |
 | **`supremeai-skills`** | **Public · MIT** | **Skills & Tools Marketplace.** Dynamic capability registry, installers, and reusable tools for agents. | Tool specs, skill manifests, and agent plugins. |
@@ -148,7 +148,7 @@ flowchart TB
 | Boundary | `supremeai-open` | public SSOT: contracts, guards, gate, bridge dispatch |
 | Tool plane | `supremeai-mcp-control-plane` | governed tool registry, credential brokering, kill-switch |
 | Edge | `supremeai-api` | unified multi-LLM provider gateway |
-| Experience | `supremeai-studio` | React/Vite dashboard and frontend shell ([Live Console](https://supremeai-studio-live.vercel.app)) |
+| Experience | `supremeai-studio` | React/Vite dashboard and frontend shell ([Live Console](https://supremeai-studio.vercel.app)) |
 | Core | `supremeai-core` | orchestration, planning, decision, execution intelligence |
 
 ### 6.2 Automation topology
