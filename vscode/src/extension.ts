@@ -5,6 +5,9 @@
 import * as vscode from "vscode";
 import { McpBridge } from "./mcp_bridge";
 import { FederationStatusBar } from "./status_bar";
+import { SupremeAIChatViewProvider } from "./chat_view";
+import { inlineChatCommand } from "./commands/inline_chat";
+import { registerCodeActions } from "./code_actions";
 import { submitTaskCommand } from "./commands/submit_task";
 import { runwayStatusCommand } from "./commands/runway_status";
 
@@ -13,8 +16,8 @@ let bridge: McpBridge | null = null;
 
 export function activate(context: vscode.ExtensionContext): void {
   const config = vscode.workspace.getConfiguration("supremeai");
-  const towerUrl = config.get<string>("supremeai.towerUrl", "https://supremeai-mcp-tower.onrender.com/mcp");
-  const refreshSeconds = config.get<number>("supremeai.autoRefreshSeconds", 30);
+  const towerUrl = config.get<string>("towerUrl", "https://supremeai-mcp-tower.onrender.com/mcp");
+  const refreshSeconds = config.get<number>("autoRefreshSeconds", 30);
 
   // 1. Initialize MCP Client Bridge
   bridge = new McpBridge(towerUrl);
@@ -23,6 +26,14 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBar = new FederationStatusBar(bridge);
   statusBar.startPolling(refreshSeconds);
   context.subscriptions.push(statusBar);
+
+  // 3. Register Chat Sidebar Webview
+  const chatProvider = new SupremeAIChatViewProvider(context);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(SupremeAIChatViewProvider.viewType, chatProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
 
   // 3. Register Commands
   const dispatchDisposable = vscode.commands.registerCommand("supremeai.dispatchTask", () => {
@@ -66,12 +77,22 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  const askSelectionDisposable = vscode.commands.registerCommand("supremeai.askSelection", () => {
+    inlineChatCommand();
+  });
+
+  const openChatDisposable = vscode.commands.registerCommand("supremeai.openChat", () => {
+    vscode.commands.executeCommand("supremeai.chat.focus");
+  });
+
+  registerCodeActions(context);
+
   // 4. Listen to configuration updates
   const configDisposable = vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration("supremeai")) {
       const updatedConfig = vscode.workspace.getConfiguration("supremeai");
-      const newUrl = updatedConfig.get<string>("supremeai.towerUrl", "https://supremeai-mcp-tower.onrender.com/mcp");
-      const newRefresh = updatedConfig.get<number>("supremeai.autoRefreshSeconds", 30);
+      const newUrl = updatedConfig.get<string>("towerUrl", "https://supremeai-mcp-tower.onrender.com/mcp");
+      const newRefresh = updatedConfig.get<number>("autoRefreshSeconds", 30);
 
       if (bridge) {
         bridge.updateConfig(newUrl);
@@ -82,7 +103,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
-  context.subscriptions.push(dispatchDisposable, runwayDisposable, killSwitchDisposable, configDisposable);
+  context.subscriptions.push(dispatchDisposable, runwayDisposable, killSwitchDisposable, askSelectionDisposable, openChatDisposable, configDisposable);
 }
 
 export function deactivate(): void {

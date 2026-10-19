@@ -39,8 +39,44 @@
         "command": "supremeai.emergencyStop",
         "title": "Trigger Emergency Autonomy Kill-Switch",
         "category": "SupremeAI"
+      },
+      {
+        "command": "supremeai.askSelection",
+        "title": "Ask SupremeAI about Selection",
+        "category": "SupremeAI"
+      },
+      {
+        "command": "supremeai.openChat",
+        "title": "Open SupremeAI Chat",
+        "category": "SupremeAI"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "supremeai",
+          "title": "SupremeAI",
+          "icon": "media/chat.svg"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "supremeai.askSelection",
+        "key": "ctrl+shift+i",
+        "mac": "cmd+shift+i",
+        "when": "editorHasSelection"
+      }
+    ],
+    "views": {
+      "supremeai": [
+        {
+          "id": "supremeai.chat",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
     "configuration": {
       "type": "object",
       "title": "SupremeAI Configuration",
@@ -59,6 +95,21 @@
           "type": "boolean",
           "default": true,
           "description": "Show notification when an agent completes a task or CI gate fails"
+        },
+        "supremeai.gatewayUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8080",
+          "description": "SupremeAI Gateway base URL for chat completions"
+        },
+        "supremeai.apiKey": {
+          "type": "string",
+          "default": "supremeai-key-test-0000000001",
+          "description": "X-SupremeAI-Key for gateway authentication"
+        },
+        "supremeai.model": {
+          "type": "string",
+          "default": "auto",
+          "description": "Default model tier (auto, fast, balanced, pro)"
         }
       }
     }
@@ -71,6 +122,7 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.80.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.3.3"
   }
 }

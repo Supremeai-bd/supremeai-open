@@ -252,11 +252,15 @@ def create_app(
     attempt_fn: AttemptFn | None = None,
     stream_fn=None,
     stealth_webhook_fn=None,
+    memory_store=None,
 ) -> FastAPI:
     """Build the gateway. Every collaborator is injectable for offline tests."""
     limiter = limiter or SlidingWindowLimiter(
         config.rate_limit_window_s, config.rate_limit_max_requests
     )
+    if memory_store is None:
+        from .memory import MemoryStore
+        memory_store = MemoryStore()
     if stealth_webhook_fn is None:
         from .stealth_webhook import forward_stealth_webhook as _fwd
         async def stealth_webhook_fn(url, secret, body, timeout=10.0):
@@ -431,10 +435,8 @@ def create_app(
                 if ep.provider == provider_name:
                     endpoint = ep
                     break
-            if endpoint is None and chain:
-                endpoint = chain[0]
             if endpoint is None:
-                return {"provider": provider_name, "status": 503, "error": "no endpoint"}
+                return {"provider": provider_name, "status": 503, "error": "no endpoint configured for provider"}
             try:
                 res = await (attempt_fn or _default_attempt)(endpoint, payload)
             except Exception as exc:
@@ -470,6 +472,108 @@ def create_app(
             "consensus_count": len([r for r in safe if not (isinstance(r, dict) and r.get("status", 0) >= 400)]),
             "responses": safe,
         }))
+
+    # ---- /v1/memory/store + /v1/memory/search (P4 sidecar) ----
+    @app.post("/v1/memory/store")
+    async def memory_store_endpoint(request: Request) -> Response:
+        if (err := authenticate(request, config)) is not None:
+            return err
+        decision = await check_rate_limit(request, limiter)
+        if not decision.allowed:
+            return build_429(limiter, decision)
+        request.state.rate_decision = decision
+        try:
+            body = await request.json()
+        except Exception:
+            return error_response(400, err_type="invalid_request_error", code="malformed_json",
+                                  message="Request body is not valid JSON.")
+        if not isinstance(body, dict):
+            return error_response(400, err_type="invalid_request_error", code="invalid_body",
+                                  message="Request body must be a JSON object.")
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return error_response(400, err_type="invalid_request_error", code="missing_text",
+                                  message="'text' must be a non-empty string.")
+        namespace = body.get("namespace", "default")
+        if not isinstance(namespace, str):
+            return error_response(400, err_type="invalid_request_error", code="invalid_namespace",
+                                  message="'namespace' must be a string.")
+        item_id = body.get("id")
+        if item_id is not None and not isinstance(item_id, str):
+            return error_response(400, err_type="invalid_request_error", code="invalid_id",
+                                  message="'id' must be a string.")
+        metadata = body.get("metadata", {})
+        if not isinstance(metadata, dict):
+            return error_response(400, err_type="invalid_request_error", code="invalid_metadata",
+                                  message="'metadata' must be an object.")
+        item = memory_store.store(text=text, namespace=namespace, item_id=item_id, metadata=metadata)
+        return attach_rate_headers(request, JSONResponse({
+            "status": "stored",
+            "id": item.id,
+            "namespace": item.namespace,
+            "created": item.created,
+        }))
+
+    @app.post("/v1/memory/search")
+    async def memory_search_endpoint(request: Request) -> Response:
+        if (err := authenticate(request, config)) is not None:
+            return err
+        decision = await check_rate_limit(request, limiter)
+        if not decision.allowed:
+            return build_429(limiter, decision)
+        request.state.rate_decision = decision
+        try:
+            body = await request.json()
+        except Exception:
+            return error_response(400, err_type="invalid_request_error", code="malformed_json",
+                                  message="Request body is not valid JSON.")
+        if not isinstance(body, dict):
+            return error_response(400, err_type="invalid_request_error", code="invalid_body",
+                                  message="Request body must be a JSON object.")
+        query = body.get("query")
+        if not isinstance(query, str) or not query.strip():
+            return error_response(400, err_type="invalid_request_error", code="missing_query",
+                                  message="'query' must be a non-empty string.")
+        top_k = body.get("top_k", 5)
+        if not isinstance(top_k, int) or isinstance(top_k, bool) or top_k < 1 or top_k > 256:
+            return error_response(400, err_type="invalid_request_error", code="invalid_top_k",
+                                  message="'top_k' must be an integer in [1,256].")
+        namespace = body.get("namespace")
+        if namespace is not None and not isinstance(namespace, str):
+            return error_response(400, err_type="invalid_request_error", code="invalid_namespace",
+                                  message="'namespace' must be a string.")
+        threshold = body.get("score_threshold", 0.0)
+        if not isinstance(threshold, (int, float)) or isinstance(threshold, bool):
+            return error_response(400, err_type="invalid_request_error", code="invalid_threshold",
+                                  message="'score_threshold' must be a number.")
+        hits = memory_store.search(query=query, top_k=top_k, namespace=namespace,
+                                  threshold=float(threshold))
+        return attach_rate_headers(request, JSONResponse({
+            "status": "ok",
+            "count": len(hits),
+            "hits": hits,
+        }))
+
+    @app.get("/v1/memory/search")
+    async def memory_search_get(request: Request) -> Response:
+        if (err := authenticate(request, config)) is not None:
+            return err
+        decision = await check_rate_limit(request, limiter)
+        if not decision.allowed:
+            return build_429(limiter, decision)
+        request.state.rate_decision = decision
+        query = request.query_params.get("q") or request.query_params.get("query")
+        if not query:
+            return error_response(400, err_type="invalid_request_error", code="missing_query",
+                                  message="query param 'q' or 'query' required.")
+        try:
+            top_k = int(request.query_params.get("top_k", "5"))
+        except ValueError:
+            return error_response(400, err_type="invalid_request_error", code="invalid_top_k",
+                                  message="'top_k' must be an integer.")
+        namespace = request.query_params.get("namespace")
+        hits = memory_store.search(query=query, top_k=top_k, namespace=namespace)
+        return attach_rate_headers(request, JSONResponse({"status": "ok", "count": len(hits), "hits": hits}))
 
     @app.exception_handler(ProviderChainExhausted)
     async def chain_exhausted_handler(request: Request, exc: ProviderChainExhausted):

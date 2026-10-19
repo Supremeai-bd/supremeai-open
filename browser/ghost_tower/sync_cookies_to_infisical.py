@@ -96,7 +96,7 @@ def set_infisical_secret(token: str, key: str, value: str):
 
 
 
-async def export_and_sync():
+async def export_and_sync() -> dict:
     print("=================================================================")
     print("   SupremeAI: AI Fleet Cookies Exporter & Infisical Cloud Sync")
     print("=================================================================")
@@ -120,6 +120,8 @@ async def export_and_sync():
     ai_keywords = ["google", "chatgpt", "openai", "perplexity", "grok", "x.ai", "mistral"]
     ai_cookies = [c for c in cookies if any(k in c.get("domain", "").lower() for k in ai_keywords)]
     logger.info(f"Found {len(ai_cookies)} AI Fleet session cookies (Gemini, ChatGPT, Grok, Perplexity, Mistral).")
+    if len(ai_cookies) < 5:
+        raise RuntimeError("AI fleet session appears expired: only %d AI cookies found" % len(ai_cookies))
 
     raw_json = json.dumps(ai_cookies, indent=2)
 
@@ -158,5 +160,14 @@ async def export_and_sync():
     print("=================================================================")
 
 
+    return {
+        "success": True,
+        "total_cookies": total,
+        "ai_cookies": len(ai_cookies),
+        "expired": len(ai_cookies) < 5,
+    }
+
+
 if __name__ == "__main__":
-    asyncio.run(export_and_sync())
+    result = asyncio.run(export_and_sync())
+    print("RESULT:", result)

@@ -13,3 +13,4 @@ C?Users*
 node_modules/
 dist/
 .wrangler/
+vscode/out/
