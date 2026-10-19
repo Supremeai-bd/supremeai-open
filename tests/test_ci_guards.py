@@ -195,6 +195,21 @@ def _require_guards() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def _find_bash() -> str:
+    if sys.platform == "win32":
+        candidates: list[Path] = []
+        pf = os.environ.get("PROGRAMFILES")
+        if pf:
+            candidates.extend([Path(pf) / "Git" / "bin" / "bash.exe", Path(pf) / "Git" / "usr" / "bin" / "bash.exe"])
+        local_app = os.environ.get("LOCALAPPDATA")
+        if local_app:
+            candidates.append(Path(local_app) / "Programs" / "Git" / "bin" / "bash.exe")
+        for cand in candidates:
+            if cand.is_file():
+                return str(cand)
+    return shutil.which("bash") or "bash"
+
+
 class _GuardHarness:
     """Event-context execution rig: stub `gh`, fixture issues, real bash."""
 
@@ -215,10 +230,33 @@ class _GuardHarness:
             '  if [ -f "$f" ]; then cat "$f"; exit 0; fi\n'
             "  exit 1\n"
             "fi\n"
-            "exit 1\n".replace("FIXTURE_DIR", str(self.fixtures)),
+            "exit 1\n".replace("FIXTURE_DIR", str(self.fixtures).replace("\\", "/")),
             encoding="utf-8",
         )
         shim.chmod(0o755)
+        if not shutil.which("jq"):
+            jq_shim = shim_dir / "jq"
+            py_exe = sys.executable.replace("\\", "/")
+            jq_shim.write_text(
+                f'#!/bin/bash\n"{py_exe}" -c \'\n'
+                "import sys, json\n"
+                "try:\n"
+                "    data = json.load(sys.stdin)\n"
+                "    expr = sys.argv[-1] if len(sys.argv) > 1 else \"\"\n"
+                "    if \"labels\" in expr:\n"
+                "        targets = {\"status:claimed\", \"status:in-progress\", \"bridge:queued\", \"bridge:in-gates\", \"bridge:landed\"}\n"
+                "        labels = [l.get(\"name\") for l in data.get(\"labels\", []) if isinstance(l, dict)]\n"
+                "        sys.exit(0 if any(l in targets for l in labels) else 1)\n"
+                "    if \"atomic-claim\" in expr:\n"
+                "        comments = data.get(\"comments\", [])\n"
+                "        sys.exit(0 if any(\"<!-- atomic-claim -->\" in (c.get(\"body\") or \"\") for c in comments if isinstance(c, dict)) else 1)\n"
+                "    sys.exit(0)\n"
+                "except Exception:\n"
+                "    sys.exit(1)\n"
+                '\' "$@"\n',
+                encoding="utf-8",
+            )
+            jq_shim.chmod(0o755)
         for num, obj in FIXTURE_ISSUES.items():
             (self.fixtures / f"issue_{num}.json").write_text(
                 json.dumps(obj), encoding="utf-8"
@@ -240,15 +278,21 @@ class _GuardHarness:
     def run(self, script_text: str, **env: str) -> subprocess.CompletedProcess:
         path = self.root / "scenario.sh"
         path.write_text(self.materialize(script_text), encoding="utf-8")
+        bin_dir = str(self.root / "bin").replace("\\", "/")
         e = {
-            "PATH": f"{self.root / 'bin'}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
-            "HOME": str(self.root),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "HOME": str(self.root).replace("\\", "/"),
             "LANG": "C.UTF-8",
             "GH_TOKEN": "testtoken",
         }
         e.update(env)
         return subprocess.run(
-            ["bash", str(path)], capture_output=True, text=True, env=e, timeout=120
+            [_find_bash(), str(path)],
+            capture_output=True,
+            text=True,
+            env=e,
+            timeout=120,
+            check=False,
         )
 
     def close(self) -> None:
@@ -392,12 +436,12 @@ def test_claim_guard_behavior_matrix():
             # No issue ref: the guard echoes the literal #<num> template form.
             (
                 "no issue reference fails closed",
-                dict(
-                    PR_TITLE="feat: nothing",
-                    PR_BODY="no refs here",
-                    PR_LABELS="",
-                    HEAD_REF="agent/work-1",
-                ),
+                {
+                    "PR_TITLE": "feat: nothing",
+                    "PR_BODY": "no refs here",
+                    "PR_LABELS": "",
+                    "HEAD_REF": "agent/work-1",
+                },
                 1,
                 f"{CLAIM_ERROR_PREFIX}<num>.",
             ),
