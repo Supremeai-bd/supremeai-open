@@ -52,6 +52,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 | **U8** | **Handoff & Decision Ledger** | Finish with JSON decision ledger (`why`, `alternatives_rejected`, `evidence`). Squash commit must carry `Closes #N`. Rerun loop immediately (no sleep). |
 | **U9** | **Pattern Sweep** | When fixing a defect, sweep for sibling occurrences in the file family. Address or file linked follow-up. |
 | **U10** | **Loop-Granted Authority** | The loop is the permission. Never ask "should I start / shall I proceed". Status reports state facts, never permission questions. |
+| **U11** | **Contract Mirror Invariant & Zero-Drift** | Mirrored contract surfaces (`examples/gateway_client.py` ↔ `supremeai-api:scripts/clients/`, `api-schemas/gateway.openapi.yaml` ↔ `supremeai-api:contracts/`) are strict byte-level replicas. Arbitrary local formatter overrides or CRLF alterations are strictly forbidden. Must pass `python scripts/ci/contract_parity_guard.py --check` before push. |
 
 ---
 

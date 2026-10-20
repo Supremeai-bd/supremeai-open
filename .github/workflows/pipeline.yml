@@ -473,6 +473,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/deploy_preflight_guard.py --self-test
+      - name: Contract Parity & Byte-Hygiene Guard (fail-closed)
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/contract_parity_guard.py --self-test
+          python3 scripts/ci/contract_parity_guard.py --check
 
   # ---------------------------------------------------------------------------
   # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after
