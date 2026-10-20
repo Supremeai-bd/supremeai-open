@@ -165,3 +165,12 @@ export function GuestChat() {
     </div>
   </section>;
 }
+
+
+export const GuestChatPage = GuestChat;
+export const ModelsPage = GuestChat;
+export function PublicInfoPage(_props: { kind?: string }) { return <GuestChat />; }
+export const PricingPage = GuestChat;
+export const FeaturesPage = GuestChat;
+export const DocsPage = GuestChat;
+export const AboutPage = GuestChat;
