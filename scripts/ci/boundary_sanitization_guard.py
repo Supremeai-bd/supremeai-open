@@ -96,6 +96,7 @@ APPROVED_ROOT_FILES = {
     ".gitignore",
     ".gitleaks.toml",
     ".gitleaksignore",
+    ".pre-commit-config.yaml",
     "AGENTS.md",
     "AGENT_RULES.md",
     "AUTONOMOUS_TRANSIT_PIPELINE.md",
