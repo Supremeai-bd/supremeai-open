@@ -42,6 +42,7 @@ from typing import Final
 
 ADMIN_ONLY_LABEL: Final = "authority:admin-only"
 DENIAL_CODE: Final = "CLAIM_DENIED_ADMIN_ONLY"
+DOMAIN_MISMATCH_CODE: Final = "CLAIM_DENIED_DOMAIN_MISMATCH"
 GRANT_CODE: Final = "GRANT"
 LANE_SWARM: Final = "swarm"
 LANE_ADMIN: Final = "admin-only"
@@ -100,6 +101,99 @@ def quarantine_decision(labels: Sequence[str] | None, issue_number: int) -> Deci
     )
 
 
+def extract_domain_from_labels(labels: Sequence[str] | None) -> str | None:
+    """Extract a routing domain from labels (domain:* or repo:* or target_repo shorthand)."""
+    if not isinstance(labels, (list, tuple, set, frozenset)):
+        return None
+    for label in labels:
+        if not isinstance(label, str):
+            continue
+        low = label.strip().lower()
+        for prefix in ("domain:", "repo:"):
+            if low.startswith(prefix):
+                return low[len(prefix):].strip() or None
+    return None
+
+
+def domain_scope_decision(
+    issue_domain: str | None,
+    agent_allowed_domains: Sequence[str] | None,
+    issue_number: int,
+) -> Decision:
+    """Domain-scope claim decision: agent may only claim issues in its allowed domains."""
+    allowed = (
+        [str(d).strip().lower() for d in agent_allowed_domains]
+        if isinstance(agent_allowed_domains, (list, tuple, set, frozenset))
+        else []
+    )
+    if not issue_domain:
+        # no domain tag -> cannot verify scope -> fail-closed deny
+        return Decision(
+            allowed=False,
+            code=DOMAIN_MISMATCH_CODE,
+            message=(
+                f"CLAIM_DENIED_DOMAIN_MISMATCH: Issue #{issue_number} has no "
+                "domain tag; cannot verify agent scope (fail-closed)."
+            ),
+            execution_lane=LANE_SWARM,
+        )
+    dom = issue_domain.strip().lower()
+    if dom not in allowed:
+        return Decision(
+            allowed=False,
+            code=DOMAIN_MISMATCH_CODE,
+            message=(
+                f"CLAIM_DENIED_DOMAIN_MISMATCH: Agent scope {allowed or ['(none)']} "
+                f"cannot claim domain '{dom}' (issue #{issue_number})."
+            ),
+            execution_lane=LANE_SWARM,
+        )
+    return Decision(
+        allowed=True,
+        code=GRANT_CODE,
+        message=f"Issue #{issue_number} domain '{dom}' is within agent scope.",
+        execution_lane=LANE_SWARM,
+    )
+
+
+def quarantine_decision(  # type: ignore[no-redef]
+    labels: Sequence[str] | None,
+    issue_number: int,
+    *,
+    issue_domain: str | None = None,
+    agent_allowed_domains: Sequence[str] | None = None,
+) -> Decision:
+    """D1: the fail-closed claim decision for one issue.
+
+    Backward compatible: when issue_domain/agent_allowed_domains are not
+    supplied, only the admin-only check runs (existing contract).
+    """
+    # admin-only check first (highest priority)
+    if is_admin_only(labels):
+        return Decision(
+            allowed=False,
+            code=DENIAL_CODE,
+            message=(
+                f"CLAIM_DENIED_ADMIN_ONLY: Issue #{issue_number} is "
+                "strictly reserved for human Admin execution. "
+                "Autonomous bots cannot claim."
+            ),
+            execution_lane=LANE_ADMIN,
+        )
+    # optional domain-scope check
+    if issue_domain is not None or agent_allowed_domains is not None:
+        dom = issue_domain
+        if dom is None:
+            dom = extract_domain_from_labels(labels)
+        ddec = domain_scope_decision(dom, agent_allowed_domains, issue_number)
+        if not ddec.allowed:
+            return ddec
+    return Decision(
+        allowed=True,
+        code=GRANT_CODE,
+        message=f"Issue #{issue_number} is swarm-claimable.",
+        execution_lane=LANE_SWARM,
+    )
 def filter_pick_next(
     candidates: Sequence[Mapping],
 ) -> tuple[list[Mapping], list[Mapping]]:
@@ -218,6 +312,16 @@ def self_test() -> bool:
         except ValueError as exc:
             captured.append(str(exc))
     assert len(captured) == 3 and all("labels" in c for c in captured)
+
+    # Domain-scope check
+    dd = domain_scope_decision("studio", ["studio", "vscode"], 7)
+    assert dd.allowed and dd.code == GRANT_CODE
+    dd2 = domain_scope_decision("core", ["studio"], 8)
+    assert not dd2.allowed and dd2.code == DOMAIN_MISMATCH_CODE
+    assert domain_scope_decision(None, ["studio"], 9).code == DOMAIN_MISMATCH_CODE
+    assert extract_domain_from_labels(["domain:studio", "P1-high"]) == "studio"
+    assert extract_domain_from_labels(["repo:core"]) == "core"
+    assert extract_domain_from_labels(["enhancement"]) is None
     return True
 
 
@@ -236,6 +340,11 @@ def _cli(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--labels-json", help="JSON list of label strings")
     parser.add_argument("--issue", type=int, default=0)
+    parser.add_argument("--domain", help="issue domain (e.g. studio) for scope check")
+    parser.add_argument(
+        "--allowed-domains",
+        help="comma-separated agent allowed domains (e.g. studio,vscode)",
+    )
     parser.add_argument(
         "--filter",
         action="store_true",
@@ -249,8 +358,14 @@ def _cli(argv: Sequence[str] | None = None) -> int:
         return EXIT_ALLOW
     try:
         if args.check:
+            allowed_domains = None
+            if args.allowed_domains:
+                allowed_domains = [x.strip() for x in args.allowed_domains.split(",") if x.strip()]
             decision = quarantine_decision(
-                _parse_labels(args.labels_json or "[]"), args.issue
+                _parse_labels(args.labels_json or "[]"),
+                args.issue,
+                issue_domain=args.domain,
+                agent_allowed_domains=allowed_domains,
             )
             print(
                 json.dumps(

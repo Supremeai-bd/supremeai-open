@@ -231,28 +231,22 @@ def gh_api(
         return 0, {"error": str(e)}
 
 
+CI_FAILURE_ANCHOR = 761
+
+
 def check_existing_mirror(
     repo: str, run_id: int | str, token: str | None = None
 ) -> int | None:
-    """Check if an OPEN issue on supremeai-open already carries this run's marker.
-
-    Paginates up to 3 pages of 100 OPEN items (PRs excluded inside
-    find_mirror_in_items). A CLOSED mirror means the failure was fixed - a
-    re-listed failed run after that is a genuinely new event and SHOULD get
-    a new issue, so only the open plane participates in deduplication.
-    """
-    for page in (1, 2, 3):
-        code, res = gh_api(
-            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
-            token=token,
-        )
-        if code != 200 or not isinstance(res, list):
-            return None
-        found = find_mirror_in_items(res, repo, run_id)
-        if found is not None:
-            return found
-        if len(res) < 100:
-            break
+    """Check if this run's marker already exists in CI Failure Hub #761 comments."""
+    needle = f"{repo}/actions/runs/{run_id}"
+    code, comments = gh_api(
+        f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments?per_page=100",
+        token=token,
+    )
+    if code == 200 and isinstance(comments, list):
+        for c in comments:
+            if needle in (c.get("body") or ""):
+                return int(c.get("id", 0))
     return None
 
 
@@ -266,48 +260,36 @@ def mirror_failure(
     error_summary: str = "",
     token: str | None = None,
 ) -> bool:
-    """Create a mirrored issue on supremeai-open if not already existing."""
+    """Record CI failure incident as a structured comment in CI Failure Hub #761 (zero loose issues)."""
     existing = check_existing_mirror(repo, run_id, token=token)
     if existing:
-        print(f"[watchdog] Mirror already exists on {OPEN_REPO}#{existing}. Skipping.")
+        print(f"[watchdog] Incident already recorded in CI Hub #{CI_FAILURE_ANCHOR} (comment #{existing}). Skipping.")
         return True
 
     title = build_issue_title(workflow_name, repo, branch, run_id)
-    body = build_issue_body(
-        repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
+    body = (
+        f"## 🚨 CI Failure Incident: {title}\n\n"
+        + build_issue_body(
+            repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
+        )
     )
-    labels = build_issue_labels(repo)
-
-    data = {
-        "title": title,
-        "body": body,
-        "labels": labels,
-    }
 
     code, resp = gh_api(
-        f"repos/{OPEN_REPO}/issues", token=token, method="POST", data=data
+        f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments",
+        token=token,
+        method="POST",
+        data={"body": body},
     )
     if code == 201:
-        issue_num = resp.get("number")
-        issue_url = resp.get("html_url")
+        cid = resp.get("id")
+        curl = resp.get("html_url")
         print(
-            f"✅ [watchdog] Mirrored CI failure from {repo} to {OPEN_REPO}#{issue_num}: {issue_url}"
+            f"✅ [watchdog] Mirrored CI failure from {repo} into CI Hub #{CI_FAILURE_ANCHOR} (comment #{cid}): {curl}"
         )
-        CI_FAILURE_ANCHOR = 761
-        if link_sub_issue and issue_num:
-            linked = link_sub_issue(CI_FAILURE_ANCHOR, issue_num, repo=OPEN_REPO, token=token)
-            if linked:
-                print(
-                    f"🔗 [watchdog] Linked #{issue_num} as Sub-Issue under CI Incident Hub #{CI_FAILURE_ANCHOR} (repo: {repo})"
-                )
-            else:
-                print(
-                    f"⚠️ [watchdog] Notice: could not link #{issue_num} under CI Incident Hub #{CI_FAILURE_ANCHOR}"
-                )
         return True
     else:
         print(
-            f"❌ [watchdog] Failed to create mirror issue on {OPEN_REPO} (HTTP {code}): {resp}"
+            f"❌ [watchdog] Failed to record incident into CI Hub #{CI_FAILURE_ANCHOR} (HTTP {code}): {resp}"
         )
         return False
 

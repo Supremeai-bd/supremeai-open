@@ -680,20 +680,23 @@ jobs:
               with open(body_path, "w", encoding="utf-8") as fh:
                   fh.write(body)
               issue_title = "Bridge Work Order — " + title + " (" + task_id + ") [target: " + slug + "]"
+              header = "## 🌉 " + issue_title + "\n\n"
+              with open(body_path, "w", encoding="utf-8") as fh:
+                  fh.write(header + body)
               cmd = [
-                  "gh", "issue", "create", "--repo", os.environ["GITHUB_REPOSITORY"],
-                  "--title", issue_title, "--body-file", body_path, "--label", "bridge:queued",
-                  "--parent", str(BRIDGE_HUB_ANCHOR)
+                  "gh", "issue", "comment", str(BRIDGE_HUB_ANCHOR),
+                  "--repo", os.environ["GITHUB_REPOSITORY"],
+                  "--body-file", body_path
               ]
 
               try:
                   r = subprocess.run(cmd, capture_output=True, text=True, check=False)
                   if r.returncode == 0:
-                      print("✅ " + slug + " -> " + r.stdout.strip() + " [Sub-Issue of Anchor #" + str(parent_anchor) + "]")
+                      print("✅ " + slug + " -> Logged inside Bridge Hub #" + str(BRIDGE_HUB_ANCHOR))
                   else:
-                      print("::warning::issue create failed for " + slug + ": " + r.stderr.strip())
+                      print("::warning::bridge order comment failed for " + slug + ": " + r.stderr.strip())
               except Exception as exc:  # noqa: BLE001
-                  print("::warning::issue create exception for " + slug + ": " + str(exc))
+                  print("::warning::bridge order exception for " + slug + ": " + str(exc))
           PYEOF
 
           # 3. Optional low-latency signal (best-effort; satellites may ignore it)

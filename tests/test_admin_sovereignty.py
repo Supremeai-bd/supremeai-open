@@ -148,7 +148,35 @@ class TestConstantsSSOT(unittest.TestCase):
         self.assertEqual(guard.LANE_SWARM, "swarm")
 
 
-class TestSelfTestAndCli(unittest.TestCase):
+class TestDomainScopeAndCli(unittest.TestCase):
+    def test_domain_in_scope_allowed(self):
+        d = guard.domain_scope_decision("studio", ["studio", "vscode"], 1)
+        self.assertTrue(d.allowed)
+        self.assertEqual(d.code, guard.GRANT_CODE)
+
+    def test_domain_out_of_scope_denied(self):
+        d = guard.domain_scope_decision("core", ["studio"], 2)
+        self.assertFalse(d.allowed)
+        self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
+
+    def test_missing_domain_denied(self):
+        d = guard.domain_scope_decision(None, ["studio"], 3)
+        self.assertFalse(d.allowed)
+        self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
+
+    def test_quarantine_decision_with_domain(self):
+        d = guard.quarantine_decision(SWARM, 4, issue_domain="core", agent_allowed_domains=["studio"])
+        self.assertFalse(d.allowed)
+        self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
+
+    def test_quarantine_decision_domain_ok(self):
+        d = guard.quarantine_decision(SWARM, 5, issue_domain="studio", agent_allowed_domains=["studio"])
+        self.assertTrue(d.allowed)
+
+    def test_extract_domain(self):
+        self.assertEqual(guard.extract_domain_from_labels(["domain:studio", "P1-high"]), "studio")
+        self.assertEqual(guard.extract_domain_from_labels(["repo:core"]), "core")
+        self.assertIsNone(guard.extract_domain_from_labels(["enhancement"]))
     def test_module_self_test_passes(self):
         self.assertTrue(guard.self_test())
 
