@@ -57,6 +57,14 @@ flowchart TD
 
 *U10 Rule: The loop is the permission. Never ask "should I proceed" when self-checkable preconditions pass.*
 
+### MCP Tower tool-usage invariants (avoid argument/format errors)
+- Tool names use **underscores** (`github_read_file`, `github_repo_tree`, `github_list_prs`, `github_workflow_runs`), never dots.
+- Repo references must be **`owner/repo`** (e.g. `Supremeai-bd/supremeai-open`); a bare repo name returns "Invalid repo reference".
+- Code read/write tools are **role-gated + cloaked**: `supremeai` (core monorepo) and `supremeai-api` return "Forbidden"/"Repository not found" for non-admin callers (by design). Only admin/supremeadmin may read them.
+- There is no dedicated code-search tool; use `github_repo_tree` + `github_read_file` + `github_search_repos`.
+- Test execution is not available via the tower (requires a separate runner) — by design.
+- Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`; `content` required for `full_file` mode, default). `work_claim` requires `issueNumber` (integer). `bridge_work_order`/`bridge_read_feedback` require `number` (issue number). `bridge_work_queue` accepts optional `limit`/`label`.
+
 ---
 
 ## 3. Role Preflight Invariants (৩-সেকেন্ড আত্ম-জিজ্ঞাসা)
