@@ -116,7 +116,7 @@ jobs:
             # jq program; ambiguity across multiple open PRs refuses to
             # merge (fail-closed). Ported from merge-gate.yml (#111).
             if ! echo "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
-              echo "::error::Unexpected head SHA format (${HEAD_SHA:-empty}); refusing heuristic PR resolution (fail-closed)."
+              echo "::notice::No PR specified and no head commit in manual dispatch; idling safely (fail-closed)."
               echo "has_pr=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -726,4 +726,30 @@ jobs:
             --targets ${TARGET_REPOS} \
             --commit-msg "${PR_TITLE} (via PR #${PR_NUM})" \
             --prune-patches
+
+      - name: Auto-Prune Ephemeral Transit Patches (#416)
+        if: steps.check_scope.outputs.should_bridge == 'true'
+        env:
+          BRIDGE_PUSH_TOKEN: ${{ secrets.BRIDGE_PUSH_TOKEN || secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+          PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
+          BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          PATCH_FILES=$(git diff --name-only "${BASE_SHA}" "${PR_SHA}" | grep '^patches/' || true)
+          if [ -n "$PATCH_FILES" ]; then
+            echo "Found transit patch files to auto-prune:"
+            echo "$PATCH_FILES"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            if [ -n "${BRIDGE_PUSH_TOKEN}" ]; then
+              git remote set-url origin "https://x-access-token:${BRIDGE_PUSH_TOKEN}@github.com/${{ github.repository }}.git"
+            fi
+            git rm -f $PATCH_FILES
+            git commit -m "chore(bridge): auto-prune transit patch after satellite dispatch (Closes #416) [skip ci]"
+            git pull --rebase origin main
+            git push origin main
+            echo "✅ Ephemeral transit patches successfully auto-pruned."
+          else
+            echo "No files in patches/ touched by this landing. Zero pruning required."
+          fi
 

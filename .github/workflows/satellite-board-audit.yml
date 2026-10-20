@@ -22,7 +22,7 @@ jobs:
           python-version: "3.11"
       - name: Authenticated satellite board audit
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
           AGENT_ALLOWED_DOMAINS: "studio,api,vscode,browser,core,command,skills,agents,sdk,archive,infrastructure,mcp-control-plane"
         run: |
           set -euo pipefail
