@@ -32,7 +32,6 @@ if hasattr(sys.stderr, "reconfigure"):
 OPEN_REPO = "Supremeai-bd/supremeai-open"
 
 FEDERATION_REPOS: tuple[str, ...] = (
-    "Supremeai-bd/supremeai",
     "Supremeai-bd/supremeai-command",
     "Supremeai-bd/supremeai-skills",
     "Supremeai-bd/supremeai-vscode",
@@ -363,13 +362,13 @@ def self_test() -> int:
     print("[self-test] Running Federation CI Watchdog offline contract test...")
 
     # 1. Repos registry verification
-    assert len(FEDERATION_REPOS) == 12, (
-        f"Expected 12 federation repos, got {len(FEDERATION_REPOS)}"
+    assert len(FEDERATION_REPOS) == 11, (
+        f"Expected 11 federation repos (excluding supremeai + archive), got {len(FEDERATION_REPOS)}"
     )
-    assert "Supremeai-bd/supremeai" in FEDERATION_REPOS
     assert "Supremeai-bd/supremeai-command" in FEDERATION_REPOS
     assert "Supremeai-bd/supremeai-skills" in FEDERATION_REPOS
     assert "Supremeai-bd/supremeai-studio" in FEDERATION_REPOS
+    assert "Supremeai-bd/supremeai" not in FEDERATION_REPOS
 
     # 2. Short name mapping
     assert repo_short_name("Supremeai-bd/supremeai") == "monorepo"
