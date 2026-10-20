@@ -235,6 +235,16 @@ class BuiltinSelfTestAndPolicyTest(unittest.TestCase):
                 else:
                     os.environ[k] = v
 
+    def test_22_via_tower_scoped_satellites(self):
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {"AGENT_ALLOWED_DOMAINS": "studio,api"}):
+            with patch("sys.argv", ["satellite_board_guard.py", "--via-tower", "--report"]):
+                with patch.object(sbg, "audit_all", return_value=[sbg.SatelliteReport("studio", sbg.VERDICT_CLEAN), sbg.SatelliteReport("api", sbg.VERDICT_CLEAN)]):
+                    code = sbg.main()
+                    self.assertEqual(code, 0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
