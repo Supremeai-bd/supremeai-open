@@ -493,6 +493,7 @@ jobs:
       - name: Stream landed patch reference via Webhook / Bridge Intake (#107)
         if: steps.check_scope.outputs.should_bridge == 'true'
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRIDGE_DISPATCH_TOKEN: ${{ secrets.BRIDGE_DISPATCH_TOKEN }}
           BRIDGE_WEBHOOK_URL: ${{ secrets.BRIDGE_WEBHOOK_URL }}
           PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
