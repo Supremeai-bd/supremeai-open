@@ -603,12 +603,42 @@ jobs:
           if "Supremeai-bd/supremeai" in groups:
               groups["Supremeai-bd/supremeai"] = list(files)
 
+          ANCHOR_MAP = {
+              "Supremeai-bd/supremeai-studio": 749,
+              "Supremeai-bd/supremeai-api": 750,
+              "Supremeai-bd/supremeai-core": 751,
+              "Supremeai-bd/supremeai-command": 752,
+              "Supremeai-bd/supremeai-skills": 753,
+              "Supremeai-bd/supremeai-vscode": 754,
+              "Supremeai-bd/supremeai-agents": 755,
+              "Supremeai-bd/supremeai-browser": 756,
+              "Supremeai-bd/supremeai-sdk": 757,
+              "Supremeai-bd/supremeai-infrastructure": 758,
+              "Supremeai-bd/supremeai-mcp-control-plane": 759,
+              "Supremeai-bd/supremeai-archive": 760,
+              "Supremeai-bd/supremeai": 761,
+              "Supremeai-bd/supremeai-open": 762,
+          }
+
           for target in targets:
               tfiles = groups.get(target, [])
               if not tfiles:
                   continue
               slug = target.split("/")[-1]
               scope = "\n".join(f"- {f}" for f in tfiles)
+
+              # Dedup check: skip if an order for this task and target already exists
+              try:
+                  check_dup = subprocess.run(
+                      ["gh", "issue", "list", "--repo", os.environ["GITHUB_REPOSITORY"],
+                       "--state", "all", "--search", f'"{task_id}" "{slug}" in:title', "--json", "number"],
+                      capture_output=True, text=True, check=False,
+                  )
+                  if check_dup.returncode == 0 and check_dup.stdout.strip() not in ("", "[]"):
+                      print("⏩ Bridge work order for " + slug + " (" + task_id + ") already exists. Skipping duplicate.")
+                      continue
+              except Exception:
+                  pass
 
               # When multiple federation targets are touched, create an isolated slice branch
               # per satellite so that `git diff origin/main...origin/<branch>` only contains
@@ -630,6 +660,10 @@ jobs:
                       print("::warning::slice branch creation failed for " + slug + ": " + str(exc))
                       target_branch = branch
 
+              BRIDGE_HUB_ANCHOR = 760
+              domain_anchor = ANCHOR_MAP.get(target)
+              parent_section = f"\n\n### Parent Anchor Hub\nBridge Hub: #{BRIDGE_HUB_ANCHOR} | Domain Hub: #{domain_anchor}"
+
               body = (
                   "### Task ID\n" + task_id + "-" + slug + "\n\n"
                   "### Patch Branch\n" + target_branch + "\n\n"
@@ -639,20 +673,23 @@ jobs:
                   "### Scope Paths\n" + scope + "\n\n"
                   "### Test Evidence (3-tier contract)\n"
                   "Automated: landing.yml gates (CI — Open Unified Pipeline) green; merge squashed into main.\n\n"
-                  "### Rollback Path\n- [x] git revert-safe (pure code change; zero migration/config side effects)\n"
+                  "### Rollback Path\n- [x] git revert-safe (pure code change; zero migration/config side effects)"
+                  + parent_section + "\n"
               )
               body_path = "/tmp/bridge_wo_" + slug + ".md"
               with open(body_path, "w", encoding="utf-8") as fh:
                   fh.write(body)
               issue_title = "Bridge Work Order — " + title + " (" + task_id + ") [target: " + slug + "]"
+              cmd = [
+                  "gh", "issue", "create", "--repo", os.environ["GITHUB_REPOSITORY"],
+                  "--title", issue_title, "--body-file", body_path, "--label", "bridge:queued",
+                  "--parent", str(BRIDGE_HUB_ANCHOR)
+              ]
+
               try:
-                  r = subprocess.run(
-                      ["gh", "issue", "create", "--repo", os.environ["GITHUB_REPOSITORY"],
-                       "--title", issue_title, "--body-file", body_path, "--label", "bridge:queued"],
-                      capture_output=True, text=True, check=False,
-                  )
+                  r = subprocess.run(cmd, capture_output=True, text=True, check=False)
                   if r.returncode == 0:
-                      print("✅ " + slug + " -> " + r.stdout.strip())
+                      print("✅ " + slug + " -> " + r.stdout.strip() + " [Sub-Issue of Anchor #" + str(parent_anchor) + "]")
                   else:
                       print("::warning::issue create failed for " + slug + ": " + r.stderr.strip())
               except Exception as exc:  # noqa: BLE001
