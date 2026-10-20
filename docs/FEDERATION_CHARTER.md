@@ -62,6 +62,15 @@ proprietary backlogs and decision registers. All public or cross-federation
 work routes through `supremeai-open`. The private monorepo is out of this
 charter's audit scope by design (private plane, §2.3.1 of AGENTS.md).
 
+### Rule 4 — The 14 Persistent Anchor Hubs & Sub-Issue Architecture (১৪টি রুট হাব)
+
+The sole public task board maintains strictly **14 persistent parent Anchor Hubs**:
+- `[Federation Hub] 🚨 CI Pipeline Failures & Incident Desk (#761)`: all cross-repo CI breakages, workflow failures, and test crashes attach here.
+- `[Federation Hub] 🌉 Bridge Transit, Orders & Rejections Desk (#760)`: all transit orders, patch distributions, and bridge rejections attach here.
+- 12 Domain Repository Anchor Hubs (#749–#759, #762): all repository-specific features, bugs, and tasks attach here.
+
+All incoming work items, failure alerts, and bridge work orders are ingested strictly as **Sub-Issues** within their assigned Anchor Hub. Loose root issues on `supremeai-open` are strictly prohibited.
+
 ## 3. Enforcement
 
 ### 3.1 The Guard (automated, this charter's teeth)

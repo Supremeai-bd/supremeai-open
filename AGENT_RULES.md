@@ -45,7 +45,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 | **U1** | **Scope** | Work strictly inside assigned issue touching files. Zero unrelated refactoring or scope creep. |
 | **U2** | **Truth & Evidence** | No claims without proof. `UNKNOWN` / `NOT_VERIFIED` is never `PASS`. Evidence precedes action. |
 | **U3** | **Live Validity** | An issue is not valid just because it exists. Verify it is reproducible on live `main` before coding. |
-| **U4** | **Zero-Duplicate PRs** | Mandatory preflight `gh pr list`. Never open parallel/competing PRs for an issue with an active PR. One issue = at most one PR across the federation. |
+| **U4** | **Zero-Duplicate PRs & 14 Anchor Hub SSOT** | Mandatory preflight `gh pr list`. The public board (`supremeai-open`) maintains strictly **14 persistent parent Anchor Hubs** (#749–#762; CI Incident Hub #761, Bridge Desk #760, 12 Domain Repos). All tasks, pipeline failures, and bridge sync orders attach strictly as **Sub-Issues** inside their respective Anchor Hub. Zero loose root issues permitted. One issue = at most one PR across the federation. |
 | **U5** | **Freshness & Dual-Rebase Mandate** | Rebase onto latest `origin/main` at work start (pre-branch) AND before push (pre-push). Atomic claim before branch (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane). **Board-freshness re-check (#4177):** re-poll board before declaring done. Never work or push with a stale base. |
 | **U6** | **Safety & Permissions** | Hard gates outrank agent preference. Master keys never leave vault; no direct push to protected branches. |
 | **U7** | **3-Tier Verification** | Task is complete only when Reflection → Boot Smoke → Tests pass with verifiable output. |
@@ -119,3 +119,4 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 - **Task Validation:** `python scripts/ci/issue_template_guard.py --self-test`
 - **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
 - **Board SSOT Guard:** `python3 scripts/ci/satellite_board_guard.py --check` — 0/0 satellite mandate audit (#626; charter: `docs/FEDERATION_CHARTER.md`)
+- **14 Anchor Hub SSOT Guard:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 14 persistent root anchor hubs
