@@ -1,0 +1,29 @@
+name: Satellite Board Audit (Scheduled)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Authenticated satellite board audit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENT_ALLOWED_DOMAINS: "studio,api,vscode,browser,core,command,skills,agents,sdk,archive,infrastructure,mcp-control-plane"
+        run: |
+          set -euo pipefail
+          python scripts/ci/satellite_board_guard.py --check --via-tower
