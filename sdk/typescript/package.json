@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Official TypeScript client for the SupremeAI Unified Gateway: typed endpoints, SSE streaming, automatic failover retry.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Supremeai-bd/supremeai-sdk.git"
+  },
   "type": "module",
   "main": "./src/client.ts",
   "types": "./src/client.ts",

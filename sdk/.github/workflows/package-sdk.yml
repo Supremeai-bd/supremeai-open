@@ -1,0 +1,103 @@
+name: Package & Test SupremeAI SDK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'python/**'
+      - 'typescript/**'
+      - 'tests/**'
+      - '.github/workflows/package-sdk.yml'
+  pull_request:
+    paths:
+      - 'python/**'
+      - 'typescript/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  python-sdk:
+    name: "🐍 Python SDK (Build & Validate)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Build Tools & Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine pytest
+
+      - name: Run Python Client Tests
+        run: |
+          if [ -d "tests" ]; then
+            pytest tests/
+          elif [ -d "sdk/tests" ]; then
+            pytest sdk/tests/
+          fi
+
+      - name: Build Python Distribution Package (sdist + wheel)
+        run: |
+          python -m build python/
+
+      - name: Validate Package Metadata & Syntax
+        run: |
+          twine check python/dist/*
+
+      - name: Upload Python Package Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: supremeai-python-sdk
+          path: python/dist/
+          if-no-files-found: error
+
+  typescript-sdk:
+    name: "🟦 TypeScript SDK (Typecheck & Pack)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install TypeScript Compiler
+        run: |
+          npm install -g typescript
+
+      - name: Typecheck TypeScript Client
+        working-directory: typescript
+        run: |
+          npm run typecheck
+
+      - name: Run TypeScript Client Tests
+        working-directory: typescript
+        run: |
+          npm test
+
+      - name: Pack Distribution Tarball
+        working-directory: typescript
+        run: |
+          npm pack
+
+      - name: Upload TypeScript Tarball Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supremeai-typescript-sdk
+          path: typescript/*.tgz
+          if-no-files-found: error
