@@ -26,8 +26,9 @@ from scripts.ci.federation_ci_watchdog import (
 
 class TestFederationCiWatchdog(unittest.TestCase):
     def test_federation_repos_count_and_composition(self):
-        self.assertEqual(len(FEDERATION_REPOS), 11)
+        self.assertEqual(len(FEDERATION_REPOS), 12)
         expected = [
+            "Supremeai-bd/supremeai-open",
             "Supremeai-bd/supremeai-command",
             "Supremeai-bd/supremeai-skills",
             "Supremeai-bd/supremeai-vscode",

@@ -99,4 +99,5 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
 
 - **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
 - **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
+- **14 Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 14 persistent root hubs (#761 CI, #760 Bridge, 12 Domains); all tasks/failures are Sub-Issues.
 - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
