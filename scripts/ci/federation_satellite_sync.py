@@ -151,6 +151,15 @@ def sync_satellite(
         msg = f"sync(open->{slug}): {commit_msg} [skip ci]"
         subprocess.check_call(["git", "commit", "-m", msg], cwd=str(tmp_repo))
 
+        # Avoid non-fast-forward rejection on concurrent landings (#416).
+        subprocess.run(
+            ["git", "pull", "--rebase", "origin", "main"],
+            cwd=str(tmp_repo),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
         print(f"🚀 Pushing changes to {target_repo}:main...")
         push_res = subprocess.run(
             ["git", "push", "origin", "main"],
@@ -222,6 +231,15 @@ def sync_monorepo(
         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
         msg = f"sync(open->monorepo): {commit_msg} [skip ci]"
         subprocess.check_call(["git", "commit", "-m", msg], cwd=str(tmp_repo))
+
+        # Avoid non-fast-forward rejection on concurrent landings (#416).
+        subprocess.run(
+            ["git", "pull", "--rebase", "origin", "main"],
+            cwd=str(tmp_repo),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
         print(f"🚀 Pushing umbrella changes to {target_repo}:main...")
         push_res = subprocess.run(

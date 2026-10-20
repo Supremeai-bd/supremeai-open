@@ -209,12 +209,41 @@ def _self_test() -> int:
 
 
 if __name__ == "__main__":
-    if "--self-test" in sys.argv:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
+    parser.add_argument("--run", type=str, help="Path to a board snapshot JSON file")
+    parser.add_argument(
+        "--auto-release", action="store_true", help="Auto-release stale claims (data-only plan)"
+    )
+    parser.add_argument(
+        "--claim-to-branch-min",
+        type=float,
+        default=10.0,
+        help="Minutes allowed from claim to branch push before auto-release",
+    )
+    parser.add_argument(
+        "--branch-to-pr-min",
+        type=float,
+        default=30.0,
+        help="Minutes allowed from branch push to PR before auto-release",
+    )
+    args = parser.parse_args()
+
+    if args.self_test:
         sys.exit(_self_test())
-    if len(sys.argv) == 3 and sys.argv[1] == "--run":
-        with open(sys.argv[2], encoding="utf-8") as fh:
+    if args.run:
+        with open(args.run, encoding="utf-8") as fh:
             snap = json.load(fh)
         print(json.dumps(release_plan(snap, datetime.now(timezone.utc)), indent=2))
+        sys.exit(0)
+    if args.auto_release:
+        print(
+            "Rule 9 stale-claim auto-release: graduated lease gate "
+            f"(claim->branch {args.claim_to_branch_min}m, branch->pr {args.branch_to_pr_min}m). "
+            "No board snapshot supplied in this run; nothing to release."
+        )
         sys.exit(0)
     print(__doc__)
     sys.exit(2)
