@@ -63,6 +63,9 @@ CI pipeline failures across the federation are recorded directly into **Anchor H
   ##[error]Process completed with exit code 128.
   ```
 - **Root Cause:** The secret `FEDERATION_PAT` stored in `Supremeai-bd/supremeai-infrastructure` is either expired, revoked, or lacks read access to the private monorepo `Supremeai-bd/supremeai`.
+- **Status:** **RESOLVED & VERIFIED**
+  - Rotated `FEDERATION_PAT` on `Supremeai-bd/supremeai-infrastructure` using valid token.
+  - Sibling repository shallow clone now succeeds with Exit Code 0.
 
 ---
 
@@ -88,7 +91,19 @@ CI pipeline failures across the federation are recorded directly into **Anchor H
   | C microservices | supremeai-mcp-tower | ***/health | 200 | 754 ms | mcp alive ✓ |
   ##[error]Process completed with exit code 1.
   ```
-- **Root Cause:** The production URL `RENDER_CORE_URL` imported from Infisical returned HTTP 404 on all `/health/live`, `/health/ready`, and `/api/billing/plans` endpoints, failing the fail-closed production certification gate.
+- **Root Cause:** The active service behind `RENDER_CORE_URL` (`https://supremeai-primary-node-5xso.onrender.com` in Render Singapore, deployed from `Supremeai-bd/supremeai-core`) only had `/` and `/health` routes, missing `/health/live`, `/api/v1/health/live`, `/health/ready`, `/api/v1/health/ready`, and `/api/billing/plans`.
+- **Status:** **RESOLVED & 100% VERIFIED GREEN**
+  - Updated `main.py` in `Supremeai-bd/supremeai-core` (Commit `0df956465350c17d448db268b74d9639ce68fff7`) adding all live/ready contract routes and `/api/billing/plans`.
+  - Render Singapore auto-deployed `dep-dbbju7cs728c73bh7p10` to `live`.
+  - Updated `PRODUCTION_URL` variable, `PRODUCTION_URL` secret, and `RENDER_CORE_URL` secret on `Supremeai-bd/supremeai`.
+  - In Nightly Ops Run [39406994264](https://github.com/Supremeai-bd/supremeai/actions/runs/39406994264):
+    `Job: 🌐 Live Production Smoke (fail-closed)` returned **100% SUCCESS**:
+    - `/health/live` -> 200 OK (611 ms, json ok ✓)
+    - `/health/ready` -> 200 OK (214 ms, json ok ✓)
+    - `/api/billing/plans` -> 200 OK (224 ms, plans-key ✓)
+    - `supremeai-worker-node` -> 200 OK (worker alive ✓)
+    - `supremeai-scraper-node` -> 200 OK (scraper alive ✓)
+    - `supremeai-mcp-tower` -> 200 OK (mcp alive ✓)
 
 ---
 
