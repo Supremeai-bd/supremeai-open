@@ -518,19 +518,19 @@ def render_dossier_markdown(dossier: EcosystemDossier) -> str:
 
 
 def _valid_dossier(**overrides: Any) -> EcosystemDossier:
-    parts: dict[str, Any] = dict(
-        target=Target(
+    parts: dict[str, Any] = {
+        "target": Target(
             repository="example/org-repo",
             license="MIT",
             tech_stack=("node:24", "dep:zod"),
             core_purpose="reverse-engineering evidence ledger",
         ),
-        comparative_analysis=ComparativeAnalysis(
+        "comparative_analysis": ComparativeAnalysis(
             superior_capabilities=("streaming pagination under 10 MiB frames",),
             supremeai_advantages=("zero-dep python runtime",),
             token_and_resource_impact="30% token reduction on ledger dumps",
         ),
-        surgical_extraction=SurgicalExtraction(
+        "surgical_extraction": SurgicalExtraction(
             exact_components_needed=("EvidenceRecord interface + sha256 fingerprint",),
             adaptation_blueprint=(
                 "Transcribe natively in python with "
@@ -538,7 +538,7 @@ def _valid_dossier(**overrides: Any) -> EcosystemDossier:
             ),
             full_repo_vending_prohibited=True,
         ),
-        actionable_takeaways=ActionableTakeaways(
+        "actionable_takeaways": ActionableTakeaways(
             architectural_patterns=("evidence ledger",),
             reusable_components=("EvidenceRecord record type",),
             target_satellites=(
@@ -549,13 +549,13 @@ def _valid_dossier(**overrides: Any) -> EcosystemDossier:
                 ),
             ),
         ),
-        watchouts_and_risks=WatchoutsAndRisks(
+        "watchouts_and_risks": WatchoutsAndRisks(
             anti_patterns=("wholesale vendoring",),
             security_or_compliance_concerns=("MIT attribution mandatory",),
             prohibited_practices=("blind hype adoption",),
         ),
-        verdict="EXTRACT_PATTERNS_ONLY",
-    )
+        "verdict": "EXTRACT_PATTERNS_ONLY",
+    }
     parts.update(overrides)
     return EcosystemDossier(**parts)
 

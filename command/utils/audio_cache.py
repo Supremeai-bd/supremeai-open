@@ -20,6 +20,7 @@ Design notes (honesty + portability):
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import tempfile
@@ -43,7 +44,7 @@ class AudioCache:
     ) -> None:
         if backend not in ("memory", "temp"):
             raise AudioCacheError(
-                "unknown cache backend %r; expected 'memory' or 'temp'" % backend
+                f"unknown cache backend {backend!r}; expected 'memory' or 'temp'"
             )
         if max_entries < 1:
             raise AudioCacheError("max_entries must be >= 1")
@@ -62,7 +63,7 @@ class AudioCache:
             try:
                 self._temp_dir = tempfile.mkdtemp(prefix="supremeai-voice-cache-")
             except OSError as exc:
-                raise AudioCacheError("cannot create temp cache dir: %s" % exc) from exc
+                raise AudioCacheError(f"cannot create temp cache dir: {exc}") from exc
             self._store = OrderedDict()  # key -> (size, expires_at) index
 
     # -- key derivation ------------------------------------------------------
@@ -128,7 +129,7 @@ class AudioCache:
             with open(path, "wb") as handle:
                 handle.write(audio)
         except OSError as exc:
-            raise AudioCacheError("temp cache write failed: %s" % exc) from exc
+            raise AudioCacheError(f"temp cache write failed: {exc}") from exc
         self._store[key] = (len(audio), expires_at)
         self._store.move_to_end(key)
         while len(self._store) > self.max_entries:
@@ -176,10 +177,8 @@ class AudioCache:
             self._temp_dir = None
 
     def __del__(self):  # pragma: no cover - GC best effort
-        try:
+        with contextlib.suppress(Exception):
             self.close()
-        except Exception:
-            pass
 
     # -- internals -------------------------------------------------------------
 

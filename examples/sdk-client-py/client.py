@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import sys
 import threading
@@ -166,7 +167,7 @@ async def _request(
     timeout: float = 30.0,
 ) -> tuple[int, dict[str, str], bytes]:
     """One honest HTTP/1.1 round-trip over asyncio streams (keep-alive off)."""
-    assert url.startswith("http://") or url.startswith("https://")
+    assert url.startswith(("http://", "https://"))
     rest = url.split("://", 1)[1]
     host_port, _, path = rest.partition("/")
     host, _, port_s = host_port.partition(":")
@@ -202,10 +203,8 @@ async def _request(
         return status, resp_headers, resp_body
     finally:
         writer.close()
-        try:
+        with contextlib.suppress(Exception):
             await writer.wait_closed()
-        except Exception:
-            pass
 
 
 def _raise_for_status(status: int, headers: dict[str, str], body: bytes) -> None:
@@ -439,10 +438,8 @@ class SupremeAIClient:
                     data_lines.append(text.split(":", 1)[1].lstrip())
         finally:
             writer.close()
-            try:
+            with contextlib.suppress(Exception):
                 await writer.wait_closed()
-            except Exception:
-                pass
 
 
 # ---------------------------------------------------------------------------

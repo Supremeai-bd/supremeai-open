@@ -64,7 +64,8 @@ class CapabilityRouter:
         eligible = [
             a
             for a in candidates
-            if a.healthy and a.cooldown_until <= now
+            if a.healthy
+            and a.cooldown_until <= now
             and (a.quota_remaining is None or a.quota_remaining > 0)
         ]
         if not eligible:
@@ -76,7 +77,9 @@ class CapabilityRouter:
         )
         return Selection(capability, chosen, "ok")
 
-    def record_success(self, capability: str, alias: str, latency_ms: float = 0.0, quota_used: int = 1) -> None:
+    def record_success(
+        self, capability: str, alias: str, latency_ms: float = 0.0, quota_used: int = 1
+    ) -> None:
         acc = self._find(capability, alias)
         if acc is None:
             return
@@ -86,7 +89,9 @@ class CapabilityRouter:
         if acc.quota_remaining is not None:
             acc.quota_remaining = max(0, acc.quota_remaining - quota_used)
 
-    def record_failure(self, capability: str, alias: str, cooldown_s: float = 30.0) -> None:
+    def record_failure(
+        self, capability: str, alias: str, cooldown_s: float = 30.0
+    ) -> None:
         acc = self._find(capability, alias)
         if acc is None:
             return

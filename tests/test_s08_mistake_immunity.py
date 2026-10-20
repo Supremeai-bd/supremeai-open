@@ -12,6 +12,7 @@ Pure stdlib. Run: python3 -m unittest test_s08_mistake_immunity -v
 import sys
 import unittest
 from pathlib import Path
+from typing import Any, ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "ci"))
 
@@ -156,7 +157,7 @@ class FreshBase(unittest.TestCase):
 
 
 class ConcurrencyDetection(unittest.TestCase):
-    EVENTS = [
+    EVENTS: ClassVar[list[dict[str, Any]]] = [
         ev("a", 900, "2026-10-17T06:00:00Z", "2026-10-17T06:30:00Z"),
         ev("a", 901, "2026-10-17T06:05:00Z", "2026-10-17T06:35:00Z"),
         ev("b", 905, "2026-10-17T06:00:00Z", "2026-10-17T06:30:00Z"),

@@ -83,7 +83,6 @@ class ScrollPlan:
         plan: list[ScrollStep] = []
         stagnant = 0
         y = 0
-        last_height = self.page_height
         round_index = 0
         while round_index < self.max_rounds and stagnant < self.stall_limit:
             y = min(y + step, self.page_height)

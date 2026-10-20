@@ -24,7 +24,7 @@ if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
+    except (AttributeError, OSError):
         pass
 
 UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
@@ -40,9 +40,10 @@ def run_cmd(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
             encoding="utf-8",
             errors="replace",
             cwd=cwd,
+            check=False,
         )
         return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         return 1, "", str(e)
 
 
@@ -71,7 +72,7 @@ def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
 
     try:
         issues = json.loads(out)
-    except Exception as e:
+    except json.JSONDecodeError as e:
         print(f"❌ JSON parse error: {e}", file=sys.stderr)
         return []
 
@@ -109,7 +110,7 @@ def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
                 prs = json.loads(pr_out)
                 if prs:
                     continue  # PR already active
-            except Exception:
+            except json.JSONDecodeError:
                 pass
 
         stranded.append(

@@ -254,7 +254,7 @@ class LiveTowerContract(unittest.TestCase):
     def test_21_tool_advertised(self):
         try:
             names = self.tools()
-        except Exception as exc:  # network variance must skip, not fail
+        except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError, ImportError, ModuleNotFoundError) as exc:  # network variance must skip, not fail
             self.skipTest(f"tower unreachable: {exc}")
         self.assertIn("work_claim", [n.replace(".", "_") for n in names])
 

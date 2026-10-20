@@ -469,6 +469,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/deploy_preflight_guard.py --step1-syntax
+      - name: Evidence Verification Gate (offline self-test)
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/deploy_preflight_guard.py --self-test
 
   # ---------------------------------------------------------------------------
   # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after
@@ -592,6 +596,33 @@ jobs:
       - name: Contract-safe Tower test suite
         run: npm run test:tower-ci
         working-directory: infrastructure/mcp-control-plane
+
+  # ---------------------------------------------------------------------------
+  # 📦 SDK — TypeScript client typecheck + tests
+  # ---------------------------------------------------------------------------
+  sdk-typescript:
+    name: SDK TypeScript Verification (typecheck + tests)
+    needs: boundary_sanitization_guard
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Typecheck SDK
+        run: npm run typecheck
+        working-directory: sdk/typescript
+
+      - name: Test SDK
+        run: npm test
+        working-directory: sdk/typescript
 
   # ---------------------------------------------------------------------------
   # 🤖 Agent loop — cron reconciliation + event-driven intake (#69).

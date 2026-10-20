@@ -16,7 +16,10 @@ def test_register_and_select_healthy():
     router = CapabilityRouter(clock=lambda: clock[0])
     router.register(
         "chat",
-        [Account("a1", "groq", "m1", latency_ms=50), Account("a2", "gemini", "m2", latency_ms=10)],
+        [
+            Account("a1", "groq", "m1", latency_ms=50),
+            Account("a2", "gemini", "m2", latency_ms=10),
+        ],
     )
     sel = router.select("chat")
     assert sel.account is not None
@@ -67,7 +70,9 @@ def test_record_failure_marks_unhealthy_after_three():
 def test_record_success_restores_and_decrements_quota():
     clock = [1000.0]
     router = CapabilityRouter(clock=lambda: clock[0])
-    a = Account("a1", "groq", "m1", quota_remaining=5, healthy=False, consecutive_failures=2)
+    a = Account(
+        "a1", "groq", "m1", quota_remaining=5, healthy=False, consecutive_failures=2
+    )
     router.register("chat", [a])
     router.record_success("chat", "a1", latency_ms=42.0, quota_used=2)
     acc = router.accounts("chat")[0]
@@ -94,7 +99,9 @@ def test_register_validation():
 def test_reset_health():
     clock = [1000.0]
     router = CapabilityRouter(clock=lambda: clock[0])
-    a = Account("a1", "groq", "m1", healthy=False, consecutive_failures=3, cooldown_until=9999.0)
+    a = Account(
+        "a1", "groq", "m1", healthy=False, consecutive_failures=3, cooldown_until=9999.0
+    )
     router.register("chat", [a])
     router.reset_health("chat", "a1")
     acc = router.accounts("chat")[0]

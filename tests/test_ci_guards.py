@@ -200,7 +200,12 @@ def _find_bash() -> str:
         candidates: list[Path] = []
         pf = os.environ.get("PROGRAMFILES")
         if pf:
-            candidates.extend([Path(pf) / "Git" / "bin" / "bash.exe", Path(pf) / "Git" / "usr" / "bin" / "bash.exe"])
+            candidates.extend(
+                [
+                    Path(pf) / "Git" / "bin" / "bash.exe",
+                    Path(pf) / "Git" / "usr" / "bin" / "bash.exe",
+                ]
+            )
         local_app = os.environ.get("LOCALAPPDATA")
         if local_app:
             candidates.append(Path(local_app) / "Programs" / "Git" / "bin" / "bash.exe")
@@ -242,14 +247,14 @@ class _GuardHarness:
                 "import sys, json\n"
                 "try:\n"
                 "    data = json.load(sys.stdin)\n"
-                "    expr = sys.argv[-1] if len(sys.argv) > 1 else \"\"\n"
-                "    if \"labels\" in expr:\n"
-                "        targets = {\"status:claimed\", \"status:in-progress\", \"bridge:queued\", \"bridge:in-gates\", \"bridge:landed\"}\n"
-                "        labels = [l.get(\"name\") for l in data.get(\"labels\", []) if isinstance(l, dict)]\n"
+                '    expr = sys.argv[-1] if len(sys.argv) > 1 else ""\n'
+                '    if "labels" in expr:\n'
+                '        targets = {"status:claimed", "status:in-progress", "bridge:queued", "bridge:in-gates", "bridge:landed"}\n'
+                '        labels = [l.get("name") for l in data.get("labels", []) if isinstance(l, dict)]\n'
                 "        sys.exit(0 if any(l in targets for l in labels) else 1)\n"
-                "    if \"atomic-claim\" in expr:\n"
-                "        comments = data.get(\"comments\", [])\n"
-                "        sys.exit(0 if any(\"<!-- atomic-claim -->\" in (c.get(\"body\") or \"\") for c in comments if isinstance(c, dict)) else 1)\n"
+                '    if "atomic-claim" in expr:\n'
+                '        comments = data.get("comments", [])\n'
+                '        sys.exit(0 if any("<!-- atomic-claim -->" in (c.get("body") or "") for c in comments if isinstance(c, dict)) else 1)\n'
                 "    sys.exit(0)\n"
                 "except Exception:\n"
                 "    sys.exit(1)\n"
@@ -585,7 +590,7 @@ if __name__ == "__main__":
         except AssertionError as exc:
             failed += 1
             print(f"  FAIL | {fn.__name__}: {exc}")
-        except Exception as exc:  # noqa: BLE001 — honest failure reporting
+        except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError, ImportError, ModuleNotFoundError) as exc:
             failed += 1
             print(f"  ERROR | {fn.__name__}: {type(exc).__name__}: {exc}")
     passed = len(fns) - failed - skipped

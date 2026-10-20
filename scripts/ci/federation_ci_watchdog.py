@@ -176,10 +176,10 @@ def get_default_token() -> str:
         if val and val.strip():
             return val.strip()
     try:
-        res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
+        res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
         if res.returncode == 0 and res.stdout.strip():
             return res.stdout.strip()
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         pass
     return ""
 
@@ -215,10 +215,10 @@ def gh_api(
         err_content = e.read().decode("utf-8", errors="replace")
         try:
             parsed = json.loads(err_content)
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             parsed = {"raw": err_content}
         return e.code, parsed
-    except Exception as e:
+    except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError) as e:
         return 0, {"error": str(e)}
 
 

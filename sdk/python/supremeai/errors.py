@@ -33,8 +33,4 @@ class GatewayError(RuntimeError):
         self.body = body
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
-        return "GatewayError(status=%s, code=%s, retryable=%s)" % (
-            self.status,
-            self.code,
-            self.retryable,
-        )
+        return f"GatewayError(status={self.status}, code={self.code}, retryable={self.retryable})"

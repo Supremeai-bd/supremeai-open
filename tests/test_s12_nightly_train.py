@@ -132,9 +132,9 @@ class ConsolidationRun(unittest.TestCase):
         run = nt.ConsolidationRun(run_date="20261018", satellite_heads=heads())
         self.assertEqual(run.tag, "nightly-20261018")
         with self.assertRaises(nt.TrainError):
-            nt.ConsolidationRun(run_date="2026-10-18").tag
+            _ = nt.ConsolidationRun(run_date="2026-10-18").tag
         with self.assertRaises(nt.TrainError):
-            nt.ConsolidationRun(run_date="202610").tag
+            _ = nt.ConsolidationRun(run_date="202610").tag
 
     def test_11_parity_happy_and_drift(self):
         expected = {s: "b" * 40 for s in nt.CANONICAL_SATELLITES}
@@ -238,6 +238,7 @@ class CliSmoke(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=60,
+            check=False,
         )
         self.assertEqual(allowed.returncode, 0)
         self.assertIn("ALLOW", allowed.stdout)
@@ -251,6 +252,7 @@ class CliSmoke(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=60,
+            check=False,
         )
         self.assertEqual(blocked.returncode, 2)
         self.assertIn("BLOCK", blocked.stdout)

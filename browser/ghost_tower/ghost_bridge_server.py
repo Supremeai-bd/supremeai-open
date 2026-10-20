@@ -8,6 +8,7 @@ Includes a built-in modern Web Chat interface at http://localhost:8788/
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -80,7 +81,7 @@ async def chat_endpoint(request: Request):
     """Direct Web Chat API endpoint for website chat widgets."""
     try:
         body = await request.json()
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     message = body.get("message") or body.get("prompt") or ""
@@ -98,7 +99,7 @@ async def completions_endpoint(request: Request):
     """OpenAI-compatible format for existing gateway or external frontend clients."""
     try:
         body = await request.json()
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     prompt = body.get("prompt", "")

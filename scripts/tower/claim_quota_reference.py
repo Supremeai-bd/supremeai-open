@@ -74,7 +74,7 @@ def _aware(now: datetime) -> datetime:
 def validate_board(board: dict) -> list[dict]:
     """Validate a board snapshot; returns the issues list. Fail-closed."""
     if not isinstance(board, dict) or not isinstance(board.get("issues"), list):
-        raise ValueError('board must be {"issues": [...]}')
+        raise ValueError('board must be {"issues": [...]}')  # noqa: TRY004
     for issue in board["issues"]:
         number = issue.get("number")
         if not isinstance(number, int) or number <= 0:
@@ -208,7 +208,7 @@ def enforce_quota(
 
 
 def _self_test() -> int:
-    t0 = parse_ts("2026-10-17T06:00:00Z")
+    parse_ts("2026-10-17T06:00:00Z")
     mid = parse_ts("2026-10-17T06:10:00Z")
     late = parse_ts("2026-10-17T06:31:00Z")
 

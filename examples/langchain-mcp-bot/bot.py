@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -41,7 +42,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, ClassVar
 
 DEFAULT_BASE_URL = "https://supremeai-mcp-tower.onrender.com"
 DEFAULT_CLIENT_NAME = "langchain-mcp-bot"
@@ -92,7 +93,7 @@ class McpProtocolError(RuntimeError):
 async def _post(
     url: str, body: bytes, *, token: str | None = None, timeout: float = 20.0
 ) -> tuple[int, dict[str, str], bytes]:
-    assert url.startswith("http://") or url.startswith("https://")
+    assert url.startswith(("http://", "https://"))
     rest = url.split("://", 1)[1]
     host_port, _, path = rest.partition("/")
     host, _, port_s = host_port.partition(":")
@@ -127,10 +128,8 @@ async def _post(
         return await asyncio.wait_for(_read_response(reader), timeout=timeout)
     finally:
         writer.close()
-        try:
+        with contextlib.suppress(Exception):
             await writer.wait_closed()
-        except Exception:
-            pass
 
 
 async def _sse_endpoint(
@@ -337,15 +336,13 @@ class McpSseClient:
     async def session(self) -> AsyncIterator[tuple[str, McpSseSession]]:
         """Open the SSE session and yield (message_url, session-view)."""
         sse_url = f"{self.base_url}/sse?client={self.client_name}"
-        message_url, reader, writer = await _sse_endpoint(sse_url, token=self._token)
+        message_url, _reader, writer = await _sse_endpoint(sse_url, token=self._token)
         try:
             yield message_url, McpSseSession(self, message_url)
         finally:
             writer.close()
-            try:
+            with contextlib.suppress(Exception):
                 await writer.wait_closed()
-            except Exception:
-                pass
 
 
 class McpSseSession:
@@ -529,7 +526,7 @@ class _MockTowerHandler(BaseHTTPRequestHandler):
     """Minimal mock Tower: SSE announce + tools/list + tools/call."""
 
     server_version = "MockTower/1.0"
-    TOOLS = [
+    TOOLS: ClassVar[list[dict[str, Any]]] = [
         {
             "name": "repo_read",
             "description": "Read a file from the repository.",

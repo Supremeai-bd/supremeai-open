@@ -418,7 +418,7 @@ def self_test() -> bool:
 
     # Tag contract + phase order.
     try:
-        ConsolidationRun(run_date="18-10-2026").tag
+        _ = ConsolidationRun(run_date="18-10-2026").tag
         raise SystemExit("tag gate failed open")
     except TrainError:
         pass

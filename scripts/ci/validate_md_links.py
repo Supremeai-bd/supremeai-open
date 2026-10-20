@@ -143,14 +143,14 @@ def head_ok(url: str, timeout: int = 12) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status < 400
-    except Exception:
+    except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError):
         try:  # some hosts reject HEAD → retry GET
             req2 = urllib.request.Request(
                 url, headers={"User-Agent": "link-validator/1.0"}
             )
             with urllib.request.urlopen(req2, timeout=timeout) as resp:
                 return resp.status < 400
-        except Exception:
+        except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError):
             return False
 
 

@@ -15,11 +15,9 @@ import random
 import time
 import urllib.error
 import urllib.request
-from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from .errors import RETRYABLE_STATUSES, GatewayError
-from .sse_listener import SSEListener, StreamEvent
 
 USER_AGENT = "supremeai-sdk-python/0.1.0"
 
@@ -116,28 +114,6 @@ class SupremeAIClient:
             0, code="UNREACHABLE", message="gateway unreachable"
         )
 
-    def run_task(
-        self,
-        task: str,
-        payload: Any = None,
-        model: str | None = None,
-        idempotency_key: str | None = None,
-        metadata: dict[str, str] | None = None,
-    ) -> Any:
-        """Submit a task run for gateway execution."""
-        body: dict[str, Any] = {"task": task, "input": payload or {}}
-        if model:
-            body["model"] = model
-        if idempotency_key:
-            body["idempotencyKey"] = idempotency_key
-        if metadata:
-            body["metadata"] = metadata
-        return self.request("POST", "/v1/runs", body)
-
-    def get_run(self, run_id: str) -> Any:
-        """Fetch a run's state and execution trace."""
-        return self.request("GET", "/v1/runs/" + urllib.request.quote(run_id, safe=""))
-
     def list_models(self) -> Any:
         return self.request("GET", "/v1/models")
 
@@ -158,30 +134,6 @@ class SupremeAIClient:
         body.update(kwargs)
         return self.request("POST", "/v1/consensus", body)
 
-    def stream_run(self, run_id: str) -> Iterator[StreamEvent]:
-        """Yield parsed SSE events for a run until the [DONE] sentinel."""
-        url = (
-            self.base_url
-            + "/v1/runs/"
-            + urllib.request.quote(run_id, safe="")
-            + "/stream"
-        )
-        request = urllib.request.Request(url, method="GET")
-        for key, value in self._headers({"Accept": "text/event-stream"}).items():
-            request.add_header(key, value)
-        listener = SSEListener()
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            for raw in response:
-                for event in listener.feed(raw.decode("utf-8", errors="replace")):
-                    if event.is_done:
-                        return
-                    yield event
-            for event in listener.finish():
-                if event.is_done:
-                    return
-                yield event
-
-
 class AsyncSupremeAIClient:
     """Async facade over the sync client: executor-backed HTTP, queue-backed SSE."""
 
@@ -198,12 +150,6 @@ class AsyncSupremeAIClient:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: self._sync.request(method, path, payload, headers)
-        )
-
-    async def run_task(self, task: str, payload: Any = None, **kwargs: Any) -> Any:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self._sync.run_task(task, payload, **kwargs)
         )
 
     async def health(self) -> Any:
@@ -228,25 +174,3 @@ class AsyncSupremeAIClient:
         return await loop.run_in_executor(
             None, lambda: self._sync.consensus(messages, **kwargs)
         )
-
-    async def stream_run(self, run_id: str) -> AsyncIterator[StreamEvent]:
-        """Async SSE iterator: a background thread pumps bytes into a queue."""
-        queue: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
-        loop = asyncio.get_running_loop()
-
-        def pump() -> None:
-            try:
-                for event in self._sync.stream_run(run_id):
-                    loop.call_soon_threadsafe(queue.put_nowait, event)
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, None)
-
-        import threading
-
-        thread = threading.Thread(target=pump, daemon=True)
-        thread.start()
-        while True:
-            event = await queue.get()
-            if event is None:
-                break
-            yield event

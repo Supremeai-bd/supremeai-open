@@ -27,16 +27,16 @@ import role_trigger_matrix as rtm
 
 
 def proposal(n: int, **overrides) -> rtm.ScoutProposal:
-    base = dict(
-        title=f"proposal {n}",
-        source="web",
-        pros=("p",),
-        cons=("c",),
-        anti_patterns=("a",),
-        risks=("r",),
-        dont_do_this=("d",),
-        philosophy_verdict=rtm.CORE_PHILOSOPHY_FILTERS[0],
-    )
+    base = {
+        "title": f"proposal {n}",
+        "source": "web",
+        "pros": ("p",),
+        "cons": ("c",),
+        "anti_patterns": ("a",),
+        "risks": ("r",),
+        "dont_do_this": ("d",),
+        "philosophy_verdict": rtm.CORE_PHILOSOPHY_FILTERS[0],
+    }
     base.update(overrides)
     return rtm.ScoutProposal(**base)
 

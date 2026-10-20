@@ -148,7 +148,9 @@ def resolve_voice(voice: str) -> str:
     if candidate.lower() in VOICE_ALIASES:
         return VOICE_ALIASES[candidate.lower()]
     raise VoiceRequestError(
-        "unknown voice %r; catalog: %s" % (voice, ", ".join(sorted(VOICE_CATALOG)))
+        "unknown voice {!r}; catalog: {}".format(
+            voice, ", ".join(sorted(VOICE_CATALOG))
+        )
     )
 
 
@@ -165,17 +167,16 @@ def validate_request(
         raise VoiceRequestError("text must be a non-empty string")
     if len(body) > MAX_TEXT_CHARS:
         raise VoiceRequestError(
-            "text exceeds %d characters (got %d)" % (MAX_TEXT_CHARS, len(body))
+            f"text exceeds {MAX_TEXT_CHARS} characters (got {len(body)})"
         )
     canonical_voice = resolve_voice(voice)
     if not _RATE_RE.match(rate or ""):
         raise VoiceRequestError(
-            "rate %r malformed; expected sign+digits+%%, e.g. '+10%%' or '-5%%'" % rate
+            f"rate {rate!r} malformed; expected sign+digits+%, e.g. '+10%' or '-5%'"
         )
     if not _PITCH_RE.match(pitch or ""):
         raise VoiceRequestError(
-            "pitch %r malformed; expected sign+digits+Hz, e.g. '+5Hz' or '-10Hz'"
-            % pitch
+            f"pitch {pitch!r} malformed; expected sign+digits+Hz, e.g. '+5Hz' or '-10Hz'"
         )
     if total_timeout_s <= 0:
         raise VoiceRequestError("total_timeout_s must be > 0")
@@ -245,7 +246,7 @@ async def _edge_tts_stream(request: VoiceRequest) -> AsyncIterator[bytes]:
     except asyncio.TimeoutError as exc:
         raise VoiceSynthesisError("edge-tts protocol timed out") from exc
     except Exception as exc:
-        raise VoiceSynthesisError("edge-tts synthesis failed: %s" % exc) from exc
+        raise VoiceSynthesisError(f"edge-tts synthesis failed: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -315,10 +316,10 @@ class VoiceService:
             raise
         except asyncio.TimeoutError as exc:
             raise VoiceSynthesisError(
-                "synthesis exceeded %.0fs wall-clock guard" % request.total_timeout_s
+                f"synthesis exceeded {request.total_timeout_s:.0f}s wall-clock guard"
             ) from exc
         except Exception as exc:
-            raise VoiceSynthesisError("synthesis failed: %s" % exc) from exc
+            raise VoiceSynthesisError(f"synthesis failed: {exc}") from exc
         if not audio:
             raise VoiceSynthesisError("synthesis returned zero audio bytes")
         if self._cache is not None and key is not None:

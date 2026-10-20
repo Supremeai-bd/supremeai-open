@@ -131,6 +131,7 @@ class PruneMergedBranchesTest(unittest.TestCase):
             env=env,
             capture_output=True,
             text=True,
+            check=False,
         )
 
     def test_dry_run_lists_merged_only_and_never_calls_gh(self):
@@ -161,6 +162,7 @@ class PruneMergedBranchesTest(unittest.TestCase):
             env=env,
             capture_output=True,
             text=True,
+            check=False,
         )
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("failed: 2", r.stdout)

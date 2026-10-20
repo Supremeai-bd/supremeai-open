@@ -29,16 +29,16 @@ def claim(issue, agent, ts=T0, ttl=s01.TTL_MINUTES):
 
 
 def row(num, title="task", **kw):
-    base = dict(
-        number=num,
-        title=title,
-        state="open",
-        labels=("P1-high",),
-        claim=None,
-        has_inflight_wo=False,
-        blocked_label=False,
-        is_task_issue=True,
-    )
+    base = {
+        "number": num,
+        "title": title,
+        "state": "open",
+        "labels": ("P1-high",),
+        "claim": None,
+        "has_inflight_wo": False,
+        "blocked_label": False,
+        "is_task_issue": True,
+    }
     base.update(kw)
     return s03.IssueState(**base)
 

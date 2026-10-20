@@ -27,6 +27,7 @@ from gateway.config import (
     GatewayConfig,
     parse_routing_policy,
 )
+from gateway.memory import QdrantMemoryStore
 from gateway.provider_chain import (
     AttemptResult,
     ProviderChainExhausted,
@@ -202,6 +203,30 @@ class TestProviderChain(unittest.TestCase):
             )
 
         self.assertEqual(len(ctx.exception.ledger), 2)
+
+    def test_qdrant_memory_store_integration(self):
+        store = QdrantMemoryStore(
+            qdrant_url="http://127.0.0.1:9999",
+            api_key="test-key",
+            timeout_s=0.2,
+        )
+        self.assertEqual(store.qdrant_url, "http://127.0.0.1:9999")
+        self.assertEqual(store.api_key, "test-key")
+
+        # Embedding generation is deterministic and normalized
+        v1 = store._embed("supremeai architecture")
+        self.assertEqual(len(v1), 128)
+        self.assertAlmostEqual(sum(x * x for x in v1), 1.0, places=4)
+
+        # In-memory fallback functions offline when Qdrant is unreachable
+        item = store.store(text="Autonomous multi-agent orchestration", namespace="core")
+        self.assertTrue(item.id.startswith("mem-"))
+        self.assertEqual(item.namespace, "core")
+
+        hits = store.search(query="orchestration", namespace="core")
+        self.assertGreaterEqual(len(hits), 1)
+        self.assertEqual(hits[0]["text"], "Autonomous multi-agent orchestration")
+        self.assertGreater(hits[0]["score"], 0.0)
 
 
 if __name__ == "__main__":

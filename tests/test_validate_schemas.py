@@ -287,7 +287,7 @@ if __name__ == "__main__":
         except AssertionError as exc:
             failed += 1
             print(f"  FAIL | {fn.__name__}: {exc}")
-        except Exception as exc:  # noqa: BLE001 — honest failure reporting
+        except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError, ImportError, ModuleNotFoundError) as exc:
             failed += 1
             print(f"  ERROR | {fn.__name__}: {type(exc).__name__}: {exc}")
     print(f"{len(fns) - failed}/{len(fns)} tests passed")

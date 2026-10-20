@@ -190,6 +190,7 @@ def run_cli(*cli_args: str):
         text=True,
         encoding="utf-8",
         timeout=60,
+        check=False,
     )
 
 

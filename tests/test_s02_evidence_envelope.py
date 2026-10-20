@@ -21,16 +21,16 @@ import pr_evidence_envelope as env_mod
 
 
 def make_env(**overrides):
-    base = dict(
-        task_issue_ref=457,
-        claim_marker_id="atomic-claim:issue=457,agent=zai,ts=2026-10-17T03:30:00Z,ttl=30m",
-        reflection_why="structured assertions replace brittle regex ladders on PR bodies",
-        alternatives_rejected=["keep regex ladders", "external validation service"],
-        scope_paths=[
+    base = {
+        "task_issue_ref": 457,
+        "claim_marker_id": "atomic-claim:issue=457,agent=zai,ts=2026-10-17T03:30:00Z,ttl=30m",
+        "reflection_why": "structured assertions replace brittle regex ladders on PR bodies",
+        "alternatives_rejected": ["keep regex ladders", "external validation service"],
+        "scope_paths": [
             "docs/S02_STRUCTURED_EVIDENCE_SPEC.md",
             "scripts/tower/pr_evidence_envelope.py",
         ],
-    )
+    }
     base.update(overrides)
     return env_mod.EvidenceEnvelope(**base)
 

@@ -15,11 +15,11 @@ import type {
   StreamEvent,
   TaskRunRequest,
   TaskRunResponse,
-} from './types/generated';
-import { SSEParser, streamRunEvents } from './streaming';
+} from './types/generated.ts';
+import { SSEParser, streamRunEvents } from './streaming.ts';
 
-export * from './types/generated';
-export { SSEParser, streamRunEvents } from './streaming';
+export * from './types/generated.ts';
+export { SSEParser, streamRunEvents } from './streaming.ts';
 
 /** Status codes considered transient and safe to retry. */
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
@@ -208,16 +208,6 @@ export class SupremeAIClient {
     throw lastError ?? new GatewayError(0, { code: 'UNREACHABLE', message: 'gateway unreachable' });
   }
 
-  /** Submit a task run for execution. */
-  runTask(request: TaskRunRequest, options?: RequestOptions): Promise<TaskRunResponse> {
-    return this.request<TaskRunResponse>('POST', '/v1/runs', request, options);
-  }
-
-  /** Fetch a run's current state and trace. */
-  getRun(runId: string, options?: RequestOptions): Promise<TaskRunResponse> {
-    return this.request<TaskRunResponse>('GET', '/v1/runs/' + encodeURIComponent(runId), undefined, options);
-  }
-
   /** List models available to the failover cascade. */
   listModels(options?: RequestOptions): Promise<ModelInfo[]> {
     return this.request<ModelInfo[]>('GET', '/v1/models', undefined, options);
@@ -228,35 +218,13 @@ export class SupremeAIClient {
     return this.request<HealthResponse>('GET', '/v1/health', undefined, options);
   }
 
-  /**
-   * Open the SSE stream for a run and yield parsed events as an async
-   * iterable. The underlying fetch is not retried (streams are not
-   * idempotent); callers should resume via getRun on stream failure.
-   */
-  streamRun(runId: string, options?: RequestOptions): AsyncIterable<StreamEvent> {
-    const controller = new AbortController();
-    const onOuterAbort = () => controller.abort();
-    options?.signal?.addEventListener('abort', onOuterAbort, { once: true });
-    const start = async (): Promise<Response> => {
-      const response = await fetch(this.url('/v1/runs/' + encodeURIComponent(runId) + '/stream'), {
-        method: 'GET',
-        headers: this.signedHeaders({ accept: 'text/event-stream' }),
-        signal: controller.signal,
-      });
-      if (!response.ok || !response.body) {
-        let shape: Partial<GatewayErrorShape> = {};
-        try {
-          shape = (await response.json()) as Partial<GatewayErrorShape>;
-        } catch {
-          /* body not JSON — keep defaults */
-        }
-        throw new GatewayError(response.status, shape);
-      }
-      return response;
-    };
-    return streamRunEvents(() => start(), () => {
-      options?.signal?.removeEventListener('abort', onOuterAbort);
-      controller.abort();
-    });
+  /** OpenAI-compatible chat completion via /v1/chat/completions. */
+  chat<T = unknown>(body: Record<string, unknown>, options?: RequestOptions): Promise<T> {
+    return this.request<T>('POST', '/v1/chat/completions', body, options);
+  }
+
+  /** Parallel multi-model consensus via /v1/consensus. */
+  consensus<T = unknown>(body: Record<string, unknown>, options?: RequestOptions): Promise<T> {
+    return this.request<T>('POST', '/v1/consensus', body, options);
   }
 }

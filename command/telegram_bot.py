@@ -88,7 +88,7 @@ def build_voice_status_summary(status_text: str) -> str:
     tower_part = (
         VOICE_TOWER_UP_BN if "Control Tower: reachable" in body else VOICE_TOWER_DOWN_BN
     )
-    return "%s। %s।" % (VOICE_STATUS_PHRASE, tower_part)
+    return f"{VOICE_STATUS_PHRASE}। {tower_part}।"
 
 
 @dataclass
@@ -122,15 +122,15 @@ def sync_voice_synthesizer(
                 text, voice=voice, total_timeout_s=total_timeout_s
             )
         except VoiceRequestError as exc:
-            return VoiceOutcome(error="invalid request: %s" % exc)
+            return VoiceOutcome(error=f"invalid request: {exc}")
         try:
             result = asyncio.run(service.synthesize(request))
         except VoiceServiceUnavailable as exc:
-            return VoiceOutcome(error="service unavailable: %s" % exc)
+            return VoiceOutcome(error=f"service unavailable: {exc}")
         except VoiceSynthesisError as exc:
-            return VoiceOutcome(error="%s" % exc)
-        except Exception as exc:  # noqa: BLE001 - poll loop must survive
-            return VoiceOutcome(error="unexpected voice failure: %s" % exc)
+            return VoiceOutcome(error=f"{exc}")
+        except (RuntimeError, OSError, TimeoutError, ConnectionError, ValueError) as exc:
+            return VoiceOutcome(error=f"unexpected voice failure: {exc}")
         return VoiceOutcome(
             audio=result.audio,
             voice_used=result.request.voice,
@@ -227,9 +227,7 @@ class CommandRouter:
                     if outcome.ok:
                         voice_audio = outcome.audio
                     else:
-                        status_text += (
-                            "\n🔊 voice alert unavailable: %s" % outcome.error
-                        )
+                        status_text += f"\n🔊 voice alert unavailable: {outcome.error}"
             return BotReply(status_text, voice_audio=voice_audio)
         if command == "/voice":
             if not argument:
@@ -241,10 +239,9 @@ class CommandRouter:
                 )
             outcome = self.synthesize_voice(argument)
             if not outcome.ok:
-                return BotReply("🔊 voice synthesis failed: %s" % outcome.error)
+                return BotReply(f"🔊 voice synthesis failed: {outcome.error}")
             return BotReply(
-                "🎙️ voice note ready (%s, %d bytes)"
-                % (outcome.voice_used, outcome.size_bytes),
+                f"🎙️ voice note ready ({outcome.voice_used}, {outcome.size_bytes} bytes)",
                 action="voice",
                 voice_audio=outcome.audio,
             )
@@ -288,7 +285,7 @@ class StdlibTelegramTransport:
         )
         with urllib.request.urlopen(req, timeout=self.config.request_timeout_s) as resp:
             if resp.status != 200:
-                raise RuntimeError("telegram sendMessage HTTP %d" % resp.status)
+                raise RuntimeError(f"telegram sendMessage HTTP {resp.status}")
 
     def send_voice(
         self,
@@ -298,40 +295,39 @@ class StdlibTelegramTransport:
         mime_type: str = "audio/mpeg",
     ) -> None:
         """Upload a voice note via sendVoice (multipart/form-data, stdlib only)."""
-        boundary = "supremeai-voice-%s" % uuid.uuid4().hex
+        boundary = f"supremeai-voice-{uuid.uuid4().hex}"
         parts = [
             (
-                '--%s\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n%s\r\n'
-                % (boundary, chat_id)
-            ).encode("utf-8"),
+                f'--{boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n{chat_id}\r\n'
+            ).encode(),
             (
-                '--%s\r\nContent-Disposition: form-data; name="voice"; filename="%s"\r\n'
-                "Content-Type: %s\r\n\r\n" % (boundary, filename, mime_type)
-            ).encode("utf-8"),
+                f'--{boundary}\r\nContent-Disposition: form-data; name="voice"; filename="{filename}"\r\n'
+                f"Content-Type: {mime_type}\r\n\r\n"
+            ).encode(),
             audio,
-            ("\r\n--%s--\r\n" % boundary).encode("utf-8"),
+            (f"\r\n--{boundary}--\r\n").encode(),
         ]
         body = b"".join(parts)
         req = urllib.request.Request(
             self.config.telegram_api_base + "/sendVoice",
             data=body,
-            headers={"Content-Type": "multipart/form-data; boundary=%s" % boundary},
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.config.request_timeout_s) as resp:
             if resp.status != 200:
-                raise RuntimeError("telegram sendVoice HTTP %d" % resp.status)
+                raise RuntimeError(f"telegram sendVoice HTTP {resp.status}")
 
     def poll_updates(
         self, router: CommandRouter, timeout_s: int = 25
     ) -> None:  # pragma: no cover - runtime loop
         offset = 0
-        url = self.config.telegram_api_base + "/getUpdates?timeout=%d" % max(
-            1, timeout_s
-        )
+        timeout_val = max(1, timeout_s)
+        url = f"{self.config.telegram_api_base}/getUpdates?timeout={timeout_val}"
         while True:
+            offset_query = f"&offset={offset}" if offset else ""
             req = urllib.request.Request(
-                url + ("&offset=%d" % offset if offset else ""),
+                f"{url}{offset_query}",
                 method="GET",
             )
             try:

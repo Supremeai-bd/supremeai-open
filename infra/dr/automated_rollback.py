@@ -70,7 +70,7 @@ class AutomatedRollback:
         verification_passed = False
         try:
             verification_passed = verification_fn()
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError) as e:
             logger.error("Verification raised exception: %s", e)
             verification_passed = False
 
@@ -83,7 +83,7 @@ class AutomatedRollback:
         revert_ok = False
         try:
             revert_ok = self._revert_action(deployment_id, last_stable_version)
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError) as e:
             logger.error("Revert action failed: %s", e)
             revert_ok = False
 

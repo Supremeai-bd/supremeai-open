@@ -21,6 +21,7 @@ import sys
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import ClassVar
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "scripts" / "ci"))
@@ -46,7 +47,7 @@ def fetch_rate_limited(org, repo, token=None):
 class RegistryDoctrineTest(unittest.TestCase):
     """Tier 1 — the audited registry IS the #626 doctrine, pinned."""
 
-    EXPECTED = {
+    EXPECTED: ClassVar[set[str]] = {
         "studio",
         "api",
         "vscode",

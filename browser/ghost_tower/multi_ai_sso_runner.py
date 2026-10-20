@@ -10,11 +10,13 @@ Autonomously logs into top generous free-tier AI platforms using Google SSO ("Co
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import sys
 
 from playwright.async_api import BrowserContext, Page, async_playwright
+from playwright.async_api import Error as PlaywrightError
 
 # Import local credential vault and google flow
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -69,12 +71,10 @@ async def click_google_sso_button(
         success = await handle_google_flow(
             popup, email=email, password=password, timeout_seconds=timeout
         )
-        try:
+        with contextlib.suppress(Exception):
             await popup.wait_for_event("close", timeout=10000)
-        except Exception:
-            pass
         return success
-    except Exception:
+    except (PlaywrightError, asyncio.TimeoutError, OSError, RuntimeError):
         # Redirect happened in the same window
         await asyncio.sleep(2)
         if "accounts.google.com" in page.url:
@@ -106,11 +106,11 @@ async def login_chatgpt(context: BrowserContext, email: str, password: str) -> b
                     logger.info("✅ ChatGPT is already authenticated!")
                     return True
                 break
-            except Exception:
+            except (PlaywrightError, OSError):
                 await asyncio.sleep(1)
 
         # Click Log in button if present
-        try:
+        with contextlib.suppress(Exception):
             login_btn = await page.query_selector(
                 'button[data-testid="login-button"], button:has-text("Log in"), a:has-text("Log in")'
             )
@@ -118,8 +118,6 @@ async def login_chatgpt(context: BrowserContext, email: str, password: str) -> b
                 logger.info("Clicking ChatGPT 'Log in' button...")
                 await login_btn.click()
                 await asyncio.sleep(3)
-        except Exception:
-            pass
 
         # Click Continue with Google
         await click_google_sso_button(page, email, password)
@@ -129,7 +127,7 @@ async def login_chatgpt(context: BrowserContext, email: str, password: str) -> b
         )
         for _ in range(25):
             await asyncio.sleep(1)
-            try:
+            with contextlib.suppress(Exception):
                 if "chatgpt.com" in page.url and "auth" not in page.url:
                     inp = await page.query_selector(
                         '#prompt-textarea, textarea, div[contenteditable="true"]'
@@ -139,12 +137,10 @@ async def login_chatgpt(context: BrowserContext, email: str, password: str) -> b
                             "✅ ChatGPT Google SSO login verified successfully!"
                         )
                         return True
-            except Exception:
-                pass
 
         logger.info(f"ChatGPT current URL: {page.url}")
         return True
-    except Exception as e:
+    except (PlaywrightError, OSError, RuntimeError, TimeoutError, ConnectionError) as e:
         logger.warning(f"ChatGPT session notice: {e}")
         await asyncio.sleep(10)
         return True
@@ -172,25 +168,23 @@ async def login_grok(context: BrowserContext, email: str, password: str) -> bool
                     logger.info("✅ Grok is already authenticated!")
                     return True
                 break
-            except Exception:
+            except (PlaywrightError, OSError):
                 await asyncio.sleep(1)
 
         # Look for Sign in button
-        try:
+        with contextlib.suppress(Exception):
             signin_btn = await page.query_selector(
                 'button:has-text("Sign In"), a:has-text("Sign in"), button:has-text("Log in")'
             )
             if signin_btn and await signin_btn.is_visible():
                 await signin_btn.click()
                 await asyncio.sleep(2)
-        except Exception:
-            pass
 
         await click_google_sso_button(page, email, password)
         await asyncio.sleep(8)
         logger.info(f"Grok URL after SSO attempt: {page.url}")
         return True
-    except Exception as e:
+    except (PlaywrightError, OSError, RuntimeError, TimeoutError, ConnectionError) as e:
         logger.warning(f"Grok session notice: {e}")
         await asyncio.sleep(10)
         return True
@@ -218,7 +212,7 @@ async def login_mistral(context: BrowserContext, email: str, password: str) -> b
                     logger.info("✅ Mistral Le Chat is already authenticated!")
                     return True
                 break
-            except Exception:
+            except (PlaywrightError, OSError):
                 await asyncio.sleep(1)
 
         # Click Continue with Google
@@ -229,7 +223,7 @@ async def login_mistral(context: BrowserContext, email: str, password: str) -> b
         )
         for _ in range(25):
             await asyncio.sleep(1)
-            try:
+            with contextlib.suppress(Exception):
                 if "chat.mistral.ai" in page.url and (
                     "auth" not in page.url and "login" not in page.url
                 ):
@@ -239,12 +233,10 @@ async def login_mistral(context: BrowserContext, email: str, password: str) -> b
                     if chat_box:
                         logger.info("✅ Mistral Le Chat authentication confirmed!")
                         return True
-            except Exception:
-                pass
 
         logger.info(f"Mistral Le Chat URL: {page.url}")
         return True
-    except Exception as e:
+    except (PlaywrightError, OSError, RuntimeError, TimeoutError, ConnectionError) as e:
         logger.warning(f"Mistral session notice: {e}")
         await asyncio.sleep(10)
         return True
@@ -272,25 +264,23 @@ async def login_perplexity(context: BrowserContext, email: str, password: str) -
                     logger.info("✅ Perplexity is already authenticated!")
                     return True
                 break
-            except Exception:
+            except (PlaywrightError, OSError):
                 await asyncio.sleep(1)
 
         # Click Sign In button
-        try:
+        with contextlib.suppress(Exception):
             signin_btn = await page.query_selector(
                 'button:has-text("Sign In"), button:has-text("Log In")'
             )
             if signin_btn and await signin_btn.is_visible():
                 await signin_btn.click()
                 await asyncio.sleep(2)
-        except Exception:
-            pass
 
         await click_google_sso_button(page, email, password)
         await asyncio.sleep(8)
         logger.info(f"Perplexity URL: {page.url}")
         return True
-    except Exception as e:
+    except (PlaywrightError, OSError, RuntimeError, TimeoutError, ConnectionError) as e:
         logger.warning(f"Perplexity session notice: {e}")
         await asyncio.sleep(10)
         return True

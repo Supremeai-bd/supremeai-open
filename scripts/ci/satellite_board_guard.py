@@ -83,6 +83,33 @@ SATELLITES: tuple[str, ...] = (
     "mcp-control-plane",
 )
 
+# Short satellite key -> actual GitHub repository name. The #626 doctrine uses
+# short keys, but the GitHub repos are prefixed with "supremeai-". Keep
+# SATELLITES as short keys for display/doctrine parity; resolve to full repo
+# names only at the HTTP boundary.
+SATELLITE_REPO_NAMES: dict[str, str] = {
+    "studio": "supremeai-studio",
+    "api": "supremeai-api",
+    "vscode": "supremeai-vscode",
+    "browser": "supremeai-browser",
+    "core": "supremeai-core",
+    "command": "supremeai-command",
+    "skills": "supremeai-skills",
+    "agents": "supremeai-agents",
+    "sdk": "supremeai-sdk",
+    "archive": "supremeai-archive",
+    "infrastructure": "supremeai-infrastructure",
+    "mcp-control-plane": "supremeai-mcp-control-plane",
+}
+
+
+def satellite_repo_name(short: str) -> str:
+    """Resolve a short satellite key to its full GitHub repository name."""
+    if short in SATELLITE_REPO_NAMES:
+        return SATELLITE_REPO_NAMES[short]
+    return short if short.startswith("supremeai-") else f"supremeai-{short}"
+
+
 DEFAULT_ORG = "Supremeai-bd"
 
 VERDICT_CLEAN = "CLEAN"
@@ -143,7 +170,7 @@ def _http_get_json(url: str, token: str | None = None, timeout: int = 30) -> lis
 
 def _issues_url(org: str, repo: str) -> str:
     """Combined open-issues+PRs listing endpoint for one satellite."""
-    return f"https://api.github.com/repos/{org}/{repo}/issues?state=open&per_page=100"
+    return f"https://api.github.com/repos/{org}/{satellite_repo_name(repo)}/issues?state=open&per_page=100"
 
 
 def default_fetch_open_items(

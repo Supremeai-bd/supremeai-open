@@ -329,8 +329,10 @@ ROLE_CONTRACTS: Final[Mapping[str, RoleContract]] = MappingProxyType(
                 "first-impression quality (ফার্স্ট ইমপ্রেশন কোয়ালিটি)",
             ),
             must_not=(
-                "editing source code (নিজে সোর্স কোড এডিট করবে না — কেবল ডিজাইন ও "
-                "এস্থেটিক নির্দেশনাসহ ইস্যু তৈরি করবে)",
+                (
+                    "editing source code (নিজে সোর্স কোড এডিট করবে না — কেবল ডিজাইন ও "
+                    "এস্থেটিক নির্দেশনাসহ ইস্যু তৈরি করবে)"
+                ),
             ),
             weapons=frozenset(
                 {
@@ -361,8 +363,10 @@ ROLE_CONTRACTS: Final[Mapping[str, RoleContract]] = MappingProxyType(
                 "leaks, CPU spikes, DoS proof (ডুয়াল-ভেক্টর আক্রমণ)।"
             ),
             must_follow=(
-                "commit failing exploit tests as damage proof (ধ্বংসের প্রমাণ হিসেবে "
-                "ফেইলিং এক্সপ্লয়েট টেস্ট কমিট)",
+                (
+                    "commit failing exploit tests as damage proof (ধ্বংসের প্রমাণ হিসেবে "
+                    "ফেইলিং এক্সপ্লয়েট টেস্ট কমিট)"
+                ),
                 f"file {P0_LABEL} issues (P0-critical ইস্যু ফাইল করা বাধ্যতামূলক)",
             ),
             must_not=(
@@ -401,12 +405,16 @@ ROLE_CONTRACTS: Final[Mapping[str, RoleContract]] = MappingProxyType(
                 "ফ্রেশনেস মনিটর)।"
             ),
             must_follow=(
-                "zero-admin self-healing: auto-failover when possible, otherwise "
-                "file an issue immediately (জিরো-অ্যাডমিন সেলফ-হিলিং)",
+                (
+                    "zero-admin self-healing: auto-failover when possible, otherwise "
+                    "file an issue immediately (জিরো-অ্যাডমিন সেলফ-হিলিং)"
+                ),
             ),
             must_not=(
-                "interrupting healthy routes without cause (সুস্থ রাউটে অহেতুক "
-                "ট্রাফিক ইন্টারাপ্ট নিষেধ)",
+                (
+                    "interrupting healthy routes without cause (সুস্থ রাউটে অহেতুক "
+                    "ট্রাফিক ইন্টারাপ্ট নিষেধ)"
+                ),
             ),
             weapons=frozenset(
                 {
@@ -519,9 +527,11 @@ def dispatch(signal: DispatchSignal) -> DispatchDecision:
     if missing:
         return _deny("LABEL_GATE", labels_missing=missing)
 
-    if spec.schedule_kind is not None:
-        if signal.payload.get("schedule_kind") != spec.schedule_kind:
-            return _deny("SCHEDULE_GATE")
+    if (
+        spec.schedule_kind is not None
+        and signal.payload.get("schedule_kind") != spec.schedule_kind
+    ):
+        return _deny("SCHEDULE_GATE")
 
     for key in spec.required_payload:
         if not signal.payload.get(key):

@@ -9,6 +9,7 @@ ZERO network, ZERO browser launches, stdlib-only.
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -100,7 +101,7 @@ def test_bezier_path_natural_motion() -> None:
     assert len(pts) == 40
     assert pts[0][0] < pts[-1][0], "path must progress toward the target"
     for x, y in pts:
-        assert x == x and y == y, "no NaN coordinates"
+        assert not (math.isnan(x) or math.isnan(y)), "no NaN coordinates"
         assert -50 <= x <= 350 and -50 <= y <= 250, "bounded jitter"
     again = bezier_path((0, 0), (300, 200), steps=40, seed="gesture-1")
     assert pts == again, "gesture paths are deterministic per seed"
@@ -230,7 +231,7 @@ def test_feed_expander_growth_and_stall() -> None:
     final = expander.expand(max_rounds=10, stall_limit=3)
     assert final == 5000, "expansion stops at observed height"
     assert expander.stalled_rounds >= 3, "stall counted after growth ends"
-    assert SCROLL_AND_EXPAND_JS in SCROLL_AND_EXPAND_JS, "runtime JS constant embedded"
+    assert bool(SCROLL_AND_EXPAND_JS), "runtime JS constant embedded"
     assert "scrollBy" in SCROLL_AND_EXPAND_JS
 
 

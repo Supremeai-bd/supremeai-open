@@ -144,13 +144,11 @@ def validate(env: EvidenceEnvelope) -> list[str]:
     if not (1 <= len(paths) <= 30):
         errors.append("E_SCOPE_PROTECTED")
     for p in paths:
-        if check_protected(p):
-            if "E_SCOPE_PROTECTED" not in errors:
-                errors.append("E_SCOPE_PROTECTED")
-    for _path, digest in (env.file_digests or {}).items():
-        if not SHA256_RE.match(str(digest)):
-            if "E_BAD_DIGEST" not in errors:
-                errors.append("E_BAD_DIGEST")
+        if check_protected(p) and "E_SCOPE_PROTECTED" not in errors:
+            errors.append("E_SCOPE_PROTECTED")
+    for digest in (env.file_digests or {}).values():
+        if not SHA256_RE.match(str(digest)) and "E_BAD_DIGEST" not in errors:
+            errors.append("E_BAD_DIGEST")
     if not TS_RE.match(env.created_ts or ""):
         errors.append("E_BAD_TIMESTAMP")
     if not (env.rollback_path or "").strip():

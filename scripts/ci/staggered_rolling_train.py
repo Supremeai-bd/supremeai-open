@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import itertools
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
@@ -126,7 +127,7 @@ def assert_no_overlap(schedule=ROLLING_SCHEDULE) -> None:
     minutes = [slot.minute for slot in slots]
     if minutes != sorted(minutes):
         raise TrainError(f"slot minutes must be strictly increasing; got {minutes}")
-    for prev, cur in zip(slots, slots[1:]):
+    for prev, cur in itertools.pairwise(slots):
         if cur.minute < prev.minute + SLOT_MINUTES:
             raise TrainError(
                 f"overlapping slots: {prev.satellite}@{prev.minute} and "
@@ -307,7 +308,7 @@ def self_test() -> bool:
     assert active_slot(t115).satellite == "open"  # 5 min into the wrapped open slot
     t120 = epoch + _dt.timedelta(minutes=120)
     assert active_slot(t120).satellite == "studio"  # second slot of the next cycle
-    naive = _dt.datetime(1970, 1, 1, 0, 30)
+    naive = _dt.datetime(1970, 1, 1, 0, 30)  # noqa: DTZ001  # intentional naive datetime for fallback test
     assert active_slot(naive).satellite == "api"  # naive == UTC, minute 30
     try:
         active_slot("now")

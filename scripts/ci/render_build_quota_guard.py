@@ -117,7 +117,7 @@ def calculate_monthly_build_minutes(
                 duration = max(0.0, (f_dt - c_dt).total_seconds())
                 total_seconds += duration
                 deploy_count += 1
-        except Exception:
+        except (ValueError, TypeError, KeyError):
             continue
 
     return round(total_seconds / 60.0, 2), deploy_count
@@ -166,7 +166,7 @@ def set_render_autodeploy(service_id: str, api_key: str, enabled: bool) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=12) as resp:
             return resp.status == 200
-    except Exception as e:
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
         print(f"Failed to toggle autoDeploy: {e}", file=sys.stderr)
         return False
 
@@ -290,7 +290,7 @@ def main() -> int:
             if eval_res["warning"]:
                 has_warning = True
 
-        except Exception as e:
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError) as e:
             results.append(
                 {
                     "service": svc_name,
