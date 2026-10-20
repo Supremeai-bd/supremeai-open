@@ -47,6 +47,13 @@ DOMAIN_MAP: dict[str, str] = {
     "Supremeai-bd/supremeai-sdk": "sdk",
 }
 
+# Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
+# (source_rel_in_open, target_repo, target_rel_in_satellite)
+CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
+    ("examples/gateway_client.py", "Supremeai-bd/supremeai-api", "scripts/clients/gateway_client.py"),
+    ("api-schemas/gateway.openapi.yaml", "Supremeai-bd/supremeai-api", "contracts/openapi.yaml"),
+]
+
 # Monorepo sync ignores: files in supremeai-open that should not overwrite monorepo root configs
 MONOREPO_EXCLUDES = {
     ".git",
@@ -124,6 +131,16 @@ def sync_satellite(
 
         # Copy domain files into the satellite root
         copy_tree_contents(src_path, tmp_repo)
+
+        # Copy contract mirror pairs specific to this satellite
+        for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
+            if sat_repo == target_repo:
+                src_file = repo_root / open_rel
+                dst_file = tmp_repo / sat_rel
+                if src_file.exists():
+                    dst_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dst_file)
+                    print(f"📋 Mirrored contract file '{open_rel}' -> '{sat_rel}' in {target_repo}")
 
         # Check for diff
         status = subprocess.check_output(
@@ -280,6 +297,10 @@ def self_test() -> bool:
     assert "Supremeai-bd/supremeai-studio" in DOMAIN_MAP
     assert "Supremeai-bd/supremeai-core" in DOMAIN_MAP
     assert "Supremeai-bd/supremeai-api" in DOMAIN_MAP
+    assert len(CONTRACT_MIRROR_PAIRS) >= 2, "Expected at least 2 mirrored contract pairs"
+    for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
+        assert sat_repo in DOMAIN_MAP, f"Target repo {sat_repo} must exist in DOMAIN_MAP"
+        assert open_rel and sat_rel, "Mirror paths must be non-empty"
     return True
 
 

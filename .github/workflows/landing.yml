@@ -570,7 +570,7 @@ jobs:
               out = set()
               if f.startswith("studio/") or f.startswith("examples/dashboard-preview/") or f.startswith("api-schemas/dashboard."):
                   out.add("Supremeai-bd/supremeai-studio")
-              if f.startswith("api/") or f.startswith("gateway/") or f.startswith("api-schemas/gateway."):
+              if f.startswith("api/") or f.startswith("gateway/") or f.startswith("api-schemas/gateway.") or f == "examples/gateway_client.py":
                   out.add("Supremeai-bd/supremeai-api")
               if f.startswith("core/") or f.startswith("api-schemas/task-router."):
                   out.add("Supremeai-bd/supremeai-core")

@@ -1,3 +1,22 @@
-# Enforce LF endings for git hooks and shell scripts across Windows/Linux/macOS
-.githooks/* text eol=lf
+# Enforce LF endings across all text files on Windows/Linux/macOS to guarantee byte-parity
+* text=auto eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
 *.sh text eol=lf
+.githooks/* text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.tar.gz binary
+*.zip binary
+
