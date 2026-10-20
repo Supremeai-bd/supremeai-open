@@ -29,6 +29,15 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+try:
+    from scripts.ci.federation_anchors import get_anchor_issue_number, link_sub_issue
+except ImportError:
+    try:
+        from federation_anchors import get_anchor_issue_number, link_sub_issue
+    except ImportError:
+        get_anchor_issue_number = None
+        link_sub_issue = None
+
 OPEN_REPO = "Supremeai-bd/supremeai-open"
 
 FEDERATION_REPOS: tuple[str, ...] = (
@@ -283,6 +292,17 @@ def mirror_failure(
         print(
             f"✅ [watchdog] Mirrored CI failure from {repo} to {OPEN_REPO}#{issue_num}: {issue_url}"
         )
+        CI_FAILURE_ANCHOR = 761
+        if link_sub_issue and issue_num:
+            linked = link_sub_issue(CI_FAILURE_ANCHOR, issue_num, repo=OPEN_REPO, token=token)
+            if linked:
+                print(
+                    f"🔗 [watchdog] Linked #{issue_num} as Sub-Issue under CI Incident Hub #{CI_FAILURE_ANCHOR} (repo: {repo})"
+                )
+            else:
+                print(
+                    f"⚠️ [watchdog] Notice: could not link #{issue_num} under CI Incident Hub #{CI_FAILURE_ANCHOR}"
+                )
         return True
     else:
         print(
@@ -439,7 +459,15 @@ def self_test() -> int:
     assert is_fresh_run("", now, 24) is False
     assert is_fresh_run("not-a-date", now, 24) is False
 
-    print("✅ [self-test] All 6 contract assertion groups passed!")
+    # 7. Anchor Hub resolution contract
+    if get_anchor_issue_number is not None:
+        for r in FEDERATION_REPOS:
+            anc = get_anchor_issue_number(r)
+            assert (
+                anc is not None and 749 <= anc <= 762
+            ), f"Repo {r} must map to a valid anchor hub, got {anc}"
+
+    print("✅ [self-test] All 7 contract assertion groups passed!")
     return 0
 
 
