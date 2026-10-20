@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Official Python client for the SupremeAI Unified Gateway: typed runs, SSE streaming, automatic failover retry."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
 dependencies = []
 keywords = ["supremeai", "gateway", "sse", "streaming", "client"]
 classifiers = [
