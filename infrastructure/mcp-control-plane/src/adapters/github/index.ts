@@ -110,6 +110,34 @@ export async function readFile(accountId: string, path: string, ref: string = "m
   return data;
 }
 
+export async function searchCode(query: string, repo?: string, limit: number = 10): Promise<unknown> {
+  const { apiKey: token } = getAccountConfig(repo || "github-primary");
+  const q = repo
+    ? `${query} repo:Supremeai-bd/${repo.replace(/^Supremeai-bd\//i, "")}`
+    : `${query} org:Supremeai-bd`;
+  const res = await httpRequest(
+    `https://api.github.com/search/code?q=${encodeURIComponent(q)}&per_page=${Math.min(limit, 30)}`,
+    { headers: githubHeaders(token) },
+  );
+  if (!res.ok) {
+    const msg =
+      res.data && typeof res.data === "object" && "message" in (res.data as Record<string, unknown>)
+        ? String((res.data as Record<string, unknown>).message)
+        : `HTTP ${res.status}`;
+    throw new Error(`GitHub code search error: ${msg}`);
+  }
+  const data = res.data as any;
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return items.map((item: any) => ({
+    path: item.path,
+    repository: item.repository?.full_name,
+    url: item.html_url,
+    score: item.score,
+  }));
+}
+
+export const codeSearch = searchCode;
+
 export async function listPullRequests(accountId: string, state: string = "open", limit: number = 5): Promise<unknown> {
   const { apiKey: token, baseUrl } = getAccountConfig(accountId);
   const res = await httpRequest(`${baseUrl}/pulls?state=${state}&per_page=${limit}`, {

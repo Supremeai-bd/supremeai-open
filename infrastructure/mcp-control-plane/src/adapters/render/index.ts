@@ -325,7 +325,12 @@ export async function getDeployLogs(accountId: string, serviceId: string): Promi
   };
 }
 
-export async function getServiceEnvVars(accountId: string, serviceId: string): Promise<unknown> {
+export async function getEnvVarKeys(accountId: string, serviceId: string): Promise<string[]> {
+  const envVars = (await getServiceEnvVars(accountId, serviceId)) as Array<{ key: string; value: string }>;
+  return envVars.map((item) => item.key).filter((k): k is string => typeof k === "string");
+}
+
+export async function getServiceEnvVars(accountId: string, serviceId: string, keysOnly: boolean = false): Promise<unknown> {
   const apiKey = getApiKey(accountId);
   const res = await httpRequest(`${BASE_URL}/services/${serviceId}/env-vars?limit=50`, {
     headers: bearerAuth(apiKey),
@@ -342,9 +347,11 @@ export async function getServiceEnvVars(accountId: string, serviceId: string): P
     throw new Error(`Render API error: ${errorMsg}`);
   }
   const items = res.data as any[];
-  return items.map((item: any) => ({
+  const mapped = items.map((item: any) => ({
     key: item.envVar?.key,
     value: item.envVar?.value ? maskSecretValue(String(item.envVar.key ?? ""), String(item.envVar.value)) : "",
   }));
+  if (keysOnly) return mapped.map((m) => m.key).filter((k): k is string => typeof k === "string");
+  return mapped;
 }
 
