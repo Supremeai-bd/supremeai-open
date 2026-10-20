@@ -1,9 +1,11 @@
-name: Package & Test SupremeAI SDK
+name: Package & Release SupremeAI SDK
 
 on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
     paths:
       - 'python/**'
       - 'typescript/**'
@@ -15,6 +17,17 @@ on:
       - 'typescript/**'
       - 'tests/**'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish packages to PyPI and npm registry'
+        required: false
+        type: boolean
+        default: false
+      create_release:
+        description: 'Create GitHub Release with package assets'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -22,7 +35,7 @@ permissions:
 
 jobs:
   python-sdk:
-    name: "🐍 Python SDK (Build & Validate)"
+    name: "🐍 Python SDK (Build, Test & Publish)"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -63,8 +76,16 @@ jobs:
           path: python/dist/
           if-no-files-found: error
 
+      - name: Publish to PyPI
+        if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true') && env.TWINE_PASSWORD != ''
+        run: |
+          twine upload --skip-existing python/dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+
   typescript-sdk:
-    name: "🟦 TypeScript SDK (Typecheck & Pack)"
+    name: "🟦 TypeScript SDK (Typecheck, Pack & Publish)"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -101,3 +122,33 @@ jobs:
           name: supremeai-typescript-sdk
           path: typescript/*.tgz
           if-no-files-found: error
+
+      - name: Publish to npm Registry
+        if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true') && env.NODE_AUTH_TOKEN != ''
+        working-directory: typescript
+        run: |
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release:
+    name: "🚀 Publish GitHub Release"
+    needs: [python-sdk, typescript-sdk]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            supremeai-python-sdk/*
+            supremeai-typescript-sdk/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

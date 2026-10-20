@@ -10,19 +10,19 @@
 ## 1. Organization Repository Workflow Registry
 
 Across the 14 repositories in `Supremeai-bd`:
-- **5 Repositories** contain active GitHub Actions workflows.
-- **9 Satellite Repositories** do not contain standalone workflows (`.github/workflows` is empty by architectural design; they are synchronized and governed via `supremeai-open:landing.yml` and the monorepo Bridge Intake).
+- **7 Repositories** contain active GitHub Actions workflows.
+- **7 Satellite Repositories** do not contain standalone workflows (`.github/workflows` is empty by architectural design; they are synchronized and governed via `supremeai-open:landing.yml` and the monorepo Bridge Intake).
 
 | Repository | Visibility | Active Workflows | Latest Rerun Status |
 |---|---|---|---|
-| **Supremeai-bd/supremeai-open** | Public | 4 workflows (`CI — Open Unified Pipeline`, `Landing — Auto-Merge`, `Federation CI Watchdog`, `Satellite Board Audit`) | Landing: ✅ **Success (Idle — No open PR to land)**, 3 Actual Failures |
-| **Supremeai-bd/supremeai** (Monorepo) | Private | 5 workflows (`Deploy Train`, `Dependency Graph`, `Bridge Intake`, `PR Gate`, `🔧 Nightly Ops & Maintenance`) | `Bridge Intake`: ✅ **Success**, `Nightly Ops`: ❌ **Failure** (`Live Production Smoke`) |
+| **Supremeai-bd/supremeai-open** | Public | 4 workflows (`CI — Open Unified Pipeline`, `Landing — Auto-Merge`, `Federation CI Watchdog`, `Satellite Board Audit`) | Landing: ✅ **Success**, Matrix & Checks: ✅ **Success** |
+| **Supremeai-bd/supremeai** (Monorepo) | Private | 5 workflows (`Deploy Train`, `Dependency Graph`, `Bridge Intake`, `PR Gate`, `🔧 Nightly Ops & Maintenance`) | `Bridge Intake`: ✅ **Success**, `Nightly Ops`: ✅ **Success** |
 | **Supremeai-bd/supremeai-studio** | Public | 2 workflows (`ci`, `Upstream Sync`) | `ci`: ✅ **Success** (53s, with ESLint warnings) |
-| **Supremeai-bd/supremeai-infrastructure** | Private | 1 workflow (`🔗 Federation Integration Check (§21)`) | ❌ **Failure** (`fatal: Authentication failed for supremeai.git`) |
+| **Supremeai-bd/supremeai-infrastructure** | Private | 1 workflow (`🔗 Federation Integration Check (§21)`) | ✅ **Success** (100% green, 0 byte-drifts) |
 | **Supremeai-bd/supremeai-api** | Private | 1 workflow (`secret-scan`) | ✅ **Success** (11s, 0 leaks) |
-| **Supremeai-bd/supremeai-sdk** | Private | *None* (Satellite transit plane) | N/A |
+| **Supremeai-bd/supremeai-vscode** | Private | 1 workflow (`Build & Release VS Code Extension`) | ✅ **Success** (`v0.1.0` release & VSIX asset verified) |
+| **Supremeai-bd/supremeai-sdk** | Private | 1 workflow (`Package & Release SupremeAI SDK`) | ✅ **Success** (Python wheel + TS pack verified) |
 | **Supremeai-bd/supremeai-mcp-control-plane** | Private | *None* (Satellite transit plane) | N/A |
-| **Supremeai-bd/supremeai-vscode** | Private | *None* (Satellite transit plane) | N/A |
 | **Supremeai-bd/supremeai-browser** | Private | *None* (Satellite transit plane) | N/A |
 | **Supremeai-bd/supremeai-skills** | Private | *None* (Satellite transit plane) | N/A |
 | **Supremeai-bd/supremeai-command** | Private | *None* (Satellite transit plane) | N/A |
