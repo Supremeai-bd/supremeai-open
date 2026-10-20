@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests } from "../adapters/github/index.js";
+import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, searchCode } from "../adapters/github/index.js";
 import { RequestContextStore, roleRank, type UserRole } from "../policy/auth.context.js";
 import { scopeAllows } from "../policy/client-registry.js";
 import { buildAccountRegistry } from "../registry/account.registry.js";
@@ -52,7 +52,22 @@ export function repoAccessFor(role: UserRole): RepoAccess {
  * read-only tiers (fail-closed — legacy pre-#110 records cannot exist for
  * these roles, so no behavior regression is possible for old tiers).
  */
-export function assertRepoReadAccess(toolName: string, accountId: string, accountRepoUrl: string): string | null {
+export const CONTRACT_FILE_PATTERNS: readonly RegExp[] = [
+  /\.d\.ts$/i,
+  /(^|\/)schema\.prisma$/i,
+  /(^|\/)openapi\.(json|ya?ml)$/i,
+  /(^|\/)swagger\.(json|ya?ml)$/i,
+  /\.graphqls?$/i,
+  /(^|\/)types?\.json$/i,
+];
+
+export function isContractFile(path: string): boolean {
+  if (typeof path !== "string" || path.trim() === "") return false;
+  const normalized = path.replace(/\\/g, "/");
+  return CONTRACT_FILE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+export function assertRepoReadAccess(toolName: string, accountId: string, accountRepoUrl: string, path?: string): string | null {
   const store = RequestContextStore.get();
   if (!store) {
     return `Forbidden: tool '${toolName}' requires an authenticated request context (default-deny).`;
@@ -71,16 +86,19 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
     return `Forbidden: organization-level resources are strictly restricted to admin and supremeadmin roles (current role: '${store.role}').`;
   }
 
-  // Ghost Cloaking Policy: 'supremeai-api' is completely air-gapped from regular agents.
-  // Non-admin callers receive 'Repository not found' (stealth, zero-knowledge).
-  if (shortName === "supremeai-api" && roleRank(store.role) < 4) {
+  // Ghost Cloaking Policy: 'supremeai-api' is completely air-gapped from regular agents,
+  // EXCEPT read-only contract files (.d.ts, schema.prisma, openapi.json, …) which are
+  // needed to keep satellite/core interfaces in sync (#gap-1).
+  const contract = isContractFile(path ?? "");
+  if (shortName === "supremeai-api" && roleRank(store.role) < 4 && !contract) {
     return `Repository not found: '${shortName}'.`;
   }
-  // কোর মোনোরিপো সার্বভৌম সিকিউরিটি: 'supremeai' শুধুমাত্র admin ও supremeadmin রোলের জন্য উন্মুক্ত।
-  if (shortName === "supremeai" && roleRank(store.role) < 4) {
+  // কোর মোনোরিপো সার্বভৌম সিকিউরিটি: 'supremeai' শুধুমাত্র admin ও supremeadmin
+  // রোলের জন্য উন্মুক্ত — তবে contract ফাইলগুলো non-admin-ও read-only পড়তে পারবে।
+  if (shortName === "supremeai" && roleRank(store.role) < 4 && !contract) {
     return `Forbidden: core monorepo 'supremeai' is strictly restricted to admin and supremeadmin roles; non-admin roles are limited to satellite repos (current role: '${store.role}').`;
   }
-  if (access === "satellite-readonly" && (shortName === "supremeai" || !isSatelliteRepo(shortName))) {
+  if (access === "satellite-readonly" && !contract && (shortName === "supremeai" || !isSatelliteRepo(shortName))) {
     return `Forbidden: restricted_viewer is limited to satellite repos; '${shortName}' is outside the allowlist (core repo is blocked).`;
   }
   const scopes = store.scopes ?? [];
@@ -208,7 +226,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     async ({ accountId, repo, path, ref }) => {
       const target = repo || accountId || "github-primary";
       const targetUrl = repoUrlFor(accountId, repo);
-      const deny = assertRepoReadAccess("github.read_file", target, targetUrl);
+      const deny = assertRepoReadAccess("github.read_file", target, targetUrl, path);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
         const fileData = await readFile(target, path, ref ?? "main");
@@ -248,6 +266,53 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
           isError: true,
           content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
         };
+      }
+    }
+  );
+
+  server.tool(
+    "github.code_search",
+    "Search code across Supremeai-bd repositories (Read-Only). Useful for finding method/type references without manual tree traversal.",
+    {
+      query: z.string().describe("Search query (code terms, symbol names, etc.)"),
+      repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
+      limit: z.number().int().min(1).max(30).optional().describe("Max results (default: 10)"),
+    },
+    async ({ query, repo, limit }) => {
+      if (repo) {
+        const targetUrl = repoUrlFor(undefined, repo);
+        const deny = assertRepoReadAccess("github.code_search", repo, targetUrl);
+        if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+      }
+      try {
+        const results = await searchCode(query, repo, limit ?? 10);
+        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+      }
+    }
+  );
+
+  // Alias for clients expecting the alternate name.
+  server.tool(
+    "github.search_code",
+    "Alias of github.code_search — search code across Supremeai-bd repositories (Read-Only).",
+    {
+      query: z.string().describe("Search query (code terms, symbol names, etc.)"),
+      repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
+      limit: z.number().int().min(1).max(30).optional().describe("Max results (default: 10)"),
+    },
+    async ({ query, repo, limit }) => {
+      if (repo) {
+        const targetUrl = repoUrlFor(undefined, repo);
+        const deny = assertRepoReadAccess("github.search_code", repo, targetUrl);
+        if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+      }
+      try {
+        const results = await searchCode(query, repo, limit ?? 10);
+        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
       }
     }
   );

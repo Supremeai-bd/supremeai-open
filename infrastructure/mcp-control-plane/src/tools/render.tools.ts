@@ -5,6 +5,7 @@ import {
   getServiceHealth,
   getDeployLogs,
   getServiceEnvVars,
+  getEnvVarKeys,
   listLogs,
   RenderLogFilters,
 } from "../adapters/render/index.js";
@@ -105,16 +106,39 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
 
   server.tool(
     "render.get_env_vars",
-    "List environment variable keys and values for a Render service (Read-Only).",
+    "List environment variable keys and values for a Render service (Read-Only). Values are masked when they look like secrets; use render.get_env_var_keys for a keys-only view.",
+    {
+      accountId: z.string().describe("The account ID (e.g. render-primary)"),
+      serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
+      keysOnly: z.boolean().optional().describe("When true, return only the set of KEY names (no values)"),
+    },
+    async ({ accountId, serviceId, keysOnly }) => {
+      try {
+        const envVars = await getServiceEnvVars(accountId, serviceId, keysOnly ?? false);
+        return {
+          content: [{ type: "text", text: JSON.stringify(envVars, null, 2) }],
+        };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "render.get_env_var_keys",
+    "List only the environment variable KEY names set on a Render service (values hidden) — Read-Only.",
     {
       accountId: z.string().describe("The account ID (e.g. render-primary)"),
       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
     },
     async ({ accountId, serviceId }) => {
       try {
-        const envVars = await getServiceEnvVars(accountId, serviceId);
+        const keys = await getEnvVarKeys(accountId, serviceId);
         return {
-          content: [{ type: "text", text: JSON.stringify(envVars, null, 2) }],
+          content: [{ type: "text", text: JSON.stringify(keys, null, 2) }],
         };
       } catch (err) {
         return {
