@@ -375,13 +375,37 @@ def main() -> int:
         default=DEFAULT_ORG,
         help=f"GitHub organization (default: {DEFAULT_ORG})",
     )
+    parser.add_argument(
+        "--scopes",
+        help="comma-separated satellite short keys to audit (e.g. studio,vscode); default: all",
+    )
+    parser.add_argument(
+        "--via-tower",
+        action="store_true",
+        help="scope audit to AGENT_ALLOWED_DOMAINS env (comma-separated short keys)",
+    )
     args = parser.parse_args()
 
     if args.self_test:
         return 0 if self_test() else 1
-
     token = _env_token()
-    reports = audit_all(org=args.org, token=token)
+
+    # Resolve scoped satellite set (roadmap L2: scoped audit mode)
+    scoped = None
+    if args.via_tower:
+        raw = os.environ.get("AGENT_ALLOWED_DOMAINS", "")
+        scoped = [s.strip() for s in raw.split(",") if s.strip()]
+    elif args.scopes:
+        scoped = [s.strip() for s in args.scopes.split(",") if s.strip()]
+    if scoped:
+        satellites = tuple(s for s in SATELLITES if s in scoped)
+        if not satellites:
+            print("MALFORMED INPUT (fail-closed): no valid satellite scopes resolved")
+            return 3
+    else:
+        satellites = SATELLITES
+
+    reports = audit_all(org=args.org, token=token, satellites=satellites)
 
     if args.as_json:
         print(json.dumps(build_json(reports, args.org), indent=2))
