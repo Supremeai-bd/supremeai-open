@@ -1,0 +1,76 @@
+name: Build & Release VS Code Extension
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'media/**'
+      - 'package.json'
+      - 'tsconfig.json'
+      - '.vscodeignore'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publish GitHub Release with .vsix binary'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  package:
+    name: "📦 Package & Publish VSIX"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile Extension
+        run: npm run compile
+
+      - name: Run Extension Tests
+        run: npm test
+
+      - name: Package VSIX Extension
+        run: npx --yes @vscode/vsce package --no-git-tag-version --out supremeai-vscode.vsix
+
+      - name: Upload VSIX Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supremeai-vscode-vsix
+          path: supremeai-vscode.vsix
+          if-no-files-found: error
+
+      - name: Determine Version
+        id: version
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          echo "version=v$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Create or Update GitHub Release
+        if: github.ref == 'refs/heads/main' || github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: supremeai-vscode.vsix
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "SupremeAI IDE Bridge ${{ steps.version.outputs.version }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
