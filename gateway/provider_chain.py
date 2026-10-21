@@ -74,6 +74,28 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
     """One HTTP round-trip via httpx with connection pooling."""
     import os
 
+    # Web-relay provider: cookie-based Gemini relay (no API key). Primary scout.
+    if endpoint.provider == "web":
+        relay_url = os.environ.get("SUPREMEAI_WEB_RELAY_URL", "").rstrip("/")
+        if not relay_url:
+            raise RuntimeError("web relay not configured (set SUPREMEAI_WEB_RELAY_URL)")
+        url = relay_url + "/v1/chat/completions"
+        started = time.monotonic()
+        body = {
+            "model": endpoint.model,
+            "messages": json.loads(payload).get("messages", []),
+            "stream": False,
+        }
+        client = _http_client()
+        resp = await client.post(url, json=body, timeout=60.0)
+        return AttemptResult(
+            endpoint=endpoint,
+            status=resp.status_code,
+            headers={k.lower(): v for k, v in resp.headers.items()},
+            body=resp.content,
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
+
     api_base = os.environ.get(f"SUPREMEAI_PROVIDER_BASE_{endpoint.provider.upper()}")
     api_key = os.environ.get(f"SUPREMEAI_PROVIDER_KEY_{endpoint.provider.upper()}")
     if not api_base or not api_key:
