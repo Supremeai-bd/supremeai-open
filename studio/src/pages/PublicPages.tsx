@@ -174,3 +174,4 @@ export const PricingPage = GuestChat;
 export const FeaturesPage = GuestChat;
 export const DocsPage = GuestChat;
 export const AboutPage = GuestChat;
+export default GuestChat;
