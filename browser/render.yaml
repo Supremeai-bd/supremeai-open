@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: supremeai-browser
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_PROFILE_DIR
+        value: /data/profile
+    disk:
+      name: browser-profile
+      mountPath: /data/profile
+      sizeGB: 1
