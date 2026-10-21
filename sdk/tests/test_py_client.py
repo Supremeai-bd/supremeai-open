@@ -69,7 +69,9 @@ class MockGateway(BaseHTTPRequestHandler):
                 200,
                 {
                     "id": "chat_123",
-                    "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}],
+                    "choices": [
+                        {"message": {"content": "hello"}, "finish_reason": "stop"}
+                    ],
                 },
             )
         elif self.path == "/v1/runs":
@@ -147,7 +149,9 @@ class TestSupremeAISDK(unittest.TestCase):
         response = self.client.chat([{"role": "user", "content": "hello"}])
         self.assertEqual(response["id"], "chat_123")
         self.assertEqual(self.gateway.state["last_auth"], "Bearer test-key-123")
-        self.assertEqual(self.gateway.state["last_body"]["messages"][0]["content"], "hello")
+        self.assertEqual(
+            self.gateway.state["last_body"]["messages"][0]["content"], "hello"
+        )
 
     def test_retry_backoff_succeeds_on_third_attempt(self):
         response = self.client.request("GET", "/v1/flaky")
@@ -172,6 +176,7 @@ class TestSupremeAISDK(unittest.TestCase):
         self.assertEqual(events[0].data, "line-one\nline-two")
         self.assertEqual(events[0].id, "42")
         self.assertEqual(listener.finish(), [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

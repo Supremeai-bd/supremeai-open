@@ -21,8 +21,7 @@ pip install supremeai-sdk
 from supremeai.client import GatewayClient
 
 client = GatewayClient(
-    base_url="https://supremeai-api.onrender.com",
-    bearer_token="your-token"
+    base_url="https://supremeai-api.onrender.com", bearer_token="your-token"
 )
 
 # Check health
