@@ -79,7 +79,7 @@ function responseFor(input: string) { return 'SupremeAI is experiencing high dem
 async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via: string }> {
   try {
     const apiTarget = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com';
-    const resolvedKey = apiKey || (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_KEY || (typeof localStorage !== 'undefined' ? localStorage.getItem('supremeai_api_key') || '' : '');
+    const resolvedKey = apiKey || (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_KEY || (typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || 'guest') : 'guest');
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
 
@@ -96,7 +96,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
         ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
       },
       body: JSON.stringify({
-        model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'auto',
+        model: modelName.toLowerCase().includes('reasoning') ? 'supremeai/openrouter' : 'supremeai/groq',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
