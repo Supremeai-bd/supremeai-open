@@ -70,7 +70,7 @@ SUPREMEAI_WEB_RELAY_URL=<render worker url if used>
 - `INFISICAL_*` → secrets sync (env-based এখন, hardcoded সরানো হয়েছে)।
 
 ### ৩.৪ ব্যবহার না হওয়া key (নমুনা)
-- Provider pool keys: `GROQ_API_KEY_2..11`, `OPENROUTER_API_KEY_2..9`, `GEMINI_API_KEY_2..12`, `HF_API_KEYS`, `KAGGLE_API_TOKEN_1..6`, `UPSTASH_*` secondary pools, `CLOUDFLARE_*` secondary accounts, `FIRECRAWL_API_KEY_1..3`, `STRIPE_*`, `VERCEL_TOKEN_2`, `MODAL_*`, `NEON_*`, `E2B_*`, `LAUNCHDARKLY_*`, `GITPOD_TOKEN`, `TRIGGER_*`, `JULES_API_KEY`, `OPENHANDS_API_KEY`, `GITHUB_MODELS_API_KEY`, `BAI_*`, `BYNARA_*`, `CEREBRAS_*`, `ROUTEME_*`।
+- Provider secondary pools: Groq, OpenRouter, Gemini, HF, Kaggle, Upstash secondary pools, Cloudflare secondary accounts, Firecrawl, Stripe, Vercel, Modal, Neon, E2B, LaunchDarkly, Gitpod, Trigger, Jules, OpenHands, GitHub Models, Bai, Bynara, Cerebras, RouteMe।
 - এগুলো সম্ভবত স্যাটেলাইট রিপো বা ম্যানুয়াল অপারেশনে ব্যবহৃত; এই রিপোতে reference নেই → হয় satellite-এ ব্যবহৃত, নয়তো ডেড কনফিগ।
 - প্রস্তাব: `scripts/ci/env_usage_audit.py` চালিয়ে স্যাটেলাইট রিপোর সাথে cross-reference করুন; অব্যবহৃত key গুলো Vault-এ সংরক্ষণ করে `.env` থেকে সরান।
 
