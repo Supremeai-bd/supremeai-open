@@ -1,6 +1,0 @@
-﻿[lint.per-file-ignores]
-"browser/**" = ["BLE001", "S110", "S102", "TRY004", "DTZ001", "DTZ006", "F401", "F841", "PIE810", "PYI034", "RUF012", "SIM117", "UP031", "F811"]
-"scripts/**" = ["BLE001", "S110", "S102", "TRY004", "DTZ001", "F811"]
-"examples/**" = ["BLE001", "S110", "TRY004", "UP031"]
-"tests/**" = ["S102", "DTZ001", "SIM117"]
-"gateway/**" = ["UP031"]
