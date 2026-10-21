@@ -35,7 +35,7 @@ def fingerprint_event(event: dict) -> str:
     are excluded so repeated failures dedup onto one issue.
     """
     if not isinstance(event, dict):
-        raise ValueError("event must be a dict")  # noqa: TRY004
+        raise ValueError("event must be a dict")
     repo, kind, key = event.get("repo"), event.get("kind"), event.get("key")
     if not repo or not isinstance(repo, str):
         raise ValueError("event.repo (str) required")

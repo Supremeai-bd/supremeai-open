@@ -359,23 +359,23 @@ def _check_backward_compat(
 def evaluate(request: dict) -> dict:
     """Deterministic evaluation. Fail-closed on malformed input."""
     if not isinstance(request, dict):
-        raise ValueError("request must be an object")  # noqa: TRY004
+        raise ValueError("request must be an object")
     changed_files = request.get("changed_files")
     if not isinstance(changed_files, list):
-        raise ValueError("changed_files must be a list")  # noqa: TRY004
+        raise ValueError("changed_files must be a list")
     for cf in changed_files:
         if not isinstance(cf, dict) or not isinstance(cf.get("path"), str):
-            raise ValueError("each changed file needs a string path")  # noqa: TRY004
+            raise ValueError("each changed file needs a string path")
         if not isinstance(cf.get("added", []), list) or not isinstance(
             cf.get("removed", []), list
         ):
-            raise ValueError("added/removed must be line lists")  # noqa: TRY004
+            raise ValueError("added/removed must be line lists")
     declared = request.get("declared_files")
     if not isinstance(declared, list):
-        raise ValueError("declared_files must be a list")  # noqa: TRY004
+        raise ValueError("declared_files must be a list")
     migration_notes = request.get("migration_notes") or []
     if not isinstance(migration_notes, list):
-        raise ValueError("migration_notes must be a list")  # noqa: TRY004
+        raise ValueError("migration_notes must be a list")
     fixed_claim = request.get("fixed_failing_tests")
     if fixed_claim is not None and not isinstance(fixed_claim, list):
         raise ValueError("fixed_failing_tests must be a list of test ids")

@@ -8,6 +8,7 @@ Does NOT trust a coder's self-report. Verifies:
 
 Stdlib-only. Fail-closed: any git/subprocess failure or scope violation -> fail.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,15 +19,30 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PROTECTED_PREFIXES = (".env", "secrets/", "credentials/", "vault/", ".github/", "prisma/")
+PROTECTED_PREFIXES = (
+    ".env",
+    "secrets/",
+    "credentials/",
+    "vault/",
+    ".github/",
+    "prisma/",
+)
 PROTECTED_PATTERNS = (".pem", "credential", "key.p12")
 
 
-def _run(cmd, cwd: Path, timeout: int = 300, shell: bool = False) -> tuple[int, str, str]:
+def _run(
+    cmd, cwd: Path, timeout: int = 300, shell: bool = False
+) -> tuple[int, str, str]:
     try:
-        p = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=timeout, check=False, shell=shell)
-        return p.returncode, p.stdout.decode("utf-8", errors="replace"), p.stderr.decode("utf-8", errors="replace")
-    except Exception as exc:  # noqa: BLE001
+        p = subprocess.run(
+            cmd, cwd=cwd, capture_output=True, timeout=timeout, check=False, shell=shell
+        )
+        return (
+            p.returncode,
+            p.stdout.decode("utf-8", errors="replace"),
+            p.stderr.decode("utf-8", errors="replace"),
+        )
+    except Exception as exc:
         return 127, "", str(exc)
 
 
@@ -146,9 +162,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Controller-side evidence verifier")
     parser.add_argument("--base", required=True, help="base commit SHA")
     parser.add_argument("--head", required=True, help="head commit SHA")
-    parser.add_argument("--scope", default="", help="comma-separated declared scope paths")
-    parser.add_argument("--digests", default="", help="path to JSON file of {path: sha256:...}")
-    parser.add_argument("--test", action="append", default=[], help="test command (repeatable)")
+    parser.add_argument(
+        "--scope", default="", help="comma-separated declared scope paths"
+    )
+    parser.add_argument(
+        "--digests", default="", help="path to JSON file of {path: sha256:...}"
+    )
+    parser.add_argument(
+        "--test", action="append", default=[], help="test command (repeatable)"
+    )
     parser.add_argument("--repo-root", default=".", help="repository root")
     args = parser.parse_args()
 
@@ -159,7 +181,9 @@ def main() -> int:
         try:
             digests = json.loads(Path(args.digests).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            print(json.dumps({"passed": False, "errors": [f"digests-load-failed:{exc}"]}))
+            print(
+                json.dumps({"passed": False, "errors": [f"digests-load-failed:{exc}"]})
+            )
             return 1
     res = verify(args.base, args.head, scope, digests, args.test, root)
     print(json.dumps(res, indent=2, sort_keys=True))

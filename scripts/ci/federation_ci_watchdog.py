@@ -185,7 +185,9 @@ def get_default_token() -> str:
         if val and val.strip():
             return val.strip()
     try:
-        res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
+        res = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, check=False
+        )
         if res.returncode == 0 and res.stdout.strip():
             return res.stdout.strip()
     except (OSError, subprocess.SubprocessError):
@@ -227,7 +229,13 @@ def gh_api(
         except (json.JSONDecodeError, ValueError):
             parsed = {"raw": err_content}
         return e.code, parsed
-    except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError) as e:
+    except (
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        ConnectionError,
+        ValueError,
+    ) as e:
         return 0, {"error": str(e)}
 
 
@@ -263,15 +271,14 @@ def mirror_failure(
     """Record CI failure incident as a structured comment in CI Failure Hub #761 (zero loose issues)."""
     existing = check_existing_mirror(repo, run_id, token=token)
     if existing:
-        print(f"[watchdog] Incident already recorded in CI Hub #{CI_FAILURE_ANCHOR} (comment #{existing}). Skipping.")
+        print(
+            f"[watchdog] Incident already recorded in CI Hub #{CI_FAILURE_ANCHOR} (comment #{existing}). Skipping."
+        )
         return True
 
     title = build_issue_title(workflow_name, repo, branch, run_id)
-    body = (
-        f"## 🚨 CI Failure Incident: {title}\n\n"
-        + build_issue_body(
-            repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
-        )
+    body = f"## 🚨 CI Failure Incident: {title}\n\n" + build_issue_body(
+        repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
     )
 
     code, resp = gh_api(
@@ -447,9 +454,9 @@ def self_test() -> int:
     if get_anchor_issue_number is not None:
         for r in FEDERATION_REPOS:
             anc = get_anchor_issue_number(r)
-            assert (
-                anc is not None and 749 <= anc <= 762
-            ), f"Repo {r} must map to a valid anchor hub, got {anc}"
+            assert anc is not None and 749 <= anc <= 762, (
+                f"Repo {r} must map to a valid anchor hub, got {anc}"
+            )
 
     print("✅ [self-test] All 7 contract assertion groups passed!")
     return 0

@@ -93,7 +93,13 @@ def _fetch(
             ),
             "error": f"HTTP {e.code}",
         }
-    except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError) as e:
+    except (
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        ConnectionError,
+        ValueError,
+    ) as e:
         return {
             "ok": False,
             "status": None,

@@ -74,7 +74,7 @@ def _aware(now: datetime) -> datetime:
 def validate_board(board: dict) -> list[dict]:
     """Validate a board snapshot; returns the issues list. Fail-closed."""
     if not isinstance(board, dict) or not isinstance(board.get("issues"), list):
-        raise ValueError('board must be {"issues": [...]}')  # noqa: TRY004
+        raise ValueError('board must be {"issues": [...]}')
     for issue in board["issues"]:
         number = issue.get("number")
         if not isinstance(number, int) or number <= 0:

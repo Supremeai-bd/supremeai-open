@@ -759,7 +759,7 @@ def _parse_records(raw: str) -> list[SourceRecord]:
     if isinstance(data, Mapping):
         data = data.get("files", [])
     if not isinstance(data, list):
-        raise ValueError("expected a JSON list of {path, content}")  # noqa: TRY004
+        raise ValueError("expected a JSON list of {path, content}")
     records = []
     for item in data:
         if not isinstance(item, Mapping) or "path" not in item or "content" not in item:
