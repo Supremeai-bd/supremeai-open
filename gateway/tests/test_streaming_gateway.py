@@ -691,7 +691,16 @@ def test_config_rejects_drift():
 
 def test_config_provider_enum_matches_task_router_ssot():
     assert ALLOWED_PROVIDERS == frozenset(
-        {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek", "web"}
+        {
+            "openai",
+            "anthropic",
+            "gemini",
+            "groq",
+            "openrouter",
+            "mistral",
+            "deepseek",
+            "web",
+        }
     )
 
 

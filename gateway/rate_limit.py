@@ -110,7 +110,11 @@ class RedisSlidingWindowLimiter:
         else:
             import redis.asyncio as _redis
 
-            url = redis_url or os.environ.get("REDIS_URL") or os.environ.get("SUPREMEAI_REDIS_URL")
+            url = (
+                redis_url
+                or os.environ.get("REDIS_URL")
+                or os.environ.get("SUPREMEAI_REDIS_URL")
+            )
             if not url:
                 raise ValueError("redis_url required for RedisSlidingWindowLimiter")
             self._client = _redis.from_url(url, decode_responses=True)
