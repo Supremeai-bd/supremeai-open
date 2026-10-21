@@ -96,7 +96,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
         ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
       },
       body: JSON.stringify({
-        model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'auto',
+        model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'supremeai/groq',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
@@ -110,7 +110,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
     if (res.ok) {
       const data = await res.json();
       const content = data?.choices?.[0]?.message?.content;
-      if (content && typeof content === 'string') {
+      if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100')) {
         return content.trim();
       }
     }
