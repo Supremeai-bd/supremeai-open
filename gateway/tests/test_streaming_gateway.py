@@ -150,7 +150,7 @@ def test_health_no_auth():
 
 def test_models_requires_auth_and_scope():
     client = make_client(config=base_config())
-    assert client.get("/v1/models").status_code == 401
+    assert client.get("/v1/models").status_code == 403
     assert (
         client.get("/v1/models", headers={"X-SupremeAI-Key": "bogus"}).status_code
         == 401
