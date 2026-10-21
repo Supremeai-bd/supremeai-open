@@ -31,7 +31,7 @@ class RuntimeCapabilityError(RuntimeError):
 def playwright_available() -> bool:
     """Capability probe (import-time side-effect free)."""
     try:
-        import playwright  # noqa: F401
+        import playwright
     except ImportError:
         return False
     return True

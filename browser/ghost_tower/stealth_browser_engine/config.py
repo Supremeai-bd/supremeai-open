@@ -6,14 +6,14 @@ Fail-closed design:
     randomized vendor strings; see stealth_profile for coherent noise).
   - Nothing here performs I/O, so importing this module is always safe.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, Tuple
 
 __all__ = [
-    "BrowserProfile",
     "PRESETS",
+    "BrowserProfile",
     "get_profile",
     "profile_names",
 ]
@@ -25,16 +25,16 @@ class BrowserProfile:
 
     name: str
     user_agent: str
-    viewport: Tuple[int, int] = (1920, 1080)
+    viewport: tuple[int, int] = (1920, 1080)
     locale: str = "en-US"
     timezone_id: str = "UTC"
     device_scale_factor: float = 1.0
     is_mobile: bool = False
     has_touch: bool = False
     stealth_level: int = 2  # 0=off, 1=basic, 2=hardened, 3=max
-    extra_headers: Dict[str, str] = field(default_factory=dict)
+    extra_headers: dict[str, str] = field(default_factory=dict)
 
-    def with_overrides(self, **overrides) -> "BrowserProfile":
+    def with_overrides(self, **overrides) -> BrowserProfile:
         """Return a modified copy; unknown fields raise TypeError (fail-closed)."""
         return replace(self, **overrides)
 
@@ -104,7 +104,7 @@ _PRESET_LIST = [
     ),
 ]
 
-PRESETS: Dict[str, BrowserProfile] = {p.name: p for p in _PRESET_LIST}
+PRESETS: dict[str, BrowserProfile] = {p.name: p for p in _PRESET_LIST}
 
 
 def get_profile(name: str) -> BrowserProfile:
@@ -116,6 +116,6 @@ def get_profile(name: str) -> BrowserProfile:
         raise KeyError(f"unknown profile {name!r}; known profiles: {known}") from None
 
 
-def profile_names() -> Tuple[str, ...]:
+def profile_names() -> tuple[str, ...]:
     """Sorted preset names (stable for tests and docs)."""
     return tuple(sorted(PRESETS))

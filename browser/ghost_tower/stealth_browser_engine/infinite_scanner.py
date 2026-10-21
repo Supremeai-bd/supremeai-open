@@ -8,16 +8,17 @@ stall detection. This module is PURE LOGIC + a JS constant:
   - `FeedExpander` models multi-round growth with a pluggable observer,
     so CI can simulate feeds without launching any browser.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
 
 __all__ = [
+    "SCROLL_AND_EXPAND_JS",
+    "FeedExpander",
     "ScrollPlan",
     "ScrollStep",
-    "FeedExpander",
-    "SCROLL_AND_EXPAND_JS",
 ]
 
 SCROLL_AND_EXPAND_JS = """
@@ -76,10 +77,10 @@ class ScrollPlan:
         self.stall_limit = stall_limit
         self.max_rounds = max_rounds
 
-    def build(self) -> List[ScrollStep]:
+    def build(self) -> list[ScrollStep]:
         """Round-by-round plan; stops at stall_limit stagnant rounds."""
         step = max(1, int(self.viewport_height * self.step_ratio))
-        plan: List[ScrollStep] = []
+        plan: list[ScrollStep] = []
         stagnant = 0
         y = 0
         last_height = self.page_height
@@ -116,7 +117,7 @@ class FeedExpander:
         self.rounds_executed = 0
         self.stalled_rounds = 0
 
-    def run_round(self) -> Tuple[int, bool]:
+    def run_round(self) -> tuple[int, bool]:
         """Execute one expansion round; returns (height, grew)."""
         before = self._height
         self._grow(self.rounds_executed)
