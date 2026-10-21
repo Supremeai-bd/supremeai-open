@@ -4,6 +4,7 @@ Uses stored Google session cookies to call Gemini web endpoint over HTTP.
 Suitable for Render Free Tier. Falls back gracefully (502) so the gateway
 can fail over to API-key providers.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,7 +41,11 @@ def _cookies() -> dict[str, str]:
     for key in ("SUPREMEAI_GEMINI_1PSID", "SUPREMEAI_GEMINI_3PSID"):
         val = os.environ.get(key, "")
         if val:
-            name = key.replace("SUPREMEAI_GEMINI_", "").replace("1PSID", "__Secure-1PSID").replace("3PSID", "__Secure-3PSID")
+            name = (
+                key.replace("SUPREMEAI_GEMINI_", "")
+                .replace("1PSID", "__Secure-1PSID")
+                .replace("3PSID", "__Secure-3PSID")
+            )
             c[name] = val
     return c
 
@@ -66,13 +71,21 @@ async def chat_completions(req: ChatRequest) -> JSONResponse:
         "Referer": "https://gemini.google.com/",
     }
     try:
-        async with httpx.AsyncClient(cookies=cookies, timeout=60.0, follow_redirects=True) as client:
-            resp = await client.post(GEMINI_URL, headers=headers, data={"f.req": json.dumps([None, [[[prompt]]]])})
+        async with httpx.AsyncClient(
+            cookies=cookies, timeout=60.0, follow_redirects=True
+        ) as client:
+            resp = await client.post(
+                GEMINI_URL,
+                headers=headers,
+                data={"f.req": json.dumps([None, [[[prompt]]]])},
+            )
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
     if resp.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"gemini returned {resp.status_code}")
+        raise HTTPException(
+            status_code=502, detail=f"gemini returned {resp.status_code}"
+        )
 
     text = resp.text
     if not text or "accounts.google.com" in text:
@@ -84,6 +97,12 @@ async def chat_completions(req: ChatRequest) -> JSONResponse:
             "object": "chat.completion",
             "created": 0,
             "model": "gemini-web-relay",
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": text[:2000]}, "finish_reason": "stop"}],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text[:2000]},
+                    "finish_reason": "stop",
+                }
+            ],
         }
     )

@@ -119,10 +119,10 @@ flowchart TD
 
 1. **Automation Controlled ফ্ল্যাগ রিমুভাল:**
    ```python
-   args=[
+   args = [
        "--disable-blink-features=AutomationControlled",
        "--no-default-browser-check",
-       "--no-first-run"
+       "--no-first-run",
    ]
    ```
 2. **আল্ট্রা-ফাস্ট ন্যাচারাল ইনপুট ডিসপ্যাচ (Clipboard / DOM Event Dispatch):**
@@ -143,7 +143,9 @@ flowchart TD
 1. **`service/app.py` (লাইন ১৮৩-২০০):**
    - কোডে ইতিমধ্যে একটি `Priority-1: Stealth Webhook ($0 Free Tier / Web AI)` রাউটার হুক রয়েছে:
      ```python
-     if STEALTH_WEBHOOK_URL and (preferred_provider is None or preferred_provider == "stealth"):
+     if STEALTH_WEBHOOK_URL and (
+         preferred_provider is None or preferred_provider == "stealth"
+     ):
          w_status, w_response = await forward_stealth_webhook(
              STEALTH_WEBHOOK_URL,
              STEALTH_WEBHOOK_SECRET,
@@ -192,7 +194,7 @@ flowchart TD
   async def multi_model_consensus(request: Request):
       """Queries Ghost Gemini Web ($0), Groq, and Gemini API in parallel and returns consensus."""
       body = await request.json()
-      
+
       async def run_slot(provider: str):
           candidates = squad.get_candidate_slots(provider)
           if not candidates:
@@ -202,7 +204,12 @@ flowchart TD
           return {"provider": provider, "slot": slot.name, "status": st, "data": resp}
 
       tasks = [
-          forward_stealth_webhook(STEALTH_WEBHOOK_URL, STEALTH_WEBHOOK_SECRET, body, timeout=STEALTH_WEBHOOK_TIMEOUT),
+          forward_stealth_webhook(
+              STEALTH_WEBHOOK_URL,
+              STEALTH_WEBHOOK_SECRET,
+              body,
+              timeout=STEALTH_WEBHOOK_TIMEOUT,
+          ),
           run_slot("groq"),
           run_slot("gemini"),
       ]
@@ -210,7 +217,7 @@ flowchart TD
       return {
           "status": "success",
           "consensus_count": len([r for r in results if not isinstance(r, Exception)]),
-          "responses": results
+          "responses": results,
       }
   ```
 
@@ -291,11 +298,15 @@ flowchart TD
 3. **গুগল ডাটাসেন্টার আইপি ব্লকিং বাইপাস (Residential Proxy Routing):**
    - Render-এর ডাটাসেন্টার আইপি যেন গুগল ব্লক না করে, সেজন্য স্ক্র্যাপার কনটেইনারের ক্রোমিয়াম কমান্ডে একটি রেসিডেনশিয়াল প্রক্সি রাউটিং ফ্ল্যাগ যুক্ত থাকবে:
      ```python
-     proxy_config = {
-         "server": os.getenv("RESIDENTIAL_PROXY_URL"), # e.g. http://pr.oxylabs.io:7777
-         "username": os.getenv("PROXY_USER"),
-         "password": os.getenv("PROXY_PASS")
-     } if os.getenv("RESIDENTIAL_PROXY_URL") else None
+     proxy_config = (
+         {
+             "server": os.getenv("RESIDENTIAL_PROXY_URL"),  # e.g. http://pr.oxylabs.io:7777
+             "username": os.getenv("PROXY_USER"),
+             "password": os.getenv("PROXY_PASS"),
+         }
+         if os.getenv("RESIDENTIAL_PROXY_URL")
+         else None
+     )
      ```
 
 ##### সমাধান ২ (Secondary): Cloudflare Tunnel (লোকাল পিসি ব্যাকআপের জন্য)
@@ -322,18 +333,22 @@ import tarfile
 import httpx
 
 SESSION_DIR = os.path.expanduser("~/.supremeai_browser_profiles")
-STORAGE_ENDPOINT = os.getenv("STORAGE_BUCKET_URL") # Supabase Storage / S3
+STORAGE_ENDPOINT = os.getenv("STORAGE_BUCKET_URL")  # Supabase Storage / S3
+
 
 async def backup_profile_snapshot(account_id: str):
     """Compresses and uploads entire browser user_data_dir to persistent cloud storage."""
     tar_path = f"/tmp/{account_id}_profile.tar.gz"
     with tarfile.open(tar_path, "w:gz") as tar:
         tar.add(os.path.join(SESSION_DIR, account_id), arcname=account_id)
-    
+
     # Upload encrypted archive to private bucket
     with open(tar_path, "rb") as f:
-        await httpx.AsyncClient().post(f"{STORAGE_ENDPOINT}/snapshots/{account_id}", content=f.read())
+        await httpx.AsyncClient().post(
+            f"{STORAGE_ENDPOINT}/snapshots/{account_id}", content=f.read()
+        )
     os.remove(tar_path)
+
 
 async def restore_profile_snapshot(account_id: str):
     """Restores the persistent session on new container boot in < 2 seconds."""
@@ -368,9 +383,10 @@ async def fast_input_dispatch(page: Page, input_selector: str, prompt: str):
     Completely bypasses character-by-character typing lag while retaining human bot scores.
     """
     await page.wait_for_selector(input_selector, timeout=8000)
-    
+
     # 1. Fast DOM text injection + synthetic input dispatch
-    await page.evaluate("""({ selector, text }) => {
+    await page.evaluate(
+        """({ selector, text }) => {
         const el = document.querySelector(selector);
         el.focus();
         if (el.isContentEditable) {
@@ -380,8 +396,10 @@ async def fast_input_dispatch(page: Page, input_selector: str, prompt: str):
         }
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
-    }""", {"selector": input_selector, "text": prompt})
-    
+    }""",
+        {"selector": input_selector, "text": prompt},
+    )
+
     # 2. Natural Micro-jitter (< 50ms) before clicking Send
     await asyncio.sleep(0.05)
 ```
@@ -402,8 +420,12 @@ async def fast_input_dispatch(page: Page, input_selector: str, prompt: str):
 ```python
 class WebSessionPoolRouter:
     """Manages a fleet of isolated browser contexts for true concurrent multi-account routing."""
+
     def __init__(self, contexts: list[BrowserContext]):
-        self.workers = [{"id": i, "ctx": ctx, "busy": False, "lock": asyncio.Lock()} for i, ctx in enumerate(contexts)]
+        self.workers = [
+            {"id": i, "ctx": ctx, "busy": False, "lock": asyncio.Lock()}
+            for i, ctx in enumerate(contexts)
+        ]
         self._queue = asyncio.Queue()
 
     async def execute_chat(self, prompt: str) -> str:
@@ -412,7 +434,7 @@ class WebSessionPoolRouter:
             if not w["busy"]:
                 idle_worker = w
                 break
-        
+
         if not idle_worker:
             idle_worker = await self._queue.get()
 
@@ -442,17 +464,31 @@ class WebSessionPoolRouter:
 async def multi_model_consensus(request: Request):
     """Parallel consensus across $0 Web Relay, Groq, and Gemini API."""
     body = await request.json()
-    
+
     async def run_provider_slot(provider: str):
         candidates = squad.get_candidate_slots(provider)
         if not candidates:
-            return {"provider": provider, "status": 503, "error": f"No healthy keys for {provider}"}
+            return {
+                "provider": provider,
+                "status": 503,
+                "error": f"No healthy keys for {provider}",
+            }
         p, slot = candidates[0]
         status, resp = await forward_chat_completion(p, slot.key, body)
-        return {"provider": provider, "slot": slot.name, "status": status, "response": resp}
+        return {
+            "provider": provider,
+            "slot": slot.name,
+            "status": status,
+            "response": resp,
+        }
 
     tasks = [
-        forward_stealth_webhook(STEALTH_WEBHOOK_URL, STEALTH_WEBHOOK_SECRET, body, timeout=STEALTH_WEBHOOK_TIMEOUT),
+        forward_stealth_webhook(
+            STEALTH_WEBHOOK_URL,
+            STEALTH_WEBHOOK_SECRET,
+            body,
+            timeout=STEALTH_WEBHOOK_TIMEOUT,
+        ),
         run_provider_slot("groq"),
         run_provider_slot("gemini"),
     ]
@@ -461,7 +497,7 @@ async def multi_model_consensus(request: Request):
         "status": "success",
         "timestamp": int(time.time()),
         "consensus_count": len([r for r in results if not isinstance(r, Exception)]),
-        "responses": results
+        "responses": results,
     }
 ```
 
