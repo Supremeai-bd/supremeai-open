@@ -136,7 +136,9 @@ def make_http_server(
     return ThreadingHTTPServer((bind_host, bind_port), Handler)
 
 
-def serve(ingress: WebhookIngress, port: int, host: str | None = None) -> None:  # pragma: no cover - runtime
+def serve(
+    ingress: WebhookIngress, port: int, host: str | None = None
+) -> None:  # pragma: no cover - runtime
     """Blocking runtime entrypoint (used by the command runtime, not tests)."""
     bind_host = host or os.environ.get("WEBHOOK_BIND_HOST", "127.0.0.1")
     server = make_http_server(ingress, bind_port=port, bind_host=bind_host)

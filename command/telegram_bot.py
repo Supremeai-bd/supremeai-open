@@ -129,7 +129,13 @@ def sync_voice_synthesizer(
             return VoiceOutcome(error=f"service unavailable: {exc}")
         except VoiceSynthesisError as exc:
             return VoiceOutcome(error=f"{exc}")
-        except (RuntimeError, OSError, TimeoutError, ConnectionError, ValueError) as exc:
+        except (
+            RuntimeError,
+            OSError,
+            TimeoutError,
+            ConnectionError,
+            ValueError,
+        ) as exc:
             return VoiceOutcome(error=f"unexpected voice failure: {exc}")
         return VoiceOutcome(
             audio=result.audio,
