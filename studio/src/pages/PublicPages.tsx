@@ -76,9 +76,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) { retu
 type Message = { role: 'user' | 'assistant'; text: string };
 function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
 
-async function callLiveAI(prompt: string, modelName: string): Promise<string> {
+async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<string> {
   try {
-    const apiTarget = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_URL || 'https://supremeai-api.onrender.com';
+    const apiTarget = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com';
+    const resolvedKey = apiKey || (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_KEY || (typeof localStorage !== 'undefined' ? localStorage.getItem('supremeai_api_key') || '' : '');
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
 
@@ -92,6 +93,7 @@ async function callLiveAI(prompt: string, modelName: string): Promise<string> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
       },
       body: JSON.stringify({
         model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'auto',
@@ -124,6 +126,7 @@ export function GuestChat() {
   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string }[]>([]);
   const [input, setInput] = React.useState('');
   const [model, setModel] = React.useState(models[0]?.name ?? 'Supreme Auto');
+  const [apiKey, setApiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
   const [busy, setBusy] = React.useState(false);
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -136,7 +139,8 @@ export function GuestChat() {
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
-      const reply = await callLiveAI(text, model);
+      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch {} }
+      const reply = await callLiveAI(text, model, apiKey);
       setMessages((m) => [...m, { role: 'assistant', text: reply }]);
     } catch {
       setMessages((m) => [...m, { role: 'assistant', text: responseFor(text) }]);
