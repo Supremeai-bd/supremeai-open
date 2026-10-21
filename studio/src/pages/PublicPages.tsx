@@ -76,7 +76,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) { retu
 type Message = { role: 'user' | 'assistant'; text: string };
 function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
 
-async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<string> {
+async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via: string }> {
   try {
     const apiTarget = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com';
     const resolvedKey = apiKey || (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_KEY || (typeof localStorage !== 'undefined' ? localStorage.getItem('supremeai_api_key') || '' : '');
@@ -110,20 +110,21 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
     if (res.ok) {
       const data = await res.json();
       const content = data?.choices?.[0]?.message?.content;
+      const servedModel = (data?.model as string) || '';
       if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100')) {
-        return content.trim();
+        return { text: content.trim(), via: servedModel || 'api' };
       }
     }
   } catch (err) {
     console.warn('[GuestChat] Live AI fallback triggered:', err);
   }
-  return responseFor(prompt);
+  return { text: responseFor(prompt), via: 'fallback' };
 }
 
 function AssistantAvatar({ muted = false }: { muted?: boolean }) { return <span aria-hidden="true" className={`mt-1 flex size-6 shrink-0 items-center justify-center rounded-lg font-mono text-[10px] font-bold text-cyan-300 ${muted ? 'bg-cyan-300/[0.06]' : 'bg-cyan-300/10 shadow-[0_0_16px_rgba(103,232,249,0.15)]'}`}>S</span>; }
 
 export function GuestChat() {
-  const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string }[]>([]);
+  const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string }[]>([]);
   const [input, setInput] = React.useState('');
   const [model, setModel] = React.useState(models[0]?.name ?? 'Supreme Auto');
   const [apiKey, setApiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
@@ -141,9 +142,9 @@ export function GuestChat() {
     try {
       if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch {} }
       const reply = await callLiveAI(text, model, apiKey);
-      setMessages((m) => [...m, { role: 'assistant', text: reply }]);
+      setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via }]);
     } catch {
-      setMessages((m) => [...m, { role: 'assistant', text: responseFor(text) }]);
+      setMessages((m) => [...m, { role: 'assistant', text: responseFor(text), via: 'fallback' }]);
     } finally {
       setBusy(false);
     }
@@ -159,7 +160,7 @@ export function GuestChat() {
       {messages.length === 0 && <p className="text-sm text-slate-500">Ask SupremeAI anything to get started.</p>}
       {messages.map((m, i) => <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
         {m.role === 'assistant' && <AssistantAvatar />}
-        <div className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${m.role === 'user' ? 'bg-cyan-300 text-slate-950' : 'bg-white/[0.04] text-slate-200'}`}>{m.text}</div>
+        <div className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${m.role === 'user' ? 'bg-cyan-300 text-slate-950' : 'bg-white/[0.04] text-slate-200'}`}>{m.text}{m.via ? <span className="ml-2 text-[10px] opacity-60">[{m.via}]</span> : null}</div>
       </div>)}
       {busy && <div className="flex gap-2"><AssistantAvatar muted /><div className="text-sm italic text-slate-400">Thinking…</div></div>}
     </div>
