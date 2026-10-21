@@ -2,13 +2,12 @@
 """tests/test_federation_anchors.py — Unit tests for Federation Anchor Hubs SSOT Registry."""
 
 import unittest
+
 from scripts.ci.federation_anchors import (
     ANCHOR_HUBS,
-    ANCHOR_ALIASES,
-    CI_FAILURE_ANCHOR,
     BRIDGE_ORDER_ANCHOR,
+    CI_FAILURE_ANCHOR,
     get_anchor_issue_number,
-    normalize_repo_key,
     self_test,
 )
 

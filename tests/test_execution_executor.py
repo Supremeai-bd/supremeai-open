@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline tests for execution executor."""
+
 from __future__ import annotations
 
 import json
@@ -16,18 +17,23 @@ import execution_executor as ee
 
 
 def _intent():
-    return eb.build_dispatch_record(eb._valid_envelope() if hasattr(eb, "_valid_envelope") else {
-        "task_envelope": {
-            "task_id": "task-1",
-            "role": "coder",
-            "objective": "do thing",
-            "specialist_prompt": "implement smallest safe change",
-            "scope": {"touching_files": ["a.py"], "forbidden_paths": []},
-            "acceptance": ["tests pass"],
-            "verification": ["python -c \"print('ok')\""],
-            "submission": {"base_branch": "main"},
-        }
-    }, dry_run=True)
+    return eb.build_dispatch_record(
+        eb._valid_envelope()
+        if hasattr(eb, "_valid_envelope")
+        else {
+            "task_envelope": {
+                "task_id": "task-1",
+                "role": "coder",
+                "objective": "do thing",
+                "specialist_prompt": "implement smallest safe change",
+                "scope": {"touching_files": ["a.py"], "forbidden_paths": []},
+                "acceptance": ["tests pass"],
+                "verification": ["python -c \"print('ok')\""],
+                "submission": {"base_branch": "main"},
+            }
+        },
+        dry_run=True,
+    )
 
 
 class TestLoadIntent(unittest.TestCase):
@@ -63,7 +69,7 @@ class TestExecutors(unittest.TestCase):
 
     def test_verify_executor_fail(self):
         intent = _intent()
-        intent["verification"] = ["python -c \"import sys; sys.exit(1)\""]
+        intent["verification"] = ['python -c "import sys; sys.exit(1)"']
         res = ee.execute(intent, "verify", Path("."))
         self.assertIsNotNone(res)
         self.assertFalse(res["passed"])

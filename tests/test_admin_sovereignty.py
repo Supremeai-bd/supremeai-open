@@ -165,18 +165,25 @@ class TestDomainScopeAndCli(unittest.TestCase):
         self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
 
     def test_quarantine_decision_with_domain(self):
-        d = guard.quarantine_decision(SWARM, 4, issue_domain="core", agent_allowed_domains=["studio"])
+        d = guard.quarantine_decision(
+            SWARM, 4, issue_domain="core", agent_allowed_domains=["studio"]
+        )
         self.assertFalse(d.allowed)
         self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
 
     def test_quarantine_decision_domain_ok(self):
-        d = guard.quarantine_decision(SWARM, 5, issue_domain="studio", agent_allowed_domains=["studio"])
+        d = guard.quarantine_decision(
+            SWARM, 5, issue_domain="studio", agent_allowed_domains=["studio"]
+        )
         self.assertTrue(d.allowed)
 
     def test_extract_domain(self):
-        self.assertEqual(guard.extract_domain_from_labels(["domain:studio", "P1-high"]), "studio")
+        self.assertEqual(
+            guard.extract_domain_from_labels(["domain:studio", "P1-high"]), "studio"
+        )
         self.assertEqual(guard.extract_domain_from_labels(["repo:core"]), "core")
         self.assertIsNone(guard.extract_domain_from_labels(["enhancement"]))
+
     def test_module_self_test_passes(self):
         self.assertTrue(guard.self_test())
 

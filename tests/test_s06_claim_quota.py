@@ -242,7 +242,9 @@ class FailClosed(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             cref.scan_active_claims(
-                {"issues": []}, "a", dt.datetime(2026, 10, 17, 6, 10)  # noqa: DTZ001
+                {"issues": []},
+                "a",
+                dt.datetime(2026, 10, 17, 6, 10),
             )
 
     def test_27_max_active_must_be_positive(self):

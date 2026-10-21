@@ -240,8 +240,17 @@ class BuiltinSelfTestAndPolicyTest(unittest.TestCase):
         from unittest.mock import patch
 
         with patch.dict(os.environ, {"AGENT_ALLOWED_DOMAINS": "studio,api"}):
-            with patch("sys.argv", ["satellite_board_guard.py", "--via-tower", "--report"]):
-                with patch.object(sbg, "audit_all", return_value=[sbg.SatelliteReport("studio", sbg.VERDICT_CLEAN), sbg.SatelliteReport("api", sbg.VERDICT_CLEAN)]):
+            with patch(
+                "sys.argv", ["satellite_board_guard.py", "--via-tower", "--report"]
+            ):
+                with patch.object(
+                    sbg,
+                    "audit_all",
+                    return_value=[
+                        sbg.SatelliteReport("studio", sbg.VERDICT_CLEAN),
+                        sbg.SatelliteReport("api", sbg.VERDICT_CLEAN),
+                    ],
+                ):
                     code = sbg.main()
                     self.assertEqual(code, 0)
 

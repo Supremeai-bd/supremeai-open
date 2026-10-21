@@ -605,7 +605,7 @@ def self_test() -> bool:
     assert "github.com/morluto/rea" in stub and "MIT" in stub
     verify_stub_standalone(stub)
     ns: dict = {}
-    exec(compile(stub, "<stub>", "exec"), ns)  # noqa: S102  # runs 100% standalone
+    exec(compile(stub, "<stub>", "exec"), ns)  # runs 100% standalone
     assert ns["evidence_fingerprint"](b"abc").startswith("0x") is False
     assert len(ns["evidence_fingerprint"](b"abc")) == 64
 

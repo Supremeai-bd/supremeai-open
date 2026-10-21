@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline tests for test parity guard."""
+
 from __future__ import annotations
 
 import sys
@@ -23,7 +24,9 @@ class TestParityGuard(unittest.TestCase):
             root = Path(td)
             (root / "scripts" / "agents").mkdir(parents=True)
             (root / "scripts" / "ci").mkdir(parents=True)
-            (root / "scripts" / "agents" / "foo_bar.py").write_text("# x", encoding="utf-8")
+            (root / "scripts" / "agents" / "foo_bar.py").write_text(
+                "# x", encoding="utf-8"
+            )
             (root / "tests").mkdir()
             ok, missing = tpg.run_guard(root)
             self.assertFalse(ok)
@@ -34,7 +37,9 @@ class TestParityGuard(unittest.TestCase):
             root = Path(td)
             (root / "scripts" / "agents").mkdir(parents=True)
             (root / "scripts" / "ci").mkdir(parents=True)
-            (root / "scripts" / "agents" / "self_healing_reporter.py").write_text("# x", encoding="utf-8")
+            (root / "scripts" / "agents" / "self_healing_reporter.py").write_text(
+                "# x", encoding="utf-8"
+            )
             ok, _missing = tpg.run_guard(root)
             self.assertTrue(ok)
 
