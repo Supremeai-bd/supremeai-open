@@ -96,7 +96,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
         ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
       },
       body: JSON.stringify({
-        model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'supremeai/groq',
+        model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'auto',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
