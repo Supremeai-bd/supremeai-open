@@ -128,12 +128,6 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
   }
   return { text: responseFor(prompt), via: 'fallback' };
 }
-    }
-  } catch (err) {
-    console.warn('[GuestChat] Live AI fallback triggered:', err);
-  }
-  return { text: responseFor(prompt), via: 'fallback' };
-}
 
 function AssistantAvatar({ muted = false }: { muted?: boolean }) { return <span aria-hidden="true" className={`mt-1 flex size-6 shrink-0 items-center justify-center rounded-lg font-mono text-[10px] font-bold text-cyan-300 ${muted ? 'bg-cyan-300/[0.06]' : 'bg-cyan-300/10 shadow-[0_0_16px_rgba(103,232,249,0.15)]'}`}>S</span>; }
 
