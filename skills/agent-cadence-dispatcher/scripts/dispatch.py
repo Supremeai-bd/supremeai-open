@@ -4,6 +4,7 @@
 Prints due roles and, when requested, creates an empty-board audit issue.
 Stdlib-only. Fail-closed.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,10 +20,16 @@ import continuous_agent_loop as cal
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Agent cadence dispatcher skill")
-    parser.add_argument("--create-audit-issue", action="store_true",
-                        help="Create a full-project audit issue (empty-board handling)")
-    parser.add_argument("--mark-run", metavar="ROLE",
-                        help="Record that ROLE just ran (update last_run store)")
+    parser.add_argument(
+        "--create-audit-issue",
+        action="store_true",
+        help="Create a full-project audit issue (empty-board handling)",
+    )
+    parser.add_argument(
+        "--mark-run",
+        metavar="ROLE",
+        help="Record that ROLE just ran (update last_run store)",
+    )
     args = parser.parse_args()
 
     cfg = cal.load_cadence_config()
