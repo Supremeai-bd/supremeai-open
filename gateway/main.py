@@ -74,26 +74,25 @@ def _redact_ledger(ledger: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def authenticate(request: Request, config: GatewayConfig) -> JSONResponse | None:
-    """X-SupremeAI-Key → 401 (missing/unknown) or 403 (scope) — default-deny."""
+    """X-SupremeAI-Key -> 401/403, or guest mode (chat scope) when missing."""
     key = request.headers.get("x-supremeai-key")
     if not key:
-        return error_response(
-            401,
-            err_type="authentication_error",
-            code="missing_api_key",
-            message="Missing X-SupremeAI-Key header. One SUPREMEAI_API_KEY, provider-agnostic responses.",
+        from .config import ApiKeyRecord
+
+        request.state.key_record = ApiKeyRecord(
+            owner="guest", scopes=frozenset({"chat"})
         )
+        return None
     record = config.api_keys.get(key)
     if record is None:
         return error_response(
             401,
             err_type="authentication_error",
             code="invalid_api_key",
-            message="Unknown SUPREMEAI_API_KEY — credential invalid or revoked.",
+            message="Unknown SUPREMEAI_API_KEY - credential invalid or revoked.",
         )
     request.state.key_record = record
     return None
-
 
 def require_scope(request: Request, scope: str) -> JSONResponse | None:
     record = getattr(request.state, "key_record", None)
