@@ -7,6 +7,7 @@ Fail-closed: a missing test for a non-allowlisted script -> exit 1.
 
 Stdlib-only. Offline.
 """
+
 from __future__ import annotations
 
 import argparse

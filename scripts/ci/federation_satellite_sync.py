@@ -50,8 +50,16 @@ DOMAIN_MAP: dict[str, str] = {
 # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
 # (source_rel_in_open, target_repo, target_rel_in_satellite)
 CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
-    ("examples/gateway_client.py", "Supremeai-bd/supremeai-api", "scripts/clients/gateway_client.py"),
-    ("api-schemas/gateway.openapi.yaml", "Supremeai-bd/supremeai-api", "contracts/openapi.yaml"),
+    (
+        "examples/gateway_client.py",
+        "Supremeai-bd/supremeai-api",
+        "scripts/clients/gateway_client.py",
+    ),
+    (
+        "api-schemas/gateway.openapi.yaml",
+        "Supremeai-bd/supremeai-api",
+        "contracts/openapi.yaml",
+    ),
 ]
 
 # Monorepo sync ignores: files in supremeai-open that should not overwrite monorepo root configs
@@ -74,12 +82,16 @@ def get_auth_token(token_arg: str | None = None) -> str:
             return val
     # Fallback to local gh CLI if available
     try:
-        out = subprocess.check_output(["gh", "auth", "token"], text=True, stderr=subprocess.DEVNULL).strip()
+        out = subprocess.check_output(
+            ["gh", "auth", "token"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
         if out:
             return out
     except Exception:
         pass
-    raise RuntimeError("No GitHub authentication token found (checked BRIDGE_PUSH_TOKEN, SAT_SYNC_PAT, GH_TOKEN).")
+    raise RuntimeError(
+        "No GitHub authentication token found (checked BRIDGE_PUSH_TOKEN, SAT_SYNC_PAT, GH_TOKEN)."
+    )
 
 
 def copy_tree_contents(src: Path, dst: Path) -> None:
@@ -88,7 +100,11 @@ def copy_tree_contents(src: Path, dst: Path) -> None:
         return
     for root, dirs, files in os.walk(src):
         # Exclude hidden git/cache dirs
-        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", ".pytest_cache", "node_modules")]
+        dirs[:] = [
+            d
+            for d in dirs
+            if d not in (".git", "__pycache__", ".pytest_cache", "node_modules")
+        ]
         rel = Path(root).relative_to(src)
         target_dir = dst / rel
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -111,7 +127,9 @@ def sync_satellite(
     slug = target_repo.split("/")[-1]
     src_path = repo_root / source_dir
     if not src_path.exists():
-        print(f"⏩ [SKIP] Source directory '{source_dir}' does not exist for {target_repo}.")
+        print(
+            f"⏩ [SKIP] Source directory '{source_dir}' does not exist for {target_repo}."
+        )
         return True
 
     clone_url = f"https://x-access-token:{token}@github.com/{target_repo}.git"
@@ -140,7 +158,9 @@ def sync_satellite(
                 if src_file.exists():
                     dst_file.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src_file, dst_file)
-                    print(f"📋 Mirrored contract file '{open_rel}' -> '{sat_rel}' in {target_repo}")
+                    print(
+                        f"📋 Mirrored contract file '{open_rel}' -> '{sat_rel}' in {target_repo}"
+                    )
 
         # Check for diff
         status = subprocess.check_output(
@@ -150,7 +170,9 @@ def sync_satellite(
         ).strip()
 
         if not status:
-            print(f"✅ [NO-OP] {target_repo} is already in perfect sync with '{source_dir}'.")
+            print(
+                f"✅ [NO-OP] {target_repo} is already in perfect sync with '{source_dir}'."
+            )
             return True
 
         print(f"📝 Diff detected in {target_repo}:\n{status}")
@@ -161,7 +183,12 @@ def sync_satellite(
             cwd=str(tmp_repo),
         )
         subprocess.check_call(
-            ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
+            [
+                "git",
+                "config",
+                "user.email",
+                "github-actions[bot]@users.noreply.github.com",
+            ],
             cwd=str(tmp_repo),
         )
         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
@@ -242,7 +269,12 @@ def sync_monorepo(
             cwd=str(tmp_repo),
         )
         subprocess.check_call(
-            ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
+            [
+                "git",
+                "config",
+                "user.email",
+                "github-actions[bot]@users.noreply.github.com",
+            ],
             cwd=str(tmp_repo),
         )
         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
@@ -267,7 +299,9 @@ def sync_monorepo(
             check=False,
         )
         if push_res.returncode == 0:
-            print(f"🎉 [SUCCESS] Successfully synced umbrella monorepo {target_repo}:main")
+            print(
+                f"🎉 [SUCCESS] Successfully synced umbrella monorepo {target_repo}:main"
+            )
             return True
         else:
             print(f"❌ Failed to push to {target_repo}: {push_res.stderr.strip()}")
@@ -293,25 +327,49 @@ def prune_ephemeral_patches(repo_root: Path) -> None:
 
 def self_test() -> bool:
     """Self-test verifying contract and mappings."""
-    assert len(DOMAIN_MAP) == 11, f"Expected 11 satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
+    assert len(DOMAIN_MAP) == 11, (
+        f"Expected 11 satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
+    )
     assert "Supremeai-bd/supremeai-studio" in DOMAIN_MAP
     assert "Supremeai-bd/supremeai-core" in DOMAIN_MAP
     assert "Supremeai-bd/supremeai-api" in DOMAIN_MAP
-    assert len(CONTRACT_MIRROR_PAIRS) >= 2, "Expected at least 2 mirrored contract pairs"
+    assert len(CONTRACT_MIRROR_PAIRS) >= 2, (
+        "Expected at least 2 mirrored contract pairs"
+    )
     for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
-        assert sat_repo in DOMAIN_MAP, f"Target repo {sat_repo} must exist in DOMAIN_MAP"
+        assert sat_repo in DOMAIN_MAP, (
+            f"Target repo {sat_repo} must exist in DOMAIN_MAP"
+        )
         assert open_rel and sat_rel, "Mirror paths must be non-empty"
     return True
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Synchronize supremeai-open changes directly to satellites.")
-    parser.add_argument("--targets", nargs="*", help="Specific target repositories to sync (default: all mapped)")
-    parser.add_argument("--all", action="store_true", help="Sync all 11 satellites and central monorepo")
+    parser = argparse.ArgumentParser(
+        description="Synchronize supremeai-open changes directly to satellites."
+    )
+    parser.add_argument(
+        "--targets",
+        nargs="*",
+        help="Specific target repositories to sync (default: all mapped)",
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="Sync all 11 satellites and central monorepo"
+    )
     parser.add_argument("--token", help="GitHub Personal Access Token or App Token")
-    parser.add_argument("--commit-msg", default="synchronize federation transit surface", help="Commit message")
-    parser.add_argument("--self-test", action="store_true", help="Run contract verification self-test")
-    parser.add_argument("--prune-patches", action="store_true", help="Auto-prune ephemeral patches in patches/")
+    parser.add_argument(
+        "--commit-msg",
+        default="synchronize federation transit surface",
+        help="Commit message",
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="Run contract verification self-test"
+    )
+    parser.add_argument(
+        "--prune-patches",
+        action="store_true",
+        help="Auto-prune ephemeral patches in patches/",
+    )
 
     args = parser.parse_args()
 
@@ -354,7 +412,9 @@ def main() -> int:
         targets_to_sync = list(DOMAIN_MAP.keys())
         sync_umbrella = True
 
-    print(f"🎯 Target Repositories to Sync: {targets_to_sync} (Umbrella: {sync_umbrella})")
+    print(
+        f"🎯 Target Repositories to Sync: {targets_to_sync} (Umbrella: {sync_umbrella})"
+    )
 
     success = True
     for target in targets_to_sync:

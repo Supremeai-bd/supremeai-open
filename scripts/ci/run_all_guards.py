@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run all CI guards in one pass (dispatcher; guards stay as separate modules)."""
+
 from __future__ import annotations
 
 import subprocess

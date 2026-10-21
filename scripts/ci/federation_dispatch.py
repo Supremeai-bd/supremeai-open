@@ -159,7 +159,14 @@ def self_test():
         yaml_ok = isinstance(parsed, dict) and "jobs" in parsed
     except (ImportError, ModuleNotFoundError):
         yaml_ok = False
-    except (yaml.YAMLError, OSError, ValueError, UnicodeDecodeError, TypeError, RuntimeError):
+    except (
+        yaml.YAMLError,
+        OSError,
+        ValueError,
+        UnicodeDecodeError,
+        TypeError,
+        RuntimeError,
+    ):
         yaml_ok = False
     check("workflow appendix parses as YAML", yaml_ok)
 
