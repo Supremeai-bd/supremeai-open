@@ -150,7 +150,10 @@ class QdrantMemoryStore(MemoryStore):
             headers=self._headers(),
             method="PUT",
         )
-        with contextlib.suppress(Exception), urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+        with (
+            contextlib.suppress(Exception),
+            urllib.request.urlopen(req, timeout=self.timeout_s) as resp,
+        ):
             if resp.status in (200, 201):
                 self._collection_ensured = True
         self._collection_ensured = True
@@ -162,7 +165,10 @@ class QdrantMemoryStore(MemoryStore):
 
         vec = [0.0] * self.vector_size
         for word in re.findall(r"\w+", text.lower()):
-            idx = int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16) % self.vector_size
+            idx = (
+                int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16)
+                % self.vector_size
+            )
             vec[idx] += 1.0
         norm = math.sqrt(sum(v * v for v in vec))
         return [v / norm for v in vec] if norm > 0 else vec
@@ -182,7 +188,11 @@ class QdrantMemoryStore(MemoryStore):
 
         self._ensure_collection()
         point_id = item.id.replace("mem-", "")
-        if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", point_id, re.IGNORECASE):
+        if not re.match(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            point_id,
+            re.IGNORECASE,
+        ):
             point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, item.id))
 
         point = {
@@ -203,7 +213,10 @@ class QdrantMemoryStore(MemoryStore):
             headers=self._headers(),
             method="PUT",
         )
-        with contextlib.suppress(Exception), urllib.request.urlopen(req, timeout=self.timeout_s):
+        with (
+            contextlib.suppress(Exception),
+            urllib.request.urlopen(req, timeout=self.timeout_s),
+        ):
             pass
         return item
 
@@ -260,4 +273,3 @@ class QdrantMemoryStore(MemoryStore):
             return super().search(
                 query=query, top_k=top_k, namespace=namespace, threshold=threshold
             )
-

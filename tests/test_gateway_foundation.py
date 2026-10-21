@@ -220,7 +220,9 @@ class TestProviderChain(unittest.TestCase):
         self.assertAlmostEqual(sum(x * x for x in v1), 1.0, places=4)
 
         # In-memory fallback functions offline when Qdrant is unreachable
-        item = store.store(text="Autonomous multi-agent orchestration", namespace="core")
+        item = store.store(
+            text="Autonomous multi-agent orchestration", namespace="core"
+        )
         self.assertTrue(item.id.startswith("mem-"))
         self.assertEqual(item.namespace, "core")
 
