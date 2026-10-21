@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline tests for learning feedback loop."""
+
 from __future__ import annotations
 
 import sys
@@ -17,7 +18,9 @@ class TestRecord(unittest.TestCase):
     def test_record_and_load(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "sol.jsonl"
-            rec = lf.record_verified_solution(42, ["a.py", "b.py"], digests={"a.py": "sha256:abc"}, path=p)
+            rec = lf.record_verified_solution(
+                42, ["a.py", "b.py"], digests={"a.py": "sha256:abc"}, path=p
+            )
             self.assertIsNotNone(rec)
             self.assertEqual(rec["issue_ref"], 42)
             sols = lf.load_verified_solutions(p)
@@ -32,7 +35,10 @@ class TestRecord(unittest.TestCase):
     def test_load_skips_malformed(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "sol.jsonl"
-            p.write_text('{"schema":"verified-solution/1","issue_ref":1}\nnot json\n', encoding="utf-8")
+            p.write_text(
+                '{"schema":"verified-solution/1","issue_ref":1}\nnot json\n',
+                encoding="utf-8",
+            )
             sols = lf.load_verified_solutions(p)
             self.assertEqual(len(sols), 1)
 

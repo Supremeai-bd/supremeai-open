@@ -1,6 +1,5 @@
 import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from scripts.ci import federation_satellite_sync as sync_mod
 

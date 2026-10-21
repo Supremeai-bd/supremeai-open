@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline tests for execution bridge."""
+
 from __future__ import annotations
 
 import json
@@ -50,7 +51,9 @@ class TestValidation(unittest.TestCase):
 
     def test_scope_too_wide(self):
         env = _valid_envelope()
-        env["task_envelope"]["scope"]["touching_files"] = [f"f{i}.py" for i in range(31)]
+        env["task_envelope"]["scope"]["touching_files"] = [
+            f"f{i}.py" for i in range(31)
+        ]
         errs = eb.validate_envelope(env)
         self.assertIn("E_SCOPE_TOO_WIDE", errs)
 
