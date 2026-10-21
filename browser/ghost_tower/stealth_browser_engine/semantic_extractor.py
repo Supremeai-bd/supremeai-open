@@ -4,6 +4,7 @@ Inspired by the Moli direction discussed in issue #498 and required by
 issue #502: parse HTML into a semantic tree, DISCARD pure layout wrappers,
 and expose a token-budgeted outline. No network, no third-party deps.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -14,17 +15,54 @@ from typing import List, Optional
 __all__ = [
     "SemanticNode",
     "SemanticTree",
-    "extract_semantic_tree",
     "estimate_tokens",
+    "extract_semantic_tree",
 ]
 
 _SEMANTIC_TAGS = {
-    "article", "section", "main", "header", "footer", "nav", "aside",
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "p", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td",
-    "blockquote", "pre", "code", "figure", "figcaption",
-    "a", "img", "button", "form", "label", "input", "select", "option",
-    "summary", "details", "time", "address", "dl", "dt", "dd",
+    "article",
+    "section",
+    "main",
+    "header",
+    "footer",
+    "nav",
+    "aside",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "ul",
+    "ol",
+    "li",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "blockquote",
+    "pre",
+    "code",
+    "figure",
+    "figcaption",
+    "a",
+    "img",
+    "button",
+    "form",
+    "label",
+    "input",
+    "select",
+    "option",
+    "summary",
+    "details",
+    "time",
+    "address",
+    "dl",
+    "dt",
+    "dd",
 }
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "iframe"}
 # Layout wrappers: kept only when they carry identifying attributes or
@@ -36,8 +74,8 @@ _LAYOUT_TAGS = {"div", "span", "section", "center"}
 class SemanticNode:
     tag: str
     attrs: dict
-    text_chunks: List[str] = field(default_factory=list)
-    children: List["SemanticNode"] = field(default_factory=list)
+    text_chunks: list[str] = field(default_factory=list)
+    children: list[SemanticNode] = field(default_factory=list)
 
     def text(self) -> str:
         parts = [c for c in self.text_chunks if c.strip()]
@@ -55,7 +93,7 @@ class _TreeBuilder(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.root = SemanticNode(tag="#root", attrs={})
-        self.stack: List[SemanticNode] = [self.root]
+        self.stack: list[SemanticNode] = [self.root]
 
     # -- helpers -----------------------------------------------------------
     def _skip_active(self) -> bool:
@@ -105,13 +143,13 @@ def _is_semantic(node: SemanticNode) -> bool:
     return node.tag in _SEMANTIC_TAGS or node.has_identity()
 
 
-def _flatten(node: SemanticNode) -> List[SemanticNode]:
+def _flatten(node: SemanticNode) -> list[SemanticNode]:
     """Drop pure layout wrappers: recurse into them, keep semantic nodes.
 
     A wrapper is dropped when it is a layout tag WITHOUT identity and either
     has exactly one child or no children of its own (pure grouping box).
     """
-    kept: List[SemanticNode] = []
+    kept: list[SemanticNode] = []
     for child in node.children:
         if child.tag in _LAYOUT_TAGS and not child.has_identity():
             kept.extend(_flatten(child))
@@ -120,7 +158,7 @@ def _flatten(node: SemanticNode) -> List[SemanticNode]:
     return kept
 
 
-def _prune(node: SemanticNode) -> Optional[SemanticNode]:
+def _prune(node: SemanticNode) -> SemanticNode | None:
     node.children = _flatten(node)
     pruned_children = []
     for child in node.children:
@@ -141,7 +179,7 @@ class SemanticTree:
 
     def outline(self, max_depth: int = 12) -> str:
         """Indented outline; one line per semantic node (token-cheap)."""
-        lines: List[str] = []
+        lines: list[str] = []
 
         def walk(node: SemanticNode, depth: int) -> None:
             if depth > max_depth:
@@ -149,11 +187,18 @@ class SemanticTree:
             text = node.text()
             attrs = ""
             if node.has_identity():
-                ident = node.attrs.get("id") or node.attrs.get("class") or node.attrs.get("role") or ""
+                ident = (
+                    node.attrs.get("id")
+                    or node.attrs.get("class")
+                    or node.attrs.get("role")
+                    or ""
+                )
                 attrs = f" #{str(ident).split()[0]}" if ident else ""
             snippet = (text[:80] + "…") if len(text) > 80 else text
             if node.tag != "#root":
-                lines.append(f"{'  ' * (depth - 1)}<{node.tag}>{attrs} {snippet}".rstrip())
+                lines.append(
+                    f"{'  ' * (depth - 1)}<{node.tag}>{attrs} {snippet}".rstrip()
+                )
             for child in node.children:
                 walk(child, depth + 1)
 

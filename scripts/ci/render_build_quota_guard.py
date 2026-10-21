@@ -290,7 +290,13 @@ def main() -> int:
             if eval_res["warning"]:
                 has_warning = True
 
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError) as e:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            OSError,
+            ValueError,
+            KeyError,
+        ) as e:
             results.append(
                 {
                     "service": svc_name,

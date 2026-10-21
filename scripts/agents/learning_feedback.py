@@ -4,6 +4,7 @@
 On a successful, verified merge, record the verified solution so future compatible
 skills/agents can reuse it. Stdlib-only. Fail-closed on IO errors (logged, never crash).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -123,7 +124,11 @@ def main() -> int:
 
     if args.list:
         sols = load_verified_solutions()
-        print(json.dumps({"count": len(sols), "solutions": sols}, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {"count": len(sols), "solutions": sols}, indent=2, sort_keys=True
+            )
+        )
         return 0
     if args.record_issue is not None:
         rec = record_verified_solution(args.record_issue, scope_paths=[])

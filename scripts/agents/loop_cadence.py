@@ -54,8 +54,18 @@ def load_cadence_config(path: Path | None = None) -> dict[str, Any]:
                 cleaned[str(role)] = h
         if not cleaned:
             cleaned = dict(DEFAULT_CADENCE_HOURS)
-        return {"cadences_hours": cleaned, "merged_roles": merged or dict(DEFAULT_MERGED_ROLES)}
-    except (OSError, RuntimeError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:  # fail-closed: never crash the loop on bad config
+        return {
+            "cadences_hours": cleaned,
+            "merged_roles": merged or dict(DEFAULT_MERGED_ROLES),
+        }
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        json.JSONDecodeError,
+    ) as exc:  # fail-closed: never crash the loop on bad config
         log("âš ï¸", f"[Cadence] config load failed ({exc}); using defaults.")
         return {
             "cadences_hours": dict(DEFAULT_CADENCE_HOURS),
@@ -99,7 +109,13 @@ def save_last_run_store(store: dict[str, float], path: Path | None = None) -> bo
         with target.open("w", encoding="utf-8") as fh:
             json.dump(store, fh, indent=2, sort_keys=True)
         return True
-    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ) as exc:
         log("âš ï¸", f"[Cadence] last_run store save failed: {exc}")
         return False
 
@@ -209,6 +225,3 @@ def create_full_project_audit_issue() -> str | None:
         return num
     log("âš ï¸", f"[Empty-Board] audit issue created but number unparseable: {out!r}")
     return None
-
-
-

@@ -380,7 +380,7 @@ class RollingSchedule(unittest.TestCase):
             srt.active_slot(epoch + _dt.timedelta(minutes=110 + 45)).satellite, "skills"
         )
         self.assertEqual(
-            srt.active_slot(_dt.datetime(1970, 1, 1, 0, 30)).satellite, "api"  # noqa: DTZ001
+            srt.active_slot(_dt.datetime(1970, 1, 1, 0, 30)).satellite, "api"
         )  # naive=UTC
 
     def test_29_slot_type_and_bounds_enforced(self):

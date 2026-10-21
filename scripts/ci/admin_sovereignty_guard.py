@@ -66,11 +66,11 @@ class Decision:
 
 def _normalized(labels: Sequence[str] | None) -> set[str]:
     if not isinstance(labels, (list, tuple, set, frozenset)):
-        raise ValueError("labels must be a list of strings")  # noqa: TRY004
+        raise ValueError("labels must be a list of strings")
     out = set()
     for label in labels:
         if not isinstance(label, str):
-            raise ValueError("labels must be a list of strings")  # noqa: TRY004
+            raise ValueError("labels must be a list of strings")
         out.add(label.strip().lower())
     return out
 
@@ -111,7 +111,7 @@ def extract_domain_from_labels(labels: Sequence[str] | None) -> str | None:
         low = label.strip().lower()
         for prefix in ("domain:", "repo:"):
             if low.startswith(prefix):
-                return low[len(prefix):].strip() or None
+                return low[len(prefix) :].strip() or None
     return None
 
 
@@ -194,6 +194,8 @@ def quarantine_decision(  # type: ignore[no-redef]
         message=f"Issue #{issue_number} is swarm-claimable.",
         execution_lane=LANE_SWARM,
     )
+
+
 def filter_pick_next(
     candidates: Sequence[Mapping],
 ) -> tuple[list[Mapping], list[Mapping]]:
@@ -360,7 +362,9 @@ def _cli(argv: Sequence[str] | None = None) -> int:
         if args.check:
             allowed_domains = None
             if args.allowed_domains:
-                allowed_domains = [x.strip() for x in args.allowed_domains.split(",") if x.strip()]
+                allowed_domains = [
+                    x.strip() for x in args.allowed_domains.split(",") if x.strip()
+                ]
             decision = quarantine_decision(
                 _parse_labels(args.labels_json or "[]"),
                 args.issue,

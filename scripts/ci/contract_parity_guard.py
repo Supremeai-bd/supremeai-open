@@ -19,10 +19,8 @@ from __future__ import annotations
 import argparse
 import ast
 import contextlib
-import os
 import sys
 from pathlib import Path
-from typing import Any
 
 if hasattr(sys.stdout, "reconfigure"):
     with contextlib.suppress(Exception):
@@ -153,36 +151,50 @@ def self_test() -> bool:
         clean_py = t_root / "clean.py"
         clean_py.write_bytes(
             b'DEFAULT_BASE_URL = "http://test"\n'
-            b'class GatewayError(Exception): pass\n'
-            b'class GatewayAuthError(GatewayError): pass\n'
-            b'class GatewayRateLimited(GatewayError): pass\n'
-            b'class GatewayProviderError(GatewayError): pass\n'
-            b'class GatewayUnavailable(GatewayError): pass\n'
+            b"class GatewayError(Exception): pass\n"
+            b"class GatewayAuthError(GatewayError): pass\n"
+            b"class GatewayRateLimited(GatewayError): pass\n"
+            b"class GatewayProviderError(GatewayError): pass\n"
+            b"class GatewayUnavailable(GatewayError): pass\n"
             b'def chat(messages, model="test", base_url=None): return {}\n'
         )
-        assert not check_lf_endings(clean_py), "Clean LF file must pass line-ending check"
-        assert not check_gateway_client_ast(clean_py), "Clean symbols file must pass AST check"
+        assert not check_lf_endings(clean_py), (
+            "Clean LF file must pass line-ending check"
+        )
+        assert not check_gateway_client_ast(clean_py), (
+            "Clean symbols file must pass AST check"
+        )
 
         # Case B: CRLF contamination
         crlf_py = t_root / "crlf.py"
-        crlf_py.write_bytes(b'def chat():\r\n    pass\r\n')
+        crlf_py.write_bytes(b"def chat():\r\n    pass\r\n")
         errs = check_lf_endings(crlf_py)
-        assert len(errs) == 1 and "CRLF line endings detected" in errs[0], "CRLF must be flagged"
+        assert len(errs) == 1 and "CRLF line endings detected" in errs[0], (
+            "CRLF must be flagged"
+        )
 
         # Case C: Missing symbol
         missing_py = t_root / "missing.py"
-        missing_py.write_bytes(b'def chat(): pass\n')
+        missing_py.write_bytes(b"def chat(): pass\n")
         errs = check_gateway_client_ast(missing_py)
-        assert len(errs) == 1 and "Missing required contract symbols" in errs[0], "Missing symbol must be caught"
+        assert len(errs) == 1 and "Missing required contract symbols" in errs[0], (
+            "Missing symbol must be caught"
+        )
 
     print("✅ [self-test] Contract parity guard self-tests PASSED (3/3 test cases)!")
     return True
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Autonomous Contract Parity & Byte-Hygiene Guard")
-    parser.add_argument("--check", action="store_true", help="Run contract parity check across repo")
-    parser.add_argument("--self-test", action="store_true", help="Run hermetic self-test")
+    parser = argparse.ArgumentParser(
+        description="Autonomous Contract Parity & Byte-Hygiene Guard"
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="Run contract parity check across repo"
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="Run hermetic self-test"
+    )
 
     args = parser.parse_args()
 
@@ -193,10 +205,15 @@ def main() -> int:
     count, errs = run_contract_check(repo_root)
 
     if count == 0:
-        print("✅ [Contract Parity Guard] All mirrored contract files verified clean (0 byte-drift, valid AST, strict LF).")
+        print(
+            "✅ [Contract Parity Guard] All mirrored contract files verified clean (0 byte-drift, valid AST, strict LF)."
+        )
         return 0
 
-    print(f"❌ [Contract Parity Guard] Found {count} contract parity violation(s):", file=sys.stderr)
+    print(
+        f"❌ [Contract Parity Guard] Found {count} contract parity violation(s):",
+        file=sys.stderr,
+    )
     for e in errs:
         print(f"  - {e}", file=sys.stderr)
     return 1

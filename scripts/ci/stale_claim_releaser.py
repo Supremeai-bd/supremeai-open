@@ -105,7 +105,7 @@ def release_plan(snapshot: dict, now: datetime) -> dict:
                  "last_push_at": iso|null, "pr_opened_at": iso|null}]}
     """
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get("issues"), list):
-        raise ValueError('snapshot must be {"issues": [...]}')  # noqa: TRY004
+        raise ValueError('snapshot must be {"issues": [...]}')
     releases, keeps = [], []
     for issue in snapshot["issues"]:
         number = issue.get("number")
@@ -212,10 +212,14 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
+    parser.add_argument(
+        "--self-test", action="store_true", help="Run offline contract assertions"
+    )
     parser.add_argument("--run", type=str, help="Path to a board snapshot JSON file")
     parser.add_argument(
-        "--auto-release", action="store_true", help="Auto-release stale claims (data-only plan)"
+        "--auto-release",
+        action="store_true",
+        help="Auto-release stale claims (data-only plan)",
     )
     parser.add_argument(
         "--claim-to-branch-min",

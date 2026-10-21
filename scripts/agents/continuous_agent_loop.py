@@ -204,7 +204,6 @@ ROLES: dict[str, str] = {
 # log() and run_cmd() are provided by loop_common (imported above).
 
 
-
 def build_task_contract(
     task_id: str,
     issue: str | int | None = None,
@@ -652,7 +651,14 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
                         for i in raw_data
                         if isinstance(i, dict) and "pull_request" not in i
                     ]
-        except (urllib.error.URLError, OSError, TimeoutError, ValueError, json.JSONDecodeError, UnicodeDecodeError) as http_err:
+        except (
+            urllib.error.URLError,
+            OSError,
+            TimeoutError,
+            ValueError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ) as http_err:
             log(
                 "âš ï¸",
                 f"[Board Fetch] gh unavailable ({err or out or f'code {code}'}) and HTTP fallback error: {http_err}",
@@ -705,7 +711,14 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
         sorted_issues = sorted(candidates, key=priority_key)
         if sorted_issues:
             return str(sorted_issues[0].get("number"))
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
+    except (
+        RuntimeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        OSError,
+    ) as exc:
         # Selection failure must also stay diagnosable (never looks like an empty board).
         log("âš ï¸", f"[Board Fetch] selection failed: {exc}")
     return None
@@ -956,7 +969,10 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
                 return False
         log("âœ…", f"Constitution auto-synced from origin/main: {diverged}")
     else:
-        log("âš ï¸", f"[Rules Gate] Constitution drift DETECTED (report-only): {diverged}")
+        log(
+            "âš ï¸",
+            f"[Rules Gate] Constitution drift DETECTED (report-only): {diverged}",
+        )
         log(
             "â„¹ï¸",
             "Report-only mode: the tree is never mutated here (governance PRs "
@@ -1459,7 +1475,16 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
                 "files_scanned": len(scan_targets),
             }
         )
-    except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError) as e:
+    except (
+        RuntimeError,
+        ValueError,
+        TypeError,
+        OSError,
+        TimeoutError,
+        ConnectionError,
+        AttributeError,
+        KeyError,
+    ) as e:
         log("âŒ", f"Self-test verification failed: {e}")
         return False, evidence
 
@@ -1483,11 +1508,15 @@ def pre_push_rebase_and_verify(
        newly landed commits on main did not introduce logical regressions.
     """
     log(
-        "ðŸ”„", f"[Pre-Push Invariant] Checking branch freshness against {remote}/main..."
+        "ðŸ”„",
+        f"[Pre-Push Invariant] Checking branch freshness against {remote}/main...",
     )
     fetch_code, _, fetch_err = run_cmd(["git", "fetch", remote, "main"], check=False)
     if fetch_code != 0:
-        log("âš ï¸", f"Warning: git fetch {remote} main exited {fetch_code}: {fetch_err}")
+        log(
+            "âš ï¸",
+            f"Warning: git fetch {remote} main exited {fetch_code}: {fetch_err}",
+        )
 
     # Check how many commits HEAD is behind remote/main
     behind_code, behind_out, _ = run_cmd(
@@ -1527,7 +1556,9 @@ def pre_push_rebase_and_verify(
         log("âœ…", "Post-rebase verification tiers passed cleanly!")
         return True, f"Rebased past {behind} commits and verified", re_evidence
 
-    log("âœ…", f"Branch '{branch}' is 100% fresh with {remote}/main (0 commits behind).")
+    log(
+        "âœ…", f"Branch '{branch}' is 100% fresh with {remote}/main (0 commits behind)."
+    )
     return True, "Fresh base verified", None
 
 
@@ -1897,7 +1928,10 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
             cycle_no += 1
             next_start = time.monotonic() + interval
             label = f"{cycle_no}/{total}" if total else str(cycle_no)
-            log("ðŸš€", f"[Scheduled Mode] cycle {label} starting at {_utc_now_stamp()}.")
+            log(
+                "ðŸš€",
+                f"[Scheduled Mode] cycle {label} starting at {_utc_now_stamp()}.",
+            )
             rc, dispatched_id = _run_one_scheduled_tick(args, exclude=dispatched)
             if dispatched_id:
                 dispatched.add(str(dispatched_id))
@@ -2213,7 +2247,6 @@ def main() -> int:
         log("ðŸŽ¯", f"Auto-selected highest priority Issue #{issue_to_run}")
 
     return run_cycle(args, issue_to_run)
-
 
 
 # Role-cadence + empty-board issue creation (extracted to loop_cadence).

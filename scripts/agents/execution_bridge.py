@@ -9,6 +9,7 @@ run (fail-closed) until an executor is wired.
 
 Stdlib-only. Fail-closed on invalid envelope / IO errors.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -62,7 +63,9 @@ def validate_envelope(env: dict[str, Any]) -> list[str]:
     return errors
 
 
-def build_dispatch_record(envelope: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
+def build_dispatch_record(
+    envelope: dict[str, Any], dry_run: bool = True
+) -> dict[str, Any]:
     te = envelope["task_envelope"]
     return {
         "schema": "dispatch-intent/1",
@@ -113,14 +116,30 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Execution bridge for task envelopes")
     parser.add_argument("--envelope", required=True, help="path to task envelope JSON")
     parser.add_argument("--queue", default=".dispatch_queue", help="queue directory")
-    parser.add_argument("--results", default=".execution_results", help="results directory (used with --execute)")
-    parser.add_argument("--dry-run", action="store_true", default=True, help="record only (default)")
-    parser.add_argument("--execute", action="store_true", help="run safe executor (verify) on the dispatch record")
-    parser.add_argument("--executor", default="verify", choices=("null", "verify"), help="executor for --execute")
+    parser.add_argument(
+        "--results",
+        default=".execution_results",
+        help="results directory (used with --execute)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", default=True, help="record only (default)"
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="run safe executor (verify) on the dispatch record",
+    )
+    parser.add_argument(
+        "--executor",
+        default="verify",
+        choices=("null", "verify"),
+        help="executor for --execute",
+    )
     parser.add_argument("--repo-root", default=".", help="repository root")
     args = parser.parse_args()
 
     import sys as _sys
+
     root = Path(args.repo_root).resolve()
     env = load_envelope(Path(args.envelope))
     if env is None:
@@ -140,6 +159,7 @@ def main() -> int:
     if args.execute:
         _sys.path.insert(0, str(Path(__file__).resolve().parent))
         import execution_executor as _ee
+
         res_path = _ee.run(rec_path, Path(args.results), args.executor, root)
         if res_path is None:
             print("ERROR: execution failed", file=_sys.stderr)

@@ -4,6 +4,7 @@ auto_login.py — Autonomous Hands-Free Google / AI Account Login Engine.
 Automates the Google sign-in flow using credentials from CredentialVault.
 Supports automated 2FA verification via pyotp (Authenticator App).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,11 +25,13 @@ try:
 except ImportError:
     pyotp = None
 
-from playwright.async_api import BrowserContext, Page
 from credential_vault import CredentialVault
+from playwright.async_api import BrowserContext, Page
 
 logger = logging.getLogger("ghost_tower.auto_login")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 
 
 async def handle_google_flow(
@@ -54,14 +57,18 @@ async def handle_google_flow(
             return True
 
         # A. Check for "Choose an account" list (Only if not already on password screen)
-        password_input = await page.query_selector('input[type="password"], input[name="Passwd"]')
+        password_input = await page.query_selector(
+            'input[type="password"], input[name="Passwd"]'
+        )
         if not password_input:
             account_chooser = await page.query_selector(
                 f'div[data-identifier*="{email}"][role="link"], li[data-identifier*="{email}"], '
                 f'div[data-email*="{email}"][role="link"]'
             )
             if account_chooser and await account_chooser.is_visible():
-                logger.info(f"[SSO] Account selector detected. Selecting stored account ({email})...")
+                logger.info(
+                    f"[SSO] Account selector detected. Selecting stored account ({email})..."
+                )
                 await account_chooser.click()
                 await asyncio.sleep(2)
 
@@ -75,7 +82,9 @@ async def handle_google_flow(
                 await email_elem.click()
                 await email_elem.fill(email)
                 await asyncio.sleep(0.5)
-                next_btn = await page.query_selector('#identifierNext, button:has-text("Next")')
+                next_btn = await page.query_selector(
+                    '#identifierNext, button:has-text("Next")'
+                )
                 if next_btn and await next_btn.is_visible():
                     await next_btn.click()
                 else:
@@ -90,7 +99,9 @@ async def handle_google_flow(
             await password_elem.click()
             await password_elem.fill(password)
             await asyncio.sleep(0.5)
-            next_btn = await page.query_selector('#passwordNext, button:has-text("Next")')
+            next_btn = await page.query_selector(
+                '#passwordNext, button:has-text("Next")'
+            )
             if next_btn and await next_btn.is_visible():
                 await next_btn.click()
             else:
@@ -102,7 +113,9 @@ async def handle_google_flow(
         totp_elem = await page.query_selector(totp_selector)
         if totp_elem and await totp_elem.is_visible():
             if totp_secret and pyotp:
-                logger.info("[SSO] Generating and injecting 2FA TOTP code from secret...")
+                logger.info(
+                    "[SSO] Generating and injecting 2FA TOTP code from secret..."
+                )
                 current_otp = pyotp.TOTP(totp_secret).now()
                 await totp_elem.fill(current_otp)
                 await page.keyboard.press("Enter")
@@ -118,11 +131,21 @@ async def handle_google_flow(
         except Exception:
             pass
 
-        if any(phrase in page_text for phrase in ["Check your phone", "Tap Yes", "Google sent a notification", "2-Step Verification"]):
-            print("\n" + "="*60)
-            print("[ACTION REQUIRED] Google sent a security verification to your phone!")
+        if any(
+            phrase in page_text
+            for phrase in [
+                "Check your phone",
+                "Tap Yes",
+                "Google sent a notification",
+                "2-Step Verification",
+            ]
+        ):
+            print("\n" + "=" * 60)
+            print(
+                "[ACTION REQUIRED] Google sent a security verification to your phone!"
+            )
             print("Please tap 'Yes' (or the matching number) on your phone now!")
-            print("="*60 + "\n")
+            print("=" * 60 + "\n")
             logger.info("[PHONE 2FA] Waiting for user approval on phone...")
             await asyncio.sleep(4)
 
@@ -147,7 +170,7 @@ async def handle_google_flow(
 async def auto_login_gemini(
     page: Page,
     account_label: str = "gemini_default",
-    account_data: Optional[Dict[str, Any]] = None,
+    account_data: dict[str, Any] | None = None,
     timeout_seconds: int = 90,
 ) -> bool:
     """
@@ -165,7 +188,9 @@ async def auto_login_gemini(
             credentials = vault.get_account(first_label)
 
     if not credentials:
-        logger.warning("No credentials found in vault. Please save an account using credential_vault.py first.")
+        logger.warning(
+            "No credentials found in vault. Please save an account using credential_vault.py first."
+        )
         return False
 
     email = credentials["email"]
@@ -180,7 +205,9 @@ async def auto_login_gemini(
         await asyncio.sleep(2)
 
     # 2. Check if already logged in
-    sign_in_candidate = await page.query_selector('a[href*="accounts.google.com"], button:has-text("Sign in")')
+    sign_in_candidate = await page.query_selector(
+        'a[href*="accounts.google.com"], button:has-text("Sign in")'
+    )
     if not sign_in_candidate and "accounts.google.com" not in page.url:
         logger.info("Already logged in to Gemini!")
         return True
@@ -189,12 +216,18 @@ async def auto_login_gemini(
     logger.info("Navigating directly to Google Sign-in for Gemini...")
     await page.goto(
         "https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app",
-        wait_until="networkidle"
+        wait_until="networkidle",
     )
     await asyncio.sleep(2)
 
     # 4. Handle Google Sign-in / Account Chooser workflow
-    await handle_google_flow(page, email=email, password=password, totp_secret=totp_secret, timeout_seconds=timeout_seconds)
+    await handle_google_flow(
+        page,
+        email=email,
+        password=password,
+        totp_secret=totp_secret,
+        timeout_seconds=timeout_seconds,
+    )
 
     # 5. Wait for redirect back to gemini.google.com/app
     start_time = asyncio.get_event_loop().time()
@@ -202,7 +235,9 @@ async def auto_login_gemini(
         if "gemini.google.com" in page.url and "accounts.google.com" not in page.url:
             sign_in_check = await page.query_selector('a[href*="accounts.google.com"]')
             if not sign_in_check:
-                logger.info("[SUCCESS] Autonomous Google login successfully completed and verified!")
+                logger.info(
+                    "[SUCCESS] Autonomous Google login successfully completed and verified!"
+                )
                 return True
         await asyncio.sleep(1)
 
@@ -255,14 +290,18 @@ async def auto_login_via_google_sso(
         popup_page = await new_page_info.value
         await popup_page.wait_for_load_state("domcontentloaded")
         logger.info(f"OAuth popup opened: {popup_page.url}")
-        success = await handle_google_flow(popup_page, email=email, password=password, totp_secret=totp_secret)
+        success = await handle_google_flow(
+            popup_page, email=email, password=password, totp_secret=totp_secret
+        )
         await asyncio.sleep(2)
         return success
     except Exception:
         # Redirect in same window
         await asyncio.sleep(2)
         if "accounts.google.com" in page.url:
-            return await handle_google_flow(page, email=email, password=password, totp_secret=totp_secret)
+            return await handle_google_flow(
+                page, email=email, password=password, totp_secret=totp_secret
+            )
 
     return True
 
@@ -270,6 +309,7 @@ async def auto_login_via_google_sso(
 async def run_standalone_login(account_label: str = "gemini_default"):
     """Standalone runner to open browser and test auto-login."""
     from playwright.async_api import async_playwright
+
     user_data_dir = os.path.expanduser(r"~\.gemini_isolated_session")
 
     print("=================================================================")
@@ -291,9 +331,13 @@ async def run_standalone_login(account_label: str = "gemini_default"):
         page = context.pages[0] if context.pages else await context.new_page()
         success = await auto_login_gemini(page, account_label=account_label)
         if success:
-            print("\n[SUCCESS]: Account is permanently authenticated in isolated persistent profile!")
+            print(
+                "\n[SUCCESS]: Account is permanently authenticated in isolated persistent profile!"
+            )
         else:
-            print("\n[NOTICE]: Login could not complete automatically. You can finish it manually in the opened window.")
+            print(
+                "\n[NOTICE]: Login could not complete automatically. You can finish it manually in the opened window."
+            )
 
         await asyncio.sleep(5)
         await context.close()

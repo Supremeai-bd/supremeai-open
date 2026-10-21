@@ -308,7 +308,9 @@ def self_test() -> bool:
     assert active_slot(t115).satellite == "open"  # 5 min into the wrapped open slot
     t120 = epoch + _dt.timedelta(minutes=120)
     assert active_slot(t120).satellite == "studio"  # second slot of the next cycle
-    naive = _dt.datetime(1970, 1, 1, 0, 30)  # noqa: DTZ001  # intentional naive datetime for fallback test
+    naive = _dt.datetime(
+        1970, 1, 1, 0, 30
+    )  # intentional naive datetime for fallback test
     assert active_slot(naive).satellite == "api"  # naive == UTC, minute 30
     try:
         active_slot("now")

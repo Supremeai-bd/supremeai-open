@@ -10,6 +10,7 @@ The runtime tier supports two attachment modes:
 
 No method here performs I/O at import time; `close()` is idempotent.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -30,7 +31,7 @@ class RuntimeCapabilityError(RuntimeError):
 def playwright_available() -> bool:
     """Capability probe (import-time side-effect free)."""
     try:
-        import playwright  # noqa: F401
+        import playwright
     except ImportError:
         return False
     return True
@@ -41,8 +42,8 @@ class BrowserSessionManager:
 
     def __init__(
         self,
-        profile: Optional[BrowserProfile] = None,
-        cdp_endpoint: Optional[str] = None,
+        profile: BrowserProfile | None = None,
+        cdp_endpoint: str | None = None,
         headless: bool = True,
     ) -> None:
         if profile is None:
@@ -50,7 +51,7 @@ class BrowserSessionManager:
         profile.validate()
         self.profile = profile
         self.headless = bool(headless)
-        self._cdp_endpoint: Optional[str] = None
+        self._cdp_endpoint: str | None = None
         self._session_started = False
         self._closed = False
         if cdp_endpoint is not None:
@@ -62,7 +63,7 @@ class BrowserSessionManager:
         return "cdp" if self._cdp_endpoint else "playwright"
 
     @property
-    def cdp_endpoint(self) -> Optional[str]:
+    def cdp_endpoint(self) -> str | None:
         return self._cdp_endpoint
 
     @property
@@ -75,14 +76,18 @@ class BrowserSessionManager:
         if not endpoint or not isinstance(endpoint, str):
             raise ValueError("cdp endpoint must be a non-empty string")
         lowered = endpoint.lower()
-        if not (lowered.startswith("ws://") or lowered.startswith("wss://")
-                or lowered.startswith("http://") or lowered.startswith("https://")):
+        if not (
+            lowered.startswith("ws://")
+            or lowered.startswith("wss://")
+            or lowered.startswith("http://")
+            or lowered.startswith("https://")
+        ):
             raise ValueError(
                 "cdp endpoint must use ws://, wss://, http:// or https:// scheme"
             )
         self._cdp_endpoint = endpoint
 
-    def start(self) -> "BrowserSessionManager":
+    def start(self) -> BrowserSessionManager:
         """Begin the session; fail-closed with a precise capability error."""
         if self._closed:
             raise RuntimeError("session already closed; create a new manager")
@@ -110,7 +115,7 @@ class BrowserSessionManager:
         self._session_started = False
 
     # -- context manager ----------------------------------------------------
-    def __enter__(self) -> "BrowserSessionManager":
+    def __enter__(self) -> BrowserSessionManager:
         return self.start()
 
     def __exit__(self, exc_type, exc, tb) -> None:

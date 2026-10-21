@@ -150,7 +150,13 @@ def head_ok(url: str, timeout: int = 12) -> bool:
             )
             with urllib.request.urlopen(req2, timeout=timeout) as resp:
                 return resp.status < 400
-        except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError):
+        except (
+            urllib.error.URLError,
+            OSError,
+            TimeoutError,
+            ConnectionError,
+            ValueError,
+        ):
             return False
 
 

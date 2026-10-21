@@ -22,7 +22,6 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from typing import Any
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -54,7 +53,7 @@ ANCHOR_HUBS: dict[str, int] = {
 
 # Specialized Hubs
 BRIDGE_ORDER_ANCHOR: int = 760  # [Federation Hub] Bridge Transit, Orders & Rejections
-CI_FAILURE_ANCHOR: int = 761    # [Federation Hub] CI Pipeline Failures & Incident Desk
+CI_FAILURE_ANCHOR: int = 761  # [Federation Hub] CI Pipeline Failures & Incident Desk
 
 # Short aliases for CLI/script convenience
 ANCHOR_ALIASES: dict[str, int] = {
@@ -139,7 +138,9 @@ def get_default_token() -> str:
         if val and val.strip():
             return val.strip()
     try:
-        res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
+        res = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, check=False
+        )
         if res.returncode == 0 and res.stdout.strip():
             return res.stdout.strip()
     except (OSError, subprocess.SubprocessError):
@@ -181,7 +182,9 @@ def link_sub_issue(
     if tok:
         try:
             # First fetch child issue database id
-            url_child = f"https://api.github.com/repos/{repo}/issues/{child_issue_number}"
+            url_child = (
+                f"https://api.github.com/repos/{repo}/issues/{child_issue_number}"
+            )
             req_c = urllib.request.Request(
                 url_child,
                 headers={
@@ -210,7 +213,12 @@ def link_sub_issue(
                 with urllib.request.urlopen(req_l, timeout=10) as resp_l:
                     if resp_l.status in (200, 201):
                         return True
-        except (urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError, OSError):
+        except (
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+            json.JSONDecodeError,
+            OSError,
+        ):
             pass
 
     return False
@@ -283,7 +291,9 @@ def create_sub_issue(
             for lbl in labels:
                 cmd_fallback.extend(["--label", lbl])
         try:
-            res_fb = subprocess.run(cmd_fallback, env=env, capture_output=True, text=True, check=False)
+            res_fb = subprocess.run(
+                cmd_fallback, env=env, capture_output=True, text=True, check=False
+            )
             out_fb = (res_fb.stdout or "").strip()
             if res_fb.returncode == 0 and out_fb:
                 url = out_fb.splitlines()[-1]
@@ -303,7 +313,9 @@ def self_test() -> int:
     print("[self-test] Validating 14 Anchor Hub SSOT contract...")
 
     # 1. Exact count check
-    assert len(ANCHOR_HUBS) == 14, f"Must have exactly 14 anchor hubs, found {len(ANCHOR_HUBS)}"
+    assert len(ANCHOR_HUBS) == 14, (
+        f"Must have exactly 14 anchor hubs, found {len(ANCHOR_HUBS)}"
+    )
 
     # 2. Unique issue numbers
     numbers = list(ANCHOR_HUBS.values())
@@ -311,7 +323,9 @@ def self_test() -> int:
 
     # 3. Sequential 749-762 range
     expected_range = set(range(749, 763))
-    assert set(numbers) == expected_range, f"Anchor numbers must match {expected_range}, got {set(numbers)}"
+    assert set(numbers) == expected_range, (
+        f"Anchor numbers must match {expected_range}, got {set(numbers)}"
+    )
 
     # 4. Satellite resolution
     assert get_anchor_issue_number("Supremeai-bd/supremeai-studio") == 749
@@ -344,7 +358,9 @@ def self_test() -> int:
 def verify_live(token: str | None = None) -> int:
     """Verify against live GitHub API that all 14 Anchor Hubs exist and are open."""
     tok = token or get_default_token()
-    print("🔍 [verify-live] Verifying all 14 Anchor Hubs on Supremeai-bd/supremeai-open...")
+    print(
+        "🔍 [verify-live] Verifying all 14 Anchor Hubs on Supremeai-bd/supremeai-open..."
+    )
     errors = 0
 
     for repo_name, issue_num in sorted(ANCHOR_HUBS.items(), key=lambda x: x[1]):
@@ -363,7 +379,9 @@ def verify_live(token: str | None = None) -> int:
                 state = data.get("state")
                 title = data.get("title")
                 if state != "open":
-                    print(f"❌ Anchor #{issue_num} ({repo_name}) is {state}! (Must be OPEN)")
+                    print(
+                        f"❌ Anchor #{issue_num} ({repo_name}) is {state}! (Must be OPEN)"
+                    )
                     errors += 1
                 else:
                     print(f"✅ Anchor #{issue_num}: {title} [state: {state}]")
@@ -379,9 +397,17 @@ def verify_live(token: str | None = None) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="14 Anchor Hub SSOT Registry")
-    parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
-    parser.add_argument("--verify-live", action="store_true", help="Query live board to check all 14 anchors")
-    parser.add_argument("--resolve", type=str, help="Resolve repository identifier to anchor number")
+    parser.add_argument(
+        "--self-test", action="store_true", help="Run offline contract assertions"
+    )
+    parser.add_argument(
+        "--verify-live",
+        action="store_true",
+        help="Query live board to check all 14 anchors",
+    )
+    parser.add_argument(
+        "--resolve", type=str, help="Resolve repository identifier to anchor number"
+    )
     args = parser.parse_args()
 
     if args.self_test:

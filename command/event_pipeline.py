@@ -124,7 +124,16 @@ class EventPipeline:
             task.state = "running"
             try:
                 ok = bool(self._handler(event, task))
-            except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError) as exc:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                OSError,
+                TimeoutError,
+                ConnectionError,
+                AttributeError,
+                KeyError,
+            ) as exc:
                 ok = False
                 task.last_error = str(exc)
             if ok:

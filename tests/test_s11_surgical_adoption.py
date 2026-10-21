@@ -121,7 +121,7 @@ class NativeZeroBloatFitting(unittest.TestCase):
         s = ex.extract_python_slice(fingerprint_source(), "evidence_fingerprint")
         stub = ex.generate_adaptation_stub(s, "morluto/rea", "MIT")
         namespace: dict = {}
-        exec(compile(stub, "<stub>", "exec"), namespace)  # noqa: S102
+        exec(compile(stub, "<stub>", "exec"), namespace)
         digest = namespace["evidence_fingerprint"](b"abc")
         self.assertEqual(len(digest), 64)
 
@@ -129,7 +129,7 @@ class NativeZeroBloatFitting(unittest.TestCase):
         s = ex.extract_python_slice(fingerprint_source(), "evidence_fingerprint")
         stub = ex.generate_adaptation_stub(s, "morluto/rea", "MIT")
         namespace: dict = {}
-        exec(compile(stub, "<stub>", "exec"), namespace)  # noqa: S102
+        exec(compile(stub, "<stub>", "exec"), namespace)
         with self.assertRaises(ValueError):
             namespace["evidence_fingerprint"](b"")
 

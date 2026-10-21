@@ -9,6 +9,7 @@
 - retry শুধু 502/503-তে — 401/429 কখনো retry নয় (429-এ Retry-After সম্মান)
 - 429-এ server Retry-After হেডার দিলে সেটা `err.retry_after`-এ বহন হয় — caller সম্মান করতে পারে (CONSUMERS.md §৩)
 """
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,9 @@ import time
 import urllib.error
 import urllib.request
 
-DEFAULT_BASE_URL = os.getenv("SUPREMEAI_GATEWAY_URL", "https://supremeai-api.onrender.com")
+DEFAULT_BASE_URL = os.getenv(
+    "SUPREMEAI_GATEWAY_URL", "https://supremeai-api.onrender.com"
+)
 RETRY_BACKOFF_S = 2.0
 
 
@@ -92,7 +95,7 @@ def chat(
             body = ""
             try:
                 body = exc.read().decode()[:200]
-            except Exception:  # noqa: BLE001 — বাংলা: বডি-পড়া ব্যর্থ হলেও error-শ্রেণি দরকার
+            except Exception:
                 pass
             code = exc.code
             if code == 401:
@@ -138,7 +141,11 @@ if __name__ == "__main__":
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     args = parser.parse_args()
     try:
-        out = chat([{"role": "user", "content": args.prompt}], model=args.model, base_url=args.base_url)
+        out = chat(
+            [{"role": "user", "content": args.prompt}],
+            model=args.model,
+            base_url=args.base_url,
+        )
     except GatewayError as err:
         print(f"{type(err).__name__}: {err}", file=sys.stderr)
         sys.exit(1)
