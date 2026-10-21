@@ -10,18 +10,17 @@ Autonomously logs into top generous free-tier AI platforms using Google SSO ("Co
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import os
 import sys
+from typing import Dict, Any, List
 
-from playwright.async_api import BrowserContext, Page, async_playwright
-from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import async_playwright, Page, BrowserContext
 
 # Import local credential vault and google flow
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from .auto_login import handle_google_flow
-from .credential_vault import CredentialVault
+from credential_vault import CredentialVault
+from auto_login import handle_google_flow
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,9 +31,7 @@ logger = logging.getLogger("ghost_tower.multi_sso")
 USER_DATA_DIR = os.path.expanduser(r"~\.gemini_isolated_session")
 
 
-async def click_google_sso_button(
-    page: Page, email: str, password: str, timeout: int = 30
-) -> bool:
+async def click_google_sso_button(page: Page, email: str, password: str, timeout: int = 30) -> bool:
     """Detects and clicks any 'Continue with Google' button, handling popups or redirects."""
     google_btn_selectors = [
         'button:has-text("Continue with Google")',
@@ -56,9 +53,7 @@ async def click_google_sso_button(
             break
 
     if not btn:
-        logger.warning(
-            "Could not find a visible 'Continue with Google' button on the current page."
-        )
+        logger.warning("Could not find a visible 'Continue with Google' button on the current page.")
         return False
 
     # Handle popup vs direct redirect
@@ -68,20 +63,18 @@ async def click_google_sso_button(
         popup = await new_page_info.value
         await popup.wait_for_load_state("domcontentloaded")
         logger.info(f"OAuth popup detected: {popup.url}")
-        success = await handle_google_flow(
-            popup, email=email, password=password, timeout_seconds=timeout
-        )
-        with contextlib.suppress(Exception):
+        success = await handle_google_flow(popup, email=email, password=password, timeout_seconds=timeout)
+        try:
             await popup.wait_for_event("close", timeout=10000)
+        except Exception:
+            pass
         return success
-    except (PlaywrightError, asyncio.TimeoutError, OSError, RuntimeError):
+    except Exception:
         # Redirect happened in the same window
         await asyncio.sleep(2)
         if "accounts.google.com" in page.url:
             logger.info("Redirected to Google in same tab. Handling authentication...")
-            return await handle_google_flow(
-                page, email=email, password=password, timeout_seconds=timeout
-            )
+            return await handle_google_flow(page, email=email, password=password, timeout_seconds=timeout)
 
     return True
 
@@ -91,56 +84,48 @@ async def login_chatgpt(context: BrowserContext, email: str, password: str) -> b
     logger.info("--- Starting ChatGPT Google SSO ---")
     page = await context.new_page()
     try:
-        await page.goto(
-            "https://chatgpt.com", wait_until="domcontentloaded", timeout=45000
-        )
+        await page.goto("https://chatgpt.com", wait_until="domcontentloaded", timeout=45000)
         await asyncio.sleep(5)
 
         # Check if already authenticated
         for _ in range(5):
             try:
-                chat_input = await page.query_selector(
-                    '#prompt-textarea, textarea, div[contenteditable="true"]'
-                )
+                chat_input = await page.query_selector('#prompt-textarea, textarea, div[contenteditable="true"]')
                 if chat_input and await chat_input.is_visible():
                     logger.info("✅ ChatGPT is already authenticated!")
                     return True
                 break
-            except (PlaywrightError, OSError):
+            except Exception:
                 await asyncio.sleep(1)
 
         # Click Log in button if present
-        with contextlib.suppress(Exception):
-            login_btn = await page.query_selector(
-                'button[data-testid="login-button"], button:has-text("Log in"), a:has-text("Log in")'
-            )
+        try:
+            login_btn = await page.query_selector('button[data-testid="login-button"], button:has-text("Log in"), a:has-text("Log in")')
             if login_btn and await login_btn.is_visible():
                 logger.info("Clicking ChatGPT 'Log in' button...")
                 await login_btn.click()
                 await asyncio.sleep(3)
+        except Exception:
+            pass
 
         # Click Continue with Google
         await click_google_sso_button(page, email, password)
 
-        logger.info(
-            "Waiting for ChatGPT to complete login. If visible, feel free to click 'Continue with Google'..."
-        )
+        logger.info("Waiting for ChatGPT to complete login. If visible, feel free to click 'Continue with Google'...")
         for _ in range(25):
             await asyncio.sleep(1)
-            with contextlib.suppress(Exception):
+            try:
                 if "chatgpt.com" in page.url and "auth" not in page.url:
-                    inp = await page.query_selector(
-                        '#prompt-textarea, textarea, div[contenteditable="true"]'
-                    )
+                    inp = await page.query_selector('#prompt-textarea, textarea, div[contenteditable="true"]')
                     if inp:
-                        logger.info(
-                            "✅ ChatGPT Google SSO login verified successfully!"
-                        )
+                        logger.info("✅ ChatGPT Google SSO login verified successfully!")
                         return True
+            except Exception:
+                pass
 
         logger.info(f"ChatGPT current URL: {page.url}")
         return True
-    except (PlaywrightError, OSError, RuntimeError, TimeoutError, ConnectionError) as e:
+    except Exception as e:
         logger.warning(f"ChatGPT session notice: {e}")
         await asyncio.sleep(10)
         return True
@@ -153,38 +138,34 @@ async def login_grok(context: BrowserContext, email: str, password: str) -> bool
     logger.info("--- Starting Grok Google SSO ---")
     page = await context.new_page()
     try:
-        await page.goto(
-            "https://grok.com", wait_until="domcontentloaded", timeout=45000
-        )
+        await page.goto("https://grok.com", wait_until="domcontentloaded", timeout=45000)
         await asyncio.sleep(5)
 
         # Check if already logged in
         for _ in range(5):
             try:
-                textarea = await page.query_selector(
-                    'textarea, div[contenteditable="true"]'
-                )
+                textarea = await page.query_selector('textarea, div[contenteditable="true"]')
                 if textarea and await textarea.is_visible():
                     logger.info("✅ Grok is already authenticated!")
                     return True
                 break
-            except (PlaywrightError, OSError):
+            except Exception:
                 await asyncio.sleep(1)
 
         # Look for Sign in button
-        with contextlib.suppress(Exception):
-            signin_btn = await page.query_selector(
-                'button:has-text("Sign In"), a:has-text("Sign in"), button:has-text("Log in")'
-            )
+        try:
+            signin_btn = await page.query_selector('button:has-text("Sign In"), a:has-text("Sign in"), button:has-text("Log in")')
             if signin_btn and await signin_btn.is_visible():
                 await signin_btn.click()
                 await asyncio.sleep(2)
+        except Exception:
+            pass
 
         await click_google_sso_button(page, email, password)
         await asyncio.sleep(8)
         logger.info(f"Grok URL after SSO attempt: {page.url}")
         return True
-    except (PlaywrightError, OSError, RuntimeError, TimeoutError, ConnectionError) as e:
+    except Exception as e:
         logger.warning(f"Grok session notice: {e}")
         await asyncio.sleep(10)
         return True
@@ -197,46 +178,38 @@ async def login_mistral(context: BrowserContext, email: str, password: str) -> b
     logger.info("--- Starting Mistral Le Chat Google SSO ---")
     page = await context.new_page()
     try:
-        await page.goto(
-            "https://chat.mistral.ai", wait_until="domcontentloaded", timeout=45000
-        )
+        await page.goto("https://chat.mistral.ai", wait_until="domcontentloaded", timeout=45000)
         await asyncio.sleep(5)
 
         # Check if already in chat (resilient to navigation)
         for _ in range(5):
             try:
-                chat_box = await page.query_selector(
-                    'textarea, div[contenteditable="true"]'
-                )
+                chat_box = await page.query_selector('textarea, div[contenteditable="true"]')
                 if chat_box and await chat_box.is_visible():
                     logger.info("✅ Mistral Le Chat is already authenticated!")
                     return True
                 break
-            except (PlaywrightError, OSError):
+            except Exception:
                 await asyncio.sleep(1)
 
         # Click Continue with Google
         await click_google_sso_button(page, email, password)
 
-        logger.info(
-            "Waiting for Mistral Le Chat. If you see 'Continue with Google', feel free to click it..."
-        )
+        logger.info("Waiting for Mistral Le Chat. If you see 'Continue with Google', feel free to click it...")
         for _ in range(25):
             await asyncio.sleep(1)
-            with contextlib.suppress(Exception):
-                if "chat.mistral.ai" in page.url and (
-                    "auth" not in page.url and "login" not in page.url
-                ):
-                    chat_box = await page.query_selector(
-                        'textarea, div[contenteditable="true"]'
-                    )
+            try:
+                if "chat.mistral.ai" in page.url and ("auth" not in page.url and "login" not in page.url):
+                    chat_box = await page.query_selector('textarea, div[contenteditable="true"]')
                     if chat_box:
                         logger.info("✅ Mistral Le Chat authentication confirmed!")
                         return True
+            except Exception:
+                pass
 
         logger.info(f"Mistral Le Chat URL: {page.url}")
         return True
-    except (PlaywrightError, OSError, RuntimeError, TimeoutError, ConnectionError) as e:
+    except Exception as e:
         logger.warning(f"Mistral session notice: {e}")
         await asyncio.sleep(10)
         return True
@@ -249,43 +222,40 @@ async def login_perplexity(context: BrowserContext, email: str, password: str) -
     logger.info("--- Starting Perplexity Google SSO ---")
     page = await context.new_page()
     try:
-        await page.goto(
-            "https://www.perplexity.ai", wait_until="domcontentloaded", timeout=45000
-        )
+        await page.goto("https://www.perplexity.ai", wait_until="domcontentloaded", timeout=45000)
         await asyncio.sleep(5)
 
         # Check if already logged in (avatar or profile button present)
         for _ in range(5):
             try:
-                profile_btn = await page.query_selector(
-                    'button[aria-label="User Profile"], a[href="/settings/profile"]'
-                )
+                profile_btn = await page.query_selector('button[aria-label="User Profile"], a[href="/settings/profile"]')
                 if profile_btn:
                     logger.info("✅ Perplexity is already authenticated!")
                     return True
                 break
-            except (PlaywrightError, OSError):
+            except Exception:
                 await asyncio.sleep(1)
 
         # Click Sign In button
-        with contextlib.suppress(Exception):
-            signin_btn = await page.query_selector(
-                'button:has-text("Sign In"), button:has-text("Log In")'
-            )
+        try:
+            signin_btn = await page.query_selector('button:has-text("Sign In"), button:has-text("Log In")')
             if signin_btn and await signin_btn.is_visible():
                 await signin_btn.click()
                 await asyncio.sleep(2)
+        except Exception:
+            pass
 
         await click_google_sso_button(page, email, password)
         await asyncio.sleep(8)
         logger.info(f"Perplexity URL: {page.url}")
         return True
-    except (PlaywrightError, OSError, RuntimeError, TimeoutError, ConnectionError) as e:
+    except Exception as e:
         logger.warning(f"Perplexity session notice: {e}")
         await asyncio.sleep(10)
         return True
     finally:
         await page.close()
+
 
 
 async def run_multi_sso(target: str = "all", headless: bool = False):
@@ -297,9 +267,7 @@ async def run_multi_sso(target: str = "all", headless: bool = False):
             account = vault.get_account(accounts[0]["account_label"])
 
     if not account:
-        logger.error(
-            "No account credentials found in vault! Please run auto_login.py first."
-        )
+        logger.error("No account credentials found in vault! Please run auto_login.py first.")
         return
 
     email = account["email"]
@@ -340,12 +308,9 @@ async def run_multi_sso(target: str = "all", headless: bool = False):
             results["Grok"] = await login_grok(context, email, password)
 
         if target in ("gemini",):
-            from .auto_login import auto_login_gemini
-
+            from auto_login import auto_login_gemini
             page = context.pages[0] if context.pages else await context.new_page()
-            results["Gemini"] = await auto_login_gemini(
-                page, account_label="gemini_default"
-            )
+            results["Gemini"] = await auto_login_gemini(page, account_label="gemini_default")
 
         print("\n=================================================================")
         print("   Authentication Fleet Summary:")
@@ -367,3 +332,4 @@ if __name__ == "__main__":
         elif arg in ("chatgpt", "mistral", "perplexity", "grok", "gemini", "all"):
             selected_target = arg
     asyncio.run(run_multi_sso(target=selected_target, headless=is_headless))
+
