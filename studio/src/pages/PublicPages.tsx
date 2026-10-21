@@ -79,7 +79,8 @@ function responseFor(input: string) { return 'SupremeAI is experiencing high dem
 async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via: string }> {
   try {
     const apiTarget = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com';
-    const resolvedKey = apiKey || (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_KEY || (typeof localStorage !== 'undefined' ? localStorage.getItem('supremeai_api_key') || 'sai-live-9c8f1a4e2b7d5c3a' : 'sai-live-9c8f1a4e2b7d5c3a');
+    const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('supremeai_api_key') : null;
+    const resolvedKey = apiKey || (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_KEY || (storedKey && storedKey.trim() ? storedKey.trim() : 'sai-live-9c8f1a4e2b7d5c3a');
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
 
@@ -93,10 +94,10 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
+        'X-SupremeAI-Key': resolvedKey,
       },
       body: JSON.stringify({
-        model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'auto',
+        model: modelName.toLowerCase().includes('reasoning') ? 'supremeai/openrouter' : 'supremeai/groq',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
@@ -112,7 +113,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
       const content = data?.choices?.[0]?.message?.content;
       const servedModel = (data?.model as string) || '';
       if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100')) {
-        return { text: content.trim(), via: servedModel || 'api' };
+        return { text: content.trim(), via: servedModel || 'supremeai' };
       }
     }
   } catch (err) {
