@@ -5,29 +5,25 @@ Controls a persistent Google Chrome session logged into gemini.google.com.
 Enables real-time website chat responses directly from gemini.google.com with ZERO API keys & ZERO API costs.
 Includes a built-in modern Web Chat interface at http://localhost:8788/
 """
-
 from __future__ import annotations
 
-import json
-import logging
 import os
 import sys
 import time
-
-import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+import logging
+from typing import Any, Dict, Optional
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+import uvicorn
 
 # Setup paths
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
-from .gemini_web_engine import GeminiWebEngine
+from gemini_web_engine import GeminiWebEngine
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("ghost_tower.bridge")
 
 app = FastAPI(title="SupremeAI Ghost Tower Live Gemini Web Scraper", version="2.0.0")
@@ -49,7 +45,6 @@ async def on_startup():
     logger.info("Initializing Live Gemini Web Scraper Engine on startup...")
     # Initialize in background so server boots immediately
     import asyncio
-
     asyncio.create_task(engine.initialize())
 
 
@@ -61,11 +56,7 @@ async def on_shutdown():
 
 @app.get("/health")
 async def health():
-    status = (
-        await engine.check_login_status()
-        if engine._is_ready
-        else {"status": "initializing"}
-    )
+    status = await engine.check_login_status() if engine._is_ready else {"status": "initializing"}
     return {
         "service": "SupremeAI Ghost Tower Live Gemini Web Scraper",
         "engine": "gemini.google.com ($0 Web Scraping)",
@@ -81,7 +72,7 @@ async def chat_endpoint(request: Request):
     """Direct Web Chat API endpoint for website chat widgets."""
     try:
         body = await request.json()
-    except (json.JSONDecodeError, ValueError):
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     message = body.get("message") or body.get("prompt") or ""
@@ -99,7 +90,7 @@ async def completions_endpoint(request: Request):
     """OpenAI-compatible format for existing gateway or external frontend clients."""
     try:
         body = await request.json()
-    except (json.JSONDecodeError, ValueError):
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     prompt = body.get("prompt", "")
@@ -360,7 +351,5 @@ async def web_chat_page():
 
 if __name__ == "__main__":
     port = int(os.getenv("GHOST_PORT", "8788"))
-    logger.info(
-        f"Starting SupremeAI Ghost Tower Live Gemini Web Server on port {port}..."
-    )
+    logger.info(f"Starting SupremeAI Ghost Tower Live Gemini Web Server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
