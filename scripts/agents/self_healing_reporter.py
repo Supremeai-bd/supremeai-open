@@ -134,7 +134,9 @@ def is_ci_failure_issue(title: str, labels: list[str]) -> bool:
 
 def _run(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+        p = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, check=False
+        )
         return p.returncode, p.stdout, p.stderr
     except FileNotFoundError:
         return 127, "", f"executable not found: {cmd[0]}"

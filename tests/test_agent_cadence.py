@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline contract tests for role-cadence + empty-board issue creation helpers."""
+
 from __future__ import annotations
 
 import json
@@ -25,7 +26,14 @@ class TestCadenceConfig(unittest.TestCase):
     def test_loads_valid_config(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "c.json"
-            p.write_text(json.dumps({"cadences_hours": {"ecosystem-scout": 6}, "merged_roles": {"x": "auditor"}}))
+            p.write_text(
+                json.dumps(
+                    {
+                        "cadences_hours": {"ecosystem-scout": 6},
+                        "merged_roles": {"x": "auditor"},
+                    }
+                )
+            )
             cfg = cal.load_cadence_config(p)
             self.assertEqual(cfg["cadences_hours"]["ecosystem-scout"], 6)
             self.assertEqual(cfg["merged_roles"]["x"], "auditor")
@@ -38,7 +46,10 @@ class TestCadenceConfig(unittest.TestCase):
             self.assertEqual(cfg["cadences_hours"], cal.DEFAULT_CADENCE_HOURS)
 
     def test_canonical_role_merge(self):
-        cfg = {"cadences_hours": cal.DEFAULT_CADENCE_HOURS, "merged_roles": {"federation-auditor": "auditor"}}
+        cfg = {
+            "cadences_hours": cal.DEFAULT_CADENCE_HOURS,
+            "merged_roles": {"federation-auditor": "auditor"},
+        }
         self.assertEqual(cal.canonical_role("federation-auditor", cfg), "auditor")
         self.assertEqual(cal.canonical_role("ecosystem-scout", cfg), "ecosystem-scout")
 

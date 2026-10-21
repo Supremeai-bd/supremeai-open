@@ -1,4 +1,5 @@
 """Shared primitives for the continuous agent loop modules."""
+
 from __future__ import annotations
 
 import json
@@ -18,7 +19,11 @@ def run_cmd(
 ) -> tuple[int, str, str]:
     try:
         p = subprocess.run(
-            cmd, cwd=cwd, capture_output=True, timeout=timeout, check=False,
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
         )
         stdout = p.stdout.decode("utf-8", errors="replace").strip()
         stderr = p.stderr.decode("utf-8", errors="replace").strip()
@@ -38,7 +43,13 @@ def run_cmd(
         if check:
             raise RuntimeError(err)
         return 124, "", err
-    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ) as exc:
         err = f"Execution error for {' '.join(cmd)}: {exc}"
         if check:
             raise RuntimeError(err) from exc

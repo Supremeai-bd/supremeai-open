@@ -1,4 +1,5 @@
 """Parity test for the agent-cadence-dispatcher pilot skill."""
+
 from __future__ import annotations
 
 import sys
@@ -29,6 +30,7 @@ class TestAgentCadenceDispatcherSkill(unittest.TestCase):
 
     def test_progressive_loader_discovers(self):
         from registry.progressive_loader import ProgressiveLoader
+
         loader = ProgressiveLoader([ROOT])
         index = loader.discover()
         self.assertIn("agent-cadence-dispatcher", index)

@@ -134,6 +134,7 @@ class SupremeAIClient:
         body.update(kwargs)
         return self.request("POST", "/v1/consensus", body)
 
+
 class AsyncSupremeAIClient:
     """Async facade over the sync client: executor-backed HTTP, queue-backed SSE."""
 

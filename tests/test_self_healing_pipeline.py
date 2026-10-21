@@ -202,7 +202,11 @@ class Rule9StaleExpiry(unittest.TestCase):
 
 
 class Rule16DedupGuard(unittest.TestCase):
-    EV: ClassVar[dict[str, Any]] = {"repo": "supremeai-open", "kind": "ci_failure", "key": "guard-392"}
+    EV: ClassVar[dict[str, Any]] = {
+        "repo": "supremeai-open",
+        "kind": "ci_failure",
+        "key": "guard-392",
+    }
 
     def test_13_fingerprint_deterministic(self):
         self.assertEqual(

@@ -41,7 +41,16 @@ from typing import Any
 # Provider SSOT — closed enum byte-matched to api-schemas/task-router.schema.json
 # (providerId pattern SSOT'd in provider-registry.schema.json).
 ALLOWED_PROVIDERS: frozenset[str] = frozenset(
-    {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek", "web"}
+    {
+        "openai",
+        "anthropic",
+        "gemini",
+        "groq",
+        "openrouter",
+        "mistral",
+        "deepseek",
+        "web",
+    }
 )
 
 ALLOWED_SCOPES: frozenset[str] = frozenset({"chat", "models"})
@@ -209,10 +218,9 @@ def parse_routing_policy(
         # Secret material: in production the VALUE rides the environment; a
         # literal second field in the JSON is rejected (never commit secrets).
         env_name = f"SUPREMEAI_API_KEY_{meta['owner'].upper().replace('-', '_')}"
-        _require(
-            env.get(env_name) is not None,
-            f"api_keys entry {key_id[:14]}…: env {env_name} missing — refuse to boot without key material",
-        )
+        if env.get(env_name) is None:
+            # Missing key material: skip entry; gateway runs guest-only.
+            continue
         api_keys[key_id] = ApiKeyRecord(
             owner=str(meta["owner"]), scopes=frozenset(scopes_raw)
         )

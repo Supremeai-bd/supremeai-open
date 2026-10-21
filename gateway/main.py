@@ -94,6 +94,7 @@ def authenticate(request: Request, config: GatewayConfig) -> JSONResponse | None
     request.state.key_record = record
     return None
 
+
 def require_scope(request: Request, scope: str) -> JSONResponse | None:
     record = getattr(request.state, "key_record", None)
     if record is None or scope not in record.scopes:
@@ -234,7 +235,15 @@ async def relay_stream(
                 yield sse_frame(SSE_DONE_EVENT, "[DONE]")
                 return
             continue  # provider failed before any chunk → next endpoint
-        except (OSError, RuntimeError, ValueError, TimeoutError, ConnectionError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TimeoutError,
+            ConnectionError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ) as exc:
             if not opened:
                 continue  # pre-first-chunk failure → failover to next endpoint
             yield sse_frame(
@@ -323,7 +332,9 @@ def create_app(
     if memory_store is None:
         import os as _os
 
-        qdrant_url = _os.environ.get("QDRANT_URL") or _os.environ.get("SUPREMEAI_QDRANT_URL")
+        qdrant_url = _os.environ.get("QDRANT_URL") or _os.environ.get(
+            "SUPREMEAI_QDRANT_URL"
+        )
         if qdrant_url:
             try:
                 from .memory import QdrantMemoryStore
@@ -602,7 +613,13 @@ def create_app(
                 }
             try:
                 res = await (attempt_fn or _default_attempt)(endpoint, payload)
-            except (OSError, RuntimeError, ValueError, TimeoutError, ConnectionError) as exc:
+            except (
+                OSError,
+                RuntimeError,
+                ValueError,
+                TimeoutError,
+                ConnectionError,
+            ) as exc:
                 return {"provider": provider_name, "status": 0, "error": str(exc)[:200]}
             parsed = None
             try:

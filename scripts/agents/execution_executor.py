@@ -10,6 +10,7 @@ Supported executors:
 
 Stdlib-only. Fail-closed on invalid intent / IO errors.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,9 +36,11 @@ def load_intent(path: Path) -> dict[str, Any] | None:
 
 def _run_cmd(cmd: str, cwd: Path, timeout: int = 300) -> tuple[int, str]:
     try:
-        p = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, timeout=timeout, check=False)
+        p = subprocess.run(
+            cmd, cwd=cwd, shell=True, capture_output=True, timeout=timeout, check=False
+        )
         return p.returncode, (p.stderr or b"").decode("utf-8", errors="replace")[:200]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return 127, str(exc)[:200]
 
 
@@ -76,7 +79,9 @@ def execute_verify(intent: dict[str, Any], repo_root: Path) -> dict[str, Any]:
     }
 
 
-def execute(intent: dict[str, Any], executor: str, repo_root: Path) -> dict[str, Any] | None:
+def execute(
+    intent: dict[str, Any], executor: str, repo_root: Path
+) -> dict[str, Any] | None:
     """Run the chosen executor. Returns result dict or None on failure/unknown executor."""
     if executor not in VALID_EXECUTORS:
         return None
@@ -112,10 +117,16 @@ def run(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Execution executor for dispatch-intent records")
+    parser = argparse.ArgumentParser(
+        description="Execution executor for dispatch-intent records"
+    )
     parser.add_argument("--intent", required=True, help="path to dispatch-intent JSON")
-    parser.add_argument("--results", default=".execution_results", help="results directory")
-    parser.add_argument("--executor", default="null", choices=VALID_EXECUTORS, help="executor to use")
+    parser.add_argument(
+        "--results", default=".execution_results", help="results directory"
+    )
+    parser.add_argument(
+        "--executor", default="null", choices=VALID_EXECUTORS, help="executor to use"
+    )
     parser.add_argument("--repo-root", default=".", help="repository root")
     args = parser.parse_args()
 
@@ -123,10 +134,15 @@ def main() -> int:
     if not intent_path.is_file():
         print("ERROR: intent file not found", __import__("sys").stderr)
         return 1
-    out = run(intent_path, Path(args.results), args.executor, Path(args.repo_root).resolve())
+    out = run(
+        intent_path, Path(args.results), args.executor, Path(args.repo_root).resolve()
+    )
     if out is None:
         if args.executor == "mcp":
-            print("ERROR: mcp executor not wired yet (fail-closed)", __import__("sys").stderr)
+            print(
+                "ERROR: mcp executor not wired yet (fail-closed)",
+                __import__("sys").stderr,
+            )
         else:
             print("ERROR: execution failed", __import__("sys").stderr)
         return 1

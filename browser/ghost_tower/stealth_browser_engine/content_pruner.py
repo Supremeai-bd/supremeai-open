@@ -14,19 +14,36 @@ Algorithm (per candidate block):
   4. Markdown emission: headings, paragraphs, lists, code fences, and
      reference-style numbered citations for retained links.
 """
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import Dict, List, Optional, Tuple
 
 __all__ = ["ContentPruner", "PrunedContent", "link_density"]
 
 _DROP_TAGS = {
-    "script", "style", "noscript", "template", "svg", "iframe", "form",
-    "nav", "footer", "aside", "header", "button", "select", "option",
-    "input", "label", "video", "audio", "object", "embed",
+    "script",
+    "style",
+    "noscript",
+    "template",
+    "svg",
+    "iframe",
+    "form",
+    "nav",
+    "footer",
+    "aside",
+    "header",
+    "button",
+    "select",
+    "option",
+    "input",
+    "label",
+    "video",
+    "audio",
+    "object",
+    "embed",
 }
 _NOISE_CLASS_RE = re.compile(
     r"(advert|ads?[-_ ]?container|banner|breadcrumb|comment|cookie|promo|"
@@ -52,7 +69,7 @@ def link_density(text: str, link_chars: int) -> float:
 @dataclass
 class PrunedContent:
     markdown: str
-    citations: List[Tuple[int, str]] = field(default_factory=list)
+    citations: list[tuple[int, str]] = field(default_factory=list)
     blocks_kept: int = 0
     blocks_dropped: int = 0
     chars_before: int = 0
@@ -73,12 +90,12 @@ class PrunedContent:
 class _Block:
     """One candidate content block harvested during the parse."""
 
-    def __init__(self, tag: str, attrs: Dict[str, str], depth: int) -> None:
+    def __init__(self, tag: str, attrs: dict[str, str], depth: int) -> None:
         self.tag = tag
         self.attrs = attrs
         self.depth = depth
-        self.text_chunks: List[str] = []
-        self.links: List[Tuple[str, str]] = []  # (text, href)
+        self.text_chunks: list[str] = []
+        self.links: list[tuple[str, str]] = []  # (text, href)
         self.link_chars = 0
 
     def text(self) -> str:
@@ -94,17 +111,30 @@ class _Block:
 class _Harvester(HTMLParser):
     """Collect candidate blocks: paragraphs, headings, list items, pre."""
 
-    _BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "pre", "blockquote", "td", "figcaption"}
+    _BLOCK_TAGS = {
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "li",
+        "pre",
+        "blockquote",
+        "td",
+        "figcaption",
+    }
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.blocks: List[_Block] = []
-        self.open_blocks: List[_Block] = []
-        self.skip_depth: Optional[int] = None
+        self.blocks: list[_Block] = []
+        self.open_blocks: list[_Block] = []
+        self.skip_depth: int | None = None
         self.skip_tag: str = ""
         self.depth = 0
-        self.anchor_href: Optional[str] = None
-        self.anchor_buf: List[str] = []
+        self.anchor_href: str | None = None
+        self.anchor_buf: list[str] = []
         self.title = ""
 
     # -- helpers -----------------------------------------------------------
@@ -116,7 +146,9 @@ class _Harvester(HTMLParser):
         attrd = dict(attrs)
         if self._in_skip():
             return
-        if tag in _DROP_TAGS or (tag == "div" and _Block(tag, attrd, self.depth).is_noisy()):
+        if tag in _DROP_TAGS or (
+            tag == "div" and _Block(tag, attrd, self.depth).is_noisy()
+        ):
             self.skip_depth = self.depth
             self.skip_tag = tag
             return
@@ -171,7 +203,9 @@ def _heading_level(tag: str) -> int:
 class ContentPruner:
     """Heuristic boilerplate pruner producing citation-linked Markdown."""
 
-    def __init__(self, link_density_threshold: float = 0.6, min_block_chars: int = 24) -> None:
+    def __init__(
+        self, link_density_threshold: float = 0.6, min_block_chars: int = 24
+    ) -> None:
         if not 0.0 < link_density_threshold <= 1.0:
             raise ValueError("link_density_threshold must be within (0, 1]")
         if min_block_chars < 0:
@@ -191,8 +225,8 @@ class ContentPruner:
             citations=[],
             chars_before=len(html),
         )
-        md_lines: List[str] = []
-        seen_urls: Dict[str, int] = {}
+        md_lines: list[str] = []
+        seen_urls: dict[str, int] = {}
 
         for blk in harvester.blocks:
             text = blk.text()
@@ -222,14 +256,16 @@ class ContentPruner:
             # Inline citation links for paragraphs.
             decorated = text
             if blk.links:
-                link_map: Dict[str, int] = {}
+                link_map: dict[str, int] = {}
                 for link_text, href in blk.links:
                     if href not in seen_urls:
                         seen_urls[href] = len(seen_urls) + 1
                         result.citations.append((seen_urls[href], href))
                     if link_text and link_text in text:
                         link_map[link_text] = seen_urls[href]
-                for link_text, num in sorted(link_map.items(), key=lambda kv: -len(kv[0])):
+                for link_text, num in sorted(
+                    link_map.items(), key=lambda kv: -len(kv[0])
+                ):
                     decorated = decorated.replace(link_text, f"{link_text} [{num}]", 1)
             md_lines.append(decorated)
 
