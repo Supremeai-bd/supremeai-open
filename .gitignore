@@ -14,3 +14,11 @@ node_modules/
 dist/
 .wrangler/
 vscode/out/
+
+# Local planning and internal docs (do not commit to GitHub)
+ARCHITECTURE_PLAN.md
+*.local.md
+docs/*_BN.md
+docs/GHOST_TOWER_MULTI_AI_ROADMAP_BN.md
+docs/SUPREMEAI_API_KEY_AND_GUEST_SOLUTION_BN.md
+pr_body*.txt
