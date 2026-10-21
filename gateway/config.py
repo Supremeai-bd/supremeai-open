@@ -41,7 +41,7 @@ from typing import Any
 # Provider SSOT — closed enum byte-matched to api-schemas/task-router.schema.json
 # (providerId pattern SSOT'd in provider-registry.schema.json).
 ALLOWED_PROVIDERS: frozenset[str] = frozenset(
-    {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"}
+    {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek", "web"}
 )
 
 ALLOWED_SCOPES: frozenset[str] = frozenset({"chat", "models"})

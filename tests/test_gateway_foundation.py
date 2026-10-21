@@ -46,6 +46,7 @@ class TestGatewayConfig(unittest.TestCase):
             "openrouter",
             "mistral",
             "deepseek",
+            "web",
         }
         self.assertEqual(ALLOWED_PROVIDERS, frozenset(expected))
 

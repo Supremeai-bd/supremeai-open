@@ -65,7 +65,7 @@ READ_KEY = "supremeai-key-test-0000000002"  # scopes: models only
 
 def fake_attempt(responses: dict[str, AttemptResult], calls: list[str]):
     async def attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
-        calls.append(f"{endpoint.provider}/{endpoint.model}")
+        calls.append("%s/%s" % (endpoint.provider, endpoint.model))
         found = responses.get(endpoint.provider)
         if found is None:
             raise RuntimeError(f"no fake for {endpoint.provider}")
@@ -691,7 +691,7 @@ def test_config_rejects_drift():
 
 def test_config_provider_enum_matches_task_router_ssot():
     assert ALLOWED_PROVIDERS == frozenset(
-        {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"}
+        {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek", "web"}
     )
 
 
