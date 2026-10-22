@@ -15,7 +15,9 @@ class TestFederationSatelliteSync(unittest.TestCase):
             "Supremeai-bd/supremeai-api",
             "Supremeai-bd/supremeai-browser",
             "Supremeai-bd/supremeai-vscode",
+            "Supremeai-bd/supremeai-agents",
             "Supremeai-bd/supremeai-infrastructure",
+            "Supremeai-bd/supremeai-mcp-control-plane",
             "Supremeai-bd/supremeai-sdk",
         }
         self.assertEqual(set(sync_mod.DOMAIN_MAP.keys()), expected_slugs)
