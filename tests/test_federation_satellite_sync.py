@@ -27,6 +27,15 @@ class TestFederationSatelliteSync(unittest.TestCase):
         token = sync_mod.get_auth_token()
         self.assertEqual(token, "token-from-env")
 
+    @patch("subprocess.run")
+    def test_detect_changed_targets(self, mock_run):
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "studio/src/App.tsx\ngateway/server.py\n"
+        targets, umbrella = sync_mod.detect_changed_targets(sync_mod.Path("/tmp"))
+        self.assertIn("Supremeai-bd/supremeai-studio", targets)
+        self.assertIn("Supremeai-bd/supremeai-api", targets)
+        self.assertFalse(umbrella)
+
 
 if __name__ == "__main__":
     unittest.main()

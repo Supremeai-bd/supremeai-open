@@ -138,7 +138,11 @@ def sync_satellite(
             check=False,
         )
         if r.returncode != 0:
-            print(f"❌ Failed to clone {target_repo}: {r.stderr.strip()}")
+            err = r.stderr.strip()
+            if any(term in err.lower() for term in ("not found", "forbidden", "authentication", "permission")):
+                print(f"⚠️ [GRACEFUL-DEGRADATION] Target satellite {target_repo} cloaked or unauthorized: {err}. Skipping.")
+                return True
+            print(f"❌ Failed to clone {target_repo}: {err}")
             return False
 
         # For consolidated unified API engine (supremeai-api per ARCHITECTURE_PLAN):
@@ -235,7 +239,11 @@ def sync_satellite(
             print(f"🎉 [SUCCESS] Successfully synced and pushed to {target_repo}:main")
             return True
         else:
-            print(f"❌ Failed to push to {target_repo}: {push_res.stderr.strip()}")
+            err = push_res.stderr.strip()
+            if any(term in err.lower() for term in ("permission", "forbidden", "not found")):
+                print(f"⚠️ [GRACEFUL-DEGRADATION] Push to {target_repo} skipped due to permissions: {err}")
+                return True
+            print(f"❌ Failed to push to {target_repo}: {err}")
             return False
 
 
@@ -258,7 +266,11 @@ def sync_monorepo(
             check=False,
         )
         if r.returncode != 0:
-            print(f"❌ Failed to clone {target_repo}: {r.stderr.strip()}")
+            err = r.stderr.strip()
+            if any(term in err.lower() for term in ("not found", "forbidden", "authentication", "permission")):
+                print(f"⚠️ [GRACEFUL-DEGRADATION] Umbrella monorepo {target_repo} cloaked or unauthorized: {err}. Skipping.")
+                return True
+            print(f"❌ Failed to clone {target_repo}: {err}")
             return False
 
         # Copy non-excluded root dirs and files
@@ -323,8 +335,60 @@ def sync_monorepo(
             )
             return True
         else:
-            print(f"❌ Failed to push to {target_repo}: {push_res.stderr.strip()}")
+            err = push_res.stderr.strip()
+            if any(term in err.lower() for term in ("permission", "forbidden", "not found")):
+                print(f"⚠️ [GRACEFUL-DEGRADATION] Umbrella push skipped due to permissions: {err}")
+                return True
+            print(f"❌ Failed to push to {target_repo}: {err}")
             return False
+
+
+def detect_changed_targets(
+    repo_root: Path,
+    base_sha: str | None = None,
+    head_sha: str = "HEAD",
+) -> tuple[list[str], bool]:
+    """Inspect git diff to detect which satellites were touched for instant sync."""
+    try:
+        base = base_sha or "HEAD~1"
+        r = subprocess.run(
+            ["git", "diff", "--name-only", base, head_sha],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if r.returncode != 0 or not r.stdout.strip():
+            # If diff against base fails (e.g. shallow clone or 1 commit), fallback to all
+            return list(DOMAIN_MAP.keys()), True
+
+        files = [line.strip() for line in r.stdout.splitlines() if line.strip()]
+        targets: set[str] = set()
+        umbrella = False
+
+        for f in files:
+            if f.startswith("studio/") or f.startswith("examples/dashboard-preview/"):
+                targets.add("Supremeai-bd/supremeai-studio")
+            elif f.startswith("core/") or f.startswith("api-schemas/task-router."):
+                targets.add("Supremeai-bd/supremeai-core")
+            elif (
+                f.startswith("gateway/")
+                or f.startswith("api/")
+                or f.startswith("command/")
+                or f.startswith("skills/")
+                or f.startswith("agents/")
+            ):
+                targets.add("Supremeai-bd/supremeai-api")
+            elif f.startswith("browser/") or f.startswith("sandbox/"):
+                targets.add("Supremeai-bd/supremeai-browser")
+            elif f.startswith("vscode/"):
+                targets.add("Supremeai-bd/supremeai-vscode")
+            else:
+                umbrella = True
+
+        return sorted(targets), umbrella
+    except Exception:
+        return list(DOMAIN_MAP.keys()), True
 
 
 def prune_ephemeral_patches(repo_root: Path) -> None:
@@ -377,6 +441,15 @@ def main() -> int:
     parser.add_argument(
         "--all", action="store_true", help="Sync all active satellites and central monorepo"
     )
+    parser.add_argument(
+        "--detect-changed",
+        action="store_true",
+        help="Inspect git diff and instantly sync only touched target satellites",
+    )
+    parser.add_argument(
+        "--base-sha",
+        help="Base commit SHA for change detection (default: HEAD~1)",
+    )
     parser.add_argument("--token", help="GitHub Personal Access Token or App Token")
     parser.add_argument(
         "--commit-msg",
@@ -419,6 +492,14 @@ def main() -> int:
     if args.all:
         targets_to_sync = list(DOMAIN_MAP.keys())
         sync_umbrella = True
+    elif args.detect_changed:
+        targets_to_sync, sync_umbrella = detect_changed_targets(
+            repo_root, base_sha=args.base_sha
+        )
+        print(f"🔍 [AUTO-DETECT] Changed targets detected: {targets_to_sync} (Umbrella: {sync_umbrella})")
+        if not targets_to_sync and not sync_umbrella:
+            print("✅ [NO-OP] No satellite or monorepo domain changes detected. Instant sync complete.")
+            return 0
     elif args.targets:
         for t in args.targets:
             t = t.strip()

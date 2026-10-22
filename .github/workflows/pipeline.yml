@@ -643,6 +643,42 @@ jobs:
         working-directory: sdk/typescript
 
   # ---------------------------------------------------------------------------
+  # 🚀 Instant Federation Satellite Synchronization (Push to main)
+  # Zero-delay: eliminates 1-hour cron batching and propagates all landed changes
+  # to satellite repositories (studio, api, core, etc.) in real time (< 30s).
+  # ---------------------------------------------------------------------------
+  instant-satellite-sync:
+    name: "🚀 Instant Satellite Synchronizer"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: instant-satellite-sync
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Execute Instant Satellite Synchronization
+        env:
+          BRIDGE_PUSH_TOKEN: ${{ secrets.BRIDGE_PUSH_TOKEN || secrets.SAT_SYNC_PAT || secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          COMMIT_MSG="${{ github.event.head_commit.message || 'instant satellite sync' }}"
+          echo "🚀 Initiating instant federation synchronization for landed commit: ${COMMIT_MSG}"
+          python scripts/ci/federation_satellite_sync.py \
+            --detect-changed \
+            --commit-msg "${COMMIT_MSG}" \
+            --prune-patches
+
+  # ---------------------------------------------------------------------------
   # 🤖 Agent loop — cron reconciliation + event-driven intake (#69).
   # Runs ONLY on schedule/workflow_dispatch so a webhook-triggered dispatch
   # never burns matrix minutes. One cycle per tick; the concurrency group
