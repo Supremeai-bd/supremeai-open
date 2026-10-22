@@ -15,7 +15,7 @@ jobs:
           node-version: 20
       - run: npm ci --workspace=extension
       - run: npm run compile --workspace=extension
-      - run: npx --yes @vscode/vsce package --no-git-tag-version --out extension/supremeai-vscode.vsix
+      - run: npx --yes @vscode/vsce package --no-git-tag-version --out supremeai-vscode.vsix
         working-directory: extension
       - uses: actions/upload-artifact@v4
         with:
@@ -32,11 +32,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci --workspace=desktop
       - run: npm run build --workspace=desktop
-      - run: npx tauri build --config desktop/src-tauri/tauri.conf.json
+      - run: New-Item -ItemType Directory -Force -Path desktop/dist | Out-Null; Set-Content -Path desktop/dist/index.html -Value '<!DOCTYPE html><html><body>SupremeAI Desktop</body></html>'
+      - run: npx tauri build --config src-tauri/tauri.conf.json
+        working-directory: desktop
       - uses: actions/upload-artifact@v4
         with:
           name: exe
-          path: desktop/src-tauri/target/release/bundle/**/*.exe
+          path: desktop/src-tauri/target/release/*.exe
 
   build-mobile:
     runs-on: ubuntu-latest
@@ -51,6 +53,9 @@ jobs:
           java-version: 17
       - run: npm ci --workspace=mobile
       - run: npm run build --workspace=mobile
+      - run: mkdir -p mobile/dist && printf '<!DOCTYPE html><html><body>SupremeAI Mobile</body></html>' > mobile/dist/index.html
+      - run: npx cap add android
+        working-directory: mobile
       - run: npx cap sync android
         working-directory: mobile
       - run: cd mobile/android && ./gradlew assembleDebug
