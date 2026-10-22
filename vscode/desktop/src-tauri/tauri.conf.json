@@ -24,5 +24,13 @@
     "active": false,
     "targets": "all",
     "icon": []
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0NThCQjZERTVCMDRCM0EKUldRNlM3RGxiYnRZeEdwdHlBdFBWWGhhU0s4V212NkZDV2NrVjI4YVpNbG5PZW1IZzFMSEhrL28K",
+      "endpoints": [
+        "https://github.com/Supremeai-bd/supremeai-open/releases/latest/download/desktop-latest.json"
+      ]
+    }
   }
 }
