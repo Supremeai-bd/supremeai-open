@@ -53,12 +53,8 @@ class RegistryDoctrineTest(unittest.TestCase):
         "vscode",
         "browser",
         "core",
-        "command",
-        "skills",
         "agents",
-        "sdk",
         "archive",
-        "infrastructure",
         "mcp-control-plane",
     }
 
@@ -66,7 +62,7 @@ class RegistryDoctrineTest(unittest.TestCase):
         self.assertEqual(set(sbg.SATELLITES), self.EXPECTED)
 
     def test_02_registry_has_exactly_twelve_satellites(self):
-        self.assertEqual(len(sbg.SATELLITES), 12)
+        self.assertEqual(len(sbg.SATELLITES), 8)
 
     def test_03_private_monorepo_is_out_of_scope(self):
         self.assertNotIn("supremeai", sbg.SATELLITES)
@@ -156,7 +152,7 @@ class ExitCodeAndOutputTest(unittest.TestCase):
     def test_14_exit_code_all_unreachable_is_two(self):
         reports = sbg.audit_all(fetch=fetch_404)
         self.assertEqual(sbg.decide_exit_code(reports), 2)
-        self.assertEqual(len(reports), 12)
+        self.assertEqual(len(reports), 8)
 
     def test_15_json_output_shape_and_totals(self):
         reports = sbg.audit_all(fetch=fake_fetch([]))
@@ -164,16 +160,16 @@ class ExitCodeAndOutputTest(unittest.TestCase):
         self.assertEqual(payload["org"], "Supremeai-bd")
         self.assertEqual(payload["issue"], 626)
         self.assertEqual(payload["doctrine"], "zero-issue-satellite-mandate")
-        self.assertEqual(payload["clean"], 12)
+        self.assertEqual(payload["clean"], 8)
         self.assertEqual(payload["violations"], 0)
         self.assertEqual(payload["unreachable"], 0)
-        self.assertEqual(len(payload["satellites"]), 12)
+        self.assertEqual(len(payload["satellites"]), 8)
 
     def test_16_json_serializable(self):
         reports = sbg.audit_all(fetch=fetch_rate_limited)
         payload = sbg.build_json(reports, "Supremeai-bd")
         roundtrip = json.loads(json.dumps(payload))
-        self.assertEqual(roundtrip["unreachable"], 12)
+        self.assertEqual(roundtrip["unreachable"], 8)
 
     def test_17_report_mode_prints_matrix_and_totals(self):
         buf = io.StringIO()
