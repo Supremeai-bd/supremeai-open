@@ -15,12 +15,12 @@ services:
     # every build); current stable at the time of the fix. The tower's
     # Dockerfile installs uv via the astral.sh installer for runtime use.
     # Issue #1441: buildCommand-installed uv does NOT persist to the runtime
-    # service → 'spawn uv ENOENT' (verified live via memory_status, 2026-09-26).
-    # Instead provision backend/.venv at build time — the repo checkout IS
+    # service -> 'spawn uv ENOENT' (verified live via memory_status, 2026-09-26).
+    # Instead provision backend/.venv at build time -- the repo checkout IS
     # persisted, and backend/.venv/bin/python is the MemorySubAdapter's
     # preferred launcher. Only the `mcp` package is needed: the sidecar's
     # core.* imports are stdlib-light and memory stores degrade gracefully.
-    buildCommand: pip install uv==0.12.17 && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build
+    buildCommand: pip install uv && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build
     startCommand: python scripts/runtime/infisical_bootstrap.py npm run start
     envVars:
       - key: MCP_API_KEY
@@ -35,7 +35,7 @@ services:
         sync: false
       - key: CLOUDFLARE_API_TOKEN
         sync: false
-      - key: RENDER_API_KEY
+      - key: RENDER_API_TOKEN
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -59,10 +59,6 @@ services:
         sync: false
       - key: SUPREMEAI_JWT_SECRET
         sync: false
-      # secrets_registry.yaml marks MCP_ADMIN_KEY + TOWER_AUTH_TOKEN critical
-      # for render-mcp (run 36061775854 criticality gaps). Declared here with
-      # sync:false — value is provisioned via the Render dashboard/Infisical,
-      # never committed.
       - key: MCP_ADMIN_KEY
         sync: false
       - key: TOWER_AUTH_TOKEN
@@ -71,9 +67,5 @@ services:
         sync: false
       - key: GITHUB_TOKEN
         sync: false
-      # Task 4 fix: explicit backend path so MemorySubAdapter can find mcp_server.py
-      # without relying on __dirname traversal (fragile when Render changes rootDir).
-      # Render checks out the full repo; this points to backend/ from service root.
       - key: SUPREMEAI_BACKEND_DIR
         value: ../../backend
-
