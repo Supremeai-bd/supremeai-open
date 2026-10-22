@@ -205,6 +205,7 @@ def sync_satellite(
             cwd=str(tmp_repo),
             capture_output=True,
             text=True,
+            check=False,
         )
         if res.returncode != 0:
             if "nothing to commit" in res.stdout or "nothing to commit" in res.stderr:
