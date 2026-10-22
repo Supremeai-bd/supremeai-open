@@ -50,27 +50,31 @@ export default {
         forwardHeaders.set("X-SupremeAI-Key", "guest");
       }
 
-      try {
-        let reqBody = undefined;
-        if (request.method !== "GET" && request.method !== "HEAD") {
-          let text = await request.text();
-          // If model requested is hardcoded groq/reasoning, map to auto for Webhook -> API -> Fallback
-          try {
-            const parsed = JSON.parse(text);
-            if (parsed.model === "supremeai/groq" || parsed.model === "supremeai/openrouter") {
-              parsed.model = "auto";
-              text = JSON.stringify(parsed);
-            }
-          } catch (_) {}
-          reqBody = text;
-        }
+       try {
+         let reqBody = undefined;
+         if (request.method !== "GET" && request.method !== "HEAD") {
+           let text = await request.text();
+           // If model requested is hardcoded groq/reasoning, map to auto for Webhook -> API -> Fallback
+           try {
+             const parsed = JSON.parse(text);
+             if (parsed.model === "supremeai/groq" || parsed.model === "supremeai/openrouter") {
+               parsed.model = "auto";
+               text = JSON.stringify(parsed);
+             }
+           } catch (_) {}
+           reqBody = text;
+         }
 
-        const apiResp = await fetch(apiUrl.toString(), {
-          method: request.method,
-          headers: forwardHeaders,
-          body: reqBody,
-          redirect: "follow",
-        });
+         const apiController = new AbortController();
+         const apiTimeout = setTimeout(() => apiController.abort(), 15000);
+         const apiResp = await fetch(apiUrl.toString(), {
+           method: request.method,
+           headers: forwardHeaders,
+           body: reqBody,
+           redirect: "follow",
+           signal: apiController.signal,
+         });
+         clearTimeout(apiTimeout);
 
         const respHeaders = new Headers(apiResp.headers);
         for (const [k, v] of Object.entries(CORS_HEADERS)) {
@@ -91,8 +95,12 @@ export default {
     }
 
     // 3. Edge Cache Lookup (RAM speed) for static pages & assets
+    // NOTE: cache key is normalized to the URL only (no request headers) so that
+    // browsers sending different Accept/User-Agent headers still share one cache
+    // entry. Otherwise every distinct header combination missed the cache and
+    // fell through to the (slow) origin fetch.
     const cache = caches.default;
-    const cacheKey = new Request(url.toString(), request);
+    const cacheKey = new Request(url.toString(), { method: "GET" });
     if (request.method === "GET") {
       const cached = await cache.match(cacheKey);
       if (cached) {
@@ -121,16 +129,45 @@ export default {
                     url.pathname.endsWith(".ico") || 
                     url.pathname.endsWith(".woff2");
 
-    let response = await fetch(targetUrl.toString(), {
-      method: request.method,
-      headers: forwardHeaders,
-      body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
-      redirect: "follow",
-      cf: {
-        cacheEverything: isAsset,
-        cacheTtl: isAsset ? 86400 * 7 : 120,
+    // Origin fetch with a hard timeout so a slow/unreachable Vercel origin can
+    // never hang the worker until Cloudflare returns 522 (the "takes too long"
+    // symptom). On timeout/failure we serve a cached copy if available, else a
+    // degraded offline page.
+    const ORIGIN_TIMEOUT_MS = 8000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ORIGIN_TIMEOUT_MS);
+
+    let response;
+    try {
+      response = await fetch(targetUrl.toString(), {
+        method: request.method,
+        headers: forwardHeaders,
+        body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
+        redirect: "follow",
+        signal: controller.signal,
+        cf: {
+          cacheEverything: isAsset,
+          cacheTtl: isAsset ? 86400 * 7 : 120,
+        }
+      });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      // Try to serve any cached copy (even stale) before failing.
+      const stale = await cache.match(cacheKey);
+      if (stale) {
+        const h = new Headers(stale.headers);
+        h.set("X-Edge-Cache", "STALE-FALLBACK");
+        return new Response(stale.body, { status: stale.status, headers: h });
       }
-    });
+      // Degraded offline state (per frontend_degraded_state_on_health_failure):
+      // never block the whole UI; show a minimal offline page.
+      const offlineHtml = `<!doctype html><html><head><meta charset="utf-8"><title>SupremeAI Studio — Offline</title></head><body style="background:#09090b;color:#fafafa;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>SupremeAI Studio</h1><p>Temporarily unavailable. Please retry in a moment.</p></div></body></html>`;
+      return new Response(offlineHtml, {
+        status: 503,
+        headers: { "Content-Type": "text/html; charset=utf-8", ...CORS_HEADERS, "Cache-Control": "no-store" }
+      });
+    }
+    clearTimeout(timeoutId);
 
     // SPA fallback: If client requested a non-asset page that returned 404, fallback to index.html
     if (response.status === 404 && !isAsset && request.method === "GET") {
