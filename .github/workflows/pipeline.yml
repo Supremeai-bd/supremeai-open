@@ -616,16 +616,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Check if SDK TypeScript exists
+        id: check_sdk_ts
+        run: |
+          if [ -d "sdk/typescript" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "⏩ sdk/typescript not present in transit surface, skipping."
+          fi
+
       - name: Setup Node
+        if: steps.check_sdk_ts.outputs.exists == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "24"
 
       - name: Typecheck SDK
+        if: steps.check_sdk_ts.outputs.exists == 'true'
         run: npm run typecheck
         working-directory: sdk/typescript
 
       - name: Test SDK
+        if: steps.check_sdk_ts.outputs.exists == 'true'
         run: npm test
         working-directory: sdk/typescript
 
