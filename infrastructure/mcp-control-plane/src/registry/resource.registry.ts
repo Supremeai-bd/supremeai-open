@@ -47,7 +47,27 @@ export async function listResources(role?: UserRole): Promise<Resource[]> {
 
 export async function getResourceStatus(resourceId: string): Promise<string> {
   const { globalHealthCache } = await import("../health/snapshot.js");
-  const provider = resourceId.split("/")[0];
-  const snapshot = globalHealthCache.getSnapshot(provider);
-  return snapshot?.status ?? "unknown";
+  const parts = resourceId.split("/");
+  const provider = parts[0];
+  const accountId = parts[1] || "";
+
+  // 1. Check account-specific snapshot first, then provider-level snapshot
+  const snapshot =
+    globalHealthCache.getSnapshot(resourceId) ??
+    globalHealthCache.getSnapshot(accountId) ??
+    globalHealthCache.getSnapshot(provider);
+  if (snapshot?.status && snapshot.status !== "unknown") {
+    return snapshot.status;
+  }
+
+  // 2. If no snapshot exists in cache, check account registry availability
+  const { getAccountsForRole } = await import("./account.registry.js");
+  const accounts = getAccountsForRole("admin");
+  const account = accounts.find((a) => a.id === accountId || `${a.provider}/${a.id}` === resourceId);
+  if (account) {
+    return account.available ? "healthy" : "down";
+  }
+
+  return "unknown";
 }
+

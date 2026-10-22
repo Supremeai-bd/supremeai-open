@@ -389,6 +389,25 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
         }
       );
 
+      // Update globalHealthCache with individual service probe outcomes
+      const { globalHealthCache } = await import("../health/snapshot.js");
+      for (const entry of results) {
+        if (entry.status === "fulfilled") {
+          const val = entry.value as HealthProbe;
+          const status = val.status === "healthy" ? "healthy" : val.status === "degraded" ? "degraded" : val.status === "unconfigured" ? "unknown" : "down";
+          globalHealthCache.setSnapshot({
+            provider: val.id,
+            status,
+            lastCheckMs: Date.now(),
+            checkedAt: new Date().toISOString(),
+            latencyMs: val.latencyMs ?? 0,
+            evidence: { kind: val.error ? "error" : "provider_response", summary: val.error ?? "probed" },
+            impactedServices: [],
+            consecutiveFailures: status === "down" ? 1 : 0,
+          });
+        }
+      }
+
       const health = results.map((r) => (r.status === "fulfilled" ? r.value : r.reason));
       const count = (s: string) => health.filter((h: Record<string, unknown>) => h.status === s).length;
       const healthy = count("healthy");
