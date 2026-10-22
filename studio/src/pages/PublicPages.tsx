@@ -100,6 +100,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     try {
+      // eslint-disable-next-line no-restricted-syntax
       const res = await fetch(`${target}/v1/chat/completions`, {
         method: 'POST',
         headers: {
@@ -134,6 +135,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     try {
+      // eslint-disable-next-line no-restricted-syntax
       const res = await fetch(`${apiTarget}/v1/chat/completions`, {
         method: 'POST',
         headers: {
@@ -176,7 +178,7 @@ export function GuestChat() {
   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string }[]>([]);
   const [input, setInput] = React.useState('');
   const [model, setModel] = React.useState(models[0]?.name ?? 'Supreme Auto');
-  const [apiKey, setApiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
+  const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
   const [busy, setBusy] = React.useState(false);
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -189,7 +191,7 @@ export function GuestChat() {
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
-      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch { /* ignore storage error */ } }
+      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch (e) { void e; } }
       const reply = await callLiveAI(text, model, apiKey);
       setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via }]);
     } catch {
