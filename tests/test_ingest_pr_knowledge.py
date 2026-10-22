@@ -38,7 +38,7 @@ class TestIngestPrKnowledge(unittest.TestCase):
         data, ver = ingest_mod.extract_envelope_json(body)
         self.assertEqual(ver, "v2")
         self.assertIsNotNone(data)
-        valid, role, reason, k = ingest_mod.validate_knowledge(data, ver)
+        valid, role, _reason, k = ingest_mod.validate_knowledge(data, ver)
         self.assertTrue(valid)
         self.assertEqual(role, "auditor")
         facts = ingest_mod.format_learned_facts(88, role, k, "Audit PR")
@@ -54,7 +54,7 @@ class TestIngestPrKnowledge(unittest.TestCase):
                 # missing why_this_way, alternatives_rejected, pitfalls_to_avoid
             },
         }
-        valid, role, reason, k = ingest_mod.validate_knowledge(envelope, "v2")
+        valid, _role, reason, _k = ingest_mod.validate_knowledge(envelope, "v2")
         self.assertFalse(valid)
         self.assertIn("Missing role fields", reason)
 

@@ -26,6 +26,6 @@ export function tierToModel(tierOrModel: string): string {
 }
 
 export function modelToTier(model: string): string {
-  const found = MODEL_TIERS.find((t) => t.model === model);
+  const found = MODEL_TIERS.find((t) => t.model === model || (model.includes("/") && t.model === model.split("/")[1]));
   return found ? found.id : "auto";
 }

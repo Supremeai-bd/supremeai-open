@@ -78,6 +78,7 @@ async function runTests(): Promise<void> {
   assert.strictEqual(tierToModel("auto"), "auto");
   assert.strictEqual(modelToTier("gpt-4o-mini"), "balanced");
   assert.strictEqual(modelToTier("claude-sonnet-4-5"), "pro");
+  assert.strictEqual(modelToTier("anthropic/claude-sonnet-4-5"), "pro");
   assert.strictEqual(modelToTier("unknown-model"), "auto");
   console.log("  ✓ tierToModel and modelToTier resolve accurately across all tiers");
 

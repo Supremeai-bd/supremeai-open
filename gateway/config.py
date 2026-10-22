@@ -103,7 +103,7 @@ class GatewayConfig:
                 # Resolve a bare model name to a chain prioritising that model.
                 for endpoints in self.chains.values():
                     for idx, ep in enumerate(endpoints):
-                        if ep.model == model:
+                        if ep.model == model or ("/" in ep.model and ep.model.split("/", 1)[1] == model):
                             # Reorder: requested model first, then the rest.
                             reordered = (ep,) + endpoints[:idx] + endpoints[idx + 1 :]
                             return reordered

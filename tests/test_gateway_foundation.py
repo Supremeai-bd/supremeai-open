@@ -65,6 +65,15 @@ class TestGatewayConfig(unittest.TestCase):
         self.assertEqual(cfg.default_chain, "auto")
         self.assertGreater(cfg.rate_limit_max_requests, 0)
 
+    def test_chain_for_bare_and_prefixed_models(self):
+        policy_path = REPO_ROOT / "gateway" / "routing_policy.json"
+        raw = json.loads(policy_path.read_text(encoding="utf-8"))
+        cfg = parse_routing_policy(raw, env={})
+        chain_qual = cfg.chain_for("anthropic/claude-sonnet-4-5")
+        self.assertEqual(chain_qual[0].model, "anthropic/claude-sonnet-4-5")
+        chain_bare = cfg.chain_for("claude-sonnet-4-5")
+        self.assertEqual(chain_bare[0].model, "anthropic/claude-sonnet-4-5")
+
     def test_drift_rejection_unknown_provider(self):
         invalid_raw = {
             "schema_version": CONFIG_SCHEMA_VERSION,

@@ -152,7 +152,7 @@ def is_safe_url(url: str) -> bool:
                 return False
 
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.debug("Exception swallowed in security (deliberate fallback)", exc_info=True)
         return False
 
@@ -168,7 +168,7 @@ def is_safe_url_resolved(url: str) -> bool:
         return False
     try:
         hostname = urlparse(url).hostname or ""
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.debug("Exception swallowed in security (deliberate fallback)", exc_info=True)
         return False
     if not hostname:

@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import time
@@ -30,7 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 MARKER_OPEN_V2 = "<!-- pr-knowledge-envelope v2 -->"
 MARKER_CLOSE_V2 = "<!-- /pr-knowledge-envelope -->"

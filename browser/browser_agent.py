@@ -32,12 +32,21 @@ logger = logging.getLogger("supremeai.browser")
 
 # বাংলা মন্তব্য: Dual-path import — standalone scraper-এ top-level `security`/\n# `web_scraper`, backend-এ embedded হলে `services.scraper.*`। Scraper-এর নিজস্ব\n# self-contained security.py ব্যবহার হয় (core.security টানে না — SSRF-minimal)।
 try:
-    from security import is_safe_url, is_safe_url_resolved  # standalone scraper microservice
+    from security import (  # standalone scraper microservice
+        is_safe_url,
+        is_safe_url_resolved,
+    )
 except ImportError:  # embedded in main backend
     try:
-        from services.scraper.security import is_safe_url, is_safe_url_resolved  # type: ignore[no-redef]
+        from services.scraper.security import (  # type: ignore[no-redef]
+            is_safe_url,
+            is_safe_url_resolved,
+        )
     except ImportError:
-        from browser.security import is_safe_url, is_safe_url_resolved  # type: ignore[no-redef]
+        from browser.security import (  # type: ignore[no-redef]
+            is_safe_url,
+            is_safe_url_resolved,
+        )
 
 try:
     from web_scraper import WebScraper  # standalone scraper microservice
@@ -182,7 +191,7 @@ class BrowserAgent:
                     "links": links,
                     "action": action,
                 }
-            except (TimeoutError, Exception) as e:  # noqa: BLE001
+            except (TimeoutError, Exception) as e:
                 logger.error(f"Playwright action failed: {e}")
                 return {"success": False, "error": str(e), "url": url}
             finally:
@@ -267,7 +276,7 @@ class BrowserAgent:
                         logger.info(f"Extracted data from: {selector}")
 
                 return {"status": "success", "data": extracted_data}
-            except (TimeoutError, Exception) as e:  # noqa: BLE001
+            except (TimeoutError, Exception) as e:
                 logger.error(f"Recipe Interpreter crashed at step {index + 1}: {e!s}")
                 return {"status": "failed", "error": str(e), "step": index + 1}
             finally:

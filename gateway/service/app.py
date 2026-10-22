@@ -12,27 +12,26 @@ Key Features:
 """
 from __future__ import annotations
 
-import asyncio
+import logging
 import os
 import time
-import logging
-from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 try:
+    from service.keygen import verify_key
     from service.pool import squad
     from service.providers.adapters import (
+        PROVIDER_CONFIGS,
         forward_chat_completion,
         forward_stealth_webhook,
-        PROVIDER_CONFIGS,
     )
-    from service.keygen import verify_key
-    from service.telegram_webhook import telegram_router
     from service.providers.web_session import web_bridge
+    from service.telegram_webhook import telegram_router
 except ImportError:
     try:
         from gateway.service.keygen import verify_key
@@ -100,9 +99,7 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
 
     if not token:
         # Check if environment is secured (fail-closed in non-dev)
-        if os.getenv("SUPREMEAI_API_KEY") or SUPERADMIN_KEY or os.getenv("ENVIRONMENT") != "development":
-            return False
-        return True
+        return not (os.getenv("SUPREMEAI_API_KEY") or SUPERADMIN_KEY or os.getenv("ENVIRONMENT") != "development")
 
     # 1. Check stateless cryptographic HMAC signature (sk-supreme-...)
     if token.startswith("sk-supreme-"):
@@ -199,7 +196,7 @@ async def chat_completions(
 
     try:
         body = await request.json()
-    except Exception:
+    except Exception:  # noqa: BLE001
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     requested_model = body.get("model", "auto")

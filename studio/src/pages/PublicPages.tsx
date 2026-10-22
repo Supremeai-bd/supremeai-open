@@ -1,8 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUp, BrainCircuit, Check, ChevronDown, Clock, Database, Download, FileCode2, FileText, GitBranch, History, Image as ImageIcon, LayoutTemplate, Menu, Paperclip, Plus, Search, Share2, Sparkles, Telescope, Terminal, WandSparkles, Wrench, X, Zap } from 'lucide-react';
+import { FileText, History, Menu, Search, Sparkles, WandSparkles, Wrench, X, Zap } from 'lucide-react';
 
-const publicLinks = [
+export const publicLinks = [
   { to: '/', label: 'Chat' },
   { to: '/models', label: 'Models' },
   { to: '/features', label: 'Features' },
@@ -11,7 +11,7 @@ const publicLinks = [
   { to: '/about', label: 'About' },
 ];
 
-const capabilityItems = [
+export const capabilityItems = [
   { title: 'History', text: 'Save and revisit conversations', icon: History, href: '/login' },
   { title: 'Files', text: 'Bring your own context', icon: FileText, href: '/login' },
   { title: 'Tools', text: 'Connect actions and workflows', icon: Wrench, href: '/login' },
@@ -19,7 +19,7 @@ const capabilityItems = [
   { title: 'Workspace', text: 'Keep projects and context together', icon: Sparkles, href: '/login' },
 ];
 
-function CapabilityStrip({ onProtected }: { onProtected: (feature: string) => void }) {
+export function CapabilityStrip({ onProtected }: { onProtected: (feature: string) => void }) {
   // Issue #1460: protected capability chips used to navigate straight to
   // /login (or /register), destroying the guest's in-progress chat. They now
   // raise an in-page auth prompt instead — no navigation, state intact.
@@ -29,7 +29,7 @@ function CapabilityStrip({ onProtected }: { onProtected: (feature: string) => vo
   </nav>;
 }
 
-function AuthPromptModal({ feature, onClose }: { feature: string; onClose: () => void }) {
+export function AuthPromptModal({ feature, onClose }: { feature: string; onClose: () => void }) {
   // Issue #1460: "Sign in to access [Feature]" without navigating away.
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-label={`Sign in to access ${feature}`} onClick={onClose}>
     <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#171a20] p-7 shadow-2xl" onClick={(event) => event.stopPropagation()}>
@@ -46,7 +46,7 @@ function AuthPromptModal({ feature, onClose }: { feature: string; onClose: () =>
   </div>;
 }
 
-const intents = [
+export const intents = [
   { label: 'Research', prompt: 'Help me research a topic and organize the key findings.', icon: Search },
   { label: 'Write', prompt: 'Help me write a clear, useful first draft.', icon: WandSparkles },
   { label: 'Build', prompt: 'Help me turn an idea into a practical build plan.', icon: Zap },
