@@ -414,14 +414,11 @@ jobs:
               browser/*|sandbox/*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai-browser")
                 ;;
-              sdk/*|examples/sdk-*|api-schemas/telemetry-log.*|api-schemas/websocket-events.*)
-                TARGET_REPOS+=("Supremeai-bd/supremeai-sdk")
-                ;;
               infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane")
                 ;;
-              deployments/*|infra/*)
-                TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure")
+              sdk/*|examples/sdk-*|deployments/*|infra/*|api-schemas/telemetry-log.*|api-schemas/websocket-events.*)
+                TARGET_REPOS+=("Supremeai-bd/supremeai")
                 ;;
               scripts/agents/*|docs/*|AGENTS.md|AGENT_RULES.md|ECOSYSTEM_MAP.md|api-schemas/*|patches/*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai")
@@ -586,12 +583,8 @@ jobs:
                   out.add("Supremeai-bd/supremeai-api")
               if f.startswith("browser/") or f.startswith("sandbox/"):
                   out.add("Supremeai-bd/supremeai-browser")
-              if f.startswith("sdk/") or f.startswith("examples/sdk-") or f.startswith("api-schemas/telemetry-log.") or f.startswith("api-schemas/websocket-events."):
-                  out.add("Supremeai-bd/supremeai-sdk")
               if f.startswith("infrastructure/mcp-control-plane/") or f.startswith("api-schemas/heartbeat."):
                   out.add("Supremeai-bd/supremeai-mcp-control-plane")
-              if f.startswith("deployments/") or f.startswith("infra/"):
-                  out.add("Supremeai-bd/supremeai-infrastructure")
               # central monorepo receives everything (umbrella)
               out.add("Supremeai-bd/supremeai")
               return out
