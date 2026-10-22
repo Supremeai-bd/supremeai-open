@@ -1,5 +1,7 @@
 /* SupremeAI — Cosmic Design Tokens (Refs #855, #856) */
 :root {
+  --neon-purple: #bc13fe;
+  --danger: #f43f5e;
   --aurora-green: #10b981;
   --aurora-purple: #a855f7;
   --nebula-gradient: linear-gradient(135deg, #10b981 0%, #6366f1 50%, #a855f7 100%);
@@ -8,6 +10,7 @@
   --sa-border: rgba(255, 255, 255, 0.1);
   --sa-bg-dark: #030712;
   --sa-card-bg: rgba(15, 23, 42, 0.6);
+  --sa-overlay: rgba(3, 7, 18, 0.65);
 }
 
 @keyframes aurora-shift {
