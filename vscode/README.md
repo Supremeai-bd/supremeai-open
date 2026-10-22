@@ -1,47 +1,25 @@
-# SupremeAI VS Code Extension
+# SupremeAI Unified Client Hub (`supremeai-vscode`)
 
-Lightweight AI coding assistant + federation bridge for SupremeAI.
+Native client applications and developer workflows for SupremeAI.  
+Per [`ARCHITECTURE_PLAN.md`](https://github.com/Supremeai-bd/supremeai-open/blob/main/ARCHITECTURE_PLAN.md), this repository hosts all non-cloud client applications:
 
-## Quick Start
+| Subdirectory | Target Platform | Release Channel |
+|---|---|---|
+| **[`/extension`](./extension)** | VS Code Extension (`.vsix`) | VS Code Marketplace / GitHub Releases |
+| **[`/desktop`](./desktop)** | Windows / macOS / Linux Desktop App | GitHub Releases (`.exe`, `.dmg`, `.AppImage`) |
+| **[`/mobile`](./mobile)** | Android & iOS Supervisor App | Google Play Store / Apple App Store |
 
-1. Install dependencies: `npm install`
-2. Compile: `npm run compile`
-3. Run tests: `npm test`
-4. Press F5 in VS Code to launch the Extension Development Host.
+---
 
-## Configuration
+## 🛠️ Quick Start
 
-Open Settings → SupremeAI:
+```bash
+# Install dependencies across all workspaces
+npm install
 
-- `supremeai.gatewayUrl` — Gateway base URL (default `http://127.0.0.1:8080`)
-- `supremeai.apiKey` — `X-SupremeAI-Key` (default test key)
-- `supremeai.model` — default model (`auto`, `llama-3.1-8b-instant`, `gpt-4o-mini`, `claude-sonnet-4-5`)
-- `supremeai.towerUrl` — MCP Control Tower URL
-- `supremeai.autoRefreshSeconds` — status bar poll cadence
+# Compile the VS Code extension
+npm run build:extension
 
-For a zero-cost local run, start the gateway in mock mode:
-
+# Run extension tests
+npm run test
 ```
-SUPREMEAI_GATEWAY_MOCK_PROVIDER=1 python -m uvicorn gateway.serve:app --port 8080
-```
-
-## Features
-
-- **Chat Sidebar** (activity bar → SupremeAI) with model selector.
-- **Ask about Selection** (`Ctrl+Shift+I` / `Cmd+Shift+I`) — sends selection + question to the gateway; offers to apply a returned code block.
-- **Code Actions** — "SupremeAI: Explain/Fix selection" on any selection.
-- **Federation Bridge** — dispatch tasks, view PR runway, emergency kill-switch.
-- **Status Bar** — live federation health & latency.
-
-## Run the gateway (real providers)
-
-Set `SUPREMEAI_PROVIDER_BASE_<PROVIDER>` and `SUPREMEAI_PROVIDER_KEY_<PROVIDER>` env vars (groq/openai/anthropic/gemini), then:
-
-```
-python -m uvicorn gateway.serve:app --port 8080
-```
-
-## License
-
-Proprietary — SupremeAI Federation.
-EOF
