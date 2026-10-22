@@ -19,6 +19,18 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    for parent in Path(__file__).resolve().parents:
+        env_file = parent / ".env"
+        if env_file.is_file():
+            load_dotenv(env_file)
+            break
+except ImportError:
+    pass
+
 from credential_vault import CredentialVault
 from playwright.async_api import async_playwright
 
@@ -30,7 +42,9 @@ logger = logging.getLogger("infisical_sync")
 INFISICAL_API = "https://app.infisical.com"
 CLIENT_ID = os.environ.get("INFISICAL_CLIENT_ID", "")
 CLIENT_SECRET = os.environ.get("INFISICAL_CLIENT_SECRET", "")
-WORKSPACE_ID = os.environ.get("INFISICAL_WORKSPACE_ID", "")
+WORKSPACE_ID = os.environ.get("INFISICAL_WORKSPACE_ID") or os.environ.get(
+    "INFISICAL_PROJECT_ID", ""
+)
 ENVIRONMENT = "prod"
 
 USER_DATA_DIR = os.path.expanduser(r"~\.gemini_isolated_session")

@@ -104,6 +104,7 @@ APPROVED_ROOT_FILES = {
     "LICENSE",
     "README.md",
     "mcp.json",
+    "ruff.toml",
 }
 
 # depth-2 granularity for dirs that host executable/config material;

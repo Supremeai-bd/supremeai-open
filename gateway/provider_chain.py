@@ -80,11 +80,16 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
         if not relay_url:
             relay_url = os.environ.get("SUPREMEAI_CF_WORKER_URL", "").rstrip("/")
         if not relay_url:
-            raise RuntimeError("web relay not configured (set SUPREMEAI_WEB_RELAY_URL)")
+            relay_url = os.environ.get("STEALTH_WEBHOOK_URL", "").rstrip("/")
+        if not relay_url:
+            relay_url = "https://supremeai-worker.paykaribazaronline.workers.dev"
         url = relay_url + "/v1/chat/completions"
         started = time.monotonic()
+        req_model = endpoint.model
+        if req_model in ("gemini", "gemini-web"):
+            req_model = "gemini-2.5-flash"
         body = {
-            "model": endpoint.model,
+            "model": req_model,
             "messages": json.loads(payload).get("messages", []),
             "stream": False,
         }

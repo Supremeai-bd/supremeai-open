@@ -361,6 +361,39 @@ def create_app(
         title="SupremeAI API", version=GATEWAY_VERSION, docs_url=None, redoc_url=None
     )
 
+    import os as _cors_os
+
+    _cors_origins = [
+        "https://supremeai-studio.paykaribazaronline.workers.dev",
+        "https://supremeai-studio.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+    _extra = _cors_os.environ.get("SUPREMEAI_CORS_ORIGINS", "")
+    if _extra:
+        _cors_origins.extend(o.strip() for o in _extra.split(",") if o.strip())
+
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "Origin",
+            "X-Requested-With",
+            "X-SupremeAI-Key",
+            "x-supremeai-key",
+        ],
+    )
+
     # ---- health (no auth, OpenAPI security: []) ----
     @app.get("/health")
     @app.get("/healthz")

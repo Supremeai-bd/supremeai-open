@@ -158,6 +158,13 @@ def sync_satellite(
                 if src_file.exists():
                     dst_file.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src_file, dst_file)
+
+        # For consolidated unified API engine (supremeai-api per ARCHITECTURE_PLAN):
+        if target_repo == "Supremeai-bd/supremeai-api":
+            for sub in ("command", "skills", "agents", "gateway"):
+                sub_src = repo_root / sub
+                if sub_src.exists():
+                    copy_tree_contents(sub_src, tmp_repo / sub)
                     print(
                         f"📋 Mirrored contract file '{open_rel}' -> '{sat_rel}' in {target_repo}"
                     )
