@@ -16,9 +16,11 @@ Features:
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import struct
@@ -26,8 +28,10 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("supremeai.admin_auth")
 
 # Router for native admin endpoints
 router = APIRouter(prefix="/api/admin", tags=["admin-auth"])
@@ -140,7 +144,8 @@ def check_totp(user_otp: str, base32_secret: str) -> bool:
             if hmac.compare_digest(expected_code, user_otp.strip()):
                 return True
         return False
-    except Exception:
+    except (ValueError, TypeError, struct.error, binascii.Error) as exc:
+        logger.debug("TOTP check failed: %s", exc)
         return False
 
 
@@ -164,8 +169,8 @@ def _verify_password(provided_password: str) -> bool:
         try:
             import bcrypt
             return bcrypt.checkpw(provided_password.encode("utf-8"), pass_hash.encode("utf-8"))
-        except Exception:
-            pass
+        except (ImportError, ValueError, TypeError) as exc:
+            logger.debug("Bcrypt check failed or not available: %s", exc)
 
     # 3. Development fallback in local mode
     env_name = os.environ.get("ENV", "local").lower()
