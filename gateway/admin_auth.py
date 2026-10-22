@@ -53,11 +53,13 @@ def _b64url_decode(data: str) -> bytes:
 
 
 def get_jwt_secret() -> str:
-    return (
-        os.environ.get("SUPREMEAI_JWT_SECRET")
-        or os.environ.get("JWT_SECRET")
-        or "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
-    )
+    secret = os.environ.get("SUPREMEAI_JWT_SECRET") or os.environ.get("JWT_SECRET")
+    if secret:
+        return secret
+    env_name = os.environ.get("ENV", "local").lower()
+    if env_name in ("local", "dev", "development", "test"):
+        return "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
+    raise RuntimeError("SUPREMEAI_JWT_SECRET is required in production")
 
 
 def issue_admin_jwt(uid: str, email: str, role: str = "admin", expiry_hours: int = DEFAULT_JWT_EXPIRY_HOURS) -> str:
@@ -250,6 +252,12 @@ async def admin_login(payload: AdminLoginRequest):
 @router.post("/totp-setup")
 async def admin_totp_setup(request: Request):
     """Initiate TOTP setup, generating a fresh secret and provisioning URI."""
+    env_name = os.environ.get("ENV", "local").lower()
+    if env_name not in ("local", "dev", "development", "test"):
+        auth = request.headers.get("authorization")
+        if not auth or not auth.lower().startswith("bearer "):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
+        verify_admin_jwt(auth.split(" ", 1)[1])
     secret = generate_totp_secret()
     recovery_codes = [secrets.token_hex(4).upper() for _ in range(4)]
     email = os.environ.get("ADMIN_EMAIL", DEFAULT_ADMIN_EMAIL)

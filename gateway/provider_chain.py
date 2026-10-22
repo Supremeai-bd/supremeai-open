@@ -83,7 +83,11 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
             relay_url = os.environ.get("STEALTH_WEBHOOK_URL", "").rstrip("/")
         if not relay_url:
             relay_url = "https://supremeai-worker.paykaribazaronline.workers.dev"
-        url = relay_url + "/v1/chat/completions"
+        base = relay_url.rstrip("/")
+        if base.endswith("/v1"):
+            url = base + "/chat/completions"
+        else:
+            url = base + "/v1/chat/completions"
         started = time.monotonic()
         req_model = endpoint.model
         if req_model in ("gemini", "gemini-web"):
@@ -165,7 +169,11 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
             f"provider {endpoint.provider} not configured (set SUPREMEAI_PROVIDER_BASE_/KEY_)"
         )
 
-    url = api_base.rstrip("/") + "/v1/chat/completions"
+    base = api_base.rstrip("/")
+    if base.endswith("/v1"):
+        url = base + "/chat/completions"
+    else:
+        url = base + "/v1/chat/completions"
     body = {
         "model": endpoint.model,
         "messages": json.loads(payload).get("messages", []),
