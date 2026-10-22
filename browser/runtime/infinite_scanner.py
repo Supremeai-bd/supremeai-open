@@ -81,10 +81,9 @@ class ScrollPlan:
         """Round-by-round plan; stops at stall_limit stagnant rounds."""
         step = max(1, int(self.viewport_height * self.step_ratio))
         plan: list[ScrollStep] = []
-        stagnant = 0
         y = 0
         round_index = 0
-        while round_index < self.max_rounds and stagnant < self.stall_limit:
+        while round_index < self.max_rounds and y < self.page_height:
             y = min(y + step, self.page_height)
             plan.append(
                 ScrollStep(
@@ -95,7 +94,6 @@ class ScrollPlan:
                 )
             )
             round_index += 1
-            stagnant += 1  # without page growth, every round is stagnant
         return plan
 
 

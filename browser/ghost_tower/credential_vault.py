@@ -39,11 +39,13 @@ def get_or_create_master_key() -> bytes:
 
     # Generate new key
     new_key = Fernet.generate_key()
+    VAULT_DIR.mkdir(parents=True, exist_ok=True)
     KEY_FILE.write_bytes(new_key)
-    print(f"[KEY] [VAULT] New Master Key generated and secured at: {KEY_FILE}")
-    print(
-        f"[INFO] You can also set this in your environment: CREDENTIAL_MASTER_KEY={new_key.decode()}"
-    )
+    try:
+        os.chmod(KEY_FILE, 0o600)
+    except OSError:
+        pass
+    print("[OK] [VAULT] New Master Key generated and secured.")
     return new_key
 
 
@@ -152,14 +154,21 @@ class CredentialVault:
             return {}
         try:
             with open(VAULT_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            raise ValueError("vault store is corrupted or unreadable") from exc
+        if not isinstance(data, dict):
+            raise ValueError("vault store is corrupted: expected object")
+        return data
 
     def _write_raw_store(self, data: dict[str, Any]):
         VAULT_DIR.mkdir(parents=True, exist_ok=True)
         with open(VAULT_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+        try:
+            os.chmod(VAULT_FILE, 0o600)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":

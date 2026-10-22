@@ -12,7 +12,38 @@ export default {
       });
     }
 
-    const targetUrl = url.searchParams.get("url") || "https://example.com";
+    const targetUrlRaw = url.searchParams.get("url");
+    if (!targetUrlRaw) {
+      return Response.json({ success: false, error: "missing url parameter" }, { status: 400 });
+    }
+    let targetUrl;
+    try {
+      targetUrl = new URL(targetUrlRaw);
+    } catch {
+      return Response.json({ success: false, error: "invalid url" }, { status: 400 });
+    }
+    if (!["http:", "https:"].includes(targetUrl.protocol)) {
+      return Response.json({ success: false, error: "unsupported protocol" }, { status: 400 });
+    }
+    const host = targetUrl.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      host === "169.254.169.254"
+    ) {
+      return Response.json({ success: false, error: "target host not allowed" }, { status: 403 });
+    }
+    const expectedToken = env.SUPREMEAI_WORKER_TOKEN;
+    if (expectedToken) {
+      const auth = request.headers.get("authorization") || "";
+      if (auth !== `Bearer ${expectedToken}`) {
+        return Response.json({ success: false, error: "unauthorized" }, { status: 401 });
+      }
+    }
 
     let browser;
     try {
@@ -30,14 +61,14 @@ export default {
         }
       });
 
-      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
+      await page.goto(targetUrl.href, { waitUntil: "domcontentloaded", timeout: 15000 });
       const title = await page.title();
       const text = await page.evaluate(() => document.body ? document.body.innerText.slice(0, 2500) : "");
       await browser.close();
 
       return Response.json({
         success: true,
-        url: targetUrl,
+        url: targetUrl.href,
         title: title,
         content: text
       });
@@ -48,7 +79,7 @@ export default {
       return Response.json({
         success: false,
         error: err.message,
-        url: targetUrl
+        url: targetUrl.href
       }, { status: 500 });
     }
   }
