@@ -1,0 +1,60 @@
+name: Release Client Hub
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --workspace=extension
+      - run: npm run compile --workspace=extension
+      - run: npx --yes @vscode/vsce package --no-git-tag-version --out extension/supremeai-vscode.vsix
+        working-directory: extension
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: extension/*.vsix
+
+  build-desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci --workspace=desktop
+      - run: npm run build --workspace=desktop
+      - run: npx tauri build --config desktop/src-tauri/tauri.conf.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: desktop/src-tauri/target/release/bundle/**/*.exe
+
+  build-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci --workspace=mobile
+      - run: npm run build --workspace=mobile
+      - run: npx cap sync android
+        working-directory: mobile
+      - run: cd mobile/android && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: mobile/android/app/build/outputs/apk/debug/*.apk
