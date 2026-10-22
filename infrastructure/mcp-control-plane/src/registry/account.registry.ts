@@ -62,8 +62,8 @@ const discoveredOrgRepos = new Set<string>(CANONICAL_FEDERATION_REPOS);
  */
 export function registerDiscoveredOrgRepo(repoName: string): void {
   const normalized = repoName.trim().toLowerCase();
-  // Ghost Cloaking & Core Isolation: supremeai-api and supremeai are never exposed as generic satellites
-  if (normalized === "supremeai-api" || normalized === "supremeai") return;
+  // Core Isolation: supremeai is never exposed as generic satellite
+  if (normalized === "supremeai") return;
   if (normalized && !discoveredOrgRepos.has(normalized)) {
     discoveredOrgRepos.add(normalized);
   }
@@ -320,7 +320,6 @@ export function buildAccountRegistry(): ProviderAccount[] {
 
 export const ADMIN_ONLY_GITHUB_REPOS = new Set([
   "supremeai",
-  "supremeai-api",
   "supremeai-core",
   "github-org-supremeai-bd",
 ]);
