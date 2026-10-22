@@ -1,1 +1,0 @@
-"""Skill execution sandbox package."""
