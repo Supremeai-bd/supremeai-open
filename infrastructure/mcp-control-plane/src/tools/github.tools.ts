@@ -15,6 +15,7 @@ import { buildAccountRegistry } from "../registry/account.registry.js";
  */
 export const SATELLITE_REPOS: ReadonlySet<string> = new Set([
   "supremeai-open",
+  "supremeai-api",
   "supremeai-core",
   "supremeai-studio",
   "supremeai-vscode",
@@ -80,11 +81,10 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
     return `Forbidden: organization-level resources are strictly restricted to admin and supremeadmin roles (current role: '${store.role}').`;
   }
 
-  // Ghost Cloaking Policy: 'supremeai-api' is completely air-gapped from regular agents,
-  // EXCEPT read-only contract files (.d.ts, schema.prisma, openapi.json, …) which are
-  // needed to keep satellite/core interfaces in sync (#gap-1).
+  // Ghost Cloaking Policy: 'supremeai-api' is accessible to agent and admin roles (rank >= 3),
+  // but cloaked for restricted viewers / public viewers (rank < 3) except for contract files.
   const contract = isContractFile(path ?? "");
-  if (shortName === "supremeai-api" && roleRank(store.role) < 4 && !contract) {
+  if (shortName === "supremeai-api" && roleRank(store.role) < 3 && !contract) {
     return `Repository not found: '${shortName}'.`;
   }
   // কোর মোনোরিপো সার্বভৌম সিকিউরিটি: 'supremeai' শুধুমাত্র admin ও supremeadmin

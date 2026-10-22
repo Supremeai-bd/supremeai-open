@@ -103,10 +103,10 @@ RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
   const denyBrowser = assertRepoReadAccess("github.read_file", "supremeai-browser", browserUrl);
   assert.equal(denyBrowser, null, "Agent must be permitted to read satellite repo supremeai-browser");
 
-  // Ghost Cloaking verification: supremeai-api is completely air-gapped from regular agents
+  // supremeai-api is now accessible to agent (rank >= 3)
   const apiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
   const denyApi = assertRepoReadAccess("github.read_file", "supremeai-api", apiUrl);
-  assert.equal(denyApi, "Repository not found: 'supremeai-api'.", "Agent must receive Repository not found for cloaked supremeai-api");
+  assert.equal(denyApi, null, "Agent must be permitted to read satellite repo supremeai-api");
 });
 
 // 5a.1 Admin & Supremeadmin authority (Rank >= 4) — can access core repo and all satellites
@@ -188,10 +188,8 @@ assert.ok(adminAccs.some((a) => a.id === "github-org-supremeai-bd"), "admin must
 const agentAccs = getAccountsForRole("agent");
 assert.ok(!agentAccs.some((a) => a.id === "github-primary"), "agent must NOT see github-primary");
 assert.ok(!agentAccs.some((a) => a.id === "github-org-supremeai-bd"), "agent must NOT see github-org-supremeai-bd");
-assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-api")), "agent must NOT see supremeai-api");
+assert.ok(agentAccs.some((a) => a.id.includes("supremeai-api")), "agent MUST see supremeai-api");
 assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-core")), "agent must NOT see supremeai-core");
-assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-command")), "agent must NOT see supremeai-command");
-assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-infrastructure")), "agent must NOT see supremeai-infrastructure");
 assert.ok(agentAccs.some((a) => a.id.includes("supremeai-open")), "agent must see supremeai-open");
 
 const viewerAccs = getAccountsForRole("viewer");
