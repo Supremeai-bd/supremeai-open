@@ -31,7 +31,6 @@ export const GlobalConfigInitializer: React.FC<GlobalConfigInitializerProps> = (
     let cancelled = false;
     let retryCount = 0;
     let backoffTimer: ReturnType<typeof setTimeout> | null = null;
-    let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
 
     const applyConfig = (data: unknown) => {
       if (cancelled) return;
@@ -102,7 +101,6 @@ export const GlobalConfigInitializer: React.FC<GlobalConfigInitializerProps> = (
     return () => {
       cancelled = true;
       if (backoffTimer) clearTimeout(backoffTimer);
-      if (deadlineTimer) clearTimeout(deadlineTimer);
       if (typeof window !== 'undefined') {
         window.removeEventListener('online', onDeviceOnline);
       }
