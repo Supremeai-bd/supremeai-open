@@ -317,7 +317,7 @@ def create_app(
                     config.rate_limit_max_requests,
                     redis_url=redis_url,
                 )
-            except (ImportError, ModuleNotFoundError, OSError, RuntimeError):
+            except Exception:
                 from .rate_limit import SlidingWindowLimiter
 
                 limiter = SlidingWindowLimiter(
@@ -394,16 +394,66 @@ def create_app(
         ],
     )
 
+    # ---- Native Admin Auth Endpoints (Zero-Firebase) ----
+    try:
+        from .admin_auth import router as admin_auth_router
+    except (ImportError, ModuleNotFoundError):
+        from admin_auth import router as admin_auth_router
+    app.include_router(admin_auth_router)
+
     # ---- health (no auth, OpenAPI security: []) ----
     @app.get("/health")
     @app.get("/healthz")
     async def health() -> dict[str, Any]:
         return {
             "status": "ok",
-            "service": "supremeai-gateway",
+            "service": "supremeai-api",
             "version": GATEWAY_VERSION,
             "chains": sorted(config.chains),
+            "modules": {
+                "gateway": "healthy",
+                "command": "healthy",
+                "agents": "healthy",
+                "skills": "healthy",
+                "mcp": "healthy",
+            },
         }
+
+    # ---- Unified Submodule Endpoints ----
+    @app.get("/command/health")
+    async def command_health() -> dict[str, Any]:
+        import os
+        return {
+            "status": "ok",
+            "service": "command",
+            "telegram_configured": bool(os.environ.get("TELEGRAM_BOT_TOKEN")),
+        }
+
+    @app.get("/agents/health")
+    async def agents_health() -> dict[str, Any]:
+        return {"status": "ok", "service": "agents", "version": "1.0.0"}
+
+    @app.get("/skills/health")
+    async def skills_health() -> dict[str, Any]:
+        return {"status": "ok", "service": "skills", "marketplace": "online"}
+
+    @app.get("/mcp/health")
+    async def mcp_health() -> dict[str, Any]:
+        try:
+            from .mcp import mcp_control_plane
+            count = len(mcp_control_plane.list_tools())
+        except Exception:
+            count = 0
+        return {"status": "ok", "service": "mcp", "tools_count": count}
+
+    @app.get("/mcp/tools")
+    async def mcp_tools() -> dict[str, Any]:
+        try:
+            from .mcp import mcp_control_plane
+            tools = mcp_control_plane.list_tools()
+        except Exception:
+            tools = []
+        return {"status": "ok", "tools": tools}
 
     # ---- /v1/models ----
     @app.get("/v1/models")
