@@ -21,7 +21,7 @@ export async function inlineChatCommand(): Promise<void> {
   const prompt = buildPrompt(question, ctx);
   const config = vscode.workspace.getConfiguration("supremeai");
   const gatewayUrl = config.get<string>("gatewayUrl", "http://127.0.0.1:8080");
-  const apiKey = config.get<string>("apiKey", "supremeai-key-test-0000000001");
+  const apiKey = config.get<string>("apiKey", "") || process.env.SUPREMEAI_API_KEY || "";
   const model = tierToModel(config.get<string>("model", "auto"));
 
   const channel = vscode.window.createOutputChannel("SupremeAI");

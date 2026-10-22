@@ -60,7 +60,7 @@ export class SupremeAIChatViewProvider implements vscode.WebviewViewProvider {
   private async callGateway(userText: string, model: string): Promise<string> {
     const config = vscode.workspace.getConfiguration("supremeai");
     const gatewayUrl = config.get<string>("gatewayUrl", "http://127.0.0.1:8080");
-    const apiKey = config.get<string>("apiKey", "supremeai-key-test-0000000001");
+    const apiKey = config.get<string>("apiKey", "") || process.env.SUPREMEAI_API_KEY || "";
 
     const messages = [...this.messages.filter((m) => m.role === "user" || m.role === "assistant")];
     // ensure last user message present

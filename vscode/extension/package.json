@@ -108,8 +108,8 @@
         },
         "supremeai.apiKey": {
           "type": "string",
-          "default": "supremeai-key-test-0000000001",
-          "description": "X-SupremeAI-Key for gateway authentication"
+          "default": "",
+          "description": "X-SupremeAI-Key for gateway authentication (or SUPREMEAI_API_KEY environment variable)"
         },
         "supremeai.model": {
           "type": "string",
