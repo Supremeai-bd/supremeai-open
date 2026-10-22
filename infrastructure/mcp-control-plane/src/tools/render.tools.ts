@@ -9,6 +9,18 @@ import {
   listLogs,
   RenderLogFilters,
 } from "../adapters/render/index.js";
+import { RequestContextStore, roleRank, type UserRole } from "../policy/auth.context.js";
+
+function assertRenderAccess(toolName: string, minRole: UserRole): string | null {
+  const store = RequestContextStore.get();
+  if (!store) {
+    return null;
+  }
+  if (roleRank(store.role) < roleRank(minRole)) {
+    return `Forbidden: tool '${toolName}' requires ${minRole} role or higher (current role: '${store.role}').`;
+  }
+  return null;
+}
 
 /** Shared shape for the render.get_logs optional filter block. */
 const renderLogFiltersSchema = {
@@ -44,6 +56,8 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       accountId: z.string().describe("The account ID (e.g. render-primary)"),
     },
     async ({ accountId }) => {
+      const denial = assertRenderAccess("render.list_services", "agent");
+      if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
       try {
         const services = await listServices(accountId);
         return {
@@ -66,6 +80,8 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
     },
     async ({ accountId, serviceId }) => {
+      const denial = assertRenderAccess("render.service_health", "agent");
+      if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
       try {
         const health = await getServiceHealth(accountId, serviceId);
         return {
@@ -89,6 +105,8 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       ...renderLogFiltersSchema,
     },
     async ({ accountId, serviceId, startTime, endTime, level, type, text, limit, cursor }) => {
+      const denial = assertRenderAccess("render.get_logs", "agent");
+      if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
       try {
         const filters: RenderLogFilters = { startTime, endTime, level, type, text, limit, cursor };
         const result = await listLogs(accountId, serviceId, filters);
@@ -113,6 +131,8 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       keysOnly: z.boolean().optional().describe("When true, return only the set of KEY names (no values)"),
     },
     async ({ accountId, serviceId, keysOnly }) => {
+      const denial = assertRenderAccess("render.get_env_vars", "admin");
+      if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
       try {
         const envVars = await getServiceEnvVars(accountId, serviceId, keysOnly ?? false);
         return {
@@ -135,6 +155,8 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
     },
     async ({ accountId, serviceId }) => {
+      const denial = assertRenderAccess("render.get_env_var_keys", "admin");
+      if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
       try {
         const keys = await getEnvVarKeys(accountId, serviceId);
         return {

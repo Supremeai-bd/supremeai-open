@@ -204,7 +204,8 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
   if (
     name.startsWith("infisical_") ||
     name === "github_list_secrets" ||
-    name === "render_get_env_vars"
+    name === "render_get_env_vars" ||
+    name === "render_get_env_var_keys"
   ) {
     return {
       name,
