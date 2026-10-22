@@ -47,6 +47,9 @@
     "test:github-adapter": "tsx scripts/test-runner.ts test_github.ts GITHUB_TOKEN",
     "test:infisical": "tsx scripts/test-runner.ts test_infisical.ts",
     "test:remediation": "tsx scripts/test-runner.ts test_remediation.ts",
+    "test:bridge-patch-modes": "tsx scripts/test-runner.ts test_bridge_patch_modes.ts",
+    "test:bridge-freshness": "tsx scripts/test-runner.ts test_bridge_freshness.ts",
+    "test:preemptive-rotation": "tsx test_redis_preemptive_rotation.ts",
     "test:wiring-guard": "tsx scripts/test-runner.ts --guard"
   },
   "keywords": [
