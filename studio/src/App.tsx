@@ -1,4 +1,5 @@
 import React from "react";
+import "./styles/tokens.css";
 import { GlobalConfigInitializer } from "./components/core/GlobalConfigInitializer";
 import { SatelliteMatrix } from "./components/SatelliteMatrix";
 import { ConsensusWidget } from "./components/ConsensusWidget";

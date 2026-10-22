@@ -1,0 +1,35 @@
+/* SupremeAI — Cosmic Design Tokens (Refs #855, #856) */
+:root {
+  --aurora-green: #10b981;
+  --aurora-purple: #a855f7;
+  --nebula-gradient: linear-gradient(135deg, #10b981 0%, #6366f1 50%, #a855f7 100%);
+  --surface-glass: rgba(15, 23, 42, 0.75);
+  --glow-accent: 0 0 24px rgba(168, 85, 247, 0.25);
+  --sa-border: rgba(255, 255, 255, 0.1);
+  --sa-bg-dark: #030712;
+  --sa-card-bg: rgba(15, 23, 42, 0.6);
+}
+
+@keyframes aurora-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.aurora-bg {
+  background: radial-gradient(circle at 50% 0%, rgba(168, 85, 247, 0.2) 0%, transparent 60%),
+              radial-gradient(circle at 100% 50%, rgba(16, 185, 129, 0.15) 0%, transparent 50%),
+              #030712;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-bg {
+    animation: none !important;
+  }
+}
