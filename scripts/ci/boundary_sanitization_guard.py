@@ -123,7 +123,7 @@ APPROVED_SUBTREES = {
         "actions",
         "PULL_REQUEST_TEMPLATE.md",
     },  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
-    "infrastructure": {"mcp-control-plane"},
+    "infrastructure": {"mcp-control-plane", "cloudflare-studio-proxy"},
 }
 
 # ---------------------------------------------------------------------------
