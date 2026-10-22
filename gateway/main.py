@@ -317,7 +317,7 @@ def create_app(
                     config.rate_limit_max_requests,
                     redis_url=redis_url,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - fallback to in-memory sliding window limiter on redis failure
                 from .rate_limit import SlidingWindowLimiter
 
                 limiter = SlidingWindowLimiter(
@@ -442,7 +442,7 @@ def create_app(
         try:
             from .mcp import mcp_control_plane
             count = len(mcp_control_plane.list_tools())
-        except Exception:
+        except Exception:  # noqa: BLE001 - graceful degradation if mcp control plane is uninitialized
             count = 0
         return {"status": "ok", "service": "mcp", "tools_count": count}
 
@@ -451,7 +451,7 @@ def create_app(
         try:
             from .mcp import mcp_control_plane
             tools = mcp_control_plane.list_tools()
-        except Exception:
+        except Exception:  # noqa: BLE001 - graceful degradation if mcp control plane is uninitialized
             tools = []
         return {"status": "ok", "tools": tools}
 
