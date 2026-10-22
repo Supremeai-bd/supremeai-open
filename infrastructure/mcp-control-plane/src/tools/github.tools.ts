@@ -15,17 +15,11 @@ import { buildAccountRegistry } from "../registry/account.registry.js";
  */
 export const SATELLITE_REPOS: ReadonlySet<string> = new Set([
   "supremeai-open",
-  "supremeai-sdk",
-  "supremeai-archive",
   "supremeai-core",
   "supremeai-studio",
-  "supremeai-infrastructure",
-  "supremeai-mcp-control-plane",
-  "supremeai-command",
-  "supremeai-skills",
   "supremeai-vscode",
-  "supremeai-agents",
   "supremeai-browser",
+  "supremeai-archive",
 ]);
 
 export function isSatelliteRepo(repoName: string): boolean {

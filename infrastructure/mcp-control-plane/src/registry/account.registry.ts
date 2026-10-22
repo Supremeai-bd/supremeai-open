@@ -43,17 +43,11 @@ function isAvailable(envRef: string): boolean {
 export const CANONICAL_FEDERATION_REPOS = [
   "supremeai",
   "supremeai-open",
-  "supremeai-command",
-  "supremeai-skills",
-  "supremeai-vscode",
-  "supremeai-agents",
-  "supremeai-browser",
-  "supremeai-api",
-  "supremeai-studio",
-  "supremeai-infrastructure",
   "supremeai-core",
-  "supremeai-sdk",
-  "supremeai-mcp-control-plane",
+  "supremeai-api",
+  "supremeai-browser",
+  "supremeai-studio",
+  "supremeai-vscode",
   "supremeai-archive",
 ] as const;
 
@@ -328,9 +322,6 @@ export const ADMIN_ONLY_GITHUB_REPOS = new Set([
   "supremeai",
   "supremeai-api",
   "supremeai-core",
-  "supremeai-command",
-  "supremeai-infrastructure",
-  "supremeai-mcp-control-plane",
   "github-org-supremeai-bd",
 ]);
 
