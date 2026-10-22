@@ -399,18 +399,15 @@ jobs:
                 TARGET_REPOS+=("Supremeai-bd/supremeai-core")
                 ;;
               command/*|handlers/telegram*)
-                TARGET_REPOS+=("Supremeai-bd/supremeai-command")
                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
                 ;;
               skills/*|examples/langchain-*|examples/vercel-*)
-                TARGET_REPOS+=("Supremeai-bd/supremeai-skills")
                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
                 ;;
               vscode/*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai-vscode")
                 ;;
               agents/*|runner/*)
-                TARGET_REPOS+=("Supremeai-bd/supremeai-agents")
                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
                 ;;
               browser/*|sandbox/*)
@@ -420,7 +417,6 @@ jobs:
                 TARGET_REPOS+=("Supremeai-bd/supremeai-sdk")
                 ;;
               infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
-                TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane")
                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
                 ;;
               deployments/*|infra/*)
@@ -579,22 +575,18 @@ jobs:
               if f.startswith("core/") or f.startswith("api-schemas/task-router."):
                   out.add("Supremeai-bd/supremeai-core")
               if f.startswith("command/") or f.startswith("handlers/telegram"):
-                  out.add("Supremeai-bd/supremeai-command")
                   out.add("Supremeai-bd/supremeai-api")
               if f.startswith("skills/") or f.startswith("examples/langchain-") or f.startswith("examples/vercel-"):
-                  out.add("Supremeai-bd/supremeai-skills")
                   out.add("Supremeai-bd/supremeai-api")
               if f.startswith("vscode/"):
                   out.add("Supremeai-bd/supremeai-vscode")
               if f.startswith("agents/") or f.startswith("runner/"):
-                  out.add("Supremeai-bd/supremeai-agents")
                   out.add("Supremeai-bd/supremeai-api")
               if f.startswith("browser/") or f.startswith("sandbox/"):
                   out.add("Supremeai-bd/supremeai-browser")
               if f.startswith("sdk/") or f.startswith("examples/sdk-") or f.startswith("api-schemas/telemetry-log.") or f.startswith("api-schemas/websocket-events."):
                   out.add("Supremeai-bd/supremeai-sdk")
               if f.startswith("infrastructure/mcp-control-plane/") or f.startswith("api-schemas/heartbeat."):
-                  out.add("Supremeai-bd/supremeai-mcp-control-plane")
                   out.add("Supremeai-bd/supremeai-api")
               if f.startswith("deployments/") or f.startswith("infra/"):
                   out.add("Supremeai-bd/supremeai-infrastructure")
