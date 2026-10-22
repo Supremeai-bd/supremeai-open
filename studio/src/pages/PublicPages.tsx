@@ -189,7 +189,7 @@ export function GuestChat() {
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
-      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch {} }
+      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch { /* ignore storage error */ } }
       const reply = await callLiveAI(text, model, apiKey);
       setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via }]);
     } catch {
