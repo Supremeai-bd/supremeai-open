@@ -81,6 +81,10 @@ const rawIssues = [
   { number: 42, title: "test: client harness", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/42", created_at: "2026-10-12T11:00:00Z", labels: [{ name: "bridge:queued" }], comments: 0 },
   { number: 43, title: "PR thread, not a work order", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/pull/43", created_at: "2026-10-12T12:00:00Z", labels: [], pull_request: { url: "x" } },
   { number: 44, title: "closed again", state: "closed", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/44", labels: [] },
+  { number: 45, title: "[Anchor Hub] Supremeai-bd/supremeai-studio", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/45", labels: ["P1-high", "area:governance"] },
+  { number: 46, title: "[Federation Hub] CI Failures Desk", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/46", labels: ["P1-high"] },
+  { number: 47, title: "failed work order", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/47", labels: ["bridge:rejected"] },
+  { number: 48, title: "landed work order", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/48", labels: ["bridge:landed"] },
   null,
 ];
 
