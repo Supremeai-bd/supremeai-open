@@ -628,6 +628,22 @@ export function isIssueNotPullRequest(raw: RawIssue): boolean {
   return !raw.pull_request;
 }
 
+export function isAnchorHubOrGovernance(raw: RawIssue): boolean {
+  const title = typeof raw.title === "string" ? raw.title : "";
+  if (/^\[(Anchor|Federation)\s+Hub\]/i.test(title)) return true;
+  const labels = Array.isArray(raw.labels)
+    ? raw.labels.map((l) => (typeof l === "string" ? l : (l as { name?: string })?.name || ""))
+    : [];
+  return labels.some((l) => l.toLowerCase() === "area:governance");
+}
+
+export function isRejectedOrLanded(raw: RawIssue): boolean {
+  const labels = Array.isArray(raw.labels)
+    ? raw.labels.map((l) => (typeof l === "string" ? l : (l as { name?: string })?.name || ""))
+    : [];
+  return labels.some((l) => l.toLowerCase() === "bridge:rejected" || l.toLowerCase() === "bridge:landed");
+}
+
 /** Open issues only (defense in depth: the API query filters, we verify). */
 function isOpenIssue(raw: RawIssue): boolean {
   return typeof raw.state !== "string" || raw.state.toLowerCase() === "open";
@@ -640,6 +656,8 @@ export function queueFromIssues(rawIssues: unknown, limit = 20) {
     .filter((item): item is RawIssue => Boolean(item) && typeof item === "object")
     .filter(isIssueNotPullRequest)
     .filter(isOpenIssue)
+    .filter((item) => !isAnchorHubOrGovernance(item))
+    .filter((item) => !isRejectedOrLanded(item))
     .map(normalizeQueueItem)
     .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
     .slice(0, Math.min(Math.max(1, limit), 50));
