@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import { createHash } from "node:crypto";
 import { getOrCreateGuestClient, type ClientProtocol, type ExternalClient } from "./client-registry.js";
 import { profileForProvider } from "./tool-visibility.js";
 
@@ -136,8 +137,9 @@ export function autoRegisterGuestClient(
     return getOrCreateGuestClient(named.id, guestName, provider, protocol, tenantId, toolProfile);
   }
 
-  const clientIp = clientIpFor(req).replace(/[^a-zA-Z0-9]/g, "_");
-  const guestId = `guest_${provider}_${clientIp.slice(0, 12)}`;
-  const guestName = `${label} Client (${clientIp})`;
+  const rawIp = clientIpFor(req);
+  const ipHash = createHash("sha256").update(rawIp).digest("hex").slice(0, 12);
+  const guestId = `guest_${provider}_${ipHash}`;
+  const guestName = `${label} Client (${ipHash})`;
   return getOrCreateGuestClient(guestId, guestName, provider, protocol, tenantId, toolProfile);
 }
