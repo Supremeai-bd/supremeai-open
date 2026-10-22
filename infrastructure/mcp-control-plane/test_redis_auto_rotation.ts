@@ -64,4 +64,12 @@ const resetDate = new Date(resetMs);
 assert.equal(resetDate.getUTCDate(), 1, "Reset day must be 1st of month");
 assert.equal(resetDate.getUTCHours(), 0, "Reset hour must be 00:00 UTC");
 
+// 7. Auto-recovery probe verification
+const { clearAccountCooldown, probeCooldownRecovery } = await import("./src/lib/redis_chain.js");
+assert.equal(isAccountQuotaExhausted("primary"), true);
+const recovered = await probeCooldownRecovery(async (acc) => acc.label === "primary");
+assert.deepEqual(recovered, ["primary"]);
+assert.equal(isAccountQuotaExhausted("primary"), false, "Primary should recover after successful probe");
+assert.equal(getActiveRedisAccount().label, "primary", "Primary should resume active primary after recovery");
+
 console.log("✅ All Redis auto-rotation contract tests PASSED!");

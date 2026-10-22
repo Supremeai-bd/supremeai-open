@@ -9,7 +9,10 @@
 > **Orientation for New AI Agents (Directory Mapping & Single Door):**  
 > This repo (`supremeai-open`) contains mirror folders (`core/`, `command/`, `studio/`, `infrastructure/`, etc.). These are **NOT legacy duplicates**; they are the public transit surfaces for the 12 satellite repositories.  
 > - **Never push directly to satellites:** Satellites enforce a strict 0 Issues / 0 PRs policy ([`FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)).  
-> - **Code right here:** Make your edits inside this repository in the respective domain directory. Once your PR merges into `supremeai-open:main`, `landing.yml` automatically dispatches the commit to the target satellite repo.
+> - **Code right here:** Make your edits inside this repository in the respective domain directory. Once your PR merges into `supremeai-open:main`, `landing.yml` automatically dispatches the commit to the target satellite repo.  
+> - **Satellite Dispatch Invariants:**  
+>   - **Domain Routing:** Code must touch the mirror folder (`studio/*` → `supremeai-studio`, `vscode/*` → `supremeai-vscode`, `api/*` / `gateway/*` → `supremeai-api`, etc.). Files in `docs/*` route *only* to monorepo `supremeai`. Work orders (`docs/work-orders/*`) are specs, not satellite code!  
+>   - **Branch Prefix Rule:** PR branches must use standard naming (`feat/*`, `fix/*`, etc.). Branches prefixed with `bridge/*` trigger loop-prevention in `landing.yml` and intentionally skip satellite dispatch.
 
 ---
 

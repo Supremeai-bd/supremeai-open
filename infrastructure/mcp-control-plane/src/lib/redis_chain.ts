@@ -125,6 +125,58 @@ export function isAccountQuotaExhausted(label: string, nowMs: number = Date.now(
 }
 
 /**
+ * কোটা cooldown থেকে কোনো অ্যাকাউন্টকে আগাম মুক্তি দেওয়া (যেমন পিং টেস্টে সফল হলে)।
+ */
+export function clearAccountCooldown(label: string): boolean {
+  if (quotaCooldownUntil.has(label)) {
+    quotaCooldownUntil.delete(label);
+    console.log(`[redis-chain] Account "${label}" cooldown cleared via recovery probe.`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Cooldown-এ থাকা অ্যাকাউন্টগুলোর স্বয়ংক্রিয় স্বাস্থ্য পরীক্ষা ও পুনরুদ্ধার (#2613 / #26)।
+ * সাময়িক নেটওয়ার্ক সমস্যা বা ট্রানজিয়েন্ট রেট-লিমিটের কারণে কোনো নোড যেন দীর্ঘ সময়
+ * (যেমন ১ মাস) অকারণে আটকে না থাকে — এই প্রোব পিং সফল হলে কুলডাউন পরিষ্কার করে দেয়।
+ */
+export async function probeCooldownRecovery(
+  pingFn?: (account: RedisAccountConfig) => Promise<boolean>,
+): Promise<string[]> {
+  const recovered: string[] = [];
+  const chain = buildAccountChain();
+  for (const account of chain) {
+    if (!isAccountQuotaExhausted(account.label)) continue;
+    try {
+      let isAlive = false;
+      if (pingFn) {
+        isAlive = await pingFn(account);
+      } else if (account.restUrl && account.restToken) {
+        const pingUrl = account.restUrl.replace(/\/+$/, "") + "/ping";
+        const res = await fetch(pingUrl, {
+          headers: { Authorization: `Bearer ${account.restToken}` },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+          const body = await res.text();
+          if (!responseIndicatesQuotaExhaustion(res.status, body)) {
+            isAlive = true;
+          }
+        }
+      }
+      if (isAlive) {
+        clearAccountCooldown(account.label);
+        recovered.push(account.label);
+      }
+    } catch {
+      // Still unreachable or in error; keep in cooldown
+    }
+  }
+  return recovered;
+}
+
+/**
  * Cooldown-মুক্ত account-দের chain (R2)। সব account cooldown-এ থাকলে পুরো
  * chain ফিরিয়ে দাও — সময়-হিসাবে ভুল হলেও fleet-wide blackout এড়াতে
  * (graceful degradation, AGENTS.md invariant #3)।
