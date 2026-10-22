@@ -18,10 +18,12 @@
         "resizable": true
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
   },
   "bundle": {
-    "active": false,
+    "active": true,
     "targets": "all",
     "icon": []
   },

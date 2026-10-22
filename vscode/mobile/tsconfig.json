@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "jsx": "react-jsx",
     "rootDir": "src",
-    "noEmit": true
+    "outDir": "dist",
+    "noEmit": false
   },
   "include": ["src"]
 }
