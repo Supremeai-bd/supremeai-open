@@ -75,9 +75,7 @@ SATELLITES: tuple[str, ...] = (
     "vscode",
     "browser",
     "core",
-    "agents",
     "archive",
-    "mcp-control-plane",
 )
 
 # Short satellite key -> actual GitHub repository name. The #626 doctrine uses
@@ -90,9 +88,7 @@ SATELLITE_REPO_NAMES: dict[str, str] = {
     "vscode": "supremeai-vscode",
     "browser": "supremeai-browser",
     "core": "supremeai-core",
-    "agents": "supremeai-agents",
     "archive": "supremeai-archive",
-    "mcp-control-plane": "supremeai-mcp-control-plane",
 }
 
 

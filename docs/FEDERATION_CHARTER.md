@@ -30,9 +30,9 @@ desk** of the federation. All tasks, bridge work orders, CI failure alerts,
 feature proposals, and community contributions across all 14 repositories
 are submitted and tracked exclusively here. There is no second door.
 
-### Rule 2 — Zero-Issue / Zero-PR Satellite Mandate (৮টি স্যাটেলাইটে ০/০)
+### Rule 2 — Zero-Issue / Zero-PR Satellite Mandate (৬টি স্যাটেলাইটে ০/০)
 
-The 8 active satellite repositories:
+The 6 active satellite repositories:
 
 | # | Satellite | Role |
 |---|-----------|------|
@@ -40,10 +40,8 @@ The 8 active satellite repositories:
 | 2 | `api` | Unified provider gateway & commands (Render) |
 | 3 | `vscode` | IDE extension & native client hub |
 | 4 | `browser` | Stealth automation sandbox (Render) |
-| 5 | `core` | Decision intelligence & primary node (Render) |
-| 6 | `agents` | Autonomous agent lifecycle & worker (Render) |
-| 7 | `archive` | Append-only memory & ADRs |
-| 8 | `mcp-control-plane` | MCP tower on Render |
+| 5 | `core` | Decision intelligence & primary/worker node (Render) |
+| 6 | `archive` | Append-only memory & ADRs |
 
 must maintain **zero open issues and zero open PRs — permanently**. Direct
 manual issue creation or PR opening on a satellite is deprecated; all
