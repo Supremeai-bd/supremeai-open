@@ -177,7 +177,7 @@ export class McpBridge {
       }
 
       const data = (await res.json().catch(() => ({}))) as {
-        result?: { content?: Array<{ text?: string }> };
+        result?: { content?: Array<{ text?: string }>; isError?: boolean };
         error?: { message?: string };
       };
 
@@ -185,11 +185,45 @@ export class McpBridge {
         return { success: false, error: data.error.message || "MCP Dispatch Error" };
       }
 
+      if (!data.result) {
+        return { success: false, error: "MCP response missing result" };
+      }
+
       const responseText = data?.result?.content?.[0]?.text || "";
+      if (data.result.isError) {
+        return { success: false, error: responseText || "MCP tool reported an error" };
+      }
+
+      let taskId: string | undefined;
+      let issueNumber: number | undefined;
+      if (responseText) {
+        try {
+          const parsed = JSON.parse(responseText) as Record<string, unknown>;
+          taskId =
+            (parsed.taskId as string) ||
+            (parsed.task_id as string) ||
+            (parsed.id as string) ||
+            undefined;
+          const rawIssue =
+            parsed.issueNumber ?? parsed.issue_number ?? parsed.issue;
+          if (typeof rawIssue === "number") issueNumber = rawIssue;
+          else if (typeof rawIssue === "string" && /^\d+$/.test(rawIssue)) {
+            issueNumber = Number(rawIssue);
+          }
+        } catch {
+          // Non-JSON tool text is still a successful dispatch; keep it as the id.
+          taskId = responseText;
+        }
+      }
+
+      if (!responseText && !taskId) {
+        return { success: false, error: "MCP dispatch returned no result content" };
+      }
+
       return {
         success: true,
-        taskId: `task-${Date.now().toString(36)}`,
-        error: responseText ? undefined : undefined,
+        taskId,
+        issueNumber,
       };
     } catch (err) {
       return {
@@ -226,7 +260,22 @@ export class McpBridge {
       });
       clearTimeout(timer);
 
-      return res.ok;
+      if (!res.ok) {
+        return false;
+      }
+
+      const data = (await res.json().catch(() => ({}))) as {
+        result?: { isError?: boolean; content?: Array<{ text?: string }> };
+        error?: { message?: string };
+      };
+
+      if (data.error) {
+        return false;
+      }
+      if (!data.result || data.result.isError) {
+        return false;
+      }
+      return true;
     } catch {
       return false;
     }
