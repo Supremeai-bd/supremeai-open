@@ -137,3 +137,69 @@ export async function checkKaggle(): Promise<unknown> {
     latencyMs: Date.now() - start
   };
 }
+
+export async function pushKaggleKernel(
+  username: string,
+  slug: string,
+  title: string,
+  code: string,
+  isNotebook = false
+): Promise<unknown> {
+  if (kagglePool().length === 0) throw new Error("KAGGLE_API_TOKENS is not configured.");
+
+  return await kagglePool().execute(
+    async (token) => {
+      const isBearer = token.startsWith("KGAT_");
+      const authHeader = isBearer ? `Bearer ${token}` : `Basic ${Buffer.from(token).toString('base64')}`;
+      const res = await httpRequest("https://www.kaggle.com/api/v1/kernels/push", {
+        method: "POST",
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json"
+        },
+        body: {
+          id: `${username}/${slug}`,
+          title,
+          text: code,
+          language: "python",
+          kernel_type: isNotebook ? "notebook" : "script",
+          is_private: true,
+          enable_gpu: true,
+          enable_internet: true
+        }
+      });
+      if (!res.ok) {
+        throw new Error(`Kaggle push error (${res.status}): ${JSON.stringify(res.data)}`);
+      }
+      return res.data;
+    },
+    (err: any) => {
+      const msg = err?.message || "";
+      return msg.includes("429") || msg.includes("rate limit") || msg.includes("quota");
+    }
+  );
+}
+
+export async function getKaggleKernelStatus(username: string, slug: string): Promise<unknown> {
+  if (kagglePool().length === 0) throw new Error("KAGGLE_API_TOKENS is not configured.");
+
+  return await kagglePool().execute(
+    async (token) => {
+      const isBearer = token.startsWith("KGAT_");
+      const authHeader = isBearer ? `Bearer ${token}` : `Basic ${Buffer.from(token).toString('base64')}`;
+      const res = await httpRequest(
+        `https://www.kaggle.com/api/v1/kernels/status?userName=${encodeURIComponent(username)}&kernelSlug=${encodeURIComponent(slug)}`,
+        { headers: { Authorization: authHeader } }
+      );
+      if (!res.ok) {
+        throw new Error(`Kaggle status error (${res.status}): ${JSON.stringify(res.data)}`);
+      }
+      return res.data;
+    },
+    (err: any) => {
+      const msg = err?.message || "";
+      return msg.includes("429") || msg.includes("rate limit") || msg.includes("quota");
+    }
+  );
+}
+

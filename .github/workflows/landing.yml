@@ -784,3 +784,40 @@ jobs:
             echo "No files in patches/ touched by this landing. Zero pruning required."
           fi
 
+  knowledge-ingest:
+    name: "🧠 Knowledge Ingestion — Extract & Store Agent Intelligence"
+    needs: auto_merge
+    if: |
+      always() &&
+      (needs.auto_merge.outputs.merged == 'true' ||
+       needs.auto_merge.outputs.merged == 'dispatch-only' ||
+       (github.event_name == 'pull_request' && github.event.pull_request.merged == true))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ingest Agent Intelligence into Supabase and Qdrant
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ needs.auto_merge.outputs.pr_number || github.event.pull_request.number }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$PR_NUM" ]; then
+            echo "Extracting structured knowledge for PR #${PR_NUM}..."
+            python3 scripts/ci/ingest_pr_knowledge.py --pr-num "$PR_NUM" || echo "::warning::Knowledge ingestion encountered a non-fatal issue."
+          else
+            echo "No PR number available for knowledge ingestion. Skipping."
+          fi
+
+

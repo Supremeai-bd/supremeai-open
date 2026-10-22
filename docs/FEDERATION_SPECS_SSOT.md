@@ -17,6 +17,7 @@ Companion to `AGENTS.md` / `AGENT_RULES.md`. One-line purpose per spec; open the
 | S11 Surgical Adoption | Minimal diff adoption | ≤30 files / ≤200 KB |
 | S12 Nightly Train | Scheduled heavy suites | P0/P1 preemption + dedup |
 | S13 Knowledge Graph | 1-hop context graph | Graceful fallback if unavailable |
+| S14 Requirements & Training | Customer requirement understanding, audit playbook & curriculum | Problem > solution, 3-tier memory isolation, zero-compromise security |
 
 ## Core invariants (all specs)
 - Law of Minimal Elegance: simple + effective > clever + complex.
@@ -24,4 +25,5 @@ Companion to `AGENTS.md` / `AGENT_RULES.md`. One-line purpose per spec; open the
 - Evidence before action; smallest safe diff.
 - Satellites hold 0 issues/PRs (FEDERATION_CHARTER).
 
-Full specs: `docs/S01_*.md` … `docs/S13_*.md`.
+Full specs: `docs/S01_*.md` … `docs/S14_*.md`, `docs/requirement-understanding-kb.md`.
+

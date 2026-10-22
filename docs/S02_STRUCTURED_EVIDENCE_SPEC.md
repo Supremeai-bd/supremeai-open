@@ -106,8 +106,61 @@ do — this is the same asymmetry that keeps claim-guard honest.
 - S0.4: tower tool consolidation — bridge_submit_patch gains an evidenceEnvelope argument and the tower embeds the envelope into the PR body at creation time; the PR body becomes a projection of structured data, never hand-written prose.
 - Removal of the old regex ladders is gated on guards consuming the envelope for one full week without a false reject (the S0.1 week proved the pattern).
 
-## 8. References
+## 8. V2 Intelligent Role-Specific Knowledge Envelope
+
+While V1 captures basic PR mechanics, **V2 (`pr-knowledge-envelope/2`)** captures cognitive, architectural knowledge tailored to SupremeAI's 7 canonical agent roles. Upon landing in `main`, `landing.yml` autonomously parses and ingests these entries into Supabase (`knowledge_base`, `learned_facts`) and Qdrant (`supremeai_memory`).
+
+```json
+<!-- pr-knowledge-envelope v2 -->
+{
+  "schema": "pr-knowledge-envelope/2",
+  "task_issue_ref": 100,
+  "role": "coder" | "auditor" | "ci-fixer" | "planner" | "human-eye" | "third-party" | "ecosystem-scout",
+  "knowledge": { ...role-specific fields... }
+}
+<!-- /pr-knowledge-envelope -->
+```
+
+### The 7 Canonical Role Knowledge Contracts:
+
+1. **`coder` (Contributor / Developer)**
+   - `fix_mechanism`: Technical explanation of HOW the solution works (code/logic flow, not superficial description).
+   - `why_this_way`: Architectural and simplicity justification for choosing this design.
+   - `alternatives_rejected`: `[{"method": "...", "why_rejected": "..."}]` (concrete rejected approaches).
+   - `pitfalls_to_avoid`: Known edge cases, concurrency gotchas, or regression hazards.
+
+2. **`auditor` (Sentinel / Rules-Breaker)**
+   - `audit_methodology`: Exact probing technique used (AST parsing, live MCP calls, grep signatures).
+   - `alternative_audit_methods`: Other scanning techniques considered (e.g. static typecheck vs mock execution).
+   - `improper_audit_traps`: How NOT to audit this (avoiding aggressive traffic, side-effects, or false positive traps).
+   - `prevention_gate`: Automated CI check or contract test deployed to permanently prevent recurrence.
+
+3. **`ci-fixer` (Infrastructure / Workflow)**
+   - `root_cause_analysis`: True underlying failure root cause (strictly banning skip-test or `|| true` hacks).
+   - `cross_platform_guarantee`: Verification of deterministic execution across Linux, Windows, and macOS.
+   - `fast_path_quota_impact`: Preservation of <5s fast paths and free runner minutes.
+
+4. **`planner` (Architect / Spec Designer)**
+   - `reused_components`: 80% reuse rule evidence: existing federation modules/abstractions reused.
+   - `rejected_speculative_complexity`: Premature scaling or speculative modularity deliberately avoided.
+   - `contract_compatibility`: Backward compatibility guarantee and zero-drift verification.
+
+5. **`human-eye` (Supervisory / Governance)**
+   - `permanent_system_learning`: Permanent rule, template, or automated check taught to the system.
+   - `admin_work_budget_check`: Verification that administrative manual overhead remains <= 0.01%.
+
+6. **`third-party` (MCP Control Tower & Bridge)**
+   - `zero_credential_preservation`: Verification that master keys remain vaulted and zero-credential boundary holds.
+   - `cold_start_resilience`: Timeout, circuit-breaking, or cold-start retry mechanisms implemented.
+
+7. **`ecosystem-scout` (Platform Sentinel)**
+   - `board_parity_finding`: Status of satellite 0-issues / 0-PRs mandate and anchor hub integrity.
+   - `drift_detected_and_remedied`: Any specification or implementation drift detected and resolved.
+
+## 9. References
 
 - Task issue #457 · siblings #456 (landed via PR #462), #458, #459
+- Ingestion engine: `scripts/ci/ingest_pr_knowledge.py` (V2 role parser + Supabase/Qdrant auto-ingestion)
 - Battle record: WO #435 (claim-guard false reject), PR #462 (opener keyword miss + Knowledge Sharing miss + boundary subtree miss)
-- Deliverables: scripts/tower/pr_evidence_envelope.py (reference impl), tests/test_s02_evidence_envelope.py (dual-mode suite)
+- Deliverables: `scripts/tower/pr_evidence_envelope.py` (reference impl), `tests/test_s02_evidence_envelope.py` (dual-mode suite), `tests/test_ingest_pr_knowledge.py`
+

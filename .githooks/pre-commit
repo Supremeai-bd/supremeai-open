@@ -110,24 +110,20 @@ fi
 for file in $staged_files; do
     case "$file" in
         *.env|*.env.*|.env)
-            reject \"Staged secret file detected: $file\" \
-                \"Never commit .env or secret configuration files to version control.\" \
-                \"Remove it from the staging area: git reset HEAD $file\" \
-                \"Deliberate admin bypass: git commit --no-verify.\"
+            reject "Staged secret file detected: $file" \
+                "Never commit .env or secret configuration files to version control." \
+                "Remove it from the staging area: git reset HEAD $file" \
+                "Deliberate admin bypass: git commit --no-verify."
             ;;
     esac
 done
 
 # 2. Check for common raw credential patterns in staged diff
-# Matches unmasked assignments like API_KEY = "..." or TOKEN = '...' in BOTH quote
-# styles (ignoring test allow annotations). The delimiter bracket must carry the
-# FIXED: Use proper POSIX ERE character class for single and double quotes.
-# Previously used broken pattern that matched literal x/2/7/backslash characters.
-if git diff --cached -U0 | grep -E '^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*['"][A-Za-z0-9_\-\.]{20,}['"]' | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
-    reject \"Potential raw secret literal detected in staged diff\" \
-        \"Secrets must be loaded from vault/environment, never hardcoded into source files.\" \
-        \"If this is a false positive test fixture, annotate the line with '# gitleaks:allow'\n.\" \
-        \"Deliberate admin bypass: git commit --no-verify.\"
+if git diff --cached -U0 | grep -E '^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*[\x27"][A-Za-z0-9_\-\.]{20,}[\x27"]' | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
+    reject "Potential raw secret literal detected in staged diff" \
+        "Secrets must be loaded from vault/environment, never hardcoded into source files." \
+        "If this is a false positive test fixture, annotate the line with '# gitleaks:allow'." \
+        "Deliberate admin bypass: git commit --no-verify."
 fi
 
 # 3. Freshness / Stale-Base Check (Dual-Rebase Mandate)
@@ -138,11 +134,11 @@ if git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null 2>&1; then
         if [ -n "$merge_base" ]; then
             behind=$(git rev-list --count "$merge_base..$main_ref" 2>/dev/null || echo 0)
             if [ "$behind" -gt 0 ]; then
-                reject \"stale branch: main advanced $behind commit(s) past your merge-base (#161, #4177)\" \
-                    \"Rebase onto latest main before committing new work:\" \
-                    \"  git fetch origin main && git rebase origin/main\" \
-                    \"Working on a stale base leads to merge conflicts and CI failure.\" \
-                    \"Deliberate admin bypass: git commit --no-verify.\"
+                reject "stale branch: main advanced $behind commit(s) past your merge-base (#161, #4177)" \
+                    "Rebase onto latest main before committing new work:" \
+                    "  git fetch origin main && git rebase origin/main" \
+                    "Working on a stale base leads to merge conflicts and CI failure." \
+                    "Deliberate admin bypass: git commit --no-verify."
             fi
         fi
     fi
@@ -154,10 +150,10 @@ for file in $staged_files; do
         *.py)
             if [ -f "$file" ]; then
                 if ! python -m py_compile "$file" 2>/dev/null; then
-                    reject \"Python syntax error in staged file: $file\" \
-                        \"Fix syntax errors before committing.\" \
-                        \"Test command: python -m py_compile $file\" \
-                        \"Deliberate admin bypass: git commit --no-verify.\"
+                    reject "Python syntax error in staged file: $file" \
+                        "Fix syntax errors before committing." \
+                        "Test command: python -m py_compile $file" \
+                        "Deliberate admin bypass: git commit --no-verify."
                 fi
             fi
             ;;
@@ -170,9 +166,9 @@ for file in $staged_files; do
         *.json)
             if [ -f "$file" ]; then
                 if ! python -c "import json; json.load(open(r'$file', encoding='utf-8'))" 2>/dev/null; then
-                    reject \"Invalid JSON syntax in staged file: $file\" \
-                        \"Check JSON formatting before committing.\" \
-                        \"\nDeliberate admin bypass: git commit --no-verify.\"
+                    reject "Invalid JSON syntax in staged file: $file" \
+                        "Check JSON formatting before committing." \
+                        "Deliberate admin bypass: git commit --no-verify."
                 fi
             fi
             ;;
@@ -180,22 +176,22 @@ for file in $staged_files; do
 done
 
 # 6. TypeScript check for infrastructure/mcp-control-plane
-mcp_staged=$(echo "$staged_files" | grep -E '^infrastructure/mcp-control-plane/.*\\.(ts|tsx)$' || true)
+mcp_staged=$(echo "$staged_files" | grep -E '^infrastructure/mcp-control-plane/.*\.(ts|tsx)$' || true)
 if [ -n "$mcp_staged" ]; then
     if [ -d "infrastructure/mcp-control-plane" ]; then
         if command -v bunx >/dev/null 2>&1; then
             if ! (cd infrastructure/mcp-control-plane && bunx tsc --noEmit >/dev/null 2>&1); then
-                reject \"TypeScript typecheck failed in infrastructure/mcp-control-plane\" \
-                    \"Run 'bunx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors.\" \
-                    \"Ensure all imports, exports, and types are valid.\" \
-                    \"Deliberate admin bypass: git commit --no-verify.\"
+                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
+                    "Run 'bunx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors." \
+                    "Ensure all imports, exports, and types are valid." \
+                    "Deliberate admin bypass: git commit --no-verify."
             fi
         elif command -v npx >/dev/null 2>&1; then
             if ! (cd infrastructure/mcp-control-plane && npx tsc --noEmit >/dev/null 2>&1); then
-                reject \"TypeScript typecheck failed in infrastructure/mcp-control-plane\" \
-                    \"Run 'npx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors.\" \
-                    \"Ensure all imports, exports, and types are valid.\" \
-                    \"Deliberate admin bypass: git commit --no-verify.\"
+                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
+                    "Run 'npx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors." \
+                    "Ensure all imports, exports, and types are valid." \
+                    "Deliberate admin bypass: git commit --no-verify."
             fi
         fi
     fi
@@ -206,9 +202,9 @@ for file in $staged_files; do
     if [ -f "$file" ]; then
         fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
         if [ "$fsize" -gt 256000 ]; then
-            reject \"Staged file exceeds size ceiling (Rule P7): $file ($fsize bytes > 250KB)\" \
-                \"Individual source files in PRs must not exceed the P7 sizing limit.\" \
-                \"Deliberate admin bypass: git commit --no-verify.\"
+            reject "Staged file exceeds size ceiling (Rule P7): $file ($fsize bytes > 250KB)" \
+                "Individual source files in PRs must not exceed the P7 sizing limit." \
+                "Deliberate admin bypass: git commit --no-verify."
         fi
     fi
 done
