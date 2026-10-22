@@ -36,14 +36,10 @@ if hasattr(sys.stdout, "reconfigure"):
 DOMAIN_MAP: dict[str, str] = {
     "Supremeai-bd/supremeai-studio": "studio",
     "Supremeai-bd/supremeai-core": "core",
-    "Supremeai-bd/supremeai-command": "command",
     "Supremeai-bd/supremeai-api": "gateway",
-    "Supremeai-bd/supremeai-agents": "agents",
-    "Supremeai-bd/supremeai-skills": "skills",
     "Supremeai-bd/supremeai-browser": "browser",
     "Supremeai-bd/supremeai-vscode": "vscode",
     "Supremeai-bd/supremeai-infrastructure": "infra",
-    "Supremeai-bd/supremeai-mcp-control-plane": "infrastructure/mcp-control-plane",
     "Supremeai-bd/supremeai-sdk": "sdk",
 }
 
@@ -340,8 +336,8 @@ def prune_ephemeral_patches(repo_root: Path) -> None:
 
 def self_test() -> bool:
     """Self-test verifying contract and mappings."""
-    assert len(DOMAIN_MAP) == 11, (
-        f"Expected 11 satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
+    assert len(DOMAIN_MAP) == 7, (
+        f"Expected 7 active satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
     )
     assert "Supremeai-bd/supremeai-studio" in DOMAIN_MAP
     assert "Supremeai-bd/supremeai-core" in DOMAIN_MAP
@@ -367,7 +363,7 @@ def main() -> int:
         help="Specific target repositories to sync (default: all mapped)",
     )
     parser.add_argument(
-        "--all", action="store_true", help="Sync all 11 satellites and central monorepo"
+        "--all", action="store_true", help="Sync all active satellites and central monorepo"
     )
     parser.add_argument("--token", help="GitHub Personal Access Token or App Token")
     parser.add_argument(
