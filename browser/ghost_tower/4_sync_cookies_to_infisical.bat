@@ -1,7 +1,7 @@
 @echo off
 title SupremeAI: Sync AI Fleet Cookies to Infisical Cloud Vault
 echo ======================================================================
-echo   SupremeAI: AI Fleet Cookies Exporter & Infisical Cloud Sync ($0)
+echo   SupremeAI: AI Fleet Cookies Exporter and Infisical Cloud Sync ($0)
 echo ======================================================================
 echo.
 cd /d "%~dp0"
