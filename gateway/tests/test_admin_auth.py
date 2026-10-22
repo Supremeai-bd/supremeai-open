@@ -10,9 +10,9 @@ Verifies:
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -43,8 +43,6 @@ except ImportError:
 
 try:
     from admin_auth import (
-        DEFAULT_ADMIN_EMAIL,
-        DEFAULT_ADMIN_UID,
         check_totp,
         generate_totp_secret,
         issue_admin_jwt,
@@ -52,8 +50,6 @@ try:
     )
 except ImportError:
     from gateway.admin_auth import (
-        DEFAULT_ADMIN_EMAIL,
-        DEFAULT_ADMIN_UID,
         check_totp,
         generate_totp_secret,
         issue_admin_jwt,
@@ -140,7 +136,11 @@ def test_admin_totp_setup_and_verify_flow(client, monkeypatch):
     assert bad_verify.status_code == 401
 
     # 4. Valid verify code with newly generated setup secret succeeds
-    import base64, struct, hmac, hashlib, time
+    import base64
+    import hashlib
+    import hmac
+    import struct
+    import time
     clean_secret = setup_data["secret"].strip().upper()
     missing_padding = len(clean_secret) % 8
     if missing_padding:
