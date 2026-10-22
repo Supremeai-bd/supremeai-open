@@ -139,8 +139,29 @@ def test_admin_totp_setup_and_verify_flow(client, monkeypatch):
     bad_verify = client.post("/api/admin/totp-verify", json={"otp": "999999"})
     assert bad_verify.status_code == 401
 
+    # 4. Valid verify code with newly generated setup secret succeeds
+    import base64, struct, hmac, hashlib, time
+    clean_secret = setup_data["secret"].strip().upper()
+    missing_padding = len(clean_secret) % 8
+    if missing_padding:
+        clean_secret += "=" * (8 - missing_padding)
+    key = base64.b32decode(clean_secret)
+    current_time = int(time.time() // 30)
+    msg = struct.pack(">Q", current_time)
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    offset = h[19] & 15
+    code_num = struct.unpack(">I", h[offset : offset + 4])[0] & 0x7FFFFFFF
+    valid_otp = f"{code_num % 1000000:06d}"
+
+    good_verify = client.post("/api/admin/totp-verify", json={"otp": valid_otp})
+    assert good_verify.status_code == 200
+    assert good_verify.json()["status"] == "success"
+    assert "token" in good_verify.json()
+
 
 def test_admin_logout(client):
     res = client.post("/api/admin/logout")
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
+
+

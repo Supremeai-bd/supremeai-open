@@ -284,11 +284,13 @@ async def admin_totp_verify(payload: AdminTotpVerifyRequest):
     if not secret:
         secret = os.environ.get("SUPREMEAI_ADMIN_TOTP_SECRET")
 
-    # In local/test mode fallback to standard test secret if none set
+    # Vault pattern: TOTP secret MUST come from env/vault. No hardcoded
+    # fallback (fail-closed) — see secret-scan policy.
     if not secret:
-        env_name = os.environ.get("ENV", "local").lower()
-        if env_name in ("local", "dev", "development", "test"):
-            secret = "JBSWY3DPEHPK3PXP"
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="TOTP secret not configured.",
+        )
 
     if not secret or not check_totp(otp, secret):
         raise HTTPException(
