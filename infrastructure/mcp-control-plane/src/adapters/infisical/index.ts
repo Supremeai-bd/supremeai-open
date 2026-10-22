@@ -3,7 +3,14 @@ import { httpRequest, bearerAuth } from "../../lib/http.js";
 
 const INFISICAL_URL = "https://app.infisical.com";
 
+let cachedToken: string | null = null;
+let tokenExpiresAt = 0;
+
 async function getAccessToken(): Promise<string> {
+  if (cachedToken && Date.now() < tokenExpiresAt) {
+    return cachedToken;
+  }
+
   const { clientId, clientSecret } = env.infisical;
   if (!clientId || !clientSecret) {
     throw new Error("Missing INFISICAL_CLIENT_ID or INFISICAL_CLIENT_SECRET");
@@ -15,11 +22,18 @@ async function getAccessToken(): Promise<string> {
       clientId,
       clientSecret,
     },
+    timeoutMs: 6000,
+    retries: 1,
   });
 
   const data = res.data as any;
   if (data.accessToken) {
-    return data.accessToken;
+    const token = String(data.accessToken);
+    cachedToken = token;
+    // Default expiry 15 minutes (or data.expiresIn - 60s)
+    const ttlSec = typeof data.expiresIn === "number" ? Math.max(data.expiresIn - 60, 300) : 900;
+    tokenExpiresAt = Date.now() + ttlSec * 1000;
+    return token;
   }
   throw new Error("Failed to get Infisical access token");
 }

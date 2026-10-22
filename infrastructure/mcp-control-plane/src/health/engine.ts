@@ -105,6 +105,18 @@ export class HealthEngine {
         if (deployDerived) return { ...data, status: deployDerived };
         return data;
       },
+      "github": async () => {
+        const { getAccountConfig, githubHeaders } = await import("../adapters/github/index.js");
+        const { httpRequest } = await import("../lib/http.js");
+        const { apiKey: token, baseUrl } = getAccountConfig("github-primary");
+        const res = await httpRequest(baseUrl, {
+          headers: githubHeaders(token),
+          timeoutMs: 6000,
+          retries: 0,
+        });
+        if (!res.ok) throw new Error(`GitHub API responded ${res.status}`);
+        return res.data;
+      },
       "supabase": () => getSupabaseHealth("supabase-primary"),
       "redis": () => pingRedis(),
       "cloudflare": () => getWorkerStatus(),
