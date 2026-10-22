@@ -9,7 +9,7 @@ real embedding model via the store's score() hook.
 
 from __future__ import annotations
 
-import contextlib
+import logging
 import re
 import time
 import urllib.error
@@ -17,6 +17,9 @@ import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
 
 
 @dataclass
@@ -128,6 +131,12 @@ class QdrantMemoryStore(MemoryStore):
         self.vector_size = vector_size
         self.timeout_s = timeout_s
         self._collection_ensured = False
+        self._qdrant_ok = True
+        self._last_error: str | None = None
+
+    @property
+    def degraded(self) -> bool:
+        return not self._qdrant_ok or not self._collection_ensured
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
@@ -150,13 +159,26 @@ class QdrantMemoryStore(MemoryStore):
             headers=self._headers(),
             method="PUT",
         )
-        with (
-            contextlib.suppress(Exception),
-            urllib.request.urlopen(req, timeout=self.timeout_s) as resp,
-        ):
-            if resp.status in (200, 201):
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                if resp.status in (200, 201, 409):
+                    self._collection_ensured = True
+                    self._qdrant_ok = True
+                    self._last_error = None
+                    return
+                self._last_error = f"unexpected status {resp.status}"
+        except urllib.error.HTTPError as exc:
+            if exc.code == 409:
                 self._collection_ensured = True
-        self._collection_ensured = True
+                self._qdrant_ok = True
+                self._last_error = None
+                return
+            self._last_error = f"HTTP {exc.code}: {exc.reason}"
+            logger.warning("Qdrant collection ensure failed: %s", self._last_error)
+        except Exception as exc:  # noqa: BLE001 - degraded fallback
+            self._last_error = str(exc)[:200]
+            logger.warning("Qdrant collection ensure failed: %s", self._last_error)
+        self._qdrant_ok = False
 
     def _embed(self, text: str) -> list[float]:
         """Deterministic embedding vector (dimension vector_size)."""
@@ -213,11 +235,16 @@ class QdrantMemoryStore(MemoryStore):
             headers=self._headers(),
             method="PUT",
         )
-        with (
-            contextlib.suppress(Exception),
-            urllib.request.urlopen(req, timeout=self.timeout_s),
-        ):
-            pass
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                if resp.status not in (200, 201, 202):
+                    raise RuntimeError(f"unexpected status {resp.status}")
+            self._qdrant_ok = True
+            self._last_error = None
+        except Exception as exc:  # noqa: BLE001 - degraded fallback
+            self._qdrant_ok = False
+            self._last_error = str(exc)[:200]
+            logger.warning("Qdrant memory store failed: %s", self._last_error)
         return item
 
     def search(
@@ -270,6 +297,9 @@ class QdrantMemoryStore(MemoryStore):
                     )
                 return results
         except (urllib.error.URLError, OSError, ValueError):
+            self._qdrant_ok = False
+            self._last_error = "qdrant search failed"
+            logger.warning("Qdrant memory search failed; using in-memory fallback")
             return super().search(
                 query=query, top_k=top_k, namespace=namespace, threshold=threshold
             )

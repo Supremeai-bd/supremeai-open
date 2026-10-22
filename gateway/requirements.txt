@@ -1,6 +1,4 @@
-# SupremeAI Gateway — server runtime (issue #336)
-# The provider transport itself is stdlib asyncio (no httpx/requests client
-# dependency); only the SERVER framework is third-party, per the issue's
-# FastAPI/Starlette acceptance criterion.
+# SupremeAI Gateway - server runtime (issue #336)
 fastapi>=0.110
 uvicorn>=0.27
+httpx>=0.27

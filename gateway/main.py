@@ -284,6 +284,8 @@ def parse_completion_response(result: AttemptResult) -> dict[str, Any]:
         body = json.loads(result.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise ValueError("provider returned a non-JSON completion body") from None
+    if not isinstance(body, dict):
+        raise TypeError("provider returned a non-object completion body")
     choices = body.get("choices") or []
     if not choices:
         raise ValueError("provider completion body has no choices")
@@ -753,7 +755,9 @@ def create_app(
                         [
                             r
                             for r in safe
-                            if not (isinstance(r, dict) and r.get("status", 0) >= 400)
+                            if isinstance(r, dict)
+                            and isinstance(r.get("status"), int)
+                            and 200 <= r.get("status", 0) < 300
                         ]
                     ),
                     "responses": safe,
@@ -794,6 +798,13 @@ def create_app(
                 code="missing_text",
                 message="'text' must be a non-empty string.",
             )
+        if len(text) > 10000:
+            return error_response(
+                400,
+                err_type="invalid_request_error",
+                code="text_too_large",
+                message="'text' must be at most 10000 characters.",
+            )
         namespace = body.get("namespace", "default")
         if not isinstance(namespace, str):
             return error_response(
@@ -801,6 +812,13 @@ def create_app(
                 err_type="invalid_request_error",
                 code="invalid_namespace",
                 message="'namespace' must be a string.",
+            )
+        if not namespace or len(namespace) > 64:
+            return error_response(
+                400,
+                err_type="invalid_request_error",
+                code="invalid_namespace",
+                message="'namespace' must be 1..64 characters.",
             )
         item_id = body.get("id")
         if item_id is not None and not isinstance(item_id, str):
@@ -821,6 +839,11 @@ def create_app(
         item = memory_store.store(
             text=text, namespace=namespace, item_id=item_id, metadata=metadata
         )
+        persisted = True
+        degraded = False
+        if hasattr(memory_store, "degraded"):
+            degraded = bool(memory_store.degraded)
+            persisted = not degraded
         return attach_rate_headers(
             request,
             JSONResponse(
@@ -829,6 +852,8 @@ def create_app(
                     "id": item.id,
                     "namespace": item.namespace,
                     "created": item.created,
+                    "persisted": persisted,
+                    "degraded": degraded,
                 }
             ),
         )

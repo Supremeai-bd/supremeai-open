@@ -9,7 +9,7 @@ provider credentials never leave the server side.
 ```bash
 pip install -r gateway/requirements.txt
 export SUPREMEAI_API_KEY_PYTEST="supremeai-key-..."   # key material per owner
-uvicorn gateway.main:app --factory=false --port 8080  # see gateway/__init__:app
+uvicorn gateway.serve:app --port 8080  # see gateway/serve.py
 ```
 
 The default app factory is offline-inert (`create_app(config)` with no
