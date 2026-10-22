@@ -40,9 +40,7 @@ DOMAIN_MAP: dict[str, str] = {
     "Supremeai-bd/supremeai-browser": "browser",
     "Supremeai-bd/supremeai-vscode": "vscode",
     "Supremeai-bd/supremeai-agents": "agents",
-    "Supremeai-bd/supremeai-infrastructure": "infra",
     "Supremeai-bd/supremeai-mcp-control-plane": "infrastructure/mcp-control-plane",
-    "Supremeai-bd/supremeai-sdk": "sdk",
 }
 
 # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
@@ -338,8 +336,8 @@ def prune_ephemeral_patches(repo_root: Path) -> None:
 
 def self_test() -> bool:
     """Self-test verifying contract and mappings."""
-    assert len(DOMAIN_MAP) == 9, (
-        f"Expected 9 active satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
+    assert len(DOMAIN_MAP) == 7, (
+        f"Expected 7 active satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
     )
     assert "Supremeai-bd/supremeai-studio" in DOMAIN_MAP
     assert "Supremeai-bd/supremeai-core" in DOMAIN_MAP
