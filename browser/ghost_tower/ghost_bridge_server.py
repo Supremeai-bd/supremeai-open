@@ -33,10 +33,10 @@ app = FastAPI(title="SupremeAI Ghost Tower Live Gemini Web Scraper", version="2.
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["http://localhost:8788", "http://127.0.0.1:8788"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # Initialize the Gemini Web Engine (headless=False so user can see and log in once if needed)
@@ -362,4 +362,4 @@ if __name__ == "__main__":
     logger.info(
         f"Starting SupremeAI Ghost Tower Live Gemini Web Server on port {port}..."
     )
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="127.0.0.1", port=port)

@@ -10,7 +10,12 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Proprietary" }
 authors = [{ name = "SupremeAI Federation" }]
-dependencies = []
+dependencies = [
+    "playwright>=1.40",
+    "lxml>=4.9",
+    "cryptography>=41.0",
+    "fastapi>=0.110",
+]
 
 [project.optional-dependencies]
 runtime = ["playwright>=1.40", "lxml>=4.9"]
