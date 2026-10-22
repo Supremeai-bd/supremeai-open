@@ -30,24 +30,20 @@ desk** of the federation. All tasks, bridge work orders, CI failure alerts,
 feature proposals, and community contributions across all 14 repositories
 are submitted and tracked exclusively here. There is no second door.
 
-### Rule 2 — Zero-Issue / Zero-PR Satellite Mandate (১২টি স্যাটেলাইটে ০/০)
+### Rule 2 — Zero-Issue / Zero-PR Satellite Mandate (৮টি স্যাটেলাইটে ০/০)
 
-The 12 satellite repositories:
+The 8 active satellite repositories:
 
 | # | Satellite | Role |
 |---|-----------|------|
-| 1 | `studio` | Web UI dashboard |
-| 2 | `api` | Unified provider gateway |
-| 3 | `vscode` | IDE extension |
-| 4 | `browser` | Stealth automation sandbox |
-| 5 | `core` | Decision intelligence (private plane) |
-| 6 | `command` | Telegram admin control |
-| 7 | `skills` | Skills marketplace |
-| 8 | `agents` | Stateless agent lifecycle |
-| 9 | `sdk` | Client SDK packages |
-| 10 | `archive` | Append-only memory |
-| 11 | `infrastructure` | Render and Terraform ops |
-| 12 | `mcp-control-plane` | MCP tower on Render |
+| 1 | `studio` | Web UI dashboard (Vercel) |
+| 2 | `api` | Unified provider gateway & commands (Render) |
+| 3 | `vscode` | IDE extension & native client hub |
+| 4 | `browser` | Stealth automation sandbox (Render) |
+| 5 | `core` | Decision intelligence & primary node (Render) |
+| 6 | `agents` | Autonomous agent lifecycle & worker (Render) |
+| 7 | `archive` | Append-only memory & ADRs |
+| 8 | `mcp-control-plane` | MCP tower on Render |
 
 must maintain **zero open issues and zero open PRs — permanently**. Direct
 manual issue creation or PR opening on a satellite is deprecated; all

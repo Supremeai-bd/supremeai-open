@@ -75,12 +75,8 @@ SATELLITES: tuple[str, ...] = (
     "vscode",
     "browser",
     "core",
-    "command",
-    "skills",
     "agents",
-    "sdk",
     "archive",
-    "infrastructure",
     "mcp-control-plane",
 )
 
@@ -94,12 +90,8 @@ SATELLITE_REPO_NAMES: dict[str, str] = {
     "vscode": "supremeai-vscode",
     "browser": "supremeai-browser",
     "core": "supremeai-core",
-    "command": "supremeai-command",
-    "skills": "supremeai-skills",
     "agents": "supremeai-agents",
-    "sdk": "supremeai-sdk",
     "archive": "supremeai-archive",
-    "infrastructure": "supremeai-infrastructure",
     "mcp-control-plane": "supremeai-mcp-control-plane",
 }
 
