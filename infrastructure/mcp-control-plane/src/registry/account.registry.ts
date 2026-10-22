@@ -320,7 +320,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
 
 export const ADMIN_ONLY_GITHUB_REPOS = new Set([
   "supremeai",
-  "supremeai-core",
+  "supremeai-archive",
   "github-org-supremeai-bd",
 ]);
 

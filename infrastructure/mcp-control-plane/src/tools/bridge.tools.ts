@@ -224,14 +224,14 @@ export const BRIDGE_QUEUE_LABEL = "bridge:queued";
  * সব pure helpers exported — অফলাইন ব্যাটারিতে যাচাই হয়।
  */
 
-/** Known satellite anchors → private satellite repos (single-target rule). */
+/** Known satellite anchors → private satellite repos (single-target rule per Golden 8 topology). */
 const SATELLITE_REPO_MAP: ReadonlyArray<{ anchor: string; repo: string }> = [
-  { anchor: "infrastructure/mcp-control-plane/", repo: "Supremeai-bd/supremeai-mcp-control-plane" },
+  { anchor: "infrastructure/mcp-control-plane/", repo: "Supremeai-bd/supremeai-api" },
+  { anchor: "gateway/", repo: "Supremeai-bd/supremeai-api" },
+  { anchor: "studio/", repo: "Supremeai-bd/supremeai-studio" },
   { anchor: "browser/", repo: "Supremeai-bd/supremeai-browser" },
   { anchor: "vscode/", repo: "Supremeai-bd/supremeai-vscode" },
-  { anchor: "skills/", repo: "Supremeai-bd/supremeai-skills" },
   { anchor: "core/", repo: "Supremeai-bd/supremeai-core" },
-  { anchor: "command/", repo: "Supremeai-bd/supremeai-command" },
 ];
 
 /** The monorepo trunk — the conservative default when no single anchor covers all paths. */
