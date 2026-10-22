@@ -77,13 +77,59 @@ type Message = { role: 'user' | 'assistant'; text: string };
 function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
 
 async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via: string }> {
-  const apiTarget = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com';
-  const resolvedKey = apiKey || (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPREMEAI_API_KEY || (typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || 'guest') : 'guest');
-  const modelId = modelName.toLowerCase().includes('reasoning') ? 'supremeai/openrouter' : 'supremeai/groq';
+  const env = (import.meta as unknown as { env: Record<string, string> }).env || {};
+  const webhookTarget = (env.VITE_STEALTH_WEBHOOK_URL || env.VITE_WEBHOOK_URL || '').replace(/\/$/, '');
+  const apiTarget = (env.VITE_SUPREMEAI_API_URL || (typeof window !== 'undefined' && window.location.origin.includes('workers.dev') ? '' : 'https://supremeai-api-ulw0.onrender.com')).replace(/\/$/, '');
+  const resolvedKey = apiKey || env.VITE_SUPREMEAI_API_KEY || (typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || 'guest') : 'guest');
+  const modelId = modelName.toLowerCase().includes('reasoning') ? 'supremeai/openrouter' : (modelName.toLowerCase().includes('fast') ? 'supremeai/groq' : 'auto');
 
   const today = new Date().toISOString().split('T')[0];
   const systemPrompt = `You are SupremeAI. Today is ${today}. Your training data has a knowledge cutoff and may not reflect very recent events (elections, resignations, political changes, breaking news). For any time-sensitive factual question, provide what you know but explicitly state your knowledge may be outdated and recommend verifying with a current news source. Never assert outdated information as a current fact without this caveat.`;
 
+  const body = JSON.stringify({
+    model: modelId,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt },
+    ],
+    stream: false,
+  });
+
+  const tryTarget = async (target: string): Promise<{ text: string; via: string } | null> => {
+    if (!target) return null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(`${target}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
+        },
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        const servedModel = (data?.model as string) || '';
+        if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100') && !content.includes('[GROK Web Session Active]') && !content.includes('[CHATGPT Web Session Active]') && !content.includes('[PERPLEXITY Web Session Active]')) {
+          return { text: content.trim(), via: servedModel || 'webhook' };
+        }
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn('[GuestChat] target failed:', target, err);
+    }
+    return null;
+  };
+
+  // Priority 1: webhook (stealth web-relay)
+  const webhookResult = await tryTarget(webhookTarget);
+  if (webhookResult) return webhookResult;
+
+  // Priority 2: API (gateway)
   for (let attempt = 0; attempt < 2; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -94,14 +140,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
           'Content-Type': 'application/json',
           ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
         },
-        body: JSON.stringify({
-          model: modelId,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt },
-          ],
-          stream: false,
-        }),
+        body,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -126,6 +165,8 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
       }
     }
   }
+
+  // Priority 3: hardcoded fallback
   return { text: responseFor(prompt), via: 'fallback' };
 }
 
