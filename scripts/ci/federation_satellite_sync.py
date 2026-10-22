@@ -202,7 +202,18 @@ def sync_satellite(
         )
         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
         msg = f"sync(open->{slug}): {commit_msg} [skip ci]"
-        subprocess.check_call(["git", "commit", "-m", msg], cwd=str(tmp_repo))
+        res = subprocess.run(
+            ["git", "commit", "--no-verify", "-m", msg],
+            cwd=str(tmp_repo),
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode != 0:
+            if "nothing to commit" in res.stdout or "nothing to commit" in res.stderr:
+                print(f"⏩ [CLEAN] No new code changes to commit for {slug}.")
+                return True
+            print(f"Git commit failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
+            return False
 
         # Avoid non-fast-forward rejection on concurrent landings (#416).
         subprocess.run(
