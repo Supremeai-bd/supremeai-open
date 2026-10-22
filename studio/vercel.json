@@ -1,5 +1,9 @@
 {
+  "env": {
+    "VITE_USE_RELATIVE_PATH": "true"
+  },
   "rewrites": [
+    { "source": "/api/:path*", "destination": "https://supremeai-primary-node-5xso.onrender.com/api/:path*" },
     { "source": "/((?!.*\\.).*)", "destination": "/index.html" }
   ],
   "headers": [

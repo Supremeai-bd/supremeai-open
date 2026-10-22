@@ -1,0 +1,13 @@
+{
+  "name": "@supremeai/mobile",
+  "version": "0.1.0",
+  "description": "SupremeAI Mobile Application — Cross-platform iOS & Android Agent Supervisor",
+  "main": "src/App.tsx",
+  "scripts": {
+    "start": "echo 'Starting mobile dev server...'"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
