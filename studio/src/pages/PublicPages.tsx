@@ -1,6 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, History, Menu, Search, Sparkles, WandSparkles, Wrench, X, Zap } from 'lucide-react';
+import { UnifiedChatBubble } from '../components/chat/UnifiedChatBubble';
+
+// ROOT-CAUSE RESTYLE (Refs #878 / bridge-20261023-frontend-guestchat-cosmic):
+// বাংলা মন্তব্য: গেস্ট চ্যাট আগে legacy slate/cyan প্যালেট ব্যবহার করত ও নিজের
+// ফর্কড বাবল রেন্ডার করত — অন্য ট��যাবগুলোর Cosmic ডিজাইনের সাথে মিলত না।
+// এখন Cosmic aurora green/purple প্যালেট + শেয়ারড UnifiedChatBubble
+// (Refs #861) ব্যবহার করা হচ্ছে; চ্যাট লজিক / webhook-only ম্যান্ডেট অপরিবর্তিত।
 
 export const publicLinks = [
   { to: '/', label: 'Chat' },
@@ -24,23 +31,23 @@ export function CapabilityStrip({ onProtected }: { onProtected: (feature: string
   // /login (or /register), destroying the guest's in-progress chat. They now
   // raise an in-page auth prompt instead — no navigation, state intact.
   return <nav className="relative z-10 mx-auto flex w-full max-w-7xl gap-2 overflow-x-auto px-4 pt-24 sm:px-8" aria-label="SupremeAI capabilities">
-    <Link to="/" className="shrink-0 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-200">Chat</Link>
-    {capabilityItems.map(({ title, icon: Icon }) => <button key={title} type="button" onClick={() => onProtected(title)} className="flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-slate-500 transition hover:border-cyan-300/30 hover:text-slate-200"><Icon size={13} aria-hidden="true" />{title}</button>)}
+    <Link to="/" className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">Chat</Link>
+    {capabilityItems.map(({ title, icon: Icon }) => <button key={title} type="button" onClick={() => onProtected(title)} className="flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-slate-500 transition hover:border-purple-500/40 hover:text-slate-200"><Icon size={13} aria-hidden="true" />{title}</button>)}
   </nav>;
 }
 
 export function AuthPromptModal({ feature, onClose }: { feature: string; onClose: () => void }) {
   // Issue #1460: "Sign in to access [Feature]" without navigating away.
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-label={`Sign in to access ${feature}`} onClick={onClose}>
-    <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#171a20] p-7 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Sign in to access ${feature}`} onClick={onClose}>
+    <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.9))] p-7 shadow-2xl" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-start justify-between gap-3">
         <h2 className="text-lg font-medium text-slate-100">Sign in to access {feature.toLowerCase()}</h2>
         <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-slate-200"><X size={16} /></button>
       </div>
       <p className="mt-3 text-sm leading-6 text-slate-500">Your conversation stays right here — create an account or sign in when you are ready, and this page will keep your state.</p>
       <div className="mt-6 flex flex-col gap-2">
-        <Link to="/login" className="rounded-full bg-cyan-300 px-4 py-2.5 text-center text-sm font-semibold text-slate-950 transition hover:bg-cyan-200">Sign in</Link>
-        <Link to="/register" className="rounded-full border border-white/15 px-4 py-2.5 text-center text-sm font-medium text-slate-200 transition hover:border-cyan-300/40">Create account</Link>
+        <Link to="/login" className="rounded-full bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-2.5 text-center text-sm font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95">Sign in</Link>
+        <Link to="/register" className="rounded-full border border-white/15 px-4 py-2.5 text-center text-sm font-medium text-slate-200 transition hover:border-purple-400/40">Create account</Link>
       </div>
     </div>
   </div>;
@@ -63,15 +70,15 @@ export function PublicHeader() {
   const [menuOpen, setMenuOpen] = React.useState(false);
   return <header className="absolute inset-x-0 top-0 z-20 border-b border-white/[0.06] px-4 py-4 sm:px-8 sm:py-5">
     <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-      <Link to="/" aria-label="SupremeAI home" className="flex shrink-0 items-center gap-3 text-sm font-semibold tracking-[0.18em] text-slate-100"><span className="flex size-8 items-center justify-center rounded-xl bg-cyan-300 font-mono text-sm font-bold text-slate-950 shadow-[0_0_24px_rgba(103,232,249,0.25)]">S</span><span className="hidden sm:inline">SUPREMEAI</span></Link>
+      <Link to="/" aria-label="SupremeAI home" className="flex shrink-0 items-center gap-3 text-sm font-semibold tracking-[0.18em] text-slate-100"><span className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 font-mono text-sm font-bold text-white shadow-lg shadow-purple-500/20">S</span><span className="hidden sm:inline">SUPREMEAI</span></Link>
       <nav className="hidden items-center gap-4 md:flex lg:gap-6" aria-label="Public navigation">{publicLinks.map((link) => <Link key={link.to} to={link.to} className="text-sm text-slate-500 transition hover:text-slate-100">{link.label}</Link>)}</nav>
-      <div className="flex items-center gap-2 sm:gap-3"><span className="hidden items-center gap-2 text-xs text-slate-600 lg:flex"><span className="size-1.5 rounded-full bg-emerald-400" />Guest mode</span><Link to="/login" className="hidden text-sm text-slate-400 transition hover:text-slate-100 sm:block">Sign in</Link><Link to="/register" className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-[0_0_24px_rgba(103,232,249,0.15)] transition hover:bg-cyan-200">Get started</Link><button type="button" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-2 text-slate-400 md:hidden" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen}>{menuOpen ? <X size={18} /> : <Menu size={18} />}</button></div>
+      <div className="flex items-center gap-2 sm:gap-3"><span className="hidden items-center gap-2 text-xs text-slate-600 lg:flex"><span className="size-1.5 rounded-full bg-emerald-400" />Guest mode</span><Link to="/login" className="hidden text-sm text-slate-400 transition hover:text-slate-100 sm:block">Sign in</Link><Link to="/register" className="rounded-full bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95">Get started</Link><button type="button" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-2 text-slate-400 md:hidden" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen}>{menuOpen ? <X size={18} /> : <Menu size={18} />}</button></div>
     </div>
     {menuOpen && <nav className="mx-auto mt-3 flex max-w-7xl flex-col gap-1 rounded-2xl border border-white/10 bg-slate-900/95 p-3 md:hidden" aria-label="Mobile navigation">{publicLinks.map((link) => <Link key={link.to} to={link.to} onClick={() => setMenuOpen(false)} className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5">{link.label}</Link>)}<Link to="/login" className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5">Sign in</Link></nav>}
   </header>;
 }
 
-export function PublicLayout({ children }: { children: React.ReactNode }) { return <div className="min-h-screen bg-[#0d0f12] text-slate-100">{children}</div>; }
+export function PublicLayout({ children }: { children: React.ReactNode }) { return <div className="min-h-screen bg-slate-950 text-[var(--sa-ink,#f8fafc)]">{children}</div>; }
 
 type Message = { role: 'user' | 'assistant'; text: string };
 function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
@@ -149,8 +156,6 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
   return { text: 'Webhook relay is currently offline or unreachable.', via: 'webhook-offline' };
 }
 
-function AssistantAvatar({ muted = false }: { muted?: boolean }) { return <span aria-hidden="true" className={`mt-1 flex size-6 shrink-0 items-center justify-center rounded-lg font-mono text-[10px] font-bold text-cyan-300 ${muted ? 'bg-cyan-300/[0.06]' : 'bg-cyan-300/10 shadow-[0_0_16px_rgba(103,232,249,0.15)]'}`}>S</span>; }
-
 export function GuestChat() {
   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string }[]>([]);
   const [input, setInput] = React.useState('');
@@ -178,23 +183,24 @@ export function GuestChat() {
     }
   }
 
-  return <section className="mx-auto flex w-full max-w-3xl flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+  return <section className="mx-auto flex w-full max-w-3xl flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md">
     <div className="flex items-center gap-2">
-      <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+      <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {models.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
       </select>
     </div>
-    <div ref={listRef} className="flex max-h-96 flex-col gap-2 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
+    <div ref={listRef} className="flex max-h-96 flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
       {messages.length === 0 && <p className="text-sm text-slate-500">Ask SupremeAI anything to get started.</p>}
-      {messages.map((m, i) => <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-        {m.role === 'assistant' && <AssistantAvatar />}
-        <div className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${m.role === 'user' ? 'bg-cyan-300 text-slate-950' : 'bg-white/[0.04] text-slate-200'}`}>{m.text}{m.via ? <span className="ml-2 text-[10px] opacity-60">[{m.via}]</span> : null}</div>
+      {messages.map((m, i) => <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+        {/* Refs #861: shared Cosmic UnifiedChatBubble — আর কোনো ফর্কড legacy bubble নেই */}
+        <UnifiedChatBubble text={m.text} sender={m.role === 'user' ? 'user' : 'system'} />
+        {m.via ? <span className="mt-1 px-1 text-[10px] font-mono text-slate-600">[{m.via}]</span> : null}
       </div>)}
-      {busy && <div className="flex gap-2"><AssistantAvatar muted /><div className="text-sm italic text-slate-400">Thinking…</div></div>}
+      {busy && <div className="flex items-center gap-1.5 px-1 py-1" aria-label="SupremeAI is thinking"><span className="size-1.5 animate-pulse rounded-full bg-purple-400" /><span className="size-1.5 animate-pulse rounded-full bg-purple-400 [animation-delay:150ms]" /><span className="size-1.5 animate-pulse rounded-full bg-purple-400 [animation-delay:300ms]" /></div>}
     </div>
     <div className="flex gap-2">
-      <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={2} placeholder="Ask SupremeAI…" className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-300/40" />
-      <button type="button" onClick={send} disabled={busy || !input.trim()} className="rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:opacity-50">Send</button>
+      <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={2} placeholder="Ask SupremeAI…" className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50" />
+      <button type="button" onClick={send} disabled={busy || !input.trim()} className="rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95 disabled:opacity-50">Send</button>
     </div>
   </section>;
 }
