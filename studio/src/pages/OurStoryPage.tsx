@@ -58,7 +58,7 @@ export const OurStoryPage: React.FC = () => {
         <div className="mt-12 text-center">
           <button
             type="button"
-            onClick={() => navigate('/workspace/live')}
+            onClick={() => navigate('/chat')}
             className="rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg hover:opacity-90 transition-opacity"
           >
             Experience the Live Chat &rarr;
