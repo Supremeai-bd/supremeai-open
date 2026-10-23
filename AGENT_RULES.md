@@ -114,6 +114,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 - **P6 (Root Cause over Symptom):** Eliminate the entire defect class via machine-enforced guards.
 - **P7 (Domain Anti-Thrashing #522):** Frame tasks as cohesive domain slices (≤ 30 files, ≤ 200 KB) for ONE primary repo.
 - **P8 (Satellite-First Delivery Mandate):** Code changes must dispatch to a live product satellite (`studio`, `api`, `browser`, `vscode`, `core`). Tasks touching solely monorepo-only transit surfaces (`infrastructure/*`, `scripts/*`) must not be autonomously undertaken without explicit administrative direction.
+- **P9 (Frontend Performance & Zero-Blocking Landing Doctrine):** Public funnel (`/`, `/about`, `/chat`, `/pricing`, `/docs`) must achieve First Contentful Paint (FCP) < 1.0s. Never wrap public root `/` in `GuestRoute` or any auth-checking blocker (public visitors must see the landing page immediately without an "Authenticating..." spinner). Heavy workspace engines (Monaco/Sandpack in `AIStudio`), admin shells (`AdminShell`), and customer dashboards (`UserDashboard`) must ALWAYS be code-split via `React.lazy()` with `<Suspense>`. Monolithic/eager imports of heavy pages in `App.tsx` are strictly prohibited (enforced via `scripts/ci/frontend_performance_guard.py`).
 
 ---
 
@@ -123,3 +124,4 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 - **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
 - **Board SSOT Guard:** `python3 scripts/ci/satellite_board_guard.py --check` — 0/0 satellite mandate audit (#626; charter: `docs/FEDERATION_CHARTER.md`)
 - **14 Anchor Hub SSOT Guard:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 14 persistent root anchor hubs
+- **Frontend Performance Guard:** `python scripts/ci/frontend_performance_guard.py --self-test` (and `--check studio/src/App.tsx`)
