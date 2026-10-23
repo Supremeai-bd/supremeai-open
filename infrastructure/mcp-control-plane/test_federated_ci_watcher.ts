@@ -15,6 +15,7 @@ import {
   defaultCreateIssue,
   defaultFetchJobs,
   deriveFailureIssue,
+  linkSubIssue,
   type CiFailureReport,
   type FederatedCiWatcherConfig,
   type IssueCreateFn,
@@ -252,7 +253,7 @@ section("defaultCreateIssue: 422 fallback + token fail-closed (stubbed fetch)");
     if (parsed.labels.includes("repo:supremeai-api")) {
       return new Response("Label does not exist", { status: 422 });
     }
-    return new Response(JSON.stringify({ html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/1" }), { status: 201, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/1", number: 1 }), { status: 201, headers: { "content-type": "application/json" } });
   }) as any;
   try {
     const res = await defaultCreateIssue(
@@ -262,9 +263,34 @@ section("defaultCreateIssue: 422 fallback + token fail-closed (stubbed fetch)");
     check("two HTTP calls (422 then fallback)", calls.length === 2, `calls=${calls.length}`);
     check("second call dropped the repo:<slug> label", Array.isArray(calls[1]?.labels) && !calls[1].labels.some((l: string) => l.startsWith("repo:")));
     check("fallback result ok", res.ok && res.status === 201);
+    check("issueUrl and issueNumber captured", res.issueNumber === 1 && res.issueUrl === "https://github.com/Supremeai-bd/supremeai-open/issues/1");
 
     const noToken = await defaultCreateIssue({ repo: "r/x", title: "t", body: "b", labels: ["a"] }, undefined);
     check("missing token → fail-closed (status 0, not ok)", !noToken.ok && noToken.status === 0);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+}
+
+// ── 6b. linkSubIssue — attach as sub-issue under CI Failure Hub #761 ──────────
+section("linkSubIssue: link under anchor hub (stubbed fetch)");
+{
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: any) => {
+    if (String(url).endsWith("/issues/100")) {
+      return new Response(JSON.stringify({ id: 555001, number: 100 }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (String(url).endsWith("/sub-issues")) {
+      return new Response(JSON.stringify({ success: true }), { status: 201 });
+    }
+    return new Response("Not found", { status: 404 });
+  }) as any;
+  try {
+    const linked = await linkSubIssue(100, "Supremeai-bd/supremeai-open", "tok");
+    check("linkSubIssue succeeds with 201", linked === true);
+
+    const noTok = await linkSubIssue(100, "Supremeai-bd/supremeai-open", undefined);
+    check("linkSubIssue returns false without token", noTok === false);
   } finally {
     globalThis.fetch = origFetch;
   }

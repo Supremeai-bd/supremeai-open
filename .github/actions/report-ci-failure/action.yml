@@ -67,7 +67,6 @@ runs:
             print("::warning::No target_open_token provided — skipping CI failure mirroring.")
             exit(0)
 
-        # Check existing mirror marker
         marker = f"<!-- MIRROR_RUN: {src_repo}/actions/runs/{run_id} -->"
         headers = {
             "Accept": "application/vnd.github+json",
@@ -75,17 +74,30 @@ runs:
             "User-Agent": "SupremeAI-CI-Reporter/1.0",
         }
 
-        search_url = f"https://api.github.com/repos/{open_repo}/issues?state=open&per_page=50"
-        try:
-            req = urllib.request.Request(search_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                issues = json.loads(resp.read().decode("utf-8"))
-                for iss in issues:
-                    if marker in (iss.get("body") or ""):
-                        print(f"✅ Mirror issue already exists: {open_repo}#{iss.get('number')}. Skipping duplicate.")
-                        exit(0)
-        except Exception as e:
-            print(f"[reporter] Note: marker search returned {e}; proceeding to create.")
+        # Paginate all open issues so dedup survives a board with >50 open items.
+        page = 1
+        found = False
+        while True:
+            search_url = f"https://api.github.com/repos/{open_repo}/issues?state=open&per_page=100&page={page}"
+            try:
+                req = urllib.request.Request(search_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    issues = json.loads(resp.read().decode("utf-8"))
+            except Exception as e:
+                print(f"[reporter] Note: marker search returned {e}; proceeding to create.")
+                break
+            if not isinstance(issues, list) or not issues:
+                break
+            for iss in issues:
+                if marker in (iss.get("body") or ""):
+                    print(f"✅ Mirror issue already exists: {open_repo}#{iss.get('number')}. Skipping duplicate.")
+                    found = True
+                    break
+            if found or len(issues) < 100:
+                break
+            page += 1
+        if found:
+            exit(0)
 
         # Short repo name
         short_name = src_repo.split("/")[-1].lower()
