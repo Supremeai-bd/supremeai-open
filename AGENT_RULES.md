@@ -108,7 +108,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 - **P0 (Law of Minimal Elegance — Zero Over-Engineering):** সব এজেন্টের মূলমন্ত্র: কোনো ওভার-ইঞ্জিনিয়ারিং নয়। যেকোনো সমাধানকে কতটুকু সহজ, দৃষ্টিনন্দন ও চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই একমাত্র লক্ষ্য। ৭০-৮০% সাইজ কমিয়ে ১০০% কার্যকারিতা বজায় রাখা এবং কোটি কোটি টোকেন বাঁচানোই সুপ্রিমএআই-এর আর্কিটেকচারাল মাপকাঠি।
 - **P1 (Simple + Effective):** Prefer smallest solution that reliably solves the problem.
 - **P2 (Complexity Must Earn Existence):** Ban speculative abstractions, parallel helpers, and decorative modularity.
-- **P3 (Preserve Working Architecture):** Understand existing intent before modifying.
+- **P3 (Universal Non-Regression & Preservation Law — আগের ভালো কাজ ধ্বংস করা নিষিদ্ধ):** নতুন কাজ করতে গিয়ে বিদ্যমান কোনো কার্যকরী আর্কিটেকচার, পারফরম্যান্স বেঞ্চমার্ক, রাউটিং/এন্ডপয়েন্ট, বা নিরাপত্তা কোনো অবস্থাতেই বিনষ্ট বা অবনমিত (regress) করা যাবে না। কোড পরিবর্তন করার আগে তার পূর্ববর্তী উদ্দেশ্য (intent) ১০০% উপলব্ধি করতে হবে। কোনো ফাইল বা মডিউল অন্ধভাবে সম্পূর্ণ মুছে/রিপ্লেস করা নিষিদ্ধ—সর্বদা বিদ্যমান ভিত্তির ওপর 'Extend' করতে হবে। প্রতিষ্ঠিত কোনো কোড পরিবর্তন করতে হলে প্রমাণ দিতে হবে যে নতুন রূপটি পূর্বের চেয়ে প্রমাণযোগ্যভাবে অধিকতর উৎকৃষ্ট (strictly superior in speed, stability, or simplicity) এবং বিদ্যমান সব কার্যকারিতা অটুট রেখেছে। ফ্রন্টএন্ড, ব্যাকএন্ড, এপিআই, সিআই—পুরো সিস্টেমের প্রতিটি ফাইলের জন্য এই নিয়ম সমান ও অলঙ্ঘনীয়।
 - **P4 (Workflow Consolidation):** Maintain consolidated pipelines; do not split workflows for theoretical purity.
 - **P5 (Incremental Improvement):** Target is unlimited; first step is atomic and minimal.
 - **P6 (Root Cause over Symptom):** Eliminate the entire defect class via machine-enforced guards.

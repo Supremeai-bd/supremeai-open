@@ -80,6 +80,7 @@ flowchart TD
 - **CI Fixer:** রুট-কজ ঠিক হচ্ছে নাকি স্কিপ হ্যাক? লিনাক্স/উইন্ডোজ/ম্যাকে পোর্টেবল এবং < 5s ফাস্ট-পাথ সুরক্ষিত তো?
 - **Human Eye:** এডমিন শ্রম ≤ ০.০১% অক্ষত তো? ওয়ান-টাইম ফিক্স না করে সিস্টেমে স্থায়ী নিয়ম শেখানো হচ্ছে কি?
 - **3rd Party Platforms:** মাস্টার-কি সম্পূর্ণ আইসোলেটেড তো? সার্ভার স্লিপ হলেও কোল্ড-স্টার্ট রিট্রাই আছে তো?
+- **All Agents (Non-Regression Mandate):** আমার কাজ কি বিদ্যমান কোনো ভালো কাজ, পারফরম্যান্স বা আর্কিটেকচার নষ্ট করছে? বিদ্যমান কোড অন্ধভাবে না মুছে কি এর ওপর সুরক্ষিতভাবে এক্সটেন্ড করা হয়েছে? (রুল P3)
 - **Satellite-First (বাস্তব সুবিধা):** এই কাজ কি কোনো সক্রিয় স্যাটেলাইটে (studio, gateway, browser, vscode, core) পৌঁছাবে? শুধু ইন্টার্নাল টুলিং বা মনোরিপো-অনলি ফাইলে একা একা কাজ করা কঠোরভাবে নিষিদ্ধ।
 - **Frontend / Studio (স্পিড ডকট্রিন):** পাবলিক ল্যান্ডিং পেজ (`/`) কি কোনো অথ-ব্লকার ছাড়াই < 1.0s লোড হচ্ছে? ভারী পেজগুলো (AIStudio, AdminShell, UserDashboard) কি `React.lazy()` দিয়ে কোড-স্প্লিট করা আছে? (রুল P9)
 
@@ -98,6 +99,7 @@ flowchart TD
 - **Simple + effective > clever + complex.**
 - **Existing work before new work.** (80% reuse rule; ১৭ লাইনে ৫টি রিপোর সমন্বয় প্রমাণ করেছে মিনিমালিজমের শক্তি)
 - **Single-domain PRs.** One PR touches one federation target domain (e.g. `studio/*` OR `gateway/*`), never both in the same change — keeps patches small, testable, and avoids partial-landing drift across satellites. Cross-domain work is split into separate PRs.
+- **Extend, Never Regress (পূর্ববর্তী শ্রেষ্ঠত্ব অক্ষত রাখা):** নতুন ফিচার বা ফিক্স যোগ করতে গিয়ে পেছনের কোনো অর্জিত পারফরম্যান্স, নিরাপত্তা, বা ইউজার এক্সপেরিয়েন্স নষ্ট করা সম্পূর্ণ নিষিদ্ধ। পূর্বের চেয়ে প্রমাণযোগ্যভাবে উৎকৃষ্ট (strictly superior) না হলে কোনো প্রতিষ্ঠিত কোড বা আর্কিটেকচারে হাত দেওয়া যাবে না।
 - **Satellite-First Delivery Mandate.** All autonomous agent work must target active product satellites (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`). Code touching exclusively internal tooling or monorepo-only transit surfaces (`infrastructure/*`, `scripts/*`) is strictly banned from autonomous PR creation without explicit admin authorization.
 - **Issue validity before implementation.** (Never fix a ghost issue)
 - **Evidence before action.** (Claims without proof are rejected)
