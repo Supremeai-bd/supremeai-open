@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 // ROOT-CAUSE FIX (Refs #876 / bridge-20261023-frontend-router-restore):
 // CTAs previously targeted /signup (a route that does not exist) and
@@ -7,18 +7,28 @@ import { useNavigate } from 'react-router-dom';
 // route is /register; the public guest chat lives at /chat.
 export const LandingHeader: React.FC = () => {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const onLanding = pathname === '/';
   return (
     <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-white/10 bg-slate-950/70 px-6 backdrop-blur-xl">
-      <div className="flex items-center gap-3">
+      <Link to="/" className="flex items-center gap-3">
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 font-bold text-white shadow-lg shadow-purple-500/20">
           S
         </span>
         <span className="text-lg font-bold tracking-tight text-white">SupremeAI</span>
-      </div>
+      </Link>
 
       <nav className="hidden md:flex items-center gap-6 text-sm text-slate-300">
-        <a href="#features" className="hover:text-emerald-400 transition-colors">Features</a>
-        <a href="#demo" className="hover:text-emerald-400 transition-colors">Live Demo</a>
+        {onLanding ? (
+          <a href="#features" className="hover:text-emerald-400 transition-colors">Features</a>
+        ) : (
+          <Link to="/#features" className="hover:text-emerald-400 transition-colors">Features</Link>
+        )}
+        {onLanding ? (
+          <a href="#demo" className="hover:text-emerald-400 transition-colors">Live Demo</a>
+        ) : (
+          <Link to="/#demo" className="hover:text-emerald-400 transition-colors">Live Demo</Link>
+        )}
         <button type="button" onClick={() => navigate('/about')} className="hover:text-emerald-400 transition-colors">
           Our Story
         </button>
@@ -46,8 +56,23 @@ export const LandingHeader: React.FC = () => {
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [typedText, setTypedText] = useState('');
   const fullText = 'What is the current health status of our AI swarm across satellites?';
+
+  // ROOT-CAUSE FIX (Our Story tab hash navigation): SPA pushState does not
+  // auto-scroll, so navigating to /#features or /#demo from another page
+  // needs an explicit scroll after the landing page mounts.
+  useEffect(() => {
+    if (!location.hash) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const scroll = () => {
+      const el = document.querySelector(location.hash);
+      if (el) el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' });
+    };
+    const t = window.setTimeout(scroll, 50);
+    return () => window.clearTimeout(t);
+  }, [location.hash]);
 
   useEffect(() => {
     // prefers-reduced-motion: skip the typing animation entirely
