@@ -126,50 +126,27 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
     return null;
   };
 
-  // Priority 1: webhook (stealth web-relay)
+  // Priority 1: webhook (stealth web-relay) only
   const webhookResult = await tryTarget(webhookTarget);
   if (webhookResult) return webhookResult;
 
-  // Priority 2: API (gateway)
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    try {
-      // eslint-disable-next-line no-restricted-syntax
-      const res = await fetch(`${apiTarget}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
-        },
-        body,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const data = await res.json();
-        const content = data?.choices?.[0]?.message?.content;
-        const servedModel = (data?.model as string) || '';
-        if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100') && !content.includes('[GROK Web Session Active]') && !content.includes('[CHATGPT Web Session Active]') && !content.includes('[PERPLEXITY Web Session Active]')) {
-          return { text: content.trim(), via: servedModel || 'api' };
-        }
-      } else if (res.status >= 500 && attempt === 0) {
-        await new Promise((r) => setTimeout(r, 1000));
-        continue;
-      }
-    } catch (err) {
-      clearTimeout(timeoutId);
-      console.warn('[GuestChat] Live AI attempt failed:', err);
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 1000));
-        continue;
-      }
-    }
+  // If no direct frontend webhookTarget, forward to gateway which routes strictly to STEALTH_WEBHOOK_URL
+  if (!webhookTarget && apiTarget) {
+    const gatewayWebhookResult = await tryTarget(apiTarget);
+    if (gatewayWebhookResult) return gatewayWebhookResult;
   }
 
-  // Priority 3: hardcoded fallback
-  return { text: responseFor(prompt), via: 'fallback' };
+  /*
+   * [COMMENTED OUT PER USER MANDATE: reply only webhook use korbe, API key & fallback 2tai remove/comment]
+   *
+   * // Priority 2: API (gateway API key squad)
+   * for (let attempt = 0; attempt < 2; attempt++) { ... }
+   *
+   * // Priority 3: hardcoded fallback
+   * return { text: responseFor(prompt), via: 'fallback' };
+   */
+
+  return { text: 'Webhook relay is currently offline or unreachable.', via: 'webhook-offline' };
 }
 
 function AssistantAvatar({ muted = false }: { muted?: boolean }) { return <span aria-hidden="true" className={`mt-1 flex size-6 shrink-0 items-center justify-center rounded-lg font-mono text-[10px] font-bold text-cyan-300 ${muted ? 'bg-cyan-300/[0.06]' : 'bg-cyan-300/10 shadow-[0_0_16px_rgba(103,232,249,0.15)]'}`}>S</span>; }

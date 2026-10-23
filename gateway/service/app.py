@@ -268,51 +268,57 @@ async def chat_completions(
             }
             return JSONResponse(status_code=w_status, content=w_response, headers=headers)
 
-        logger.info(
-            f"Priority-1 Web Relay skipped or non-chat response (status={w_status}), "
-            "instantly falling back to Priority-2 API squad..."
-        )
-
-    if not squad:
-        raise HTTPException(status_code=503, detail="Dynamic squad uninitialized")
-
-    candidates = squad.get_candidate_slots(preferred_provider)
-    if not candidates:
         raise HTTPException(
-            status_code=503,
-            detail="No healthy AI provider keys available at this moment. All keys cooling down."
+            status_code=502,
+            detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}). API fallback disabled."
         )
 
-    last_error = None
-    for provider, slot in candidates:
-        status, response_data = await forward_chat_completion(provider, slot.key, body)
-
-        if 200 <= status < 300:
-            headers = {
-                "X-SupremeAI-Provider": provider,
-                "X-SupremeAI-Slot": slot.name,
-                "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
-            }
-            if use_priority_1:
-                headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
-            if isinstance(response_data, dict):
-                return JSONResponse(status_code=status, content=response_data, headers=headers)
-            return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
-
-        pool = squad.pools.get(provider)
-        if pool:
-            pool.report_injury(slot, status)
-
-        last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
-        logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
-
-    return JSONResponse(
-        status_code=502,
-        content={
-            "error": "All healthy provider attempts failed during cross-provider failover.",
-            "last_error": last_error,
-        }
+    raise HTTPException(
+        status_code=503,
+        detail="Stealth Webhook relay is currently unconfigured or offline. API key replies disabled per user mandate."
     )
+
+    # ── [COMMENTED OUT PER USER MANDATE: reply only webhook use korbe, API key squad disabled] ──
+    # if not squad:
+    #     raise HTTPException(status_code=503, detail="Dynamic squad uninitialized")
+    #
+    # candidates = squad.get_candidate_slots(preferred_provider)
+    # if not candidates:
+    #     raise HTTPException(
+    #         status_code=503,
+    #         detail="No healthy AI provider keys available at this moment. All keys cooling down."
+    #     )
+    #
+    # last_error = None
+    # for provider, slot in candidates:
+    #     status, response_data = await forward_chat_completion(provider, slot.key, body)
+    #
+    #     if 200 <= status < 300:
+    #         headers = {
+    #             "X-SupremeAI-Provider": provider,
+    #             "X-SupremeAI-Slot": slot.name,
+    #             "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
+    #         }
+    #         if use_priority_1:
+    #             headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
+    #         if isinstance(response_data, dict):
+    #             return JSONResponse(status_code=status, content=response_data, headers=headers)
+    #         return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
+    #
+    #     pool = squad.pools.get(provider)
+    #     if pool:
+    #         pool.report_injury(slot, status)
+    #
+    #     last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
+    #     logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
+    #
+    # return JSONResponse(
+    #     status_code=502,
+    #     content={
+    #         "error": "All healthy provider attempts failed during cross-provider failover.",
+    #         "last_error": last_error,
+    #     }
+    # )
 
 
 # ── MCP Control Tower & Superadmin Management Surface ────────────────────────
