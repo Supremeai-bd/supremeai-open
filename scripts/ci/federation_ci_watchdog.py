@@ -30,12 +30,21 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 try:
-    from scripts.ci.federation_anchors import get_anchor_issue_number, link_sub_issue
+    from scripts.ci.federation_anchors import (
+        get_anchor_issue_number,
+        list_sub_issue_ids,
+        link_sub_issue,
+    )
 except ImportError:
     try:
-        from federation_anchors import get_anchor_issue_number, link_sub_issue
+        from federation_anchors import (
+            get_anchor_issue_number,
+            list_sub_issue_ids,
+            link_sub_issue,
+        )
     except ImportError:
         get_anchor_issue_number = None
+        list_sub_issue_ids = None
         link_sub_issue = None
 
 OPEN_REPO = "Supremeai-bd/supremeai-open"
@@ -335,10 +344,21 @@ def mirror_failure(
                     )
                 else:
                     print(
-                        "   ↳ (could not link sub-issue; issue remains standalone)"
+                        f"   ↳ ❌ sub-issue link FAILED for #{issue_number} -> "
+                        f"#{CI_FAILURE_ANCHOR}; counting mirror as FAILED so the "
+                        f"scheduler surfaces it (a loose P0 on the root board "
+                        f"violates the 8-anchor SSOT invariant)."
                     )
+                    return False
             except Exception as exc:
-                print(f"   ↳ sub-issue link error: {exc}")
+                print(f"   ↳ ❌ sub-issue link error: {exc}")
+                return False
+        elif issue_number and link_sub_issue is None:
+            print(
+                "   ↳ ❌ federation_anchors.link_sub_issue unavailable — cannot "
+                "guarantee zero loose incidents; counting mirror as FAILED."
+            )
+            return False
         return True
     else:
         print(
@@ -414,6 +434,105 @@ def poll_federation_failures(
                 failed_count += 1
 
     return mirrored_count, failed_count
+
+
+def find_loose_mirrors(
+    items: list[dict[str, Any]] | None,
+    linked_ids: set[int] | None = None,
+) -> list[int]:
+    """Pure: open issues carrying a MIRROR_RUN marker that are NOT sub-issues.
+
+    `items` are /issues list entries (PRs excluded — they share the numbering
+    plane and can never be mirrors). `linked_ids` are the parent hub's current
+    sub-issue DATABASE ids; each list item carries its own `id` field, so
+    linkage is compared db-id to db-id (never issue number to db id). An item
+    whose id is missing counts as loose — over-counting is safe because
+    link_sub_issue is idempotent, under-counting would leave drift.
+    """
+    loose: list[int] = []
+    linked = linked_ids or set()
+    for item in items or []:
+        if item.get("pull_request"):
+            continue
+        body = item.get("body") or ""
+        if "MIRROR_RUN:" in body and "/actions/runs/" in body:
+            number = item.get("number")
+            if isinstance(number, int) and item.get("id") not in linked:
+                loose.append(number)
+    return loose
+
+
+def relink_loose_mirrors(
+    token: str | None = None,
+    parent_issue_number: int = CI_FAILURE_ANCHOR,
+) -> tuple[int, int]:
+    """Backfill: attach every loose mirrored incident under the CI Failure Hub.
+
+    Self-healing board invariant (8-anchor SSOT): after a merge of the relink
+    machinery, the next scheduled `--poll` tick repairs the board without any
+    manual step. Idempotent end-to-end: already-linked children are skipped
+    via list_sub_issue_ids before any POST.
+
+    Returns (relinked_count, failed_count).
+    """
+    relinked = 0
+    failed = 0
+    if link_sub_issue is None or list_sub_issue_ids is None:
+        print("❌ [relink] federation_anchors helpers unavailable; cannot relink.")
+        return 0, 1
+
+    # Snapshot the hub's current sub-issues once (db ids).
+    linked_ids = list_sub_issue_ids(
+        parent_issue_number, repo=OPEN_REPO, token=token
+    )
+
+    # Scan open issues for mirror markers (paginated).
+    loose_numbers: list[int] = []
+    page = 1
+    while True:
+        code, items = gh_api(
+            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
+            token=token,
+        )
+        if code != 200 or not isinstance(items, list) or not items:
+            if code not in (200,):
+                print(f"❌ [relink] could not list open issues (HTTP {code}).")
+                return relinked, failed + 1
+            break
+        loose_numbers.extend(find_loose_mirrors(items, linked_ids))
+        if len(items) < 100:
+            break
+        page += 1
+
+    if not loose_numbers:
+        print(
+            f"✅ [relink] board clean — every mirrored incident already sits "
+            f"under Hub #{parent_issue_number} (0 actions)."
+        )
+        return 0, 0
+
+    print(
+        f"🔧 [relink] {len(loose_numbers)} loose mirrored incident(s) found: "
+        f"{', '.join('#' + str(n) for n in loose_numbers)}"
+    )
+    for number in sorted(loose_numbers):
+        ok = link_sub_issue(
+            parent_issue_number=parent_issue_number,
+            child_issue_number=int(number),
+            repo=OPEN_REPO,
+            token=token,
+        )
+        if ok:
+            relinked += 1
+            print(f"   ↳ #{number} linked under CI Hub #{parent_issue_number}.")
+        else:
+            failed += 1
+            print(f"   ↳ ❌ #{number} link failed (see anchors error above).")
+    print(
+        f"🏁 [relink] done: {relinked} relinked, {failed} failed "
+        f"-> root board now shows only anchor hubs."
+    )
+    return relinked, failed
 
 
 def self_test() -> int:
@@ -507,7 +626,42 @@ def self_test() -> int:
                 f"Repo {r} must map to a valid anchor hub, got {anc}"
             )
 
-    print("✅ [self-test] All 7 contract assertion groups passed!")
+    # 8. Loose-mirror detection (8-anchor SSOT backfill, #910-#918 class)
+    mk = build_mirror_marker("Supremeai-bd/supremeai-api", 424242)
+    board = [
+        {"number": 910, "id": 9001, "body": f"x {mk} y"},  # loose mirror
+        {"number": 911, "id": 9002, "body": "no marker issue"},  # not a mirror
+        {
+            "number": 912,
+            "id": 9003,
+            "pull_request": {"url": "p"},
+            "body": mk,
+        },  # PR: never a mirror
+        {"number": 913, "id": 9004, "body": None},  # empty body
+    ]
+    assert find_loose_mirrors(board, set()) == [910]
+    assert find_loose_mirrors(board, None) == [910]
+    assert find_loose_mirrors([], set()) == []
+    assert find_loose_mirrors(None, set()) == []
+    # db-id based exclusion: the linked child (id 9001) is not loose; an
+    # item without an id always counts loose (idempotent relink makes the
+    # over-count safe, the under-count would leave drift).
+    assert find_loose_mirrors(board, {9001}) == []
+
+    # 9. Sub-issue endpoint contract pin (snake_case; hyphen 404s live)
+    try:
+        from scripts.ci.federation_anchors import SUB_ISSUES_PATH as _ssp
+    except ImportError:
+        try:
+            from federation_anchors import SUB_ISSUES_PATH as _ssp
+        except ImportError:
+            _ssp = None
+    if _ssp is not None:
+        assert _ssp == "sub_issues", (
+            f"sub-issue endpoint must be snake_case 'sub_issues', got {_ssp!r}"
+        )
+
+    print("✅ [self-test] All 9 contract assertion groups passed!")
     return 0
 
 
@@ -520,6 +674,18 @@ def main() -> int:
         "--poll",
         action="store_true",
         help="Poll all 12 federation repositories for recent failures",
+    )
+    parser.add_argument(
+        "--no-relink",
+        action="store_true",
+        help="Poll mode: skip the automatic loose-mirror relink pass "
+        "(default: poll ends with a self-healing relink under the CI Hub)",
+    )
+    parser.add_argument(
+        "--relink",
+        action="store_true",
+        help="Standalone backfill: scan open mirrored incidents and attach "
+        "every loose one as a sub-issue of the CI Failure Hub (idempotent)",
     )
     parser.add_argument(
         "--max-age-hours",
@@ -548,6 +714,16 @@ def main() -> int:
 
     if args.self_test:
         return self_test()
+
+    if args.relink:
+        relink_token = (
+            os.environ.get("OPEN_SYNC_PAT")
+            or os.environ.get("GH_TOKEN")
+            or os.environ.get("GITHUB_TOKEN")
+            or get_default_token()
+        )
+        _relinked, _failed = relink_loose_mirrors(token=relink_token)
+        return 1 if _failed else 0
 
     token = (
         os.environ.get("OPEN_SYNC_PAT")
@@ -594,7 +770,14 @@ def main() -> int:
         _mirrored, _failed = poll_federation_failures(
             token=token, max_age_hours=args.max_age_hours
         )
-        return 1 if _failed else 0
+        # Self-healing board invariant: every poll tick ends with a relink
+        # pass so mirrored incidents can never drift loose on the root board
+        # again (the #910-#918 failure mode). Fail the tick if either half
+        # fails so the scheduled workflow surfaces breakage loudly.
+        _relinked, _relink_failed = (0, 0)
+        if not args.no_relink:
+            _relinked, _relink_failed = relink_loose_mirrors(token=token)
+        return 1 if (_failed or _relink_failed) else 0
 
     parser.print_help()
     return 1

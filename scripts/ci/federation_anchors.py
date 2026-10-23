@@ -170,13 +170,87 @@ def get_default_token() -> str:
     return ""
 
 
+# GitHub REST sub-issue endpoints use SNAKE_CASE `sub_issues` (verified live:
+# GET /repos/{o}/{r}/issues/761/sub_issues -> 200; the hyphenated /sub-issues
+# variant returns 404 "Not Found", which silently killed every REST link
+# attempt and left mirrored CI incidents floating loose on the board).
+SUB_ISSUES_PATH: str = "sub_issues"
+
+
+def _gh_headers(tok: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {tok}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "SupremeAI-Federation-Anchors/1.0",
+    }
+
+
+def list_sub_issue_ids(
+    parent_issue_number: int,
+    repo: str = OPEN_REPO,
+    token: str | None = None,
+    max_pages: int = 10,
+) -> set[int]:
+    """Return the database IDs of every current sub-issue under a parent issue.
+
+    Paginated GET /repos/{owner}/{repo}/issues/{parent}/sub_issues.
+    Fail-honest: network/API problems return whatever was collected so far
+    (possibly empty) after printing the error — callers treat an empty set
+    combined with a link failure as 'board state unknown', never as success.
+    """
+    tok = token or get_default_token()
+    ids: set[int] = set()
+    if not parent_issue_number:
+        return ids
+    for page in range(1, max(1, max_pages) + 1):
+        url = (
+            f"https://api.github.com/repos/{repo}/issues/{parent_issue_number}/"
+            f"{SUB_ISSUES_PATH}?per_page=100&page={page}"
+        )
+        req = urllib.request.Request(url, headers=_gh_headers(tok or ""))
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                items = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            print(f"[anchors] list_sub_issue_ids HTTP {exc.code} for parent #{parent_issue_number}")
+            return ids
+        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
+            print(f"[anchors] list_sub_issue_ids failed for parent #{parent_issue_number}: {exc}")
+            return ids
+        if not isinstance(items, list):
+            return ids
+        for item in items:
+            item_id = item.get("id")
+            if isinstance(item_id, int):
+                ids.add(item_id)
+        if len(items) < 100:
+            break
+    return ids
+
+
 def link_sub_issue(
     parent_issue_number: int,
     child_issue_number: int,
     repo: str = OPEN_REPO,
     token: str | None = None,
 ) -> bool:
-    """Link an existing issue as a native sub-issue under a parent anchor issue."""
+    """Link an existing issue as a native sub-issue under a parent anchor issue.
+
+    Idempotent: if the child is already linked the call returns True without
+    re-posting (makes backfill/relink passes safe to re-run).
+    """
+    tok = token or get_default_token()
+
+    # 0. Idempotency pre-check: already linked? (GET is cheaper than a
+    # duplicate POST and avoids 422 'already a sub-issue' noise.)
+    try:
+        if child_issue_number in list_sub_issue_ids(
+            parent_issue_number, repo=repo, token=tok
+        ):
+            return True
+    except Exception as exc:  # noqa: BLE001 - pre-check must never block linking
+        print(f"[anchors] sub-issue pre-check skipped: {exc}")
+
     # 1. Try gh issue edit --parent
     cmd = [
         "gh",
@@ -200,48 +274,47 @@ def link_sub_issue(
     except (OSError, subprocess.SubprocessError):
         pass
 
-    # 2. Try REST API fallback: POST /repos/{owner}/{repo}/issues/{parent}/sub-issues
+    # 2. REST fallback: POST /repos/{owner}/{repo}/issues/{parent}/sub_issues
+    # (snake_case segment; the hyphenated form 404s — see SUB_ISSUES_PATH).
     if tok:
         try:
             # First fetch child issue database id
             url_child = (
                 f"https://api.github.com/repos/{repo}/issues/{child_issue_number}"
             )
-            req_c = urllib.request.Request(
-                url_child,
-                headers={
-                    "Authorization": f"Bearer {tok}",
-                    "Accept": "application/vnd.github+json",
-                    "User-Agent": "SupremeAI-Federation-Anchors/1.0",
-                },
-            )
+            req_c = urllib.request.Request(url_child, headers=_gh_headers(tok))
             with urllib.request.urlopen(req_c, timeout=10) as resp_c:
                 c_data = json.loads(resp_c.read().decode("utf-8"))
                 child_id = c_data.get("id")
 
             if child_id:
-                url_link = f"https://api.github.com/repos/{repo}/issues/{parent_issue_number}/sub-issues"
+                url_link = (
+                    f"https://api.github.com/repos/{repo}/issues/"
+                    f"{parent_issue_number}/{SUB_ISSUES_PATH}"
+                )
                 data_bytes = json.dumps({"sub_issue_id": child_id}).encode("utf-8")
                 req_l = urllib.request.Request(
                     url_link,
                     data=data_bytes,
-                    headers={
-                        "Authorization": f"Bearer {tok}",
-                        "Accept": "application/vnd.github+json",
-                        "User-Agent": "SupremeAI-Federation-Anchors/1.0",
-                    },
+                    headers=_gh_headers(tok),
                     method="POST",
                 )
                 with urllib.request.urlopen(req_l, timeout=10) as resp_l:
                     if resp_l.status in (200, 201):
                         return True
-        except (
-            urllib.error.HTTPError,
-            urllib.error.URLError,
-            json.JSONDecodeError,
-            OSError,
-        ):
-            pass
+        except urllib.error.HTTPError as exc:
+            # Fail LOUD: a silent False here cost the board 9 loose CI
+            # incidents (#910-#918) that nobody noticed for days.
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+            except OSError:
+                detail = ""
+            print(
+                f"[anchors] link_sub_issue REST failed: HTTP {exc.code} "
+                f"for child #{child_issue_number} -> parent #{parent_issue_number}: {detail}"
+            )
+        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
+            print(f"[anchors] link_sub_issue REST failed: {exc}")
 
     return False
 
@@ -372,6 +445,15 @@ def self_test() -> int:
 
     # 5. Unknown repo returns None (fail-honest)
     assert get_anchor_issue_number("nonexistent-repo") is None
+
+    # 6. Sub-issue REST endpoint contract: snake_case `sub_issues` only.
+    # The hyphenated variant is a live-verified 404; pinning the constant
+    # here makes a regression to it fail this self-test immediately.
+    assert SUB_ISSUES_PATH == "sub_issues", (
+        "GitHub sub-issue endpoints are snake_case /sub_issues; "
+        "hyphenated /sub-issues returns 404"
+    )
+    assert "sub-issues" not in SUB_ISSUES_PATH
 
     print("✅ [self-test] All 14 Anchor Hub contracts verified successfully!")
     return 0
