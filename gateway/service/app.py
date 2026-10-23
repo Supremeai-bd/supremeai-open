@@ -419,57 +419,90 @@ async def chat_completions(
             relay_detail = w_response.get("error") or w_response.get("detail") or w_response.get("message")
         if not relay_detail and w_response is not None:
             relay_detail = str(w_response)[:500]
-        raise HTTPException(
-            status_code=502,
-            detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}. API fallback disabled."
+        logger.warning(
+            f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}. "
+            f"Cascading to Tier-1/Tier-2 Squad..."
         )
 
-    raise HTTPException(
-        status_code=503,
-        detail="Stealth Webhook relay is currently unconfigured or offline. API key replies disabled per user mandate."
+    # ── Tier-1 / Tier-2 Dynamic Key-Plane Squad with Model Cascades ───────────
+    candidates = squad.get_candidate_slots(preferred_provider) if squad else []
+    if not candidates:
+        if use_priority_1:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}."
+            )
+        raise HTTPException(
+            status_code=503,
+            detail="No healthy AI provider keys available at this moment. All keys cooling down."
+        )
+
+    last_error = None
+    for provider, slot in candidates:
+        status, response_data = await forward_chat_completion(provider, slot.key, body)
+
+        if 200 <= status < 300:
+            headers = {
+                "X-SupremeAI-Provider": provider,
+                "X-SupremeAI-Slot": slot.name,
+                "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
+            }
+            if use_priority_1:
+                headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
+            if isinstance(response_data, dict):
+                return JSONResponse(status_code=status, content=response_data, headers=headers)
+            return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
+
+        pool = squad.pools.get(provider)
+        if pool:
+            pool.report_injury(slot, status)
+
+        last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
+        logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
+
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": "All healthy provider attempts failed during cross-provider failover.",
+            "last_error": last_error,
+        }
     )
 
-    # ── [COMMENTED OUT PER USER MANDATE: reply only webhook use korbe, API key squad disabled] ──
-    # if not squad:
-    #     raise HTTPException(status_code=503, detail="Dynamic squad uninitialized")
-    #
-    # candidates = squad.get_candidate_slots(preferred_provider)
-    # if not candidates:
-    #     raise HTTPException(
-    #         status_code=503,
-    #         detail="No healthy AI provider keys available at this moment. All keys cooling down."
-    #     )
-    #
-    # last_error = None
-    # for provider, slot in candidates:
-    #     status, response_data = await forward_chat_completion(provider, slot.key, body)
-    #
-    #     if 200 <= status < 300:
-    #         headers = {
-    #             "X-SupremeAI-Provider": provider,
-    #             "X-SupremeAI-Slot": slot.name,
-    #             "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
-    #         }
-    #         if use_priority_1:
-    #             headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
-    #         if isinstance(response_data, dict):
-    #             return JSONResponse(status_code=status, content=response_data, headers=headers)
-    #         return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
-    #
-    #     pool = squad.pools.get(provider)
-    #     if pool:
-    #         pool.report_injury(slot, status)
-    #
-    #     last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
-    #     logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
-    #
-    # return JSONResponse(
-    #     status_code=502,
-    #     content={
-    #         "error": "All healthy provider attempts failed during cross-provider failover.",
-    #         "last_error": last_error,
-    #     }
-    # )
+
+@app.post("/v1/ui/generate")
+async def generate_ui_component(
+    request: Request,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key")
+):
+    """Specialized V0 / UI synthesis endpoint for SupremeAI Studio."""
+    if not _verify_client_auth(request, x_supremeai_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    prompt = body.get("prompt") or (body.get("messages", [{}])[-1].get("content", "") if body.get("messages") else "")
+    ui_payload = {
+        "model": "v0-web",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a master React Tailwind UI component synthesizer. "
+                    "Generate complete, beautiful, production-ready React code without markdown chatter."
+                ),
+            },
+            {"role": "user", "content": str(prompt)},
+        ],
+    }
+    candidates = squad.get_candidate_slots("v0") if squad else []
+    for provider, slot in candidates:
+        status, resp = await forward_chat_completion(provider, slot.key, ui_payload)
+        if 200 <= status < 300:
+            return JSONResponse(status_code=status, content=resp)
+    # If V0 slot unavailable, fallback to primary chat completion
+    return await chat_completions(request, x_supremeai_key)
 
 
 # ── MCP Control Tower & Superadmin Management Surface ────────────────────────
