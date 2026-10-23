@@ -102,6 +102,12 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
     stream: false,
   });
 
+  // Oct-23 outage lesson: when every relay target failed, the guest only saw the
+  // generic offline line while the gateway's 502 body carried the actual reason
+  // (e.g. "STEALTH_WEBHOOK_URL host does not resolve"). Capture that detail and
+  // surface it (truncated) so a config outage is self-explaining in chat.
+  let relayDetail = '';
+
   const tryTarget = async (target: string): Promise<{ text: string; via: string } | null> => {
     if (!target) return null;
     const controller = new AbortController();
@@ -125,9 +131,20 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
         if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100') && !content.includes('[GROK Web Session Active]') && !content.includes('[CHATGPT Web Session Active]') && !content.includes('[PERPLEXITY Web Session Active]')) {
           return { text: content.trim(), via: servedModel || 'webhook' };
         }
+        relayDetail = 'relay returned a non-chat or empty response';
+      } else {
+        try {
+          const errData = await res.json();
+          const detail = errData?.detail || errData?.error || errData?.reason;
+          if (detail) {
+            relayDetail = `HTTP ${res.status}: ${String(detail)}`;
+            console.warn('[GuestChat] target http error:', target, res.status, detail);
+          }
+        } catch { /* non-JSON error body — keep generic detail */ }
       }
     } catch (err) {
       clearTimeout(timeoutId);
+      relayDetail = 'network error (timeout, DNS or CORS)';
       console.warn('[GuestChat] target failed:', target, err);
     }
     return null;
@@ -155,7 +172,8 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
    * return { text: responseFor(prompt), via: 'fallback' };
    */
 
-  return { text: 'Webhook relay is currently offline or unreachable.', via: 'webhook-offline' };
+  const offlineSuffix = relayDetail ? ` (${relayDetail.slice(0, 200)})` : '';
+  return { text: `Webhook relay is currently offline or unreachable.${offlineSuffix}`, via: 'webhook-offline' };
 }
 
 export function GuestChat() {
