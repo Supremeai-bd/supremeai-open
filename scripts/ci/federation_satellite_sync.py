@@ -132,7 +132,7 @@ def sync_satellite(
         tmp_repo = Path(tmp_dir) / slug
         print(f"📥 Cloning {target_repo}:main into temporary workspace...")
         r = subprocess.run(
-            ["git", "clone", "--depth", "1", clone_url, str(tmp_repo)],
+            ["git", "clone", "--depth", "50", clone_url, str(tmp_repo)],
             capture_output=True,
             text=True,
             check=False,
@@ -222,33 +222,48 @@ def sync_satellite(
             print(f"Git commit failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
             return False
 
-        # Avoid non-fast-forward rejection on concurrent landings (#416).
-        subprocess.run(
-            ["git", "pull", "--rebase", "origin", "main"],
-            cwd=str(tmp_repo),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # Push with automatic retry on concurrent remote landing (#416)
+        for attempt in range(1, 4):
+            print(f"🚀 Pushing changes to {target_repo}:main (attempt {attempt}/3)...")
+            push_res = subprocess.run(
+                ["git", "push", "origin", "main"],
+                cwd=str(tmp_repo),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if push_res.returncode == 0:
+                print(f"🎉 [SUCCESS] Successfully synced and pushed to {target_repo}:main")
+                return True
 
-        print(f"🚀 Pushing changes to {target_repo}:main...")
-        push_res = subprocess.run(
-            ["git", "push", "origin", "main"],
-            cwd=str(tmp_repo),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if push_res.returncode == 0:
-            print(f"🎉 [SUCCESS] Successfully synced and pushed to {target_repo}:main")
-            return True
-        else:
             err = push_res.stderr.strip()
             if any(term in err.lower() for term in ("permission", "forbidden", "not found")):
                 print(f"⚠️ [GRACEFUL-DEGRADATION] Push to {target_repo} skipped due to permissions: {err}")
                 return True
-            print(f"❌ Failed to push to {target_repo}: {err}")
-            return False
+
+            # If rejected because remote contains concurrent work, fetch and reconcile
+            if any(term in err.lower() for term in ("rejected", "fetch first", "non-fast-forward")):
+                print(f"🔄 Concurrent push detected for {target_repo}. Fetching latest remote commits...")
+                subprocess.run(["git", "fetch", "origin", "main", "--depth=50"], cwd=str(tmp_repo), capture_output=True, check=False)
+                rebase_res = subprocess.run(["git", "rebase", "origin/main", "-Xtheirs"], cwd=str(tmp_repo), capture_output=True, check=False)
+                if rebase_res.returncode != 0:
+                    subprocess.run(["git", "rebase", "--abort"], cwd=str(tmp_repo), capture_output=True, check=False)
+                    subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=str(tmp_repo), capture_output=True, check=False)
+                    if target_repo == "Supremeai-bd/supremeai-api":
+                        service_src = repo_root / "gateway" / "service"
+                        if service_src.exists():
+                            copy_tree_contents(service_src, tmp_repo / "service")
+                    else:
+                        copy_tree_contents(src_path, tmp_repo)
+                    subprocess.run(["git", "add", "-A"], cwd=str(tmp_repo), capture_output=True, check=False)
+                    subprocess.run(["git", "commit", "--no-verify", "-m", msg], cwd=str(tmp_repo), capture_output=True, check=False)
+                time.sleep(1)
+            else:
+                print(f"❌ Failed to push to {target_repo}: {err}")
+                return False
+
+        print(f"❌ All push attempts exhausted for {target_repo}")
+        return False
 
 
 def sync_monorepo(
