@@ -30,7 +30,7 @@ export const LandingHeader: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => navigate('/signup')}
+          onClick={() => navigate('/register')}
           className="rounded-lg bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-1.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity"
         >
           Get Started
