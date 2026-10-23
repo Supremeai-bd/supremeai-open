@@ -81,6 +81,7 @@ flowchart TD
 - **Human Eye:** এডমিন শ্রম ≤ ০.০১% অক্ষত তো? ওয়ান-টাইম ফিক্স না করে সিস্টেমে স্থায়ী নিয়ম শেখানো হচ্ছে কি?
 - **3rd Party Platforms:** মাস্টার-কি সম্পূর্ণ আইসোলেটেড তো? সার্ভার স্লিপ হলেও কোল্ড-স্টার্ট রিট্রাই আছে তো?
 - **Satellite-First (বাস্তব সুবিধা):** এই কাজ কি কোনো সক্রিয় স্যাটেলাইটে (studio, gateway, browser, vscode, core) পৌঁছাবে? শুধু ইন্টার্নাল টুলিং বা মনোরিপো-অনলি ফাইলে একা একা কাজ করা কঠোরভাবে নিষিদ্ধ।
+- **Frontend / Studio (স্পিড ডকট্রিন):** পাবলিক ল্যান্ডিং পেজ (`/`) কি কোনো অথ-ব্লকার ছাড়াই < 1.0s লোড হচ্ছে? ভারী পেজগুলো (AIStudio, AdminShell, UserDashboard) কি `React.lazy()` দিয়ে কোড-স্প্লিট করা আছে? (রুল P9)
 
 ---
 
@@ -113,4 +114,5 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
 - **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
 - **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
 - **14 Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 14 persistent root hubs (#761 CI, #760 Bridge, 12 Domains); all tasks/failures are Sub-Issues.
+- **Frontend Performance SSOT:** `python scripts/ci/frontend_performance_guard.py --self-test` — code-splitting & zero-blocking landing doctrine (FCP < 1.0s).
 - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.

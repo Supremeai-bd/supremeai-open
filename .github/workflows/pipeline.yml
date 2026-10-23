@@ -478,6 +478,11 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/contract_parity_guard.py --self-test
           python3 scripts/ci/contract_parity_guard.py --check
+      - name: Frontend Code-Splitting & Zero-Blocking Landing Guard
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/frontend_performance_guard.py --self-test
+          python3 scripts/ci/frontend_performance_guard.py --check studio/src/App.tsx
 
   # ---------------------------------------------------------------------------
   # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after

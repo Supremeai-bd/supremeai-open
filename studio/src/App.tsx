@@ -23,13 +23,12 @@ import { setupGlobalFetchInterceptor } from "./utils/apiInterceptor";
 import { ProtectedRoute, GuestRoute } from "./components/core/AuthGuards";
 import { RoleGuard } from "./components/core/guards/RoleGuard";
 
-// Providers + global chrome (ThemeSync, i18n, CommandBar were unmounted by the regression)
+// Providers + global chrome (ThemeSync, i18n, CommandBar)
 import { ThemeSyncProvider } from "./providers/ThemeSyncProvider";
 import { TranslationProvider } from "./i18n/I18nProvider";
-import { CommandBar } from "./components/layout/CommandBar";
 import { WorkspaceLayout } from "./components/layout/WorkspaceLayout";
 
-// Public funnel (Cosmic landing lives at /; guest chat at /chat)
+// Public funnel (Cosmic landing lives at /; guest chat at /chat) — kept eager for instant FCP (<1s)
 import { LandingPage } from "./pages/LandingPage";
 import { OurStoryPage } from "./pages/OurStoryPage";
 import {
@@ -43,25 +42,50 @@ import {
   DocsPage,
 } from "./pages/PublicPages";
 
-// Split auth (login/create account buttons work again)
-import { LoginPage } from "./pages/auth/LoginPage";
-import { RegisterPage } from "./pages/auth/RegisterPage";
-
-// Authenticated app
-import { UserDashboard } from "./components/customer/UserDashboard";
-import { AIStudio } from "./pages/user/AIStudio";
-import { AdminShell } from "./pages/admin/AdminShell";
 import ErrorBoundary from "./components/admin/DashboardErrorBoundary";
-import { KnowledgePage } from "./components/dashboard/KnowledgePage";
 import { workspaceFeatureRoutes } from "./routes/workspaceFeatureRoutes";
-import ErrorPage from "./pages/ErrorPage";
 
-// Internal operator telemetry widgets (kept as-is; WO1b tokenization is separate scope)
-import { SatelliteMatrix } from "./components/SatelliteMatrix";
-import { ConsensusWidget } from "./components/ConsensusWidget";
-import { EmergencyConsole } from "./components/EmergencyConsole";
-import { RunwayVisualizer } from "./components/RunwayVisualizer";
-import { SwarmDefenseGauge } from "./components/SwarmDefenseGauge";
+// 🚀 Performance Architecture: Code-splitting heavy routes with React.lazy
+// Prevents monolithic bundle bloat and keeps public landing FCP < 1s
+const LoginPage = React.lazy(() =>
+  import("./pages/auth/LoginPage").then((m) => ({ default: m.LoginPage }))
+);
+const RegisterPage = React.lazy(() =>
+  import("./pages/auth/RegisterPage").then((m) => ({ default: m.RegisterPage }))
+);
+const UserDashboard = React.lazy(() =>
+  import("./components/customer/UserDashboard").then((m) => ({ default: m.UserDashboard }))
+);
+const AIStudio = React.lazy(() =>
+  import("./pages/user/AIStudio").then((m) => ({ default: m.AIStudio }))
+);
+const AdminShell = React.lazy(() =>
+  import("./pages/admin/AdminShell").then((m) => ({ default: m.AdminShell }))
+);
+const KnowledgePage = React.lazy(() =>
+  import("./components/dashboard/KnowledgePage").then((m) => ({ default: m.KnowledgePage }))
+);
+const ErrorPage = React.lazy(() => import("./pages/ErrorPage"));
+const CommandBar = React.lazy(() =>
+  import("./components/layout/CommandBar").then((m) => ({ default: m.CommandBar }))
+);
+
+// Lazy-loaded operator telemetry widgets (isolated from public landing bundle)
+const SatelliteMatrix = React.lazy(() =>
+  import("./components/SatelliteMatrix").then((m) => ({ default: m.SatelliteMatrix }))
+);
+const ConsensusWidget = React.lazy(() =>
+  import("./components/ConsensusWidget").then((m) => ({ default: m.ConsensusWidget }))
+);
+const EmergencyConsole = React.lazy(() =>
+  import("./components/EmergencyConsole").then((m) => ({ default: m.EmergencyConsole }))
+);
+const RunwayVisualizer = React.lazy(() =>
+  import("./components/RunwayVisualizer").then((m) => ({ default: m.RunwayVisualizer }))
+);
+const SwarmDefenseGauge = React.lazy(() =>
+  import("./components/SwarmDefenseGauge").then((m) => ({ default: m.SwarmDefenseGauge }))
+);
 import { useServerStream } from "./hooks/useServerStream";
 import type { SatelliteHealth, RunwayEntry, SwarmDefenseState } from "./types/federation";
 
@@ -94,30 +118,32 @@ export const OperatorCockpit: React.FC = () => {
         </div>
       </header>
       <main className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Satellites</h2>
-          <SatelliteMatrix satellites={satellites} />
-        </section>
-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Runway</h2>
-          <RunwayVisualizer entries={runway} />
-        </section>
-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Consensus</h2>
-          <ConsensusWidget responses={[]} consensusCount={0} onRerun={() => {}} />
-        </section>
-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Defense</h2>
-          <SwarmDefenseGauge defense={defense} />
-        </section>
-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 lg:col-span-2">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Emergency</h2>
-          <EmergencyConsole
-            armed={armed}
-            onRequestKill={() => setArmed(true)}
-            onRearm={() => setArmed(false)}
-          />
-        </section>
+        <React.Suspense fallback={<div className="p-8 text-center text-xs text-slate-500 font-mono col-span-2">Loading telemetry instrumentation...</div>}>
+          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+            <h2 className="mb-3 text-sm font-medium text-slate-300">Satellites</h2>
+            <SatelliteMatrix satellites={satellites} />
+          </section>
+          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+            <h2 className="mb-3 text-sm font-medium text-slate-300">Runway</h2>
+            <RunwayVisualizer entries={runway} />
+          </section>
+          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+            <h2 className="mb-3 text-sm font-medium text-slate-300">Consensus</h2>
+            <ConsensusWidget responses={[]} consensusCount={0} onRerun={() => {}} />
+          </section>
+          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+            <h2 className="mb-3 text-sm font-medium text-slate-300">Defense</h2>
+            <SwarmDefenseGauge defense={defense} />
+          </section>
+          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 lg:col-span-2">
+            <h2 className="mb-3 text-sm font-medium text-slate-300">Emergency</h2>
+            <EmergencyConsole
+              armed={armed}
+              onRequestKill={() => setArmed(true)}
+              onRearm={() => setArmed(false)}
+            />
+          </section>
+        </React.Suspense>
       </main>
     </div>
   );
@@ -136,74 +162,84 @@ export const LiveChatPage: React.FC = () => (
   </PublicPageShell>
 );
 
+const RouteFallback: React.FC = () => (
+  <div className="flex h-screen w-full items-center justify-center bg-[#0d0f12]">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-cyan-400" />
+  </div>
+);
+
 export const App: React.FC = () => {
   return (
     <GlobalConfigInitializer>
       <ThemeSyncProvider>
         <TranslationProvider>
-          <CommandBar />
-          <Routes>
-            {/* Public Visitor Funnel — Cosmic landing at / (guests only; logged-in users land on /workspace) */}
-            <Route path="/" element={<GuestRoute><LandingPage /></GuestRoute>} />
-            <Route path="/about" element={<OurStoryPage />} />
-            <Route path="/chat" element={<LiveChatPage />} />
-            <Route path="/features" element={<PublicPageShell><FeaturesPage /></PublicPageShell>} />
-            <Route path="/models" element={<PublicPageShell><ModelsPage /></PublicPageShell>} />
-            <Route path="/pricing" element={<PublicPageShell><PricingPage /></PublicPageShell>} />
-            <Route path="/docs" element={<PublicPageShell><DocsPage /></PublicPageShell>} />
-            <Route path="/contact" element={<PublicPageShell><PublicInfoPage kind="contact" /></PublicPageShell>} />
-            <Route path="/knowledge" element={<KnowledgePage />} />
+          <React.Suspense fallback={null}>
+            <CommandBar />
+          </React.Suspense>
+          <React.Suspense fallback={<RouteFallback />}>
+            <Routes>
+              {/* Public Visitor Funnel — Cosmic landing at / (Zero-blocking; renders immediately without auth checks) */}
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/about" element={<OurStoryPage />} />
+              <Route path="/chat" element={<LiveChatPage />} />
+              <Route path="/features" element={<PublicPageShell><FeaturesPage /></PublicPageShell>} />
+              <Route path="/models" element={<PublicPageShell><ModelsPage /></PublicPageShell>} />
+              <Route path="/pricing" element={<PublicPageShell><PricingPage /></PublicPageShell>} />
+              <Route path="/docs" element={<PublicPageShell><DocsPage /></PublicPageShell>} />
+              <Route path="/contact" element={<PublicPageShell><PublicInfoPage kind="contact" /></PublicPageShell>} />
+              <Route path="/knowledge" element={<KnowledgePage />} />
 
-            {/* Split auth (Refs #876) — /login + /register restored, no silent bounce */}
-            <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
-            <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+              {/* Split auth (Refs #876) — /login + /register restored */}
+              <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+              <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
 
-            {/* Authenticated workspace */}
-            <Route
-              path="/workspace"
-              element={
-                <ProtectedRoute>
-                  <WorkspaceLayout>
-                    <UserDashboard />
-                  </WorkspaceLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/workspace/live"
-              element={
-                <ProtectedRoute>
-                  <WorkspaceLayout>
-                    <AIStudio />
-                  </WorkspaceLayout>
-                </ProtectedRoute>
-              }
-            />
+              {/* Authenticated workspace */}
+              <Route
+                path="/workspace"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceLayout>
+                      <UserDashboard />
+                    </WorkspaceLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/workspace/live"
+                element={
+                  <ProtectedRoute>
+                    <WorkspaceLayout>
+                      <AIStudio />
+                    </WorkspaceLayout>
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* Admin — AdminShell (OTP/TOTP step-up preserved), NOT OperatorCockpit */}
-            <Route
-              path="/admin/*"
-              element={
-                <RoleGuard requiredRole="admin">
-                  <ErrorBoundary>
-                    <AdminShell />
-                  </ErrorBoundary>
-                </RoleGuard>
-              }
-            />
+              {/* Admin — AdminShell (OTP/TOTP step-up preserved), NOT OperatorCockpit */}
+              <Route
+                path="/admin/*"
+                element={
+                  <RoleGuard requiredRole="admin">
+                    <ErrorBoundary>
+                      <AdminShell />
+                    </ErrorBoundary>
+                  </RoleGuard>
+                }
+              />
 
-            {/* Tier-S feature routes (share links, prompt library) */}
-            {workspaceFeatureRoutes.map((route) => (
-              <Route key={route.path} path={route.path} element={route.element} />
-            ))}
+              {/* Tier-S feature routes (share links, prompt library) */}
+              {workspaceFeatureRoutes.map((route) => (
+                <Route key={route.path} path={route.path} element={route.element} />
+              ))}
 
-            {/* Operator / Internal Telemetry Cockpit */}
-            <Route path="/cockpit" element={<OperatorCockpit />} />
-            <Route path="/telemetry" element={<OperatorCockpit />} />
+              {/* Operator / Internal Telemetry Cockpit */}
+              <Route path="/cockpit" element={<OperatorCockpit />} />
+              <Route path="/telemetry" element={<OperatorCockpit />} />
 
-            {/* Honest 404 catch-all — never silently bounce to / */}
-            <Route path="*" element={<ErrorPage code={404} />} />
-          </Routes>
+              {/* Honest 404 catch-all — never silently bounce to / */}
+              <Route path="*" element={<ErrorPage code={404} />} />
+            </Routes>
+          </React.Suspense>
         </TranslationProvider>
       </ThemeSyncProvider>
     </GlobalConfigInitializer>
