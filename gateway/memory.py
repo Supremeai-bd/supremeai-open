@@ -132,7 +132,6 @@ class QdrantMemoryStore(MemoryStore):
         self.timeout_s = timeout_s
         self._collection_ensured = False
         self._qdrant_ok = True
-        self._last_error: str | None = None
 
     @property
     def degraded(self) -> bool:
@@ -164,20 +163,18 @@ class QdrantMemoryStore(MemoryStore):
                 if resp.status in (200, 201, 409):
                     self._collection_ensured = True
                     self._qdrant_ok = True
-                    self._last_error = None
                     return
-                self._last_error = f"unexpected status {resp.status}"
+                logger.warning(
+                    "Qdrant collection ensure unexpected status: %s", resp.status
+                )
         except urllib.error.HTTPError as exc:
             if exc.code == 409:
                 self._collection_ensured = True
                 self._qdrant_ok = True
-                self._last_error = None
                 return
-            self._last_error = f"HTTP {exc.code}: {exc.reason}"
-            logger.warning("Qdrant collection ensure failed: %s", self._last_error)
+            logger.warning("Qdrant collection ensure failed: HTTP %s: %s", exc.code, exc.reason)
         except Exception as exc:  # noqa: BLE001 - degraded fallback
-            self._last_error = str(exc)[:200]
-            logger.warning("Qdrant collection ensure failed: %s", self._last_error)
+            logger.warning("Qdrant collection ensure failed: %s", str(exc)[:200])
         self._qdrant_ok = False
 
     def _embed(self, text: str) -> list[float]:
@@ -240,11 +237,9 @@ class QdrantMemoryStore(MemoryStore):
                 if resp.status not in (200, 201, 202):
                     raise RuntimeError(f"unexpected status {resp.status}")
             self._qdrant_ok = True
-            self._last_error = None
         except Exception as exc:  # noqa: BLE001 - degraded fallback
             self._qdrant_ok = False
-            self._last_error = str(exc)[:200]
-            logger.warning("Qdrant memory store failed: %s", self._last_error)
+            logger.warning("Qdrant memory store failed: %s", str(exc)[:200])
         return item
 
     def search(
@@ -298,7 +293,6 @@ class QdrantMemoryStore(MemoryStore):
                 return results
         except (urllib.error.URLError, OSError, ValueError):
             self._qdrant_ok = False
-            self._last_error = "qdrant search failed"
             logger.warning("Qdrant memory search failed; using in-memory fallback")
             return super().search(
                 query=query, top_k=top_k, namespace=namespace, threshold=threshold
