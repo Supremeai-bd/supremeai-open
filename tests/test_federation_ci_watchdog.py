@@ -18,10 +18,97 @@ from scripts.ci.federation_ci_watchdog import (
     build_issue_labels,
     build_issue_title,
     build_mirror_marker,
+    find_loose_mirrors,
     find_mirror_in_items,
     is_fresh_run,
+    relink_loose_mirrors,
     repo_short_name,
 )
+
+
+class TestLooseMirrorRelink(unittest.TestCase):
+    """8-anchor SSOT backfill: mirrored incidents must never drift loose.
+
+    Live incident class: #910-#918 were mirrored as root issues because
+    link_sub_issue's REST fallback POSTed to /sub-issues (404) instead of
+    /sub_issues, and the failure was swallowed. These tests pin the repair.
+    """
+
+    def _board(self) -> list[dict]:
+        marker = build_mirror_marker("Supremeai-bd/supremeai-api", 424242)
+        return [
+            {"number": 910, "id": 7770001, "body": f"incident body\n{marker}"},
+            {"number": 911, "id": 7770002, "body": "regular non-mirror issue"},
+            {
+                "number": 912,
+                "id": 7770003,
+                "pull_request": {"url": "x"},
+                "body": marker,
+            },
+            {"number": 913, "id": 7770004, "body": None},
+            {
+                "number": 914,
+                "id": 7770005,
+                "body": build_mirror_marker(
+                    "Supremeai-bd/supremeai-studio", 424243
+                ),
+            },
+        ]
+
+    def test_find_loose_mirrors_detects_only_loose_issue_mirrors(self):
+        loose = find_loose_mirrors(self._board(), set())
+        self.assertEqual(loose, [910, 914])
+
+    def test_find_loose_mirrors_excludes_already_linked_by_db_id(self):
+        # db ids are opaque GitHub database ids compared item-id to linked-id.
+        loose = find_loose_mirrors(self._board(), {7770001})
+        self.assertEqual(loose, [914])
+
+    def test_find_loose_mirrors_handles_none_and_empty(self):
+        self.assertEqual(find_loose_mirrors(None, None), [])
+        self.assertEqual(find_loose_mirrors([], set()), [])
+
+    def test_find_loose_mirrors_never_counts_prs(self):
+        items = [
+            {
+                "number": 999,
+                "pull_request": {"url": "x"},
+                "body": build_mirror_marker("Supremeai-bd/supremeai-core", 1),
+            }
+        ]
+        self.assertEqual(find_loose_mirrors(items, set()), [])
+
+    def test_relink_helpers_available(self):
+        # The relink pass depends on the anchors helpers; if the import
+        # chain breaks, relink must degrade to an explicit failure, not a
+        # silent zero-action success.
+        import scripts.ci.federation_ci_watchdog as wd
+
+        if wd.link_sub_issue is None:  # pragma: no cover - degraded env only
+            self.fail("federation_anchors.link_sub_issue import chain broken")
+
+    def test_sub_issue_endpoint_is_snake_case(self):
+        # Live-verified 2026-10-24: GET .../issues/761/sub_issues -> 200;
+        # GET .../issues/761/sub-issues -> 404 Not Found. A regression to
+        # the hyphenated path re-opens the loose-incident failure mode.
+        import scripts.ci.federation_anchors as anchors
+
+        self.assertEqual(anchors.SUB_ISSUES_PATH, "sub_issues")
+        self.assertNotIn("sub-issues", anchors.SUB_ISSUES_PATH)
+
+    def test_relink_returns_failure_tuple_when_helpers_missing(self):
+        # Degraded-import contract: (0, 1) so callers exit non-zero.
+        import scripts.ci.federation_ci_watchdog as wd
+
+        original = wd.link_sub_issue
+        original_list = wd.list_sub_issue_ids
+        try:
+            wd.link_sub_issue = None
+            wd.list_sub_issue_ids = None
+            self.assertEqual(relink_loose_mirrors(token=""), (0, 1))
+        finally:
+            wd.link_sub_issue = original
+            wd.list_sub_issue_ids = original_list
 
 
 class TestFederationCiWatchdog(unittest.TestCase):
