@@ -325,8 +325,11 @@ def poll_federation_failures(
             token=token,
         )
         if code != 200 or not isinstance(resp, dict):
-            print(f"  [skip] {repo}: could not fetch runs (HTTP {code})")
-            failed_count += 1
+            if code in (403, 404):
+                print(f"  [skip-inaccessible] {repo}: could not fetch runs (HTTP {code})")
+            else:
+                print(f"  [skip-error] {repo}: could not fetch runs (HTTP {code})")
+                failed_count += 1
             continue
 
         runs = resp.get("workflow_runs", [])
