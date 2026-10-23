@@ -399,13 +399,18 @@ def detect_changed_targets(
             text=True,
             check=False,
         )
-        if r.returncode != 0 or not r.stdout.strip():
+        if r.returncode != 0:
             # If diff against base fails (e.g. shallow clone or 1 commit), fallback to all
             return list(DOMAIN_MAP.keys()), True
 
         files = [line.strip() for line in r.stdout.splitlines() if line.strip()]
+        if not files:
+            return [], False
+
         targets: set[str] = set()
-        umbrella = False
+        # Central monorepo Supremeai-bd/supremeai is the umbrella repository
+        # and must always receive synchronization whenever any landed changes occur.
+        umbrella = True
 
         for f in files:
             if (
@@ -429,8 +434,6 @@ def detect_changed_targets(
                 targets.add("Supremeai-bd/supremeai-browser")
             elif f.startswith("vscode/"):
                 targets.add("Supremeai-bd/supremeai-vscode")
-            else:
-                umbrella = True
 
         return sorted(targets), umbrella
     except Exception:
