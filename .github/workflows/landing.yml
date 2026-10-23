@@ -411,7 +411,7 @@ jobs:
               repo:browser) TARGET_REPOS+=("Supremeai-bd/supremeai-browser") ;;
               repo:sdk) TARGET_REPOS+=("Supremeai-bd/supremeai-sdk") ;;
               repo:infra) TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure") ;;
-              repo:mcp) TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane") ;;
+              repo:mcp) TARGET_REPOS+=("Supremeai-bd/supremeai-api") ;;
               repo:archive) TARGET_REPOS+=("Supremeai-bd/supremeai-archive") ;;
               repo:monorepo) TARGET_REPOS+=("Supremeai-bd/supremeai") ;;
             esac
@@ -420,10 +420,10 @@ jobs:
           # 2. Resolve target repository from files touched (Domain Routing)
           for f in $FILES; do
             case "$f" in
-              studio/*|examples/dashboard-preview/*|api-schemas/dashboard.*)
+              studio/*|examples/dashboard-preview/*|api-schemas/dashboard.*|infrastructure/cloudflare-studio-proxy/*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai-studio")
                 ;;
-              api/*|gateway/*|api-schemas/gateway.*)
+              api/*|gateway/*|api-schemas/gateway.*|infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
                 ;;
               core/*|api-schemas/task-router.*)
@@ -444,9 +444,6 @@ jobs:
                 ;;
               browser/*|sandbox/*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai-browser")
-                ;;
-              infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
-                TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane")
                 ;;
               sdk/*|examples/sdk-*|deployments/*|infra/*|api-schemas/telemetry-log.*|api-schemas/websocket-events.*)
                 TARGET_REPOS+=("Supremeai-bd/supremeai")

@@ -164,6 +164,16 @@ def sync_satellite(
                 print(
                     f"📋 Synced runtime service 'gateway/service' -> 'service' in {target_repo}"
                 )
+        elif target_repo == "Supremeai-bd/supremeai-studio":
+            # Copy domain files into the satellite root
+            copy_tree_contents(src_path, tmp_repo)
+            # Sync cloudflare-studio-proxy into satellite infrastructure directory
+            cf_src = repo_root / "infrastructure" / "cloudflare-studio-proxy"
+            if cf_src.exists():
+                copy_tree_contents(cf_src, tmp_repo / "infrastructure" / "cloudflare-studio-proxy")
+                print(
+                    f"📋 Synced Cloudflare edge proxy & keep-warm cron 'infrastructure/cloudflare-studio-proxy' in {target_repo}"
+                )
         else:
             # Copy domain files into the satellite root
             copy_tree_contents(src_path, tmp_repo)
@@ -398,7 +408,11 @@ def detect_changed_targets(
         umbrella = False
 
         for f in files:
-            if f.startswith("studio/") or f.startswith("examples/dashboard-preview/"):
+            if (
+                f.startswith("studio/")
+                or f.startswith("examples/dashboard-preview/")
+                or f.startswith("infrastructure/cloudflare-studio-proxy/")
+            ):
                 targets.add("Supremeai-bd/supremeai-studio")
             elif f.startswith("core/") or f.startswith("api-schemas/task-router."):
                 targets.add("Supremeai-bd/supremeai-core")
@@ -408,6 +422,7 @@ def detect_changed_targets(
                 or f.startswith("command/")
                 or f.startswith("skills/")
                 or f.startswith("agents/")
+                or f.startswith("infrastructure/mcp-control-plane/")
             ):
                 targets.add("Supremeai-bd/supremeai-api")
             elif f.startswith("browser/") or f.startswith("sandbox/"):
