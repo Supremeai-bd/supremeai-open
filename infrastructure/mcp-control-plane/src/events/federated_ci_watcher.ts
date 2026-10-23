@@ -47,6 +47,9 @@ export const REPORT_SCHEMA_ID = "federated-ci-failure/v1";
 /** Conclusion the reporter acts on. Strict: startup_failure/timed_out/etc. are out of scope for v1. */
 export const WATCHED_CONCLUSION = "failure";
 
+/** CI Failure Hub issue number on the control-plane board (parent for mirrored incidents). */
+export const CI_FAILURE_ANCHOR = 761;
+
 export interface FailedJobSummary {
   name: string;
   steps: string[];
@@ -132,7 +135,7 @@ export interface IssueCreateRequest {
 export type IssueCreateFn = (
   req: IssueCreateRequest,
   token?: string,
-) => Promise<{ ok: boolean; status: number; issueUrl?: string; body?: any }>;
+) => Promise<{ ok: boolean; status: number; issueUrl?: string; issueNumber?: number; body?: any }>;
 
 export type JobsFetchFn = (
   repo: string,
@@ -307,6 +310,15 @@ export class FederatedCiWatcherService {
         this.config.token,
       );
       if (!res.ok) throw new Error(`GitHub issues API → HTTP ${res.status}`);
+      // Best-effort: link the new issue as a sub-issue under the CI Failure Hub
+      // so it is visible/claimable but not a loose root issue.
+      if (res.issueNumber) {
+        try {
+          await linkSubIssue(res.issueNumber, this.config.reportRepo, this.config.token);
+        } catch (e) {
+          this.log(`[CI_WATCHER] sub-issue link failed (non-fatal): ${e}`);
+        }
+      }
       entry.status = "done";
       this.emissionTimes.push(this.deps.now());
       this.log(`[CI_WATCHER] reported ${entry.report.eventKey} → ${res.issueUrl ?? this.config.reportRepo}`);
@@ -444,7 +456,7 @@ ${jobLines}
 /** POST /repos/{repo}/issues — with one 422 fallback that drops the repo:<slug> label. */
 export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
   if (!token) return { ok: false, status: 0 }; // fail-closed: no creds → caller retries → dead-letters visibly
-  const attempt = async (labels: string[]) =>
+  const attempt = async (labels: string[], bodyOverride?: string) =>
     fetch(`https://api.github.com/repos/${req.repo}/issues`, {
       method: "POST",
       headers: {
@@ -453,7 +465,7 @@ export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "SupremeAI-MCP-Control-Tower",
       },
-      body: JSON.stringify({ title: req.title, body: req.body, labels }),
+      body: JSON.stringify({ title: req.title, body: bodyOverride ?? req.body, labels }),
     });
 
   let res = await attempt(req.labels);
@@ -461,19 +473,66 @@ export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
     // A label (most likely repo:<slug>) does not exist on the board — retry
     // with the always-present core labels and note the drop in the body.
     const note = `\n\n> ℹ️ Reporter note: the \`repo:<slug>\` label does not exist on this board yet — triage may want to add/relabel it (e.g. \`repo:open\` for \`Supremeai-bd/supremeai-open\`).`;
-    res = await attempt([...req.labels.filter((l) => !l.startsWith("repo:"))]);
-    return { ok: res.status === 201, status: res.status, issueUrl: undefined, body: { labelDropped: true, note } };
+    const fallbackLabels = req.labels.filter((l) => !l.startsWith("repo:"));
+    res = await attempt(fallbackLabels, req.body + note);
+    let issueUrl: string | undefined;
+    let issueNumber: number | undefined;
+    try {
+      const data = res.ok ? (await res.json() as any) : undefined;
+      issueUrl = data?.html_url ?? undefined;
+      issueNumber = data?.number ?? undefined;
+    } catch {
+      issueUrl = undefined;
+    }
+    return { ok: res.status === 201, status: res.status, issueUrl, issueNumber, body: { labelDropped: true, note } };
   }
   let issueUrl: string | undefined;
+  let issueNumber: number | undefined;
   try {
-    issueUrl = res.ok ? ((await res.json() as any)?.html_url ?? undefined) : undefined;
+    const data = res.ok ? (await res.json() as any) : undefined;
+    issueUrl = data?.html_url ?? undefined;
+    issueNumber = data?.number ?? undefined;
   } catch {
     issueUrl = undefined;
   }
-  return { ok: res.status === 201, status: res.status, issueUrl };
+  return { ok: res.status === 201, status: res.status, issueUrl, issueNumber };
 };
 
-/** GET /repos/{repo}/actions/runs/{runId}/jobs — best-effort failed-job enrichment. */
+/** Best-effort: link an issue as a sub-issue under the CI Failure Hub. Never throws. */
+export async function linkSubIssue(
+  childIssueNumber: number,
+  repo: string,
+  token?: string,
+): Promise<boolean> {
+  if (!token) return false;
+  try {
+    const childRes = await fetch(`https://api.github.com/repos/${repo}/issues/${childIssueNumber}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "SupremeAI-MCP-Control-Tower",
+      },
+    });
+    if (childRes.status !== 200) return false;
+    const child = (await childRes.json()) as any;
+    const childId = child?.id;
+    if (!childId) return false;
+    const linkRes = await fetch(`https://api.github.com/repos/${repo}/issues/${CI_FAILURE_ANCHOR}/sub-issues`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "SupremeAI-MCP-Control-Tower",
+      },
+      body: JSON.stringify({ sub_issue_id: childId }),
+    });
+    return linkRes.status === 201 || linkRes.status === 204;
+  } catch {
+    return false;
+  }
+}
 export const defaultFetchJobs: JobsFetchFn = async (repo, runId, token) => {
   if (!token) return { ok: false, status: 0, failedJobs: [] };
   try {

@@ -247,14 +247,20 @@ def check_existing_mirror(
 ) -> int | None:
     """Check if this run's marker already exists in CI Failure Hub #761 comments."""
     needle = f"{repo}/actions/runs/{run_id}"
-    code, comments = gh_api(
-        f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments?per_page=100",
-        token=token,
-    )
-    if code == 200 and isinstance(comments, list):
+    page = 1
+    while True:
+        code, comments = gh_api(
+            f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments?per_page=100&page={page}",
+            token=token,
+        )
+        if code != 200 or not isinstance(comments, list) or not comments:
+            break
         for c in comments:
             if needle in (c.get("body") or ""):
                 return int(c.get("id", 0))
+        if len(comments) < 100:
+            break
+        page += 1
     return None
 
 
@@ -268,35 +274,75 @@ def mirror_failure(
     error_summary: str = "",
     token: str | None = None,
 ) -> bool:
-    """Record CI failure incident as a structured comment in CI Failure Hub #761 (zero loose issues)."""
-    existing = check_existing_mirror(repo, run_id, token=token)
-    if existing:
-        print(
-            f"[watchdog] Incident already recorded in CI Hub #{CI_FAILURE_ANCHOR} (comment #{existing}). Skipping."
+    """Mirror CI failure as a sub-issue under CI Failure Hub #761 (visible, claimable, stays until fixed)."""
+    # Dedup: scan open issues for this run's marker (paginated).
+    page = 1
+    while True:
+        code, items = gh_api(
+            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
+            token=token,
         )
-        return True
+        if code != 200 or not isinstance(items, list) or not items:
+            break
+        existing_num = find_mirror_in_items(items, repo, run_id)
+        if existing_num is not None:
+            print(
+                f"[watchdog] Incident already mirrored as issue #{existing_num}. Skipping."
+            )
+            return True
+        if len(items) < 100:
+            break
+        page += 1
 
     title = build_issue_title(workflow_name, repo, branch, run_id)
     body = f"## 🚨 CI Failure Incident: {title}\n\n" + build_issue_body(
         repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
     )
+    labels = build_issue_labels(repo)
 
     code, resp = gh_api(
-        f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments",
+        f"repos/{OPEN_REPO}/issues",
         token=token,
         method="POST",
-        data={"body": body},
+        data={"title": title, "body": body, "labels": labels},
     )
-    if code == 201:
-        cid = resp.get("id")
-        curl = resp.get("html_url")
-        print(
-            f"✅ [watchdog] Mirrored CI failure from {repo} into CI Hub #{CI_FAILURE_ANCHOR} (comment #{cid}): {curl}"
+    if code == 422:
+        core_labels = [l for l in labels if not l.startswith("repo:")]
+        code, resp = gh_api(
+            f"repos/{OPEN_REPO}/issues",
+            token=token,
+            method="POST",
+            data={"title": title, "body": body, "labels": core_labels},
         )
+    if code == 201:
+        issue_number = resp.get("number")
+        issue_url = resp.get("html_url")
+        print(
+            f"✅ [watchdog] Mirrored CI failure from {repo} as issue #{issue_number}: {issue_url}"
+        )
+        # Link as sub-issue under the CI Failure Hub (zero loose root issues).
+        if issue_number and link_sub_issue is not None:
+            try:
+                linked = link_sub_issue(
+                    parent_issue_number=CI_FAILURE_ANCHOR,
+                    child_issue_number=int(issue_number),
+                    repo=OPEN_REPO,
+                    token=token,
+                )
+                if linked:
+                    print(
+                        f"   ↳ linked as sub-issue under CI Hub #{CI_FAILURE_ANCHOR}."
+                    )
+                else:
+                    print(
+                        "   ↳ (could not link sub-issue; issue remains standalone)"
+                    )
+            except Exception as exc:
+                print(f"   ↳ sub-issue link error: {exc}")
         return True
     else:
         print(
-            f"❌ [watchdog] Failed to record incident into CI Hub #{CI_FAILURE_ANCHOR} (HTTP {code}): {resp}"
+            f"❌ [watchdog] Failed to mirror incident (HTTP {code}): {resp}"
         )
         return False
 
