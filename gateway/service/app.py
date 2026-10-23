@@ -24,7 +24,10 @@ from fastapi.responses import JSONResponse
 
 try:
     from service.keygen import verify_key
-    from service.pool import squad
+    try:
+        from service.pool import squad
+    except ImportError:
+        squad = None  # type: ignore[assignment]
     from service.providers.adapters import (
         PROVIDER_CONFIGS,
         forward_chat_completion,
@@ -38,10 +41,43 @@ except ImportError:
     except ImportError:
         def verify_key(key: str) -> dict | None:  # type: ignore[no-redef]
             return None
-    squad = None  # type: ignore[assignment]
-    PROVIDER_CONFIGS = {}  # type: ignore[assignment]
-    telegram_router = None  # type: ignore[assignment]
-    web_bridge = None  # type: ignore[assignment]
+    try:
+        from gateway.service.pool import squad
+    except ImportError:
+        squad = None  # type: ignore[assignment]
+    try:
+        from gateway.service.providers.adapters import (
+            PROVIDER_CONFIGS,
+            forward_chat_completion,
+            forward_stealth_webhook,
+        )
+    except ImportError:
+        try:
+            from service.providers.adapters import (
+                PROVIDER_CONFIGS,
+                forward_chat_completion,
+                forward_stealth_webhook,
+            )
+        except ImportError:
+            PROVIDER_CONFIGS = {}  # type: ignore[assignment]
+            def forward_chat_completion(*a, **k):  # type: ignore[no-redef]
+                return 503, {"error": "adapters unavailable"}
+            def forward_stealth_webhook(*a, **k):  # type: ignore[no-redef]
+                return 503, {"error": "adapters unavailable"}
+    try:
+        from gateway.service.providers.web_session import web_bridge
+    except ImportError:
+        try:
+            from service.providers.web_session import web_bridge
+        except ImportError:
+            web_bridge = None  # type: ignore[assignment]
+    try:
+        from gateway.service.telegram_webhook import telegram_router
+    except ImportError:
+        try:
+            from service.telegram_webhook import telegram_router
+        except ImportError:
+            telegram_router = None  # type: ignore[assignment]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("supremeai.gateway")
@@ -49,12 +85,13 @@ logger = logging.getLogger("supremeai.gateway")
 # Priority-1 Stealth Webhook & Web Session Configuration
 STEALTH_WEBHOOK_URL = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHOOK_URL", "")).strip()
 STEALTH_WEBHOOK_SECRET = os.getenv("STEALTH_WEBHOOK_SECRET", os.getenv("UPSTREAM_WEBHOOK_SECRET", "")).strip()
-STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "6.0"))
+STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "28.0"))
 
 app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None)
 
 # CORS setup for Studio and web agents - Restricted origins (no wildcard with credentials)
 _default_cors = [
+    "https://supremeai-studio.pages.dev",
     "https://supremeai-studio.paykaribazaronline.workers.dev",
     "https://supremeai-studio.vercel.app",
     "http://localhost:3000",
@@ -63,7 +100,10 @@ _default_cors = [
     "http://127.0.0.1:5173",
 ]
 _cors_env = os.getenv("CORS_ORIGINS", "").strip()
-allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else _default_cors
+if _cors_env:
+    allowed_origins = list(dict.fromkeys([o.strip() for o in _cors_env.split(",") if o.strip()] + _default_cors))
+else:
+    allowed_origins = _default_cors
 
 app.add_middleware(
     CORSMiddleware,
@@ -98,6 +138,8 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
     referer = (request.headers.get("referer") or "").lower()
     is_guest = (
         request.headers.get("x-guest-mode", "").lower() == "true"
+        or "https://supremeai-studio.pages.dev" in origin
+        or "https://supremeai-studio.pages.dev" in referer
         or "https://supremeai-studio.vercel.app" in origin
         or "https://supremeai-studio.vercel.app" in referer
     )
@@ -275,9 +317,14 @@ async def chat_completions(
             }
             return JSONResponse(status_code=w_status, content=w_response, headers=headers)
 
+        relay_detail = None
+        if isinstance(w_response, dict):
+            relay_detail = w_response.get("error") or w_response.get("detail") or w_response.get("message")
+        if not relay_detail and w_response is not None:
+            relay_detail = str(w_response)[:500]
         raise HTTPException(
             status_code=502,
-            detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}). API fallback disabled."
+            detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}. API fallback disabled."
         )
 
     raise HTTPException(

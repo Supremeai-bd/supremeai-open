@@ -133,12 +133,12 @@ async def forward_stealth_webhook(
     webhook_url: str,
     secret: Optional[str],
     payload: Dict[str, Any],
-    timeout: float = 6.0,
+    timeout: float = 28.0,
 ) -> Tuple[int, Dict[str, Any] | str]:
     """
     Priority-1 Stealth Forwarder.
     Normalizes the webhook endpoint to /v1/chat/completions, sends OpenAI chat payload,
-    and fails fast (< 6.0s) so the gateway can immediately fall back to the provider squad.
+    and uses a 28.0s timeout for the stealth relay.
     """
     if not webhook_url:
         return 404, {"error": "Stealth webhook not configured"}
@@ -193,6 +193,8 @@ async def forward_stealth_webhook(
                 }
             return response.status_code, data
         except httpx.TimeoutException:
+            logger.warning(f"Stealth webhook timed out after {timeout}s")
             return 504, {"error": "Stealth webhook timed out"}
         except httpx.RequestError as exc:
+            logger.warning(f"Stealth webhook connection error: {exc}")
             return 502, {"error": f"Stealth webhook connection error: {str(exc)}"}
