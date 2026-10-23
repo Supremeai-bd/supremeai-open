@@ -179,6 +179,12 @@ async def export_and_sync():
     token = infisical_login()
     logger.info("Infisical Universal Auth successful.")
 
+    # Filter Gemini-specific cookies for the cloud scraper node (SUPREMEAI_GEMINI_COOKIES)
+    gemini_cookies = [
+        c for c in cookies if "google" in c.get("domain", "").lower()
+    ]
+    logger.info(f"Found {len(gemini_cookies)} Gemini (google.com) session cookies.")
+
     # 4. Upload to Infisical
     # A. Compressed Base64 format (ready for immediate headless injection in cloud runners)
     set_infisical_secret(token, "AI_FLEET_COOKIES_GZIP_B64", b64_compressed)
@@ -186,11 +192,14 @@ async def export_and_sync():
     # B. AES-256 Encrypted format
     set_infisical_secret(token, "AI_FLEET_COOKIES_ENC", enc_payload)
 
+    # C. Gemini cookie bundle for cloud scraper node (dynamic hot-reload, no Render redeploy)
+    set_infisical_secret(token, "SUPREMEAI_GEMINI_COOKIES", json.dumps(gemini_cookies))
+
     print("\n=================================================================")
     print("   [SUCCESS]: AI Fleet Cookies Synced to Infisical Cloud Vault!")
     print(f"   - Total AI Cookies: {len(ai_cookies)}")
     print(f"   - Target Vault: Infisical Production ({WORKSPACE_ID})")
-    print("   - Keys Synced: AI_FLEET_COOKIES_GZIP_B64, AI_FLEET_COOKIES_ENC")
+    print(f"   - Keys Synced: AI_FLEET_COOKIES_GZIP_B64, AI_FLEET_COOKIES_ENC, SUPREMEAI_GEMINI_COOKIES")
     print("   All cloud microservices can now use these sessions 24/7!")
     print("=================================================================")
 

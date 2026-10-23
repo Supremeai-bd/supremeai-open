@@ -7,6 +7,8 @@ Runs seamlessly on Render Free Tier or local machine (port 8788). Refs #756.
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import logging
 import os
@@ -53,8 +55,16 @@ class GeminiCookieEngine:
         self._bl: str = "boq_gemini-web-uiserver_20261022.00_p0"
         self._token_expiry: float = 0
         self._cookies: Dict[str, str] = {}
+        self._infisical_cookies: Dict[str, str] = {}
+        self._infisical_expiry: float = 0
+        self._infisical_ttl: float = 3600.0
 
     def get_cookies(self) -> Dict[str, str]:
+        # Prefer Infisical cached cookies if fresh (TTL 1h)
+        if self._infisical_cookies and time.time() < self._infisical_expiry:
+            self._cookies = self._infisical_cookies
+            return self._cookies
+
         if self._cookies:
             return self._cookies
 
@@ -98,12 +108,138 @@ class GeminiCookieEngine:
 
         return self._cookies
 
+    async def fetch_cookies_from_infisical(self) -> Dict[str, str]:
+        """Dynamically fetch Gemini cookies from Infisical Vault (in-memory, TTL 1h)."""
+        now = time.time()
+        if self._infisical_cookies and now < self._infisical_expiry:
+            self._cookies = self._infisical_cookies
+            return self._infisical_cookies
+
+        client_id = os.getenv("INFISICAL_CLIENT_ID", "").strip()
+        client_secret = os.getenv("INFISICAL_CLIENT_SECRET", "").strip()
+        workspace_id = (os.getenv("INFISICAL_WORKSPACE_ID", "") or os.getenv("INFISICAL_PROJECT_ID", "")).strip()
+        if not client_id or not client_secret or not workspace_id:
+            return self.get_cookies()
+
+        environment = os.getenv("INFISICAL_ENV", "prod").strip() or "prod"
+        base_url = os.getenv("INFISICAL_API_URL", "https://app.infisical.com").rstrip("/")
+        secret_name = os.getenv("INFISICAL_GEMINI_COOKIES_SECRET", "SUPREMEAI_GEMINI_COOKIES").strip() or "SUPREMEAI_GEMINI_COOKIES"
+
+        old_cookies = dict(self._infisical_cookies)
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                login_resp = await client.post(
+                    f"{base_url}/api/v1/auth/universal-auth/login",
+                    json={"clientId": client_id, "clientSecret": client_secret},
+                )
+                login_resp.raise_for_status()
+                token = login_resp.json().get("accessToken")
+                if not token:
+                    raise ValueError("Infisical auth did not return accessToken")
+
+                url = f"{base_url}/api/v3/secrets/raw/{secret_name}"
+                params = {"workspaceId": workspace_id, "environment": environment, "secretPath": "/"}
+                resp = await client.get(url, params=params, headers={"Authorization": f"Bearer {token}"})
+                resp.raise_for_status()
+                data = resp.json()
+
+                raw_value = None
+                if isinstance(data, dict):
+                    if isinstance(data.get("secret"), dict):
+                        raw_value = data["secret"].get("secretValue")
+                    elif isinstance(data.get("secrets"), list) and data["secrets"]:
+                        raw_value = data["secrets"][0].get("secretValue")
+                    else:
+                        raw_value = data.get("secretValue")
+                if not raw_value:
+                    raise ValueError("Infisical secret value is empty")
+
+                cookies = self._parse_infisical_cookie_value(str(raw_value))
+                if not cookies:
+                    raise ValueError("No Gemini cookies parsed from Infisical secret")
+
+                # Reset token cache if cookies changed
+                if cookies != old_cookies:
+                    self._snl = None
+                    self._token_expiry = 0
+
+                self._infisical_cookies = cookies
+                self._infisical_expiry = time.time() + self._infisical_ttl
+                self._cookies = cookies
+                logger.info(f"Fetched {len(cookies)} Gemini cookies from Infisical (TTL {int(self._infisical_ttl)}s)")
+                return cookies
+        except Exception as exc:
+            logger.warning(f"Could not fetch cookies from Infisical: {exc}")
+            return self.get_cookies()
+
+    def _parse_infisical_cookie_value(self, raw: str) -> Dict[str, str]:
+        text = raw.strip()
+        # Try gzip/base64 compressed payload
+        try:
+            decoded = base64.b64decode(text, validate=True)
+            try:
+                text = gzip.decompress(decoded).decode("utf-8")
+            except Exception:
+                try:
+                    text = decoded.decode("utf-8")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Try JSON
+        try:
+            data = json.loads(text)
+        except Exception:
+            cookies: Dict[str, str] = {}
+            for part in text.split(";"):
+                if "=" in part:
+                    k, v = part.strip().split("=", 1)
+                    cookies[k.strip()] = v.strip()
+            known = {"__Secure-1PSID", "__Secure-3PSID", "SID", "__Secure-1PSIDTS", "__Secure-3PSIDTS", "__Secure-1PSIDCC", "__Secure-3PSIDCC"}
+            filtered = {k: v for k, v in cookies.items() if k in known}
+            return filtered if filtered else cookies
+
+        cookies = {}
+        if isinstance(data, dict):
+            if isinstance(data.get("cookies"), list):
+                data = data["cookies"]
+            else:
+                mapping: Dict[str, str] = {}
+                for k, v in data.items():
+                    if isinstance(v, str):
+                        mapping[k] = v
+                if mapping:
+                    normalized: Dict[str, str] = {}
+                    for k, v in mapping.items():
+                        name = k
+                        if k in ("1PSID", "3PSID", "SID", "1PSIDTS", "3PSIDTS", "1PSIDCC", "3PSIDCC"):
+                            name = f"__Secure-{k}" if "PSID" in k else k
+                        normalized[name] = v
+                    return normalized
+        if isinstance(data, list):
+            for cookie in data:
+                if not isinstance(cookie, dict):
+                    continue
+                name = cookie.get("name")
+                value = cookie.get("value")
+                domain = str(cookie.get("domain", ""))
+                if name and value and ("google" in domain.lower() or str(name).startswith("__Secure-") or name == "SID"):
+                    cookies[str(name)] = str(value)
+
+        known = {"__Secure-1PSID", "__Secure-3PSID", "SID", "__Secure-1PSIDTS", "__Secure-3PSIDTS", "__Secure-1PSIDCC", "__Secure-3PSIDCC"}
+        filtered = {k: v for k, v in cookies.items() if k in known}
+        return filtered if filtered else cookies
+
     async def _ensure_tokens(self, client: httpx.AsyncClient) -> tuple[str, str]:
         now = time.time()
         if self._snl and now < self._token_expiry:
             return self._snl, self._bl
 
-        cookies = self.get_cookies()
+        if os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET"):
+            cookies = await self.fetch_cookies_from_infisical()
+        else:
+            cookies = self.get_cookies()
         if not cookies:
             raise ValueError("No Gemini cookies configured (missing env vars and local vault)")
 
@@ -155,7 +291,10 @@ class GeminiCookieEngine:
         return best_text.strip()
 
     async def ask(self, prompt: str) -> str:
-        cookies = self.get_cookies()
+        if os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET"):
+            cookies = await self.fetch_cookies_from_infisical()
+        else:
+            cookies = self.get_cookies()
         if not cookies:
             raise HTTPException(status_code=503, detail="No Gemini cookies configured")
 
@@ -163,6 +302,9 @@ class GeminiCookieEngine:
             try:
                 snl, bl = await self._ensure_tokens(client)
             except PermissionError as exc:
+                self._infisical_cookies = {}
+                self._infisical_expiry = 0
+                self._cookies = {}
                 raise HTTPException(status_code=502, detail=str(exc))
             except Exception as exc:
                 raise HTTPException(status_code=502, detail=f"Token initialization error: {exc}")
@@ -219,14 +361,25 @@ class GeminiCookieEngine:
 relay_engine = GeminiCookieEngine()
 
 
+@app.on_event("startup")
+async def on_startup():
+    if os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET"):
+        logger.info("Initializing Infisical cookie prefetch on startup...")
+        try:
+            await relay_engine.fetch_cookies_from_infisical()
+        except Exception as exc:
+            logger.warning(f"Startup Infisical prefetch notice: {exc}")
+
+
 @app.get("/health")
 async def health() -> Dict[str, Any]:
-    cookies = relay_engine.get_cookies()
+    cookies = relay_engine._infisical_cookies or relay_engine.get_cookies()
     return {
         "status": "healthy",
         "service": "supremeai-browser-cookie-relay",
         "cookies_loaded": bool(cookies),
         "total_cookies": len(cookies),
+        "infisical_configured": bool(os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET")),
         "timestamp": time.time(),
     }
 
@@ -283,4 +436,4 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", "8788"))
     logger.info(f"Starting SupremeAI Gemini Cookie Relay on port {port}...")
-    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=port)
