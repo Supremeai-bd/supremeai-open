@@ -18,8 +18,11 @@ export class EventStream {
   private attempts = 0;
   private maxAttempts = 10;
   private closed = false;
+  private opts: StreamOptions;
 
-  constructor(private opts: StreamOptions) {}
+  constructor(opts: StreamOptions) {
+    this.opts = opts;
+  }
 
   start(): void {
     if (this.closed) return;

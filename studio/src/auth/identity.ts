@@ -5,7 +5,12 @@
 // এগুলো শুধু UX/guard decision — প্রতিটি privileged API call আবার backend-এ
 // authorize হয়। URL বা localStorage role key কখনোই এখানে ব্যবহৃত হয় না।
 
-import { normalizeRole, type Role } from '../types';
+import { normalizeRole, type Role } from '../config/permissions';
+
+/** Get the resolved canonical application role (fallback to 'user'). */
+export function getCanonicalRole(): Role {
+  return getAdminJwtRole() || 'user';
+}
 
 /** Storage key of the server-signed admin JWT issued after OTP/TOTP step-up. */
 export const ADMIN_JWT_KEY = 'supreme_admin_jwt';

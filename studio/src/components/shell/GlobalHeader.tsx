@@ -1,11 +1,20 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+export interface HeaderNotification {
+  id: string;
+  title: string;
+  message?: string;
+  read?: boolean;
+}
+
 export interface GlobalHeaderProps {
   title?: string;
   context?: 'user' | 'admin' | 'guest';
   onToggleSidebar?: () => void;
   actions?: React.ReactNode;
+  onLogout?: () => void;
+  notifications?: HeaderNotification[];
 }
 
 export const SwarmRadar: React.FC = () => (

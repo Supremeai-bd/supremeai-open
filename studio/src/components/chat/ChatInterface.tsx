@@ -109,7 +109,9 @@ export const ChatInterface: React.FC = () => {
     setUiLang(next);
     try {
       localStorage.setItem('sa_ui_lang', next);
-    } catch {}
+    } catch {
+      // Ignored: private browsing or storage quota unavailable
+    }
   };
 
   const chatChips = [

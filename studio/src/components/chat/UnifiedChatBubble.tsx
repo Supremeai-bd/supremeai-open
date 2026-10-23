@@ -144,7 +144,7 @@ export function UnifiedChatBubble({
       return (
         <div className={`max-w-[85%] flex flex-col gap-1 self-start items-start`}>
           {actionBadge}
-          <div className={`p-3.5 rounded-2xl text-xs leading-relaxed w-full ${SCI_FI_SYSTEM_BUBBLE}`}>
+          <div className={`p-3.5 rounded-2xl text-xs leading-relaxed w-full ${COSMIC_SYSTEM_BUBBLE}`}>
             {parsed.type === 'code' && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-1.5">
