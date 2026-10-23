@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+// ROOT-CAUSE FIX (Refs #876 / bridge-20261023-frontend-router-restore):
+// CTAs previously targeted /signup (a route that does not exist) and
+// /workspace/live (now a protected AIStudio route). Canonical split-auth
+// route is /register; the public guest chat lives at /chat.
 export const LandingHeader: React.FC = () => {
   const navigate = useNavigate();
   return (
@@ -30,7 +34,7 @@ export const LandingHeader: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => navigate('/signup')}
+          onClick={() => navigate('/register')}
           className="rounded-lg bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-1.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity"
         >
           Get Started
@@ -46,6 +50,12 @@ export const LandingPage: React.FC = () => {
   const fullText = 'What is the current health status of our AI swarm across satellites?';
 
   useEffect(() => {
+    // prefers-reduced-motion: skip the typing animation entirely
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      setTypedText(fullText);
+      return;
+    }
     let index = 0;
     const interval = setInterval(() => {
       setTypedText(fullText.slice(0, index));
@@ -80,14 +90,14 @@ export const LandingPage: React.FC = () => {
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
               type="button"
-              onClick={() => navigate('/workspace/live')}
+              onClick={() => navigate('/chat')}
               className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all"
             >
               Try Live Guest Chat →
             </button>
             <button
               type="button"
-              onClick={() => navigate('/signup')}
+              onClick={() => navigate('/register')}
               className="w-full sm:w-auto rounded-xl border border-white/10 bg-slate-900/80 px-6 py-3 font-semibold text-slate-200 hover:bg-slate-800 hover:text-white transition-all backdrop-blur-md"
             >
               Create Free Account
