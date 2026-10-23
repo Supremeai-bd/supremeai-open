@@ -54,7 +54,14 @@ STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "6.0"))
 app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None)
 
 # CORS setup for Studio and web agents - Restricted origins (no wildcard with credentials)
-_default_cors = ["https://supremeai-studio.vercel.app", "http://localhost:3000", "http://localhost:5173"]
+_default_cors = [
+    "https://supremeai-studio.paykaribazaronline.workers.dev",
+    "https://supremeai-studio.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
 _cors_env = os.getenv("CORS_ORIGINS", "").strip()
 allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else _default_cors
 

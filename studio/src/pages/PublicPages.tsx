@@ -79,7 +79,7 @@ function responseFor(input: string) { return 'SupremeAI is experiencing high dem
 async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via: string }> {
   const env = (import.meta as unknown as { env: Record<string, string> }).env || {};
   const webhookTarget = (env.VITE_STEALTH_WEBHOOK_URL || env.VITE_WEBHOOK_URL || '').replace(/\/$/, '');
-  const apiTarget = (env.VITE_SUPREMEAI_API_URL || (typeof window !== 'undefined' && window.location.origin.includes('workers.dev') ? '' : 'https://supremeai-api-ulw0.onrender.com')).replace(/\/$/, '');
+  const apiTarget = (env.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com').replace(/\/$/, '');
   const resolvedKey = apiKey || env.VITE_SUPREMEAI_API_KEY || (typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || 'guest') : 'guest');
   const modelId = modelName.toLowerCase().includes('reasoning') ? 'supremeai/openrouter' : (modelName.toLowerCase().includes('fast') ? 'supremeai/groq' : 'auto');
 
