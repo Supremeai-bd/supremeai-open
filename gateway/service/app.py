@@ -208,24 +208,18 @@ async def chat_completions(
         preferred_provider = requested_model
 
     use_priority_1 = (
-        (STEALTH_WEBHOOK_URL or (web_bridge and getattr(web_bridge, "has_active_accounts", False)))
-        and (preferred_provider is None or preferred_provider in ("stealth", "ghost_gemini", "web_session"))
+        bool(STEALTH_WEBHOOK_URL)
+        and (preferred_provider is None or preferred_provider in ("stealth", "ghost_gemini"))
     )
     if use_priority_1:
         w_status, w_response = None, None
         try:
-            if STEALTH_WEBHOOK_URL:
-                w_status, w_response = await forward_stealth_webhook(
-                    STEALTH_WEBHOOK_URL,
-                    STEALTH_WEBHOOK_SECRET,
-                    body,
-                    timeout=STEALTH_WEBHOOK_TIMEOUT,
-                )
-            elif web_bridge:
-                w_status, w_response = await web_bridge.forward_web_chat(
-                    body,
-                    timeout=STEALTH_WEBHOOK_TIMEOUT,
-                )
+            w_status, w_response = await forward_stealth_webhook(
+                STEALTH_WEBHOOK_URL,
+                STEALTH_WEBHOOK_SECRET,
+                body,
+                timeout=STEALTH_WEBHOOK_TIMEOUT,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"Priority-1 Web Relay attempt exception: {exc}")
             w_status, w_response = 500, None
@@ -250,16 +244,20 @@ async def chat_completions(
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             }
 
-        # Priority 1 is ONLY accepted if HTTP 2xx AND valid non-empty chat completion choices
-        is_valid_chat = (
+        chat_content = ""
+        if (
             isinstance(w_response, dict)
             and bool(w_response.get("choices"))
             and isinstance(w_response["choices"], list)
             and len(w_response["choices"]) > 0
             and isinstance(w_response["choices"][0], dict)
-            and "message" in w_response["choices"][0]
-            and isinstance(w_response["choices"][0]["message"], dict)
-            and bool(str(w_response["choices"][0]["message"].get("content", "")).strip())
+            and isinstance(w_response["choices"][0].get("message"), dict)
+        ):
+            chat_content = str(w_response["choices"][0]["message"].get("content", "")).strip()
+
+        # Reject mock/dummy stubs and require genuine non-empty content
+        is_valid_chat = bool(chat_content) and not any(
+            marker in chat_content for marker in ("Web Session Active", "health=", "Authenticated via")
         )
 
         if w_status is not None and 200 <= w_status < 300 and is_valid_chat:
