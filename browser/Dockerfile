@@ -6,11 +6,11 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir fastapi "uvicorn[standard]" httpx pydantic
 
-COPY server.py ./
+COPY server.py main.py ./
 
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
+ENV PORT=8080
 
-EXPOSE 8000
+EXPOSE 8080
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
