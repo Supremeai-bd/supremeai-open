@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuthStore } from '../../store/authStore';
+import { useAuthStore, AuthStatus } from '../../store/authStore';
 
 // ROOT-CAUSE RESTYLE (Refs #890 funnel / Cosmic auth):
 // বাংলা মন্তব্য: রেজিস্ট্রেশন পেজ আগে legacy neon/--supremeai-color-* টোকেন
@@ -19,7 +19,7 @@ export const RegisterPage: React.FC = () => {
 
   // Non-blocking redirect: If already logged in, navigate to workspace in background without spinner
   React.useEffect(() => {
-    if (status === 'LOGGED_IN') {
+    if (status === AuthStatus.LOGGED_IN) {
       navigate('/workspace', { replace: true });
     }
   }, [status, navigate]);

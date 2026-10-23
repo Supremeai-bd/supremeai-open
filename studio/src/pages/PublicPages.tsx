@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, History, Menu, Search, Sparkles, WandSparkles, Wrench, X, Zap } from 'lucide-react';
 import { UnifiedChatBubble } from '../components/chat/UnifiedChatBubble';
-import { brandFrom, brandTooltip, TIER_CLASS, Brand } from '../lib/brandLabel';
+import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../lib/brandLabel';
 
 // ROOT-CAUSE RESTYLE (Refs #878 / bridge-20261023-frontend-guestchat-cosmic):
 // বাংলা মন্তব্য: গেস্ট চ্যাট আগে legacy slate/cyan প্যালেট ব্যবহার করত ও নিজের

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useAuthStore } from '../../store/authStore';
+import { useAuthStore, AuthStatus } from '../../store/authStore';
 import { ServiceHealthBar } from '../../components/auth/ServiceHealthBar';
 import { apiClient } from '../../services/apiClient';
 
@@ -24,7 +24,7 @@ export const LoginPage: React.FC = () => {
 
   // Non-blocking redirect: If already logged in, navigate to workspace in background without spinner
   React.useEffect(() => {
-    if (status === 'LOGGED_IN') {
+    if (status === AuthStatus.LOGGED_IN) {
       navigate('/workspace', { replace: true });
     }
   }, [status, navigate]);
