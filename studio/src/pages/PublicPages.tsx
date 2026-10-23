@@ -219,17 +219,14 @@ export function GuestChat() {
         {m.role === 'assistant' && (
           m.brand ? (
             <div
-              className="mt-1 flex items-center gap-1.5 px-1 text-[11px]"
+              className="mt-1 flex items-center gap-1 px-1 text-[11px]"
               title={brandTooltip(m.brand)}
             >
-              <span className="font-semibold bg-gradient-to-r from-emerald-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                SupremeAI
+              <span className="font-semibold tracking-tight bg-gradient-to-r from-emerald-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                SupremeAI{m.brand.tier}
               </span>
-              <span className="font-mono text-[10px] text-slate-400 bg-white/5 border border-white/10 px-1.5 py-0.2 rounded">
-                {m.brand.channel}.{m.brand.engine}
-              </span>
-              <span className={`text-[10px] font-medium border px-1.5 py-0.2 rounded-full ${TIER_CLASS[m.brand.tier] || TIER_CLASS.Turbo}`}>
-                {m.brand.tier}
+              <span className="font-mono text-[8px] text-slate-500/80 hover:text-slate-300 transition-colors select-all">
+                ({m.brand.channel}.{m.brand.engine})
               </span>
             </div>
           ) : m.via ? (
