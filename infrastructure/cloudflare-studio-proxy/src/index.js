@@ -11,12 +11,68 @@
 const ORIGIN = "https://supremeai-studio.vercel.app";
 const API_ORIGIN = "https://supremeai-api-ulw0.onrender.com";
 
+// 5 Render nodes kept warm to eliminate 30-50s cold-start on free tiers
+const RENDER_SERVICES = [
+  { name: "api", url: "https://supremeai-api-ulw0.onrender.com/health" },
+  { name: "controlTower", url: "https://supremeai-mcp-tower.onrender.com/health" },
+  { name: "primary", url: "https://supremeai-primary-node-5xso.onrender.com/health" },
+  { name: "worker", url: "https://supremeai-worker-node.onrender.com/health" },
+  { name: "scraper", url: "https://supremeai-scraper-node.onrender.com/health" },
+];
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
   "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Origin, X-SupremeAI-Key, x-supremeai-key, X-Requested-With, X-Request-ID",
   "Access-Control-Max-Age": "86400",
 };
+
+/**
+ * Pings all 5 Render service health endpoints concurrently to keep free tier containers warm.
+ * Render free tier dormant timeout is 15 minutes; running every 10 minutes guarantees zero sleep.
+ */
+async function keepWarmAllServices() {
+  const settled = await Promise.allSettled(
+    RENDER_SERVICES.map(async (svc) => {
+      const start = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      try {
+        const res = await fetch(svc.url, {
+          method: "GET",
+          headers: {
+            "User-Agent": "SupremeAI-KeepWarm/1.0 (Cloudflare-Cron)",
+            "Accept": "application/json, text/plain, */*",
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        return {
+          service: svc.name,
+          url: svc.url,
+          status: res.status,
+          ok: res.ok,
+          latencyMs: Date.now() - start,
+        };
+      } catch (err) {
+        clearTimeout(timeout);
+        return {
+          service: svc.name,
+          url: svc.url,
+          status: "error",
+          error: err.message,
+          latencyMs: Date.now() - start,
+        };
+      }
+    })
+  );
+
+  return settled.map((r, i) =>
+    r.status === "fulfilled"
+      ? r.value
+      : { service: RENDER_SERVICES[i].name, url: RENDER_SERVICES[i].url, status: "error", error: String(r.reason), latencyMs: 0 }
+  );
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -29,8 +85,24 @@ export default {
         edge: "cloudflare-dac-edge",
         origin: ORIGIN,
         api: API_ORIGIN,
+        keepwarm: {
+          cron: "*/10 * * * *",
+          targets: RENDER_SERVICES.map((s) => s.name),
+        },
         timestamp: new Date().toISOString()
       }), {
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+      });
+    }
+
+    // 1b. On-demand keep-warm ping & diagnostic endpoint
+    if (url.pathname === "/cf-keepwarm") {
+      const results = await keepWarmAllServices();
+      return new Response(JSON.stringify({
+        status: "success",
+        timestamp: new Date().toISOString(),
+        services: results,
+      }, null, 2), {
         headers: { "Content-Type": "application/json", ...CORS_HEADERS }
       });
     }
@@ -224,5 +296,10 @@ export default {
     }
 
     return finalResponse;
+  },
+
+  // Cloudflare Cron Trigger (fires every 10 mins per [triggers] in wrangler.toml)
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(keepWarmAllServices());
   }
 };
