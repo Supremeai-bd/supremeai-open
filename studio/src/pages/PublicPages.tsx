@@ -133,12 +133,14 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
     return null;
   };
 
-  // Priority 1: webhook (stealth web-relay) only
-  const webhookResult = await tryTarget(webhookTarget);
-  if (webhookResult) return webhookResult;
+  // Priority 1: direct frontend webhookTarget (if configured)
+  if (webhookTarget) {
+    const webhookResult = await tryTarget(webhookTarget);
+    if (webhookResult) return webhookResult;
+  }
 
-  // If no direct frontend webhookTarget, forward to gateway which routes strictly to STEALTH_WEBHOOK_URL
-  if (!webhookTarget && apiTarget) {
+  // Priority 2: forward to gateway (which routes strictly to STEALTH_WEBHOOK_URL)
+  if (apiTarget && apiTarget !== webhookTarget) {
     const gatewayWebhookResult = await tryTarget(apiTarget);
     if (gatewayWebhookResult) return gatewayWebhookResult;
   }

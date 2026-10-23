@@ -15,6 +15,14 @@ export const RegisterPage: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const navigate = useNavigate();
   const register = useAuthStore((state) => state.register);
+  const status = useAuthStore((state) => state.status);
+
+  // Non-blocking redirect: If already logged in, navigate to workspace in background without spinner
+  React.useEffect(() => {
+    if (status === 'LOGGED_IN') {
+      navigate('/workspace', { replace: true });
+    }
+  }, [status, navigate]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();

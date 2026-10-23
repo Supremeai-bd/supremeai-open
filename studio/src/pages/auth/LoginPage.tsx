@@ -20,6 +20,14 @@ export const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
+  const status = useAuthStore((state) => state.status);
+
+  // Non-blocking redirect: If already logged in, navigate to workspace in background without spinner
+  React.useEffect(() => {
+    if (status === 'LOGGED_IN') {
+      navigate('/workspace', { replace: true });
+    }
+  }, [status, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
