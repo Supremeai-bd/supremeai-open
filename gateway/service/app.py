@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 import time
+import asyncio
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional, Tuple
@@ -33,6 +35,7 @@ try:
         PROVIDER_CONFIGS,
         forward_chat_completion,
         forward_stealth_webhook,
+        normalize_stealth_url,
     )
     from service.providers.web_session import web_bridge
     from service.telegram_webhook import telegram_router
@@ -51,6 +54,7 @@ except ImportError:
             PROVIDER_CONFIGS,
             forward_chat_completion,
             forward_stealth_webhook,
+            normalize_stealth_url,
         )
     except ImportError:
         try:
@@ -58,6 +62,7 @@ except ImportError:
                 PROVIDER_CONFIGS,
                 forward_chat_completion,
                 forward_stealth_webhook,
+                normalize_stealth_url,
             )
         except ImportError:
             PROVIDER_CONFIGS = {}  # type: ignore[assignment]
@@ -65,6 +70,8 @@ except ImportError:
                 return 503, {"error": "adapters unavailable"}
             def forward_stealth_webhook(*a, **k):  # type: ignore[no-redef]
                 return 503, {"error": "adapters unavailable"}
+            def normalize_stealth_url(url: str) -> str:  # type: ignore[no-redef]
+                return ""
     try:
         from gateway.service.providers.web_session import web_bridge
     except ImportError:
@@ -237,12 +244,74 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
 
 # ── Liveness & Readiness Probes ──────────────────────────────────────────────
 
+# Stealth relay DNS capability state (cached, TTL-refreshed). Oct-23 lesson:
+# chat_ready used to mean "the env var is non-empty", so the gateway reported
+# ready for DAYS while the configured hostname failed DNS ([Errno -2]) and every
+# chat reply died in 0.1s. /readyz now verifies the configured host actually
+# resolves before declaring capability; /health exposes the same state without
+# ever failing (liveness semantics unchanged).
+_STEALTH_DNS_TTL_SECONDS = float(os.getenv("STEALTH_DNS_CHECK_TTL", "60"))
+_stealth_dns_state: dict = {"ok": None, "checked_at": 0.0, "detail": "not checked yet"}
+
+
+def _stealth_target_host() -> str:
+    """Hostname of the normalized STEALTH_WEBHOOK_URL ('' when unconfigured)."""
+    if not STEALTH_WEBHOOK_URL:
+        return ""
+    try:
+        from urllib.parse import urlsplit
+        normalized = normalize_stealth_url(STEALTH_WEBHOOK_URL)
+        if not normalized:
+            return ""
+        host = urlsplit(normalized if "://" in normalized else "http://" + normalized).hostname or ""
+        return host
+    except Exception:  # noqa: BLE001 — probe must never crash the caller
+        return ""
+
+
+async def _stealth_dns_snapshot(force: bool = False) -> dict:
+    """TTL-cached DNS reachability verdict for the configured relay host.
+
+    getaddrinfo runs in the default executor (never blocks the loop) and is
+    bounded by wait_for so a broken resolver cannot stall /readyz.
+    """
+    host = _stealth_target_host()
+    now = time.time()
+    if not host:
+        return {"ok": None, "checked_at": 0.0, "detail": "STEALTH_WEBHOOK_URL not configured"}
+    if not force and _stealth_dns_state["checked_at"] and (now - _stealth_dns_state["checked_at"]) < _STEALTH_DNS_TTL_SECONDS:
+        return dict(_stealth_dns_state)
+    loop = asyncio.get_running_loop()
+
+    def _short(h: str) -> str:
+        parts = h.split(".")
+        return f"{h[:4]}…{'.'.join(parts[-2:])}" if "." in h else h
+
+    try:
+        infos = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)),
+            timeout=4.0,
+        )
+        _stealth_dns_state.update(ok=True, checked_at=now, detail=f"resolved {len(infos)} addr(s) for {_short(host)}")
+    except asyncio.TimeoutError:
+        _stealth_dns_state.update(ok=False, checked_at=now, detail="DNS lookup timed out (possible resolver outage)")
+    except socket.gaierror as exc:
+        _stealth_dns_state.update(ok=False, checked_at=now, detail=f"host {_short(host)} does not resolve ({exc}) — fix Infisical STEALTH_WEBHOOK_URL")
+    except Exception as exc:  # noqa: BLE001
+        _stealth_dns_state.update(ok=False, checked_at=now, detail=f"DNS probe error: {exc}")
+    return dict(_stealth_dns_state)
+
+
 @app.get("/")
 @app.get("/health")
 @app.get("/healthz")
 async def health_check():
     """Unauthenticated liveness probe. Always 200 OK when service is running."""
     telemetry = squad.stats() if squad else {"total_keys": 0, "total_healthy_keys": 0, "providers": {}}
+    try:
+        stealth_dns = await _stealth_dns_snapshot()
+    except Exception:  # noqa: BLE001 — liveness must never fail because of a probe
+        stealth_dns = {"ok": None, "checked_at": 0.0, "detail": "probe error"}
     return {
         "status": "healthy",
         "service_name": "supremeai-api",
@@ -252,6 +321,7 @@ async def health_check():
         "total_healthy_keys": telemetry["total_healthy_keys"],
         "chat_ready": bool(STEALTH_WEBHOOK_URL),
         "stealth_priority1_configured": bool(STEALTH_WEBHOOK_URL),
+        "stealth_dns": stealth_dns,
         "web_sessions_active": bool(web_bridge and web_bridge.has_active_accounts),
         "web_session_status": web_bridge.status() if web_bridge else {},
         "telegram_webhook_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN")),
@@ -264,14 +334,36 @@ async def health_check():
 @app.get("/readyz")
 async def readiness_check():
     """Capability probe (distinct from liveness): 200 only when a chat reply path
-    is configured. Monitors should target /readyz — /health alone cannot detect a
-    relay outage because API fallback is disabled by mandate (single reply path)."""
+    is configured AND its host resolves. Monitors should target /readyz — /health
+    alone cannot detect a relay outage because API fallback is disabled by mandate
+    (single reply path). A configured-but-unresolvable host (the Oct-23 failure:
+    [Errno -2] on every chat call while /health reported healthy) now fails this
+    probe loudly with the masked host + fix hint instead of reporting ready."""
+    timestamp = datetime.now(timezone.utc).isoformat()
     if STEALTH_WEBHOOK_URL:
+        stealth_dns = await _stealth_dns_snapshot()
+        if stealth_dns.get("ok") is False:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "degraded",
+                    "chat_ready": False,
+                    "stealth_priority1_configured": True,
+                    "stealth_dns": stealth_dns,
+                    "reason": (
+                        f"STEALTH_WEBHOOK_URL host does not resolve ({stealth_dns.get('detail')}). "
+                        "Chat cannot reply (webhook-only mandate): fix the Infisical value to a live "
+                        "OpenAI-compatible /v1/chat/completions relay."
+                    ),
+                    "timestamp": timestamp,
+                },
+            )
         return {
             "status": "ready",
             "chat_ready": True,
             "stealth_priority1_configured": True,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "stealth_dns": stealth_dns,
+            "timestamp": timestamp,
         }
     return JSONResponse(
         status_code=503,
@@ -279,7 +371,7 @@ async def readiness_check():
             "status": "degraded",
             "chat_ready": False,
             "reason": "STEALTH_WEBHOOK_URL not configured — no chat reply path (API fallback disabled per mandate)",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": timestamp,
         },
     )
 
