@@ -40,18 +40,19 @@ def check_app_code_splitting(app_tsx_content: str) -> list[str]:
     """Inspect App.tsx content for performance violations."""
     violations: list[str] = []
 
-    # 1. Check for GuestRoute or ProtectedRoute wrapping the root landing page ('/')
-    root_route_match = re.search(r'<Route\s+path=["\']\/["\']\s+element=\{([^}]+)\}', app_tsx_content)
-    if root_route_match:
-        element_content = root_route_match.group(1)
-        if "GuestRoute" in element_content:
-            violations.append(
-                "Violation: Landing page ('/') is wrapped in <GuestRoute> — causes render-blocking auth check spinner. Root '/' must render LandingPage directly."
-            )
-        if "ProtectedRoute" in element_content:
-            violations.append(
-                "Violation: Landing page ('/') is wrapped in <ProtectedRoute> — public visitors must never be blocked on root."
-            )
+    # 1. Check for GuestRoute or ProtectedRoute wrapping the root landing page ('/') or public auth routes ('/login', '/register')
+    for route_path, route_name in [("/", "Landing page ('/')"), ("/login", "Login page ('/login')"), ("/register", "Register page ('/register')")]:
+        route_match = re.search(r'<Route\s+path=["\']' + re.escape(route_path) + r'["\']\s+element=\{([^}]+)\}', app_tsx_content)
+        if route_match:
+            element_content = route_match.group(1)
+            if "GuestRoute" in element_content:
+                violations.append(
+                    f"Violation: {route_name} is wrapped in <GuestRoute> — causes render-blocking auth check spinner ('AUTHENTICATING...'). Public auth and landing routes must render immediately."
+                )
+            if route_path == "/" and "ProtectedRoute" in element_content:
+                violations.append(
+                    "Violation: Landing page ('/') is wrapped in <ProtectedRoute> — public visitors must never be blocked on root."
+                )
 
     # 2. Check for eager/static top-level imports of heavy components
     for module in HEAVY_MODULES:

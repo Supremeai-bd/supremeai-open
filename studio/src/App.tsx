@@ -189,9 +189,9 @@ export const App: React.FC = () => {
               <Route path="/contact" element={<PublicPageShell><PublicInfoPage kind="contact" /></PublicPageShell>} />
               <Route path="/knowledge" element={<KnowledgePage />} />
 
-              {/* Split auth (Refs #876) — /login + /register restored */}
-              <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
-              <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+              {/* Split auth — /login + /register render immediately with zero blocking */}
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
 
               {/* Authenticated workspace */}
               <Route
