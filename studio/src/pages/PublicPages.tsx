@@ -11,11 +11,12 @@ import { brandFrom, brandTooltip, TIER_CLASS, Brand } from '../lib/brandLabel';
 // (Refs #861) ব্যবহার করা হচ্ছে; চ্যাট লজিক / webhook-only ম্যান্ডেট অপরিবর্তিত।
 
 export const publicLinks = [
-  { to: '/', label: 'Chat' },
-  { to: '/models', label: 'Models' },
-  { to: '/features', label: 'Features' },
-  { to: '/pricing', label: 'Pricing' },
-  { to: '/docs', label: 'Docs' },
+  // ROOT-CAUSE FIX (guest nav misdirection, 2026-10-23): 'Chat' pointed at '/'
+  // (the landing page) and Models/Features/Pricing/Docs pointed at duplicate
+  // GuestChat alias pages — every nav item dumped guests into the same chat.
+  // Chat now targets /chat; the duplicate alias links are removed from the nav
+  // (their routes remain for direct URLs / backward compatibility).
+  { to: '/chat', label: 'Chat' },
   { to: '/about', label: 'About' },
 ];
 
@@ -32,7 +33,7 @@ export function CapabilityStrip({ onProtected }: { onProtected: (feature: string
   // /login (or /register), destroying the guest's in-progress chat. They now
   // raise an in-page auth prompt instead — no navigation, state intact.
   return <nav className="relative z-10 mx-auto flex w-full max-w-7xl gap-2 overflow-x-auto px-4 pt-24 sm:px-8" aria-label="SupremeAI capabilities">
-    <Link to="/" className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">Chat</Link>
+    <Link to="/chat" className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">Chat</Link>
     {capabilityItems.map(({ title, icon: Icon }) => <button key={title} type="button" onClick={() => onProtected(title)} className="flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-slate-500 transition hover:border-purple-500/40 hover:text-slate-200"><Icon size={13} aria-hidden="true" />{title}</button>)}
   </nav>;
 }
