@@ -53,6 +53,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 | **U9** | **Pattern Sweep** | When fixing a defect, sweep for sibling occurrences in the file family. Address or file linked follow-up. |
 | **U10** | **Loop-Granted Authority** | The loop is the permission. Never ask "should I start / shall I proceed". Status reports state facts, never permission questions. |
 | **U11** | **Contract Mirror Invariant & Zero-Drift** | Mirrored contract surfaces (`examples/gateway_client.py` ↔ `supremeai-api:scripts/clients/`, `api-schemas/gateway.openapi.yaml` ↔ `supremeai-api:contracts/`) are strict byte-level replicas. Arbitrary local formatter overrides or CRLF alterations are strictly forbidden. Must pass `python scripts/ci/contract_parity_guard.py --check` before push. |
+| **U12** | **Satellite-First & Tangible Product Value** | All autonomous agent tasks MUST deliver tangible user value to active product satellites (`studio/*`, `gateway/*` / `api/*`, `browser/*`, `vscode/*`, `core/*`). Autonomous PRs touching exclusively internal transit or tooling surfaces (`infrastructure/mcp-control-plane/*`, `scripts/ci/*`) that only land in the private monorepo are strictly banned without explicit human authorization. End the cycle of zero-value internal busywork. |
 
 ---
 
@@ -112,6 +113,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 - **P5 (Incremental Improvement):** Target is unlimited; first step is atomic and minimal.
 - **P6 (Root Cause over Symptom):** Eliminate the entire defect class via machine-enforced guards.
 - **P7 (Domain Anti-Thrashing #522):** Frame tasks as cohesive domain slices (≤ 30 files, ≤ 200 KB) for ONE primary repo.
+- **P8 (Satellite-First Delivery Mandate):** Code changes must dispatch to a live product satellite (`studio`, `api`, `browser`, `vscode`, `core`). Tasks touching solely monorepo-only transit surfaces (`infrastructure/*`, `scripts/*`) must not be autonomously undertaken without explicit administrative direction.
 
 ---
 
