@@ -669,11 +669,12 @@ jobs:
       - name: Execute Instant Satellite Synchronization
         env:
           BRIDGE_PUSH_TOKEN: ${{ secrets.BRIDGE_PUSH_TOKEN || secrets.SAT_SYNC_PAT || secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+          RAW_COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          COMMIT_MSG="${{ github.event.head_commit.message || 'instant satellite sync' }}"
+          COMMIT_MSG=$(python3 -c 'import os; lines = [line.strip() for line in os.environ.get("RAW_COMMIT_MSG", "").strip().splitlines() if line.strip()]; print(lines[0] if lines else "instant satellite sync")')
           echo "🚀 Initiating instant federation synchronization for landed commit: ${COMMIT_MSG}"
-          python scripts/ci/federation_satellite_sync.py \
+          python3 scripts/ci/federation_satellite_sync.py \
             --detect-changed \
             --commit-msg "${COMMIT_MSG}" \
             --prune-patches

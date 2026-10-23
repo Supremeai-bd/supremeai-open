@@ -49,7 +49,7 @@ logger = logging.getLogger("supremeai.gateway")
 # Priority-1 Stealth Webhook & Web Session Configuration
 STEALTH_WEBHOOK_URL = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHOOK_URL", "")).strip()
 STEALTH_WEBHOOK_SECRET = os.getenv("STEALTH_WEBHOOK_SECRET", os.getenv("UPSTREAM_WEBHOOK_SECRET", "")).strip()
-STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "28.0"))
+STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "6.0"))
 
 app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None)
 
@@ -208,32 +208,72 @@ async def chat_completions(
         preferred_provider = requested_model
 
     use_priority_1 = (
-        (STEALTH_WEBHOOK_URL or (web_bridge and web_bridge.has_active_accounts))
+        (STEALTH_WEBHOOK_URL or (web_bridge and getattr(web_bridge, "has_active_accounts", False)))
         and (preferred_provider is None or preferred_provider in ("stealth", "ghost_gemini", "web_session"))
     )
     if use_priority_1:
-        if STEALTH_WEBHOOK_URL:
-            w_status, w_response = await forward_stealth_webhook(
-                STEALTH_WEBHOOK_URL,
-                STEALTH_WEBHOOK_SECRET,
-                body,
-                timeout=STEALTH_WEBHOOK_TIMEOUT,
-            )
-        else:
-            w_status, w_response = await web_bridge.forward_web_chat(
-                body,
-                timeout=STEALTH_WEBHOOK_TIMEOUT,
-            )
+        w_status, w_response = None, None
+        try:
+            if STEALTH_WEBHOOK_URL:
+                w_status, w_response = await forward_stealth_webhook(
+                    STEALTH_WEBHOOK_URL,
+                    STEALTH_WEBHOOK_SECRET,
+                    body,
+                    timeout=STEALTH_WEBHOOK_TIMEOUT,
+                )
+            elif web_bridge:
+                w_status, w_response = await web_bridge.forward_web_chat(
+                    body,
+                    timeout=STEALTH_WEBHOOK_TIMEOUT,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Priority-1 Web Relay attempt exception: {exc}")
+            w_status, w_response = 500, None
 
-        if 200 <= w_status < 300:
+        # Auto-wrap raw {"reply": "..."} payloads if received
+        if isinstance(w_response, dict) and "reply" in w_response and "choices" not in w_response and str(w_response["reply"]).strip():
+            w_response = {
+                "id": "chatcmpl-stealth-" + os.urandom(6).hex(),
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": body.get("model", "auto"),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": str(w_response["reply"]).strip(),
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            }
+
+        # Priority 1 is ONLY accepted if HTTP 2xx AND valid non-empty chat completion choices
+        is_valid_chat = (
+            isinstance(w_response, dict)
+            and bool(w_response.get("choices"))
+            and isinstance(w_response["choices"], list)
+            and len(w_response["choices"]) > 0
+            and isinstance(w_response["choices"][0], dict)
+            and "message" in w_response["choices"][0]
+            and isinstance(w_response["choices"][0]["message"], dict)
+            and bool(str(w_response["choices"][0]["message"].get("content", "")).strip())
+        )
+
+        if w_status is not None and 200 <= w_status < 300 and is_valid_chat:
             headers = {
                 "X-SupremeAI-Provider": "stealth-webhook",
                 "X-SupremeAI-Slot": "priority-1",
+                "X-SupremeAI-Tier": "priority-1-free",
             }
-            if isinstance(w_response, dict):
-                return JSONResponse(status_code=w_status, content=w_response, headers=headers)
-            return Response(content=str(w_response), status_code=w_status, headers=headers, media_type="text/plain")
-        logger.info(f"Priority-1 Web Relay skipped ({w_status}), instantly falling back to 37-key squad...")
+            return JSONResponse(status_code=w_status, content=w_response, headers=headers)
+
+        logger.info(
+            f"Priority-1 Web Relay skipped or non-chat response (status={w_status}), "
+            "instantly falling back to Priority-2 API squad..."
+        )
 
     if not squad:
         raise HTTPException(status_code=503, detail="Dynamic squad uninitialized")
@@ -253,7 +293,10 @@ async def chat_completions(
             headers = {
                 "X-SupremeAI-Provider": provider,
                 "X-SupremeAI-Slot": slot.name,
+                "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
             }
+            if use_priority_1:
+                headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
             if isinstance(response_data, dict):
                 return JSONResponse(status_code=status, content=response_data, headers=headers)
             return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
