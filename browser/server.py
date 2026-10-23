@@ -2,7 +2,7 @@
 
 Connects directly to gemini.google.com session over HTTP using stored session cookies.
 Zero Headless Browser overhead, zero Playwright memory bloat.
-Runs seamlessly on Render Free Tier or local machine (port 8788).
+Runs seamlessly on Render Free Tier or local machine (port 8788). Refs #756.
 """
 
 from __future__ import annotations
