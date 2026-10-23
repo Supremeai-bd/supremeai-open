@@ -384,8 +384,22 @@ async def health() -> Dict[str, Any]:
     }
 
 
+def _verify_stealth_secret(request: Request) -> None:
+    expected = os.getenv("STEALTH_WEBHOOK_SECRET", "").strip()
+    if not expected:
+        return
+    incoming = (
+        request.headers.get("X-Stealth-Secret")
+        or request.headers.get("X-Webhook-Secret")
+        or request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+    )
+    if incoming != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing stealth secret")
+
+
 @app.post("/api/chat")
 async def api_chat(request: Request) -> Dict[str, Any]:
+    _verify_stealth_secret(request)
     try:
         body = await request.json()
     except Exception:
@@ -404,7 +418,8 @@ async def api_chat(request: Request) -> Dict[str, Any]:
 
 
 @app.post("/v1/chat/completions")
-async def chat_completions(req: ChatRequest) -> JSONResponse:
+async def chat_completions(req: ChatRequest, request: Request) -> JSONResponse:
+    _verify_stealth_secret(request)
     prompt = "\n".join(m.content for m in req.messages if m.role == "user")
     if not prompt.strip():
         raise HTTPException(status_code=400, detail="Missing user message in payload")

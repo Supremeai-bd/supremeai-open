@@ -1,169 +1,97 @@
-"""SupremeAI standalone scraper microservice.
+"""SupremeAI Standalone Scraper & Gemini Cookie Relay Entrypoint.
 
-Self-contained FastAPI app. Deployed as its own Docker image / Render service so
-Chromium + Playwright never live in the main backend API image.
-
-Endpoints:
-  GET  /health  — liveness + capability probe
-  POST /scrape  — lightweight HTTP scraping (httpx + BeautifulSoup)
-  POST /browse  — full browser automation (Playwright/Chromium)
-  POST /recipe  — scripted multi-step browser actions
+Provides the FastAPI application entrypoint for Render (uvicorn main:app)
+and local deployments. Seamlessly integrates the lightweight Gemini Cookie
+Relay engine (server.py) with optional scraping routes.
 """
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 
+logger = logging.getLogger("supremeai.scraper")
+
+# Ensure local directory is in path
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+# Import primary application from server.py (Cookie Relay Engine)
 try:
-    from browser_agent import BrowserAgent, BrowseRequest
-    from security import is_safe_url
-    from web_scraper import WebScraper
+    from server import app, relay_engine, ChatRequest
 except ImportError:
-    from services.scraper.browser_agent import BrowserAgent, BrowseRequest
-    from services.scraper.security import is_safe_url
-    from services.scraper.web_scraper import WebScraper
-from fastapi import APIRouter, FastAPI, HTTPException
-from pydantic import BaseModel
+    from browser.server import app, relay_engine, ChatRequest  # type: ignore
 
-MAX_CONCURRENCY = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
-TIMEOUT_SECONDS = int(os.getenv("SCRAPER_TIMEOUT_SECONDS", "45"))
-
-app = FastAPI(title="SupremeAI Scraper", docs_url="/docs", redoc_url="/redoc")
-router = APIRouter(tags=["scraper"])
-
-_scraper = WebScraper()
-_agent = BrowserAgent(headless=True)
-
-
-class ScrapeRequest(BaseModel):
-    url: str
-    extraction_prompt: str | None = None
-
-
-@router.get("/health")
-async def health_check():
-    try:
-        import playwright.async_api as _pw
-
-        playwright_ok = callable(getattr(_pw, "async_playwright", None))
-    except ImportError:
-        playwright_ok = False
-
-    return {
-        "status": "healthy",
-        "service": "supremeai-scraper",
-        "max_concurrency": MAX_CONCURRENCY,
-        "timeout_seconds": TIMEOUT_SECONDS,
-        "playwright_available": playwright_ok,
-    }
-
-
-@router.post("/scrape")
-async def scrape(request: ScrapeRequest):
-    if not request.url:
-        raise HTTPException(status_code=400, detail="URL is required")
-    if not is_safe_url(request.url):
-        raise HTTPException(
-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
-        )
-    # FIX (P1, review 2026-09-12): fetch_page is a SYNC httpx call (up to 15s
-    # timeout). Calling it directly froze the single event loop — one slow target
-    # stalled /browse, /recipe and /health for the whole service. Offload to a
-    # worker thread so concurrent scrapes stay responsive.
-    import asyncio as _asyncio
-
-    result = await _asyncio.to_thread(_scraper.fetch_page, request.url)
-    return result
-
-
-@router.post("/browse")
-async def browse(request: BrowseRequest):
-    if not request.url:
-        raise HTTPException(status_code=400, detail="URL is required")
-    if not is_safe_url(request.url):
-        raise HTTPException(
-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
-        )
-    result = await _agent.navigate_and_interact(
-        url=request.url,
-        action=request.action or "fetch",
-        selector=request.selector,
-        text=request.text,
-        wait_for=request.wait_for,
-    )
-    return result
-
-
-class RecipeRequest(BaseModel):
-    steps: list = []
-    initial_url: str | None = None
-
-
-@router.post("/recipe")
-async def recipe(request: RecipeRequest):
-    if request.initial_url and not is_safe_url(request.initial_url):
-        raise HTTPException(
-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
-        )
-    result = await _agent.execute_recipe(steps=request.steps, initial_url=request.initial_url)
-    return result
-
-
-app.include_router(router)
-
-# ── Integrated Priority-1 Gemini Cookie Relay Surface ────────────────────────
+# Register optional browser scraper routes if dependencies are available
 try:
-    import json
-    import time
-    from fastapi import Request
-    from fastapi.responses import JSONResponse
-    from server import ChatRequest, relay_engine
+    try:
+        from browser_agent import BrowserAgent, BrowseRequest
+        from security import is_safe_url
+        from web_scraper import WebScraper
+    except ImportError:
+        from services.scraper.browser_agent import BrowserAgent, BrowseRequest
+        from services.scraper.security import is_safe_url
+        from services.scraper.web_scraper import WebScraper
 
-    @app.post("/v1/chat/completions")
-    async def chat_completions(req: ChatRequest) -> JSONResponse:
-        prompt = "\n".join(m.content for m in req.messages if m.role == "user")
-        if not prompt.strip():
-            raise HTTPException(status_code=400, detail="Missing user message in payload")
+    from fastapi import HTTPException
+    from pydantic import BaseModel
 
-        reply = await relay_engine.ask(prompt.strip())
-        return JSONResponse(
-            {
-                "id": "chatcmpl-cookie-relay-" + os.urandom(6).hex(),
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": req.model or "gemini-web-relay",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": reply,
-                        },
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            }
+    MAX_CONCURRENCY = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
+    TIMEOUT_SECONDS = int(os.getenv("SCRAPER_TIMEOUT_SECONDS", "45"))
+
+    _scraper = WebScraper()
+    _agent = BrowserAgent(headless=True)
+
+    class ScrapeRequest(BaseModel):
+        url: str
+        extraction_prompt: str | None = None
+
+    class RecipeRequest(BaseModel):
+        steps: list = []
+        initial_url: str | None = None
+
+    @app.post("/scrape", tags=["scraper"])
+    async def scrape(request: ScrapeRequest):
+        if not request.url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        if not is_safe_url(request.url):
+            raise HTTPException(
+                status_code=400, detail="SSRF check failed: Unauthorized internal access"
+            )
+        import asyncio
+        return await asyncio.to_thread(_scraper.fetch_page, request.url)
+
+    @app.post("/browse", tags=["scraper"])
+    async def browse(request: BrowseRequest):
+        if not request.url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        if not is_safe_url(request.url):
+            raise HTTPException(
+                status_code=400, detail="SSRF check failed: Unauthorized internal access"
+            )
+        return await _agent.navigate_and_interact(
+            url=request.url,
+            action=request.action or "fetch",
+            selector=request.selector,
+            text=request.text,
+            wait_for=request.wait_for,
         )
 
-    @app.post("/api/chat")
-    async def api_chat(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    @app.post("/recipe", tags=["scraper"])
+    async def recipe(request: RecipeRequest):
+        if request.initial_url and not is_safe_url(request.initial_url):
+            raise HTTPException(
+                status_code=400, detail="SSRF check failed: Unauthorized internal access"
+            )
+        return await _agent.execute_recipe(steps=request.steps, initial_url=request.initial_url)
 
-        prompt = body.get("message") or body.get("prompt") or ""
-        if not prompt.strip():
-            raise HTTPException(status_code=400, detail="Empty prompt or message")
+    logger.info("Scraper browser routes registered successfully")
 
-        reply = await relay_engine.ask(prompt.strip())
-        return {
-            "reply": reply,
-            "source": "gemini.google.com (Cookie Relay)",
-            "cost": "$0.00",
-        }
-except Exception as _relay_err:
-    import logging
-    logging.getLogger("scraper.main").warning(f"Could not initialize cookie relay surface: {_relay_err}")
+except Exception as _scraper_err:
+    logger.info(
+        f"Scraper engine dependencies unavailable ({_scraper_err}); "
+        "operating in lightweight Gemini Cookie Relay mode."
+    )
 
