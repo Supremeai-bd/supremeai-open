@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, History, Menu, Search, Sparkles, WandSparkles, Wrench, X, Zap } from 'lucide-react';
 import { UnifiedChatBubble } from '../components/chat/UnifiedChatBubble';
+import { brandFrom, brandTooltip, TIER_CLASS, Brand } from '../lib/brandLabel';
 
 // ROOT-CAUSE RESTYLE (Refs #878 / bridge-20261023-frontend-guestchat-cosmic):
 // বাংলা মন্তব্য: গেস্ট চ্যাট আগে legacy slate/cyan প্যালেট ব্যবহার করত ও নিজের
@@ -83,7 +84,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) { retu
 type Message = { role: 'user' | 'assistant'; text: string };
 function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
 
-async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via: string }> {
+async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via?: string; brand?: Brand }> {
   const env = (import.meta as unknown as { env: Record<string, string> }).env || {};
   const webhookTarget = (env.VITE_STEALTH_WEBHOOK_URL || env.VITE_WEBHOOK_URL || '').replace(/\/$/, '');
   const apiTarget = (env.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com').replace(/\/$/, '');
@@ -108,7 +109,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
   // surface it (truncated) so a config outage is self-explaining in chat.
   let relayDetail = '';
 
-  const tryTarget = async (target: string): Promise<{ text: string; via: string } | null> => {
+  const tryTarget = async (target: string): Promise<{ text: string; via?: string; brand?: Brand } | null> => {
     if (!target) return null;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -127,9 +128,9 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
       if (res.ok) {
         const data = await res.json();
         const content = data?.choices?.[0]?.message?.content;
-        const servedModel = (data?.model as string) || '';
         if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100') && !content.includes('[GROK Web Session Active]') && !content.includes('[CHATGPT Web Session Active]') && !content.includes('[PERPLEXITY Web Session Active]')) {
-          return { text: content.trim(), via: servedModel || 'webhook' };
+          const brand = brandFrom(data);
+          return { text: content.trim(), brand, via: brand.label };
         }
         relayDetail = 'relay returned a non-chat or empty response';
       } else {
@@ -177,7 +178,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
 }
 
 export function GuestChat() {
-  const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string }[]>([]);
+  const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }[]>([]);
   const [input, setInput] = React.useState('');
   const [model, setModel] = React.useState(models[0]?.name ?? 'Supreme Auto');
   const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
@@ -195,7 +196,7 @@ export function GuestChat() {
     try {
       if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch (e) { void e; } }
       const reply = await callLiveAI(text, model, apiKey);
-      setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via }]);
+      setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
     } catch {
       setMessages((m) => [...m, { role: 'assistant', text: responseFor(text), via: 'fallback' }]);
     } finally {
@@ -214,7 +215,26 @@ export function GuestChat() {
       {messages.map((m, i) => <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
         {/* Refs #861: shared Cosmic UnifiedChatBubble — আর কোনো ফর্কড legacy bubble নেই */}
         <UnifiedChatBubble text={m.text} sender={m.role === 'user' ? 'user' : 'system'} />
-        {m.via ? <span className="mt-1 px-1 text-[10px] font-mono text-slate-600">[{m.via}]</span> : null}
+        {m.role === 'assistant' && (
+          m.brand ? (
+            <div
+              className="mt-1 flex items-center gap-1.5 px-1 text-[11px]"
+              title={brandTooltip(m.brand)}
+            >
+              <span className="font-semibold bg-gradient-to-r from-emerald-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                SupremeAI
+              </span>
+              <span className="font-mono text-[10px] text-slate-400 bg-white/5 border border-white/10 px-1.5 py-0.2 rounded">
+                {m.brand.channel}.{m.brand.engine}
+              </span>
+              <span className={`text-[10px] font-medium border px-1.5 py-0.2 rounded-full ${TIER_CLASS[m.brand.tier] || TIER_CLASS.Turbo}`}>
+                {m.brand.tier}
+              </span>
+            </div>
+          ) : m.via ? (
+            <span className="mt-1 px-1 text-[10px] font-mono text-slate-500">[{m.via}]</span>
+          ) : null
+        )}
       </div>)}
       {busy && <div className="flex items-center gap-1.5 px-1 py-1" aria-label="SupremeAI is thinking"><span className="size-1.5 animate-pulse rounded-full bg-purple-400" /><span className="size-1.5 animate-pulse rounded-full bg-purple-400 [animation-delay:150ms]" /><span className="size-1.5 animate-pulse rounded-full bg-purple-400 [animation-delay:300ms]" /></div>}
     </div>
