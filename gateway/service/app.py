@@ -213,22 +213,20 @@ async def chat_completions(
     )
     if use_priority_1:
         w_status, w_response = None, None
-        try:
-            if STEALTH_WEBHOOK_URL:
+        provider_name = "stealth-webhook"
+
+        # Stage 1: External Stealth Webhook Relay (if configured)
+        if STEALTH_WEBHOOK_URL:
+            try:
                 w_status, w_response = await forward_stealth_webhook(
                     STEALTH_WEBHOOK_URL,
                     STEALTH_WEBHOOK_SECRET,
                     body,
                     timeout=STEALTH_WEBHOOK_TIMEOUT,
                 )
-            elif web_bridge:
-                w_status, w_response = await web_bridge.forward_web_chat(
-                    body,
-                    timeout=STEALTH_WEBHOOK_TIMEOUT,
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Priority-1 Web Relay attempt exception: {exc}")
-            w_status, w_response = 500, None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Priority-1 Web Relay attempt exception: {exc}")
+                w_status, w_response = 500, None
 
         # Auto-wrap raw {"reply": "..."} payloads if received
         if isinstance(w_response, dict) and "reply" in w_response and "choices" not in w_response and str(w_response["reply"]).strip():
@@ -250,21 +248,35 @@ async def chat_completions(
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             }
 
-        # Priority 1 is ONLY accepted if HTTP 2xx AND valid non-empty chat completion choices
-        is_valid_chat = (
-            isinstance(w_response, dict)
-            and bool(w_response.get("choices"))
-            and isinstance(w_response["choices"], list)
-            and len(w_response["choices"]) > 0
-            and isinstance(w_response["choices"][0], dict)
-            and "message" in w_response["choices"][0]
-            and isinstance(w_response["choices"][0]["message"], dict)
-            and bool(str(w_response["choices"][0]["message"].get("content", "")).strip())
-        )
+        def _is_chat_ok(resp: Any) -> bool:
+            return (
+                isinstance(resp, dict)
+                and bool(resp.get("choices"))
+                and isinstance(resp["choices"], list)
+                and len(resp["choices"]) > 0
+                and isinstance(resp["choices"][0], dict)
+                and "message" in resp["choices"][0]
+                and isinstance(resp["choices"][0]["message"], dict)
+                and bool(str(resp["choices"][0]["message"].get("content", "")).strip())
+            )
 
-        if w_status is not None and 200 <= w_status < 300 and is_valid_chat:
+        # Stage 2: If external relay failed or not configured, fall back to native web session ($0 Free Tier)
+        if (w_status is None or not (200 <= w_status < 300) or not _is_chat_ok(w_response)) and web_bridge and getattr(web_bridge, "has_active_accounts", False):
+            try:
+                logger.info("External stealth relay unavailable or non-chat; falling back to Priority-1 Native Web Session fleet...")
+                wb_status, wb_resp = await web_bridge.forward_web_chat(
+                    body,
+                    timeout=STEALTH_WEBHOOK_TIMEOUT,
+                )
+                if 200 <= wb_status < 300 and _is_chat_ok(wb_resp):
+                    w_status, w_response = wb_status, wb_resp
+                    provider_name = "web-session"
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Native Web Session attempt exception: {exc}")
+
+        if w_status is not None and 200 <= w_status < 300 and _is_chat_ok(w_response):
             headers = {
-                "X-SupremeAI-Provider": "stealth-webhook",
+                "X-SupremeAI-Provider": provider_name,
                 "X-SupremeAI-Slot": "priority-1",
                 "X-SupremeAI-Tier": "priority-1-free",
             }
