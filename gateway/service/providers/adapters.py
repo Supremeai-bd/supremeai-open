@@ -15,9 +15,35 @@ import logging
 import os
 import time
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlsplit
 import httpx
 
 logger = logging.getLogger("supremeai.adapters")
+
+# One-shot config-defect warnings: keyed by defect signature so a hot request
+# path never spams the log, but every distinct misconfiguration surfaces loudly
+# exactly once per process (DNS ENOTFOUND storms are otherwise undiagnosable).
+_stealth_warned: set = set()
+
+
+def _mask_host(url: str) -> str:
+    """Host-only view of a webhook URL, safe for logs and API error bodies.
+
+    Strips scheme, userinfo, path and query (a relay URL may embed a token in
+    its path/query — never echo those back to anonymous callers). The hostname
+    itself is additionally truncated so even infra names stay partially masked:
+    supremeai-worker.paykaribazaronline.workers.dev -> supr….workers.dev
+    """
+    try:
+        host = urlsplit(url if "://" in url else "http://" + url).hostname or ""
+    except ValueError:
+        host = ""
+    if not host:
+        return "(unparseable-host)"
+    labels = host.split(".")
+    tail = ".".join(labels[-2:]) if len(labels) >= 2 else host
+    return f"{host[:4]}…{tail}" if len(host) > 12 else host
+
 
 PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
     "gemini": {
@@ -106,13 +132,56 @@ def normalize_stealth_url(url: str) -> str:
     """
     Ensure the webhook URL targets the exact synchronous OpenAI-compatible endpoint
     (/v1/chat/completions) instead of base domains, /mcp, or /dispatch.
+
+    Config-defect hardening (root cause of the Oct-23 "relay offline" outage:
+    STEALTH_WEBHOOK_URL held a value whose host failed DNS with [Errno -2]):
+    - strip env-quoting accidents (value wrapped in "..." or '...')
+    - collapse internal whitespace (never valid in a URL)
+    - repair doubled scheme (https://https://… -> host parsed as "https" -> ENOTFOUND)
+    - one-shot CRITICAL warnings for hosts that cannot possibly work:
+      underscore in host (getaddrinfo fails) and workers.dev APEX
+      (a worker URL is always <name>.<account-subdomain>.workers.dev — the apex
+      does not resolve; verified by DNS probe during the outage diagnosis).
     """
     raw = url.strip()
     if not raw:
         return ""
+    while len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("\"", "'"):
+        raw = raw[1:-1].strip()
+    if not raw:
+        return ""
+    if any(ch.isspace() for ch in raw):
+        raw = "".join(raw.split())
+    _low = raw.lower()
+    for _dbl in ("https://https://", "https://http://", "http://https://", "http://http://"):
+        if _low.startswith(_dbl):
+            raw = raw.split("://", 1)[1]
+            break
     full = raw if "://" in raw else "http://" + raw
     base = full.split("?", 1)[0].rstrip("/")
     query = ("?" + full.split("?", 1)[1]) if "?" in full else ""
+
+    # One-shot diagnostics for values that will fail DNS regardless of network
+    try:
+        _host = urlsplit(base).hostname or ""
+    except ValueError:
+        _host = ""
+    if _host:
+        if "_" in _host and ("bad-host" + _host) not in _stealth_warned:
+            _stealth_warned.add("bad-host" + _host)
+            logger.critical(
+                "STEALTH_WEBHOOK_URL host '%s' contains '_' — getaddrinfo() will fail "
+                "with [Errno -2]. Fix the Infisical value (underscore hosts are not DNS-resolvable).",
+                _mask_host(base),
+            )
+        _labels = _host.split(".")
+        if _host.endswith(".workers.dev") and len(_labels) <= 3 and ("apex" + _host) not in _stealth_warned:
+            _stealth_warned.add("apex" + _host)
+            logger.critical(
+                "STEALTH_WEBHOOK_URL host '%s' is the workers.dev APEX (does not resolve). "
+                "A worker URL is always <worker-name>.<account-subdomain>.workers.dev.",
+                _mask_host(base),
+            )
 
     # Strip incompatible non-chat suffixes
     if base.endswith(("/api/chat", "/chat", "/dispatch", "/mcp", "/webhook/telegram")):
@@ -287,5 +356,18 @@ async def forward_stealth_webhook(
             logger.warning(f"Stealth webhook timed out after {timeout}s")
             return 504, {"error": "Stealth webhook timed out"}
         except httpx.RequestError as exc:
-            logger.warning(f"Stealth webhook connection error: {exc}")
-            return 502, {"error": f"Stealth webhook connection error: {str(exc)}"}
+            # DNS/connect failures used to be indistinguishable from a dead
+            # upstream (the Oct-23 outage produced only "connection error" with
+            # zero host context, blocking diagnosis). Surface the masked host +
+            # failure class so ops can act from the log line or the 502 body alone.
+            _host = _mask_host(target_url)
+            _exc_text = str(exc)
+            _errno = "dns" if any(sig in _exc_text for sig in ("Name or service not known", "Temporary failure in name resolution", "No address associated", "nodename nor servname")) else ("refused" if "Connection refused" in _exc_text else "connect")
+            logger.warning(
+                "Stealth webhook connection error for host=%s class=%s: %s "
+                "(check Infisical STEALTH_WEBHOOK_URL value: quotes/typo/apex/dead hostname)",
+                _host,
+                _errno,
+                _exc_text,
+            )
+            return 502, {"error": f"Stealth webhook connection error for host {_host} ({_errno}): {_exc_text}", "host": _host, "reason": _errno}
