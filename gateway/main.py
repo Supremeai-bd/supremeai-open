@@ -41,7 +41,27 @@ from .provider_chain import (
 )
 from .rate_limit import SlidingWindowLimiter
 
+try:
+    from .sanitization import (
+        SECRET_MASK,
+        redact_secrets_in_text,
+        sanitize,
+        sanitize_error_message,
+    )
+except (ImportError, ModuleNotFoundError):  # pragma: no cover - script-mode fallback
+    from sanitization import (  # type: ignore
+        SECRET_MASK,
+        redact_secrets_in_text,
+        sanitize,
+        sanitize_error_message,
+    )
+
 GATEWAY_VERSION = "1.0.0"
+
+try:
+    from .sanitization import *  # noqa: F401,F403
+except (ImportError, ModuleNotFoundError):  # pragma: no cover
+    from sanitization import *  # type: ignore  # noqa: F401,F403
 
 # --- standardized JSON error contract (AC2) --------------------------------
 
@@ -57,17 +77,28 @@ def error_response(
     extra: dict[str, Any] | None = None,
 ) -> JSONResponse:
     payload: dict[str, Any] = {
-        "error": {"message": message, "type": err_type, "param": param, "code": code}
+        "error": {
+            "message": sanitize_error_message(message),
+            "type": err_type,
+            "param": param,
+            "code": code,
+        }
     }
     if extra:
-        payload.update(extra)
+        payload.update(sanitize(extra))
     return JSONResponse(status_code=status, content=payload, headers=headers or {})
 
 
 def _redact_ledger(ledger: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep provider/model/outcome/status; drop anything key-shaped."""
     safe = {"index", "provider", "model", "outcome", "status", "latency_ms", "detail"}
-    return [{k: v for k, v in entry.items() if k in safe} for entry in ledger]
+    out = []
+    for entry in ledger:
+        item = {k: v for k, v in entry.items() if k in safe}
+        if "detail" in item and isinstance(item["detail"], str):
+            item["detail"] = sanitize_error_message(item["detail"])
+        out.append(item)
+    return out
 
 
 # --- auth -------------------------------------------------------------------
@@ -218,9 +249,9 @@ async def relay_stream(
                         json.dumps(
                             {
                                 "error": {
-                                    "message": str(
-                                        event.get("message", "provider stream failed")
-                                    ),
+                        "message": sanitize_error_message(
+                            event.get("message", "provider stream failed")
+                        ),
                                     "type": "api_error",
                                     "param": None,
                                     "code": "provider_stream_error",
@@ -251,7 +282,9 @@ async def relay_stream(
                 json.dumps(
                     {
                         "error": {
-                            "message": f"provider stream interrupted: {exc}"[:300],
+                            "message": sanitize_error_message(
+                            f"provider stream interrupted: {exc}"
+                        )[:300],
                             "type": "api_error",
                             "param": None,
                             "code": "provider_stream_interrupted",
@@ -406,6 +439,7 @@ def create_app(
     # ---- health (no auth, OpenAPI security: []) ----
     @app.get("/health")
     @app.get("/healthz")
+    @app.get("/health/live")
     async def health() -> dict[str, Any]:
         return {
             "status": "ok",
@@ -420,6 +454,34 @@ def create_app(
                 "mcp": "healthy",
             },
         }
+
+    @app.get("/health/ready")
+    async def health_ready() -> Response:
+        degraded = False
+        if memory_store is not None and hasattr(memory_store, "degraded"):
+            try:
+                degraded = bool(memory_store.degraded)
+            except Exception:  # noqa: BLE001 - readiness must not raise
+                degraded = True
+        if degraded or not config.chains:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "not_ready",
+                    "service": "supremeai-api",
+                    "version": GATEWAY_VERSION,
+                    "degraded": degraded,
+                },
+            )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "ready",
+                "service": "supremeai-api",
+                "version": GATEWAY_VERSION,
+                "degraded": False,
+            },
+        )
 
     # ---- Unified Submodule Endpoints ----
     @app.get("/command/health")
@@ -684,7 +746,7 @@ def create_app(
             try:
                 chain = config.chain_for("auto")
             except (ConfigError, KeyError, ValueError) as exc:
-                return {"provider": provider_name, "status": 503, "error": str(exc)}
+                return {"provider": provider_name, "status": 503, "error": sanitize_error_message(exc)}
             endpoint = None
             for ep in chain:
                 if ep.provider == provider_name:
@@ -705,7 +767,7 @@ def create_app(
                 TimeoutError,
                 ConnectionError,
             ) as exc:
-                return {"provider": provider_name, "status": 0, "error": str(exc)[:200]}
+                return {"provider": provider_name, "status": 0, "error": sanitize_error_message(str(exc))[:200]}
             parsed = None
             try:
                 parsed = json.loads(res.body) if res.body else None
@@ -742,7 +804,7 @@ def create_app(
         safe = []
         for r in results:
             if isinstance(r, Exception):
-                safe.append({"provider": "unknown", "status": 0, "error": str(r)[:200]})
+                safe.append({"provider": "unknown", "status": 0, "error": sanitize_error_message(str(r))[:200]})
             else:
                 safe.append(r)
         return attach_rate_headers(

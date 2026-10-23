@@ -16,6 +16,7 @@ from .config import (
     parse_routing_policy,
 )
 from .main import GATEWAY_VERSION, create_app, error_response
+from .sanitization import *  # noqa: F401,F403
 from .provider_chain import AttemptResult, ProviderChainExhausted, execute_chain
 from .rate_limit import RateDecision, SlidingWindowLimiter
 
