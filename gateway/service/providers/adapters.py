@@ -1,0 +1,198 @@
+"""
+service/providers/adapters.py — Unified Provider Execution Layer.
+
+All 6 providers are connected via their OpenAI-compatible HTTP surfaces:
+- Gemini (Google Generative AI OpenAI-compat surface)
+- Groq (High-speed Llama/Qwen models)
+- OpenRouter (Aggregated catalog)
+- OpenAI (Official OpenAI platform)
+- Mistral (Mistral AI endpoints)
+- Hugging Face (Inference Router)
+"""
+from __future__ import annotations
+
+import logging
+import os
+import time
+from typing import Any, Dict, Optional, Tuple
+import httpx
+
+logger = logging.getLogger("supremeai.adapters")
+
+PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "gemini": {
+        "base_url": os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"),
+        "default_model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+    },
+    "groq": {
+        "base_url": os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+        "default_model": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+    },
+    "openrouter": {
+        "base_url": os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+        "default_model": os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct"),
+    },
+    "openai": {
+        "base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        "default_model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+    },
+    "mistral": {
+        "base_url": os.getenv("MISTRAL_BASE_URL", "https://api.mistral.ai/v1"),
+        "default_model": os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
+    },
+    "huggingface": {
+        "base_url": os.getenv("HF_BASE_URL", "https://router.huggingface.co/hf-inference/v1"),
+        "default_model": os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
+    },
+    "ghost_gemini": {
+        "base_url": os.getenv("GHOST_TOWER_URL", "http://127.0.0.1:8788"),
+        "default_model": "gemini-web",
+    },
+    "web_session": {
+        "base_url": os.getenv("WEB_SESSION_URL", "http://127.0.0.1:8788"),
+        "default_model": "web-session-auto",
+    },
+}
+
+
+def normalize_stealth_url(url: str) -> str:
+    """
+    Ensure the webhook URL targets the exact synchronous OpenAI-compatible endpoint
+    (/v1/chat/completions) instead of base domains, /mcp, or /dispatch.
+    """
+    raw = url.strip()
+    if not raw:
+        return ""
+    full = raw if "://" in raw else "http://" + raw
+    base = full.split("?", 1)[0].rstrip("/")
+    query = ("?" + full.split("?", 1)[1]) if "?" in full else ""
+
+    # Strip incompatible non-chat suffixes
+    if base.endswith(("/api/chat", "/chat", "/dispatch", "/mcp", "/webhook/telegram")):
+        base = base.rsplit("/", 1)[0].rstrip("/")
+
+    # Ensure path ends with /v1/chat/completions
+    if not base.endswith("/v1/chat/completions"):
+        if base.endswith("/v1"):
+            base = base + "/chat/completions"
+        else:
+            base = base + "/v1/chat/completions"
+
+    return base + query
+
+
+async def forward_chat_completion(
+    provider: str,
+    api_key: str,
+    payload: Dict[str, Any],
+    timeout: float = 60.0
+) -> Tuple[int, Dict[str, Any] | str]:
+    """
+    Forwards an OpenAI-format chat completion request to the chosen provider.
+    Returns (status_code, parsed_json_or_text).
+    """
+    config = PROVIDER_CONFIGS.get(provider)
+    if not config:
+        return 400, {"error": f"Unknown provider: {provider}"}
+
+    base_url = config["base_url"].rstrip("/")
+    url = f"{base_url}/chat/completions"
+
+    # Normalize model if "auto", empty, or provider-namespaced
+    body = dict(payload)
+    client_model = body.get("model", "auto")
+    if client_model in ("auto", "default", "", None) or client_model.startswith("supremeai/"):
+        body["model"] = config["default_model"]
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "SupremeAI-Gateway/2.0",
+    }
+
+    # OpenRouter requires optional referer/title headers
+    if provider == "openrouter":
+        headers["HTTP-Referer"] = "https://supremeai-api-ulw0.onrender.com"
+        headers["X-Title"] = "SupremeAI Gateway"
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            response = await client.post(url, json=body, headers=headers)
+            try:
+                data = response.json()
+            except Exception:  # noqa: BLE001
+                data = response.text
+            return response.status_code, data
+        except httpx.TimeoutException:
+            return 504, {"error": f"Provider {provider} timed out"}
+        except httpx.RequestError as exc:
+            return 502, {"error": f"Connection error to {provider}: {str(exc)}"}
+
+
+async def forward_stealth_webhook(
+    webhook_url: str,
+    secret: Optional[str],
+    payload: Dict[str, Any],
+    timeout: float = 6.0,
+) -> Tuple[int, Dict[str, Any] | str]:
+    """
+    Priority-1 Stealth Forwarder.
+    Normalizes the webhook endpoint to /v1/chat/completions, sends OpenAI chat payload,
+    and fails fast (< 6.0s) so the gateway can immediately fall back to the provider squad.
+    """
+    if not webhook_url:
+        return 404, {"error": "Stealth webhook not configured"}
+
+    target_url = normalize_stealth_url(webhook_url)
+
+    # Self-loop protection: if STEALTH_WEBHOOK_URL points to gateway itself
+    if "supremeai-api-ulw0.onrender.com" in target_url:
+        logger.warning("Stealth webhook points to gateway itself; skipping loop.")
+        return 400, {"error": "Stealth webhook target points to self (loop prevented)"}
+
+    # If pointed to async worker without explicit permission
+    if "supremeai-worker" in target_url and not os.getenv("ALLOW_WORKER_STEALTH"):
+        logger.warning(f"Stealth webhook target ({target_url}) is async worker node (not chat completions).")
+        return 405, {"error": "Configured stealth URL points to worker-node instead of chat completions relay"}
+
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "SupremeAI-Stealth-Gateway/2.0",
+    }
+    if secret:
+        headers["Authorization"] = f"Bearer {secret}"
+        headers["X-Stealth-Secret"] = secret
+        headers["X-SupremeAI-Key"] = secret
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            response = await client.post(target_url, json=payload, headers=headers)
+            try:
+                data = response.json()
+            except Exception:  # noqa: BLE001
+                data = response.text
+
+            # If response is {"reply": "..."} or {"source": "webhook", "reply": "..."}, wrap in OpenAI format
+            if isinstance(data, dict) and "reply" in data and "choices" not in data:
+                data = {
+                    "id": "chatcmpl-stealth-" + os.urandom(6).hex(),
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": payload.get("model", "stealth-priority1"),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": str(data["reply"]),
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                }
+            return response.status_code, data
+        except httpx.TimeoutException:
+            return 504, {"error": "Stealth webhook timed out"}
+        except httpx.RequestError as exc:
+            return 502, {"error": f"Stealth webhook connection error: {str(exc)}"}
