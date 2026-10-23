@@ -34,6 +34,14 @@ class TestFederationSatelliteSync(unittest.TestCase):
         targets, umbrella = sync_mod.detect_changed_targets(sync_mod.Path("/tmp"))
         self.assertIn("Supremeai-bd/supremeai-studio", targets)
         self.assertIn("Supremeai-bd/supremeai-api", targets)
+        self.assertTrue(umbrella)
+
+    @patch("subprocess.run")
+    def test_detect_changed_targets_empty(self, mock_run):
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "\n"
+        targets, umbrella = sync_mod.detect_changed_targets(sync_mod.Path("/tmp"))
+        self.assertEqual(targets, [])
         self.assertFalse(umbrella)
 
 
