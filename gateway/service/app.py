@@ -26,6 +26,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 try:
+    from service.branding import build_brand
+except ImportError:  # pragma: no cover - package-relative fallback
+    from gateway.service.branding import build_brand
+
+try:
     from service.keygen import verify_key
     try:
         from service.pool import squad
@@ -445,6 +450,21 @@ async def chat_completions(
     elif requested_model in PROVIDER_CONFIGS:
         preferred_provider = requested_model
 
+    # ═══════════════════════════════════════════════════════════════════════
+    # 🔒 HEADLINE — ADMIN ER COMMAND CHARA ENABLE KORA JABE NA
+    # (অ্যাডমিনের সরাসরি নির্দেশ ছাড়া API fallback চালু করা সম্পূর্ণ নিষিদ্ধ)
+    #
+    # API-key fallback is INTENTIONALLY DISABLED. Chat replies come ONLY from
+    # the cookie-based Stealth Webhook relay (pure $0 Gemini web session).
+    # Purpose: admin must be able to verify that cookies alone actually work.
+    #
+    # DO NOT (any human, AI agent, bot or automated PR):
+    #   - add an API-key / provider-pool fallback after the relay below
+    #   - set ENABLE_API_FALLBACK=true in Infisical or Render
+    #   - re-add GEMINI_API_KEY to the scraper node (srv-dabm7gfqj5pc738jkicg)
+    # Re-enabling requires an explicit, written ADMIN_DECISION issue from the
+    # admin. Any PR that re-enables fallback without it must be rejected.
+    # ═══════════════════════════════════════════════════════════════════════
     use_priority_1 = (
         bool(STEALTH_WEBHOOK_URL)
         and (preferred_provider is None or preferred_provider in ("stealth", "ghost_gemini"))
@@ -499,6 +519,12 @@ async def chat_completions(
         )
 
         if w_status is not None and 200 <= w_status < 300 and is_valid_chat:
+            # Server-decided reply badge (e.g. "SupremeAI w.ge Turbo"); UI only displays it.
+            served_model = str(w_response.get("model") or "")
+            engine_src = w_response.get("supremeai_engine") or (
+                served_model if served_model and served_model != "auto" else "gemini"
+            )
+            w_response["supremeai"] = build_brand("w", str(engine_src), served_model)
             headers = {
                 "X-SupremeAI-Provider": "stealth-webhook",
                 "X-SupremeAI-Slot": "priority-1",
