@@ -26,11 +26,11 @@ PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     "groq": {
         "base_url": os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-        "default_model": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+        "default_model": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
     },
     "openrouter": {
         "base_url": os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-        "default_model": os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct"),
+        "default_model": os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free"),
     },
     "openai": {
         "base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
@@ -44,6 +44,10 @@ PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
         "base_url": os.getenv("HF_BASE_URL", "https://router.huggingface.co/hf-inference/v1"),
         "default_model": os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
     },
+    "v0": {
+        "base_url": os.getenv("V0_BASE_URL", "https://api.v0.dev/v1"),
+        "default_model": os.getenv("V0_MODEL", "v0-web"),
+    },
     "ghost_gemini": {
         "base_url": os.getenv("GHOST_TOWER_URL", "http://127.0.0.1:8788"),
         "default_model": "gemini-web",
@@ -52,6 +56,49 @@ PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
         "base_url": os.getenv("WEB_SESSION_URL", "http://127.0.0.1:8788"),
         "default_model": "web-session-auto",
     },
+}
+
+# Exhaustive zero-waste model cascades: if top model hits quota/limit (429) or is unavailable (404/400),
+# the adapter seamlessly tries the next model in sequence without failing the client request.
+PROVIDER_MODEL_CASCADES: Dict[str, list[str]] = {
+    "groq": [
+        "qwen/qwen3.8-27b",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "allam-2-7b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+    ],
+    "gemini": [
+        "gemini-2.5-flash",
+        "gemini-flash-latest",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-pro",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-pro-latest",
+        "gemini-2.0-flash",
+    ],
+    "openrouter": [
+        "nvidia/nemotron-3.5-lightning:free",
+        "cohere/north-mini-code:free",
+        "dots-studio/dots-3-note-preview:free",
+        "poolside/laguna-s-2.1:free",
+        "liquid/lfm-2.5-2.6b:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+    ],
+    "mistral": [
+        "mistral-small-latest",
+        "open-mistral-7b",
+        "mistral-medium-latest",
+    ],
+    "openai": [
+        "gpt-4o-mini",
+        "gpt-4o",
+    ],
+    "v0": [
+        "v0-web",
+        "v0-preview",
+    ],
 }
 
 
@@ -89,6 +136,8 @@ async def forward_chat_completion(
 ) -> Tuple[int, Dict[str, Any] | str]:
     """
     Forwards an OpenAI-format chat completion request to the chosen provider.
+    Executes an in-flight model cascade: if the top model returns 429/404/400/503,
+    it automatically attempts the remaining prioritized models before reporting error.
     Returns (status_code, parsed_json_or_text).
     """
     config = PROVIDER_CONFIGS.get(provider)
@@ -97,12 +146,6 @@ async def forward_chat_completion(
 
     base_url = config["base_url"].rstrip("/")
     url = f"{base_url}/chat/completions"
-
-    # Normalize model if "auto", empty, or provider-namespaced
-    body = dict(payload)
-    client_model = body.get("model", "auto")
-    if client_model in ("auto", "default", "", None) or client_model.startswith("supremeai/"):
-        body["model"] = config["default_model"]
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -115,18 +158,66 @@ async def forward_chat_completion(
         headers["HTTP-Referer"] = "https://supremeai-api-ulw0.onrender.com"
         headers["X-Title"] = "SupremeAI Gateway"
 
+    # Build prioritized candidate models list
+    body = dict(payload)
+    client_model = body.get("model", "auto")
+    cascade = PROVIDER_MODEL_CASCADES.get(provider, [config["default_model"]])
+    candidate_models: list[str] = []
+
+    if client_model and client_model not in ("auto", "default", "") and not str(client_model).startswith("supremeai/"):
+        candidate_models.append(str(client_model))
+
+    for m in cascade:
+        if m not in candidate_models:
+            candidate_models.append(m)
+
+    last_status = 500
+    last_data: Any = {"error": f"No models available for provider {provider}"}
+
     async with httpx.AsyncClient(timeout=timeout) as client:
-        try:
-            response = await client.post(url, json=body, headers=headers)
+        for model_name in candidate_models:
+            body["model"] = model_name
             try:
-                data = response.json()
-            except Exception:  # noqa: BLE001
-                data = response.text
-            return response.status_code, data
-        except httpx.TimeoutException:
-            return 504, {"error": f"Provider {provider} timed out"}
-        except httpx.RequestError as exc:
-            return 502, {"error": f"Connection error to {provider}: {str(exc)}"}
+                response = await client.post(url, json=body, headers=headers)
+                status_code = response.status_code
+                try:
+                    data = response.json()
+                except Exception:  # noqa: BLE001
+                    data = response.text
+
+                # Success path (2xx)
+                if 200 <= status_code < 300:
+                    if isinstance(data, dict) and "model" not in data:
+                        data["model"] = model_name
+                    return status_code, data
+
+                # Skip paid tiers if requested payment (402)
+                if status_code == 402:
+                    logger.warning(f"[{provider}] Model {model_name} requested payment (402); skipping paid tier.")
+                    last_status, last_data = status_code, data
+                    continue
+
+                # Auto-downgrade on quota exhaustion, missing model slug, or temporary overload
+                if status_code in (404, 400, 429, 503):
+                    logger.warning(
+                        f"[{provider}] Model {model_name} returned {status_code}; "
+                        f"cascading to next available model..."
+                    )
+                    last_status, last_data = status_code, data
+                    continue
+
+                # For fatal authentication errors (401/403 on key), do not loop other models with same key
+                last_status, last_data = status_code, data
+                break
+
+            except httpx.TimeoutException:
+                logger.warning(f"[{provider}] Model {model_name} timed out after {timeout}s; trying next model...")
+                last_status, last_data = 504, {"error": f"Provider {provider} model {model_name} timed out"}
+                continue
+            except httpx.RequestError as exc:
+                return 502, {"error": f"Connection error to {provider}: {str(exc)}"}
+
+    return last_status, last_data
 
 
 async def forward_stealth_webhook(
