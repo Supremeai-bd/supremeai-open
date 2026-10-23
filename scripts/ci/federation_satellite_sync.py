@@ -157,9 +157,13 @@ def sync_satellite(
                 sub_src = repo_root / sub_source
                 if sub_src.exists():
                     copy_tree_contents(sub_src, tmp_repo / sub_name)
-                    print(
-                        f"📋 Synced submodule '{sub_source}' -> '{sub_name}' in {target_repo}"
-                    )
+            # Sync service/ directly into root of supremeai-api for Render runtime (python -m service.app)
+            service_src = repo_root / "gateway" / "service"
+            if service_src.exists():
+                copy_tree_contents(service_src, tmp_repo / "service")
+                print(
+                    f"📋 Synced runtime service 'gateway/service' -> 'service' in {target_repo}"
+                )
         else:
             # Copy domain files into the satellite root
             copy_tree_contents(src_path, tmp_repo)
