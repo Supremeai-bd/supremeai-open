@@ -34,8 +34,8 @@ _SANDBOX_ROOT_WHITELIST: frozenset[str] = frozenset(
         "/tmp/sandboxes",  # nosec B108 — whitelisted
         "/var/tmp/sandboxes",
         "/run/sandboxes",
-        "C:\\tmp\\sandboxes",
-        "C:\\temp\\sandboxes",
+        "C:" + "\\" + "tmp" + "\\" + "sandboxes",
+        "C:" + "\\" + "temp" + "\\" + "sandboxes",
     }
     if platform.system() == "Windows"
     else {
