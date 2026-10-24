@@ -192,6 +192,7 @@ app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, red
 
 # CORS setup for Studio and web agents - Restricted origins (no wildcard with credentials)
 _default_cors = [
+    "https://supremeai-studio.vercel.app",
     "https://supremeai-studio.pages.dev",
     "https://supremeai-studio.paykaribazaronline.workers.dev",
     "http://localhost:3000",
@@ -220,6 +221,21 @@ app.add_middleware(
 # Telegram Inbound Webhook Listener
 if telegram_router is not None:
     app.include_router(telegram_router)
+
+# Native Admin Authentication Router (Zero-Firebase)
+try:
+    from service.admin_auth import router as admin_auth_router
+except ImportError:
+    try:
+        from gateway.service.admin_auth import router as admin_auth_router
+    except ImportError:
+        try:
+            from admin_auth import router as admin_auth_router
+        except ImportError:
+            admin_auth_router = None
+
+if admin_auth_router is not None:
+    app.include_router(admin_auth_router)
 
 
 # ── Guest Rate Limit (cost guard for the keyless bypass) ─────────────────────
