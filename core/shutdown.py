@@ -2,7 +2,7 @@ import asyncio
 import os
 import time  # - Added for metrics collection
 
-from core import services
+from core import service_container as services
 from core.agent_supervisor import agent_supervisor
 from core.cache.redis_manager import redis_manager
 from core.logging_config import logger
@@ -140,10 +140,10 @@ async def shutdown_services(app):
 
     # HTTP client cleanup
     try:
-        if services.global_http_client:
-            await services.global_http_client.aclose()
+        if service_container.global_http_client:
+            await service_container.global_http_client.aclose()
         set_shared_client(None)
-        services.global_http_client = None
+        service_container.global_http_client = None
         logger.info("✅ Global HTTP connection pool closed successfully.")
     except Exception as e:
         logger.error(f"Error during HTTP connection pool drainage: {e!s}")

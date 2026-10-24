@@ -11,6 +11,8 @@ All 6 providers are connected via their OpenAI-compatible HTTP surfaces:
 """
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
 import time
@@ -206,6 +208,12 @@ def normalize_stealth_url(url: str) -> str:
     return base + query
 
 
+
+@asynccontextmanager
+async def _pooled_http_client(timeout: float = 28.0):
+    """Yield the shared pooled httpx client (connection reuse)."""
+    yield _get_stealth_client()
+
 async def forward_chat_completion(
     provider: str,
     api_key: str,
@@ -256,7 +264,7 @@ async def forward_chat_completion(
     last_status = 500
     last_data: Any = {"error": f"No models available for provider {provider}"}
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with _pooled_http_client(timeout) as client:
         for model_name in candidate_models:
             body["model"] = model_name
             try:
@@ -309,22 +317,27 @@ async def forward_stealth_webhook(
     timeout: float = 28.0,
 ) -> Tuple[int, Dict[str, Any] | str]:
     """
-    Priority-1 Stealth Forwarder.
-    Normalizes the webhook endpoint to /v1/chat/completions, sends OpenAI chat payload,
-    and uses a 28.0s timeout for the stealth relay.
+    Priority-1 Stealth Forwarder (improved).
+
+    Improvements vs previous version:
+    - Reuses a pooled httpx.AsyncClient (keep-alive, HTTP/2) instead of opening
+      a new connection per request -> much lower latency on repeated calls.
+    - Fast-fail connect timeout (5s) so dead hosts surface quickly.
+    - One automatic retry on transient connect/timeout errors.
+    - Structured diagnostics: host, reason class, latency_ms in both logs and
+      error bodies, plus latency_ms on success.
     """
     if not webhook_url:
         return 404, {"error": "Stealth webhook not configured"}
 
     target_url = normalize_stealth_url(webhook_url)
 
-    # Self-loop protection: if STEALTH_WEBHOOK_URL points to gateway itself
+    # Self-loop protection
     self_url = os.getenv("RENDER_EXTERNAL_URL", "")
     if (self_url and self_url in target_url) or "supremeai-api" in target_url:
         logger.warning("Stealth webhook points to gateway itself; skipping loop.")
         return 400, {"error": "Stealth webhook target points to self (loop prevented)"}
 
-    # If pointed to async worker without explicit permission
     if "supremeai-worker" in target_url and not os.getenv("ALLOW_WORKER_STEALTH"):
         logger.warning(f"Stealth webhook target ({target_url}) is async worker node (not chat completions).")
         return 405, {"error": "Configured stealth URL points to worker-node instead of chat completions relay"}
@@ -338,15 +351,17 @@ async def forward_stealth_webhook(
         headers["X-Stealth-Secret"] = secret
         headers["X-SupremeAI-Key"] = secret
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    client = _get_stealth_client()
+    started = time.monotonic()
+    last_exc: Optional[Exception] = None
+    for attempt in range(2):
         try:
-            response = await client.post(target_url, json=payload, headers=headers)
+            response = await client.post(target_url, json=payload, headers=headers, timeout=timeout)
             try:
                 data = response.json()
             except Exception:  # noqa: BLE001
                 data = response.text
 
-            # If response is {"reply": "..."} or {"source": "webhook", "reply": "..."}, wrap in OpenAI format
             if isinstance(data, dict) and "reply" in data and "choices" not in data:
                 data = {
                     "id": "chatcmpl-stealth-" + os.urandom(6).hex(),
@@ -356,32 +371,78 @@ async def forward_stealth_webhook(
                     "choices": [
                         {
                             "index": 0,
-                            "message": {
-                                "role": "assistant",
-                                "content": str(data["reply"]),
-                            },
+                            "message": {"role": "assistant", "content": str(data["reply"])},
                             "finish_reason": "stop",
                         }
                     ],
                     "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 }
+            latency = int((time.monotonic() - started) * 1000)
+            logger.info("Stealth webhook OK status=%s latency=%sms attempt=%s", response.status_code, latency, attempt + 1)
+            if isinstance(data, dict):
+                data.setdefault("latency_ms", latency)
             return response.status_code, data
-        except httpx.TimeoutException:
-            logger.warning(f"Stealth webhook timed out after {timeout}s")
-            return 504, {"error": "Stealth webhook timed out"}
+        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            last_exc = exc
+            if attempt == 0:
+                await asyncio.sleep(0.2)
+                continue
+            break
         except httpx.RequestError as exc:
-            # DNS/connect failures used to be indistinguishable from a dead
-            # upstream (the Oct-23 outage produced only "connection error" with
-            # zero host context, blocking diagnosis). Surface the masked host +
-            # failure class so ops can act from the log line or the 502 body alone.
-            _host = _mask_host(target_url)
-            _exc_text = str(exc)
-            _errno = "dns" if any(sig in _exc_text for sig in ("Name or service not known", "Temporary failure in name resolution", "No address associated", "nodename nor servname")) else ("refused" if "Connection refused" in _exc_text else "connect")
-            logger.warning(
-                "Stealth webhook connection error for host=%s class=%s: %s "
-                "(check Infisical STEALTH_WEBHOOK_URL value: quotes/typo/apex/dead hostname)",
-                _host,
-                _errno,
-                _exc_text,
-            )
-            return 502, {"error": f"Stealth webhook connection error for host {_host} ({_errno}): {_exc_text}", "host": _host, "reason": _errno}
+            last_exc = exc
+            break
+
+    latency = int((time.monotonic() - started) * 1000)
+    exc = last_exc
+    _exc_text = str(exc) if exc is not None else "unknown error"
+    _host = _mask_host(target_url)
+    if isinstance(exc, httpx.TimeoutException) or "timed out" in _exc_text.lower() or "timeout" in _exc_text.lower():
+        _errno = "timeout"
+    elif any(sig in _exc_text for sig in ("Name or service not known", "Temporary failure in name resolution", "No address associated", "nodename nor servname")):
+        _errno = "dns"
+    elif "Connection refused" in _exc_text:
+        _errno = "refused"
+    else:
+        _errno = "connect"
+    logger.warning(
+        "Stealth webhook connection error for host=%s class=%s: %s (latency=%sms)",
+        _host,
+        _errno,
+        _exc_text,
+        latency,
+    )
+    body = {"error": f"Stealth webhook connection error for host {_host} ({_errno}): {_exc_text}", "host": _host, "reason": _errno, "latency_ms": latency}
+    if _errno == "timeout":
+        body["error"] = "Stealth webhook timed out"
+        return 504, body
+    return 502, body
+
+
+# Shared pooled client helpers
+_STEALTH_CLIENT: Optional[httpx.AsyncClient] = None
+
+
+def _get_stealth_client() -> httpx.AsyncClient:
+    global _STEALTH_CLIENT
+    if _STEALTH_CLIENT is not None:
+        try:
+            if not _STEALTH_CLIENT.is_closed:
+                return _STEALTH_CLIENT
+        except AttributeError:
+            _STEALTH_CLIENT = None
+    client = httpx.AsyncClient(
+        timeout=httpx.Timeout(28.0, connect=5.0),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        http2=True,
+    )
+    # Only cache real clients (fakes used in tests lack is_closed).
+    if hasattr(client, "is_closed"):
+        _STEALTH_CLIENT = client
+    return client
+
+
+async def close_stealth_client() -> None:
+    global _STEALTH_CLIENT
+    if _STEALTH_CLIENT is not None and not _STEALTH_CLIENT.is_closed:
+        await _STEALTH_CLIENT.aclose()
+    _STEALTH_CLIENT = None

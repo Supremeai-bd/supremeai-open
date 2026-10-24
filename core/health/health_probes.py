@@ -26,7 +26,7 @@ except ImportError:
 #                                            redis_manager.get_client_async())
 #        * core/intelligent_cache.py:146    (os.environ["REDIS_URL"] → TCP client)
 #        * core/llm/llm_gateway/litellm_runtime.py:51 (litellm redis cache)
-#        * core/queue/task_queue_enhanced.py:109      (task queue backend)
+#        * core/task_queue/task_queue_enhanced.py:109      (task queue backend)
 #        * middleware/anti_hacking.py:55-57 (per-request security state via
 #                                            redis_manager)
 #   2. UPSTASH REST ("upstash-rest") — UPSTASH_REDIS_REST_URL/TOKEN via

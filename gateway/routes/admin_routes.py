@@ -143,7 +143,7 @@ async def _issue_admin_jwt(uid: str) -> str:
 
 
 from api.dependencies import get_current_user_token
-from core import services
+from core import service_container as services
 from core.config import settings
 from core.firebase_auth import get_firebase_auth
 from models.admin import (
@@ -753,12 +753,12 @@ async def revoke_all_trusted_browsers(admin: dict = Depends(get_current_admin)):
 @router.get("/admin/cloud-distribution")
 def cloud_distribution(_admin: dict = Depends(get_current_admin)):
     return {
-        "distribution": services.parallel_router.get_distribution_stats(),
+        "distribution": service_container.parallel_router.get_distribution_stats(),
         "total_requests": sum(
-            p["current_requests"] for p in services.parallel_router.PROVIDERS.values()
+            p["current_requests"] for p in service_container.parallel_router.PROVIDERS.values()
         ),
         "active_providers": sum(
-            1 for p in services.parallel_router.PROVIDERS.values() if p["status"] == "active"
+            1 for p in service_container.parallel_router.PROVIDERS.values() if p["status"] == "active"
         ),
         "strategy": "parallel_active_active",
         "rebalance_interval": "1 hour",

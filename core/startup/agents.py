@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-from core import services
+from core import service_container as services
 from core.agent_supervisor import agent_supervisor
 from core.logging_config import logger
 
@@ -128,7 +128,7 @@ async def start_background_services(app):
         # enqueue() and stops after 5 idle minutes. An eager `BLPOP` loop
         # burned ~17k Upstash commands/day (> entire free-tier quota) even
         # with zero tasks. On boot we only register handlers.
-        from core.queue.task_queue import redis_configured, task_queue
+        from core.task_queue.task_queue import redis_configured, task_queue
 
         if redis_configured():
             logger.info(

@@ -11,16 +11,16 @@ class IPBlocklistManager:
         self.cooldown_seconds = 1800  # Default 30 minutes block
 
     def is_ip_blocked(self, ip_address: str) -> bool:
-        from core import services
+        from core import service_container as services
 
         if (
-            hasattr(services, "redis_queue")
-            and services.redis_queue
-            and services.redis_queue.configured
+            hasattr(service_container, "redis_queue")
+            and service_container.redis_queue
+            and service_container.redis_queue.configured
         ):
             redis_key = f"blocklist:ip:{ip_address}"
             try:
-                val = services.redis_queue.get(redis_key)
+                val = service_container.redis_queue.get(redis_key)
                 if val is not None:
                     return val != "ok"
             except Exception as e:
@@ -29,16 +29,16 @@ class IPBlocklistManager:
 
     def block_ip(self, ip_address: str, reason: str = "suspicious_activity") -> bool:
         logger.warning(f"IPBlocklistManager: Blocking IP {ip_address} due to {reason}.")
-        from core import services
+        from core import service_container as services
 
         if (
-            hasattr(services, "redis_queue")
-            and services.redis_queue
-            and services.redis_queue.configured
+            hasattr(service_container, "redis_queue")
+            and service_container.redis_queue
+            and service_container.redis_queue.configured
         ):
             redis_key = f"blocklist:ip:{ip_address}"
             try:
-                services.redis_queue.set(redis_key, f"blocked:{reason}", ex=self.cooldown_seconds)
+                service_container.redis_queue.set(redis_key, f"blocked:{reason}", ex=self.cooldown_seconds)
                 return True
             except Exception as e:
                 logger.error(f"Redis connection failed during block_ip: {e}")
@@ -46,16 +46,16 @@ class IPBlocklistManager:
 
     def release_ip(self, ip_address: str) -> bool:
         logger.info(f"IPBlocklistManager: Releasing block on IP {ip_address}.")
-        from core import services
+        from core import service_container as services
 
         if (
-            hasattr(services, "redis_queue")
-            and services.redis_queue
-            and services.redis_queue.configured
+            hasattr(service_container, "redis_queue")
+            and service_container.redis_queue
+            and service_container.redis_queue.configured
         ):
             redis_key = f"blocklist:ip:{ip_address}"
             try:
-                services.redis_queue.set(redis_key, "", ex=1)
+                service_container.redis_queue.set(redis_key, "", ex=1)
                 return True
             except Exception as e:
                 logger.error(f"Redis connection failed during release_ip: {e}")

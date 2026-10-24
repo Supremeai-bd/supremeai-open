@@ -24,7 +24,7 @@ targets = [
     "services/rider_tracker.py",
     "core/llm_router.py",
     "tools/security_tools/multi_account_rotator.py",
-    "core/queue/task_queue_enhanced.py",
+    "core/task_queue/task_queue_enhanced.py",
     "api/routes/browser.py",
     "core/tier8/codebase_refactor_proposer.py",
     "tools/learning/style_learner.py",

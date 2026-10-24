@@ -480,7 +480,7 @@ def create_app(title: str = settings.PROJECT_NAME) -> FastAPI:
     if settings.MONITORING_DETAILED:
         from fastapi.responses import PlainTextResponse
 
-        from core.monitoring import get_metrics_collector
+        from core._monitoring_legacy import get_metrics_collector
 
         @app.get("/metrics", response_class=PlainTextResponse)
         async def metrics_endpoint():

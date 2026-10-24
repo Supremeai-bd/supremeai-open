@@ -27,7 +27,7 @@ async def receive_ci_report(report: CIReportPayload, request: Request):
     This endpoint is protected by a constitutional rule.
     """
     # Constitutional Gatekeeper for this endpoint
-    from core import services
+    from core import service_container as services
 
     if not services.god.get_rule("autofix_reporting_authorized", "false") == "true":
         raise HTTPException(

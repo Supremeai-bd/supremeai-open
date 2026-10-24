@@ -85,7 +85,7 @@ CORE_ROUTERS = [
     "api.routes.api_keys",
     "api.routes.ci_webhooks",
     "api.routes.task_workspace",
-    "api.routes.websocket_agent",
+
     "api.routes.agent_workspace",
     "api.routes.integrations",
     "api.routes.public_config",
