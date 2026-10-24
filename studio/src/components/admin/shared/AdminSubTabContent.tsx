@@ -23,7 +23,7 @@ import { GithubIntegration } from '../GithubIntegration';
 import { BackupRestore } from '../BackupRestore';
 import { SecurityDashboard } from '../security/SecurityDashboard';
 import Dashboard from '../Dashboard';
-import AdminCommandCenter from '../AdminCommandCenter';
+import SupremeAdminControlPlane from '../SupremeAdminControlPlane';
 import { RateLimitManager } from '../security/RateLimitManager';
 import { InteractiveChatTab } from '../InteractiveChatTab';
 import { AdminAlertsTab } from '../AdminAlertsTab';
@@ -82,7 +82,7 @@ interface SubTabContentProps {
 
  
 const MODULE_MAP: Record<string, React.FC<any>> = {
-  'overview': AdminCommandCenter,
+  'overview': SupremeAdminControlPlane,
   'topology': CommandCenter, // Topology map
   'service-explorer': CloudOrchestrator,
   'agents-swarm': EnhancedSkillMarketplace, // Or ModelRouter depending on context
