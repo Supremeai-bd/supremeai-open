@@ -107,7 +107,9 @@ export const ChatInterface: React.FC = () => {
     setUiLang(next);
     try {
       localStorage.setItem('sa_ui_lang', next);
-    } catch {}
+    } catch (e) {
+      void e;
+    }
   };
 
   const chatChips = [
