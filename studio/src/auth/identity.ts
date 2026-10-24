@@ -6,6 +6,7 @@
 // authorize হয়। URL বা localStorage role key কখনোই এখানে ব্যবহৃত হয় না।
 
 import { normalizeRole, type Role } from '../config/permissions';
+import { getAdminToken } from '../services/tokenStorage';
 
 /** Get the resolved canonical application role (fallback to 'user'). */
 export function getCanonicalRole(): Role {
@@ -29,9 +30,10 @@ interface AdminJwtClaims {
 export function readAdminJwtClaims(): AdminJwtClaims | null {
   if (typeof window === 'undefined') return null;
   try {
-    // Issue #521 (FE-04): sessionStorage only — the localStorage duplicate write/read
-    // (which survived browser restarts) is gone; legacy entries are swept.
-    const token = sessionStorage.getItem(ADMIN_JWT_KEY);
+    const token =
+      getAdminToken() ||
+      sessionStorage.getItem(ADMIN_JWT_KEY) ||
+      localStorage.getItem(ADMIN_JWT_KEY);
     if (!token) return null;
     const part = token.split('.')[1];
     if (!part) return null;

@@ -105,7 +105,7 @@ export function LoginView({
   const isLocked = lockedUntil !== null && currentTime < lockedUntil;
   const lockoutRemaining = lockedUntil ? Math.max(0, Math.ceil((lockedUntil - currentTime) / 1000)) : 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Rate limiting check
@@ -139,7 +139,7 @@ export function LoginView({
     setIsSubmitting(true);
 
     try {
-      handleAdminLogin(localPassword);
+      await handleAdminLogin(localPassword);
       if (!otpRequired) {
         setLocalPassword('');
       }

@@ -68,6 +68,45 @@ flowchart TD
 - Test execution is not available via the tower (requires a separate runner) — by design.
 - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`; `content` required for `full_file` mode, default). `work_claim` requires `issueNumber` (integer). `bridge_work_order`/`bridge_read_feedback` require `number` (issue number). `bridge_work_queue` accepts optional `limit`/`label`.
 
+### 2.1 Zero-Fail PR Submission Protocol & Format Blueprint (এজেন্ট PR-এর অলঙ্ঘনীয় ফরম্যাট)
+
+> **⚠️ কেন বেশিরভাগ এজেন্ট PR ফেইল করে (The 6 Fatal Traps):**  
+> ১. **Missing Reflection Evidence (Knowledge Sharing Guard #392):** PR বডিতে অবিকল `## Reflection Evidence (why + alternatives_rejected)` হেডার না থাকা বা `- **why:**` ও `- **alternatives_rejected:**`-তে ফাঁকা/প্লেসহোল্ডার টেক্সট রাখা।  
+> ২. **Missing Claim / Issue Link (Claim Gate Guard #392):** কোনো ইস্যু ক্লেইম না করে অন্ধভাবে PR খোলা।  
+> ৩. **Stale Base (Stale-Base Guard #161):** কাজ শুরুর সময় বা পুশের ঠিক আগে `origin/main` থেকে রিবেস না করা।  
+> ৪. **Invalid Branch Name (Branch Naming Guard):** ভুল প্রিফিক্স ব্যবহার করা (স্যাটেলাইট কোডে ভুলেও `bridge/*` প্রিফিক্স দেওয়া যাবে না, দিলে `landing.yml` স্যাটেলাইটে ডিসপ্যাচ স্কিপ করবে)।  
+> ৫. **Cross-Domain বা Root Shadowing (Boundary Sanitization Guard #107):** রুট `src/*`-এ কোড পুশ করা বা একই PR-এ একাধিক স্যাটেলাইট ডোমেন স্পর্শ করা।  
+> ৬. **Blind Coder Syndrome:** বিদ্যমান কোড, ইমপোর্ট বা টাইপস না পড়ে মনগড়া কোড লিখে টাইপচেক/বিল্ড নষ্ট করা (P3 Non-Regression লঙ্ঘন)।
+
+#### 📋 The Canonical PR Body Blueprint (Copy-Paste Ready)
+যেকোনো এজেন্ট PR খোলার সময় `gh pr create` বা টুলের মাধ্যমে নিচের ফরম্যাটটি অক্ষরে অক্ষরে মেনে চলতে হবে:
+
+```markdown
+### Summary
+Brief 1-2 sentence description of what this PR changes and the exact problem it solves.
+
+### Linked Issue / Claim
+Closes #<ISSUE_NUMBER>
+<!-- atomic-claim: issue #<ISSUE_NUMBER> -->
+
+### Key Changes
+- **\`<domain>/path/to/file.ext\`**: Detailed bullet point of the architectural or functional change.
+
+## Reflection Evidence (why + alternatives_rejected)
+- **why:** Concrete technical rationale explaining WHY this specific approach was selected over others. (Must be real, non-empty, and free of angle-bracket placeholders).
+- **alternatives_rejected:**
+  - *<Alternative Approach 1>:* Rejected because <precise technical drawback or failure mode>.
+  - *<Alternative Approach 2>:* Rejected because <complexity / regression / security issue>.
+
+### Dynamic Verification Evidence
+- [x] Local Guard / Smoke Test Output: \`python scripts/ci/boundary_sanitization_guard.py --files <paths>\` -> PASS
+- [x] Unit/Contract Tests passed with output proof: <test name and result summary>
+- [x] Pre-Push Rebase: 0 commits behind origin/main
+
+### Rollback Path
+- [x] \`git revert\`-safe (no cross-satellite private state dependency)
+```
+
 ---
 
 ## 3. Role Preflight Invariants (৩-সেকেন্ড আত্ম-জিজ্ঞাসা)

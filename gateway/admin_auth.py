@@ -17,6 +17,10 @@ try:
         DEFAULT_ADMIN_EMAIL,
         PRIMARY_OWNER_EMAIL,
         DEFAULT_ADMIN_UID,
+        issue_trusted_browser_token,
+        verify_trusted_browser_token,
+        TRUSTED_BROWSER_COOKIE,
+        DEFAULT_TRUSTED_BROWSER_DAYS,
     )
 except ImportError:
     from service.admin_auth import *
@@ -30,4 +34,8 @@ except ImportError:
         DEFAULT_ADMIN_EMAIL,
         PRIMARY_OWNER_EMAIL,
         DEFAULT_ADMIN_UID,
+        issue_trusted_browser_token,
+        verify_trusted_browser_token,
+        TRUSTED_BROWSER_COOKIE,
+        DEFAULT_TRUSTED_BROWSER_DAYS,
     )
