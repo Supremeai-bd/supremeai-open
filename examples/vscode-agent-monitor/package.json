@@ -1,0 +1,53 @@
+{
+  "name": "supremeai-vscode-agent-monitor",
+  "displayName": "SupremeAI Agent Monitor",
+  "description": "Live agent execution monitor: status bar indicator and streaming event output (issue #333 reference).",
+  "version": "0.1.0",
+  "publisher": "supremeai",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=18"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "supremeaiAgentMonitor.connect",
+        "title": "SupremeAI: Connect Agent Monitor"
+      },
+      {
+        "command": "supremeaiAgentMonitor.disconnect",
+        "title": "SupremeAI: Disconnect Agent Monitor"
+      }
+    ],
+    "configuration": {
+      "title": "SupremeAI Agent Monitor",
+      "properties": {
+        "supremeaiAgentMonitor.towerUrl": {
+          "type": "string",
+          "default": "ws://127.0.0.1:8765",
+          "description": "Tower WebSocket endpoint for the live agent event stream."
+        },
+        "supremeaiAgentMonitor.taskFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Optional task-<id> filter; empty shows all tasks."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -p ./ --watch",
+    "pretest": "npm run compile",
+    "test": "node --test \"tests/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.4"
+  }
+}
