@@ -106,12 +106,15 @@ app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, red
 _default_cors = [
     "https://supremeai-studio.pages.dev",
     "https://supremeai-studio.paykaribazaronline.workers.dev",
-    "https://supremeai-studio.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
 ]
+_studio_preview = os.getenv("STUDIO_FRONTEND_URL", "").strip()
+if _studio_preview and _studio_preview not in _default_cors:
+    _default_cors.append(_studio_preview)
+
 _cors_env = os.getenv("CORS_ORIGINS", "").strip()
 if _cors_env:
     allowed_origins = list(dict.fromkeys([o.strip() for o in _cors_env.split(",") if o.strip()] + _default_cors))
@@ -159,12 +162,12 @@ def _is_guest_request(request: Request, token: Optional[str]) -> bool:
     can never drift apart."""
     origin = (request.headers.get("origin") or "").lower()
     referer = (request.headers.get("referer") or "").lower()
+    studio_preview = os.getenv("STUDIO_FRONTEND_URL", "").lower().strip()
     return (
         request.headers.get("x-guest-mode", "").lower() == "true"
         or "https://supremeai-studio.pages.dev" in origin
         or "https://supremeai-studio.pages.dev" in referer
-        or "https://supremeai-studio.vercel.app" in origin
-        or "https://supremeai-studio.vercel.app" in referer
+        or (bool(studio_preview) and (studio_preview in origin or studio_preview in referer))
         or token in {"guest", "demo", "public-guest"}
     )
 
@@ -479,11 +482,11 @@ async def health_aggregation():
     Probes all 5 Render nodes in parallel and returns green/yellow/red status for Studio circles.
     """
     nodes = [
-        {"id": "api", "name": "API Gateway", "url": "https://supremeai-api-ulw0.onrender.com/health"},
-        {"id": "scraper", "name": "Scraper Relay", "url": "https://supremeai-scraper-node.onrender.com/health"},
-        {"id": "tower", "name": "MCP Control Tower", "url": "https://supremeai-mcp-tower.onrender.com/health"},
-        {"id": "primary", "name": "Primary Core Node", "url": "https://supremeai-primary-node-5xso.onrender.com/health"},
-        {"id": "worker", "name": "Worker Node", "url": "https://supremeai-worker-node.onrender.com/health"},
+        {"id": "api", "name": "API Gateway", "url": os.getenv("RENDER_API_URL", "https://supremeai-api.onrender.com/health")},
+        {"id": "scraper", "name": "Scraper Relay", "url": os.getenv("RENDER_SCRAPER_URL", "http://localhost:8001/health")},
+        {"id": "tower", "name": "MCP Control Tower", "url": os.getenv("RENDER_MCP_URL", "http://localhost:3771/health")},
+        {"id": "primary", "name": "Primary Core Node", "url": os.getenv("RENDER_PRIMARY_URL", "http://localhost:8002/health")},
+        {"id": "worker", "name": "Worker Node", "url": os.getenv("RENDER_WORKER_URL", "http://localhost:8003/health")},
     ]
 
     checks = {}

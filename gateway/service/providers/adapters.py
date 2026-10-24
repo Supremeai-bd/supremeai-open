@@ -224,7 +224,11 @@ async def forward_chat_completion(
 
     # OpenRouter requires optional referer/title headers
     if provider == "openrouter":
-        headers["HTTP-Referer"] = "https://supremeai-api-ulw0.onrender.com"
+        headers["HTTP-Referer"] = (
+            os.getenv("OPENROUTER_REFERER")
+            or os.getenv("RENDER_EXTERNAL_URL")
+            or "https://supremeai-api.onrender.com"
+        )
         headers["X-Title"] = "SupremeAI Gateway"
 
     # Build prioritized candidate models list
@@ -306,7 +310,8 @@ async def forward_stealth_webhook(
     target_url = normalize_stealth_url(webhook_url)
 
     # Self-loop protection: if STEALTH_WEBHOOK_URL points to gateway itself
-    if "supremeai-api-ulw0.onrender.com" in target_url:
+    self_url = os.getenv("RENDER_EXTERNAL_URL", "")
+    if (self_url and self_url in target_url) or "supremeai-api" in target_url:
         logger.warning("Stealth webhook points to gateway itself; skipping loop.")
         return 400, {"error": "Stealth webhook target points to self (loop prevented)"}
 

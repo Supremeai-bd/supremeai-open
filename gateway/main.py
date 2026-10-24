@@ -399,13 +399,16 @@ def create_app(
     import os as _cors_os
 
     _cors_origins = [
+        "https://supremeai-studio.pages.dev",
         "https://supremeai-studio.paykaribazaronline.workers.dev",
-        "https://supremeai-studio.vercel.app",
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
     ]
+    _studio_url = _cors_os.environ.get("STUDIO_FRONTEND_URL", "").strip()
+    if _studio_url and _studio_url not in _cors_origins:
+        _cors_origins.append(_studio_url)
     _extra = _cors_os.environ.get("SUPREMEAI_CORS_ORIGINS", "")
     if _extra:
         _cors_origins.extend(o.strip() for o in _extra.split(",") if o.strip())
