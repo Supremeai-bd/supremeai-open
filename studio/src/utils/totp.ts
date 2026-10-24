@@ -90,7 +90,7 @@ export async function generateTotpCode(secretBase32: string, counter: number): P
 
   const cryptoKey = await cryptoObj.subtle.importKey(
     'raw',
-    keyBytes,
+    keyBytes as unknown as BufferSource,
     { name: 'HMAC', hash: 'SHA-1' },
     false,
     ['sign']
