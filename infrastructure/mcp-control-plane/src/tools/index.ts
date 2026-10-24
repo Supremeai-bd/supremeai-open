@@ -29,6 +29,7 @@ import { registerAgentReviewWorkflowTools } from "./agent_review_workflow.tools.
 import { registerGuardianTools } from "./guardian.tools.js";
 import { registerAgentTools } from "./agent.tools.js";
 import { registerOrchestratorTools } from "./orchestrator.tools.js";
+import { registerIntelligenceTools } from "./intelligence.tools.js";
 import type { MemorySubAdapter } from "../adapters/memory/index.js";
 
 /**
@@ -93,4 +94,7 @@ export async function registerAllTools(
 
   // ── Context7 Documentation Adapter
   await registerContext7Adapter(server);
+
+  // ── Intelligence & Diagnostics (Graphify Codebase AST & DevTools Audit)
+  await registerIntelligenceTools(server);
 }
