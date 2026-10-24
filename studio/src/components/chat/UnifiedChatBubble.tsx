@@ -23,11 +23,19 @@ interface UnifiedChatBubbleProps {
 }
 
 // Bangla comment: Cosmic token-based styling (Refs #861, #862)
+// FIX(contrast-mix 2026-10-24, owner screenshot): দুটো রুট-বাগ ছিল —
+// (1) Tailwind-এর opacity modifier (/20, /40) arbitrary var() রঙের সাথে কাজ করে না:
+// `bg-[var(--neon-purple,#bc13fe)]/20` কম্পাইল হতো না, ফলে user bubble-এর ব্যাকগ্রাউন্ড/
+// বর্ডার রেন্ডারই হতো না। (2) `text-[var(--sa-ink)]` থিম-নির্ভর (light theme-এ #111615
+// প্রায়-কালো) অথচ bubble-এর ব্যাকগ্রাউন্ড সব থিমেই hardcoded dark glass — light mode-এ
+// কালো টেক্সট কালো bubble-এ মিশে যেত (owner-এর "text colour and background colour
+// mixing" রিপোর্ট)। Root-cause fix: explicit rgba ব্যাকগ্রাউন্ড + সবসময়-dark glass
+// bubble-এর ভেতরে থিম-নিরপেক্ষ fixed light text (text-slate-50)।
 const COSMIC_USER_BUBBLE =
-  'bg-[var(--neon-purple,#bc13fe)]/20 border border-[var(--neon-purple,#bc13fe)]/40 text-[var(--sa-ink,#f8fafc)] font-medium rounded-2xl rounded-tr-none shadow-[0_0_18px_rgba(188,19,254,0.2)] backdrop-blur-md';
+  'bg-[rgba(188,19,254,0.16)] border border-[rgba(188,19,254,0.45)] text-slate-50 font-medium rounded-2xl rounded-tr-none shadow-[0_0_18px_rgba(188,19,254,0.2)] backdrop-blur-md';
 
 const COSMIC_SYSTEM_BUBBLE =
-  'bg-[var(--surface-glass,rgba(15,23,42,0.75))] border border-[var(--sa-border,rgba(255,255,255,0.1))] text-[var(--sa-ink,#f8fafc)] rounded-2xl rounded-tl-none shadow-[0_0_14px_rgba(0,0,0,0.3)] backdrop-blur-md';
+  'bg-[var(--surface-glass,rgba(15,23,42,0.75))] border border-[var(--sa-border,rgba(255,255,255,0.1))] text-slate-50 rounded-2xl rounded-tl-none shadow-[0_0_14px_rgba(0,0,0,0.3)] backdrop-blur-md';
 
 // Bangla comment: Action item interface
 interface ActionItem {
