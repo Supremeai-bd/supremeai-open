@@ -1,0 +1,34 @@
+{
+  "color": {
+    "brand": {
+      "50": { "value": "#EEF2FF" },
+      "500": { "value": "#6366F1" },
+      "600": { "value": "#4F46E5" },
+      "cyan": { "value": "#00F3FF" },
+      "cyanGlow": { "value": "rgba(0, 243, 255, 0.35)" },
+      "purple": { "value": "#A855F7" },
+      "purpleGlow": { "value": "rgba(168, 85, 247, 0.35)" }
+    },
+    "neutral": {
+      "0": { "value": "#FFFFFF" },
+      "50": { "value": "#F8FAFC" },
+      "100": { "value": "#F1F5F9" },
+      "200": { "value": "#E2E8F0" },
+      "300": { "value": "#CBD5E1" },
+      "400": { "value": "#94A3B8" },
+      "500": { "value": "#64748B" },
+      "600": { "value": "#475569" },
+      "700": { "value": "#334155" },
+      "800": { "value": "#1E293B" },
+      "900": { "value": "#0F172A" },
+      "950": { "value": "#09090B" }
+    },
+    "status": {
+      "live": { "value": "#22C55E" },
+      "warn": { "value": "#F59E0B" },
+      "error": { "value": "#EF4444" },
+      "info": { "value": "#06B6D4" }
+    }
+  }
+}
+

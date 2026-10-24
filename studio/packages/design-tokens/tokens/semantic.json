@@ -1,0 +1,34 @@
+{
+  "semantic": {
+    "color": {
+      "action": {
+        "primary": {
+          "bg": { "value": "{color.brand.500}" },
+          "text": { "value": "{color.neutral.0}" }
+        }
+      },
+      "accent": {
+        "admin": { "value": "{color.brand.cyan}" },
+        "adminGlow": { "value": "{color.brand.cyanGlow}" },
+        "user": { "value": "{color.brand.purple}" },
+        "userGlow": { "value": "{color.brand.purpleGlow}" }
+      },
+      "status": {
+        "live": { "value": "{color.status.live}" },
+        "warning": { "value": "{color.status.warn}" },
+        "error": { "value": "{color.status.error}" },
+        "info": { "value": "{color.status.info}" }
+      },
+      "surface": {
+        "void": { "value": "{color.neutral.950}" },
+        "page": { "value": "{color.neutral.900}" },
+        "card": { "value": "{color.neutral.800}" }
+      },
+      "text": {
+        "primary": { "value": "{color.neutral.50}" },
+        "secondary": { "value": "{color.neutral.400}" },
+        "muted": { "value": "{color.neutral.500}" }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+name = "supremeai-studio"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ORIGIN_HOST = "supremeai-studio.vercel.app"
+
+[triggers]
+crons = ["*/10 * * * *"]

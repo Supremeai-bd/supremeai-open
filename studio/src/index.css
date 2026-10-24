@@ -1,0 +1,1207 @@
+@import "@supremeai/design-tokens/outputs/tokens.css";
+@import "tailwindcss";
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-neon-blue: var(--neon-blue);
+  --color-neon-purple: var(--neon-purple);
+  --color-cyber-gray: var(--cyber-gray);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-card-bg: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-tabbar-bg: var(--tabbar-bg);
+  --color-border-color: var(--border-color);
+  --color-card-text: var(--card-text);
+  --color-card-title-text: var(--card-title-text);
+  --color-alert-bg: var(--alert-bg);
+  --color-input-bg: var(--input-bg);
+  --color-input-border: var(--input-border);
+  --color-panel-bg: var(--panel-bg);
+
+  --color-bg-main: var(--bg-main);
+  --color-text-main: var(--text-main);
+  --color-text-secondary: var(--text-secondary);
+  --color-bg-panel: var(--bg-panel);
+  --color-bg-cell: var(--bg-cell);
+  --color-border-accent: var(--border-accent);
+  --color-accent-primary: var(--accent-primary);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-node-bg: var(--node-bg);
+  --color-node-text: var(--node-text);
+  --color-node-border: var(--node-border);
+  --color-chat-bg: var(--chat-bg);
+  --color-text: var(--foreground);
+  --color-secondary: var(--text-secondary);
+  --color-border: var(--border-color);
+  --color-card: var(--card-bg);
+  --color-panel: var(--panel-bg);
+}
+
+/* ═══════════════════════════════════════════════════════
+   THEME 1: SUPREMEAI 2.0 (Inherently Dark)
+   ═══════════════════════════════════════════════════════ */
+:root, .dark {
+  --background: #06070B; /* Ink */
+  --foreground: #F8FAFC; /* Text */
+  --neon-blue: #00F3FF; /* Admin Primary */
+  --neon-purple: #A855F7; /* User Primary */
+  --cyber-gray: #64748B; /* Muted */
+  --success: #22C55E;
+  --danger: #F43F5E;
+  --warning: #F59E0B;
+  --info: #38BDF8;
+  --card-bg: #0B0F17; /* Surface */
+  --card-border: rgba(255, 255, 255, 0.08); /* Border */
+  --sidebar-bg: #0B0F17;
+  --tabbar-bg: #111722; /* Raised */
+  --border-color: rgba(255, 255, 255, 0.08);
+  --card-text: #94A3B8; /* Secondary */
+  --card-title-text: #F8FAFC; /* Text */
+  --alert-bg: rgba(255, 255, 255, 0.02);
+  --input-bg: #06070B; /* Ink */
+  --input-border: rgba(255, 255, 255, 0.08);
+  --panel-bg: #0B0F17; /* Surface */
+
+  /* CommandCenter Semantic Variables */
+  --bg-main: #06070B;
+  --text-main: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --bg-panel: #0B0F17;
+  --bg-cell: #111722;
+  --border-accent: rgba(255, 255, 255, 0.08);
+  --accent-primary: #00F3FF;
+  --accent-secondary: #22D3EE;
+  --node-bg: #0B0F17;
+  --node-text: #F8FAFC;
+  --node-border: rgba(255, 255, 255, 0.08);
+  --chat-bg: #0B0F17;
+  --chat-input-bg: #06070B;
+  --waveform-bg: #111722;
+}
+
+/* ═══════════════════════════════════════════════════════
+   SURFACES (70% Minimal, 20% Glass)
+   ═══════════════════════════════════════════════════════ */
+.surface-0 {
+  background-color: var(--bg-main, #06070B);
+}
+
+.surface-1 {
+  background-color: var(--card-bg, #0B0F17);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+}
+
+.surface-2 {
+  background-color: var(--tabbar-bg, rgba(11, 15, 23, 0.7));
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+}
+
+.surface-3 {
+  background-color: var(--panel-bg, rgba(17, 23, 34, 0.8));
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+.surface-4 {
+  background-color: var(--bg-cell, #111722);
+  border: 1px solid var(--border-accent, rgba(255, 255, 255, 0.15));
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+
+/* ═══════════════════════════════════════════════════════
+   THEME 2: SKY LIGHT — আধুনিক ও পরিচ্ছন্ন লাইট থিম
+   ═══════════════════════════════════════════════════════ */
+:root[data-theme="light"],
+html.light,
+.light,
+body.light {
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --neon-blue: #0284C7;
+  --neon-purple: #7C3AED;
+  --cyber-gray: #64748B;
+  --success: #16A34A;
+  --danger: #DC2626;
+  --warning: #D97706;
+  --info: #0284C7;
+  --card-bg: #FFFFFF;
+  --card-border: #E2E8F0;
+  --sidebar-bg: #FFFFFF;
+  --tabbar-bg: #F1F5F9;
+  --border-color: #E2E8F0;
+  --card-text: #475569;
+  --card-title-text: #0F172A;
+  --alert-bg: rgba(0, 0, 0, 0.03);
+  --input-bg: #FFFFFF;
+  --input-border: #CBD5E1;
+  --panel-bg: #FFFFFF;
+
+  --bg-main: #F8FAFC;
+  --text-main: #0F172A;
+  --text-secondary: #64748B;
+  --bg-panel: #FFFFFF;
+  --bg-cell: #F1F5F9;
+  --border-accent: #E2E8F0;
+  --accent-primary: #0284C7;
+  --accent-secondary: #0EA5E9;
+  --node-bg: #FFFFFF;
+  --node-text: #0F172A;
+  --node-border: #CBD5E1;
+  --chat-bg: #FFFFFF;
+  --chat-input-bg: #F1F5F9;
+  --waveform-bg: #F1F5F9;
+}
+
+/* ═══════════════════════════════════════════════════════
+   THEME 3: SUNSET EMBER — উষ্ণ সূর্যাস্ত ও গোধূলি থিম
+   ═══════════════════════════════════════════════════════ */
+:root[data-theme="sunset"],
+html.sunset,
+.sunset,
+body.sunset {
+  --background: #0D0807;
+  --foreground: #FFF7ED;
+  --neon-blue: #F97316;
+  --neon-purple: #E11D48;
+  --cyber-gray: #78716C;
+  --success: #10B981;
+  --danger: #EF4444;
+  --warning: #F59E0B;
+  --info: #F97316;
+  --card-bg: #1C120C;
+  --card-border: rgba(249, 115, 22, 0.15);
+  --sidebar-bg: #140B06;
+  --tabbar-bg: #24140C;
+  --border-color: rgba(249, 115, 22, 0.15);
+  --card-text: #FED7AA;
+  --card-title-text: #FFF7ED;
+  --alert-bg: rgba(249, 115, 22, 0.05);
+  --input-bg: #140B06;
+  --input-border: rgba(249, 115, 22, 0.25);
+  --panel-bg: #1C120C;
+
+  --bg-main: #0D0807;
+  --text-main: #FFF7ED;
+  --text-secondary: #FB923C;
+  --bg-panel: #1C120C;
+  --bg-cell: #24140C;
+  --border-accent: rgba(249, 115, 22, 0.25);
+  --accent-primary: #F97316;
+  --accent-secondary: #FB923C;
+  --node-bg: #1C120C;
+  --node-text: #FFF7ED;
+  --node-border: rgba(249, 115, 22, 0.3);
+  --chat-bg: #1C120C;
+  --chat-input-bg: #140B06;
+  --waveform-bg: #24140C;
+}
+
+/* ═══════════════════════════════════════════════════════
+   THEME 4: EMERALD MATRIX — সবুজ হ্যাকার ম্যাট্রিক্স থিম
+   ═══════════════════════════════════════════════════════ */
+:root[data-theme="matrix"],
+html.matrix,
+.matrix,
+body.matrix {
+  --background: #020a02;
+  --foreground: #d1fae5;
+  --neon-blue: #10b981;
+  --neon-purple: #059669;
+  --cyber-gray: rgba(16, 185, 129, 0.02);
+  --success: #34d399;
+  --danger: #ef4444;
+  --warning: #fbbf24;
+  --card-bg: rgba(5, 20, 10, 0.65);
+  --card-border: rgba(16, 185, 129, 0.15);
+  --sidebar-bg: rgba(2, 12, 5, 0.95);
+  --tabbar-bg: #041408;
+  --border-color: rgba(16, 185, 129, 0.06);
+  --card-text: #a7f3d0;
+  --card-title-text: #ecfdf5;
+  --alert-bg: rgba(16, 185, 129, 0.01);
+  --input-bg: #030d05;
+  --input-border: #065f46;
+  --panel-bg: #020c04;
+
+  --bg-main: #010802;
+  --text-main: #ecfdf5;
+  --text-secondary: #6ee7b7;
+  --bg-panel: rgba(3, 14, 5, 0.5);
+  --bg-cell: rgba(5, 20, 8, 0.8);
+  --border-accent: rgba(16, 185, 129, 0.2);
+  --accent-primary: #10b981;
+  --accent-secondary: #34d399;
+  --node-bg: rgba(3, 14, 5, 0.9);
+  --node-text: #a7f3d0;
+  --node-border: rgba(16, 185, 129, 0.4);
+  --chat-bg: rgba(3, 14, 5, 0.85);
+  --chat-input-bg: #010802;
+  --waveform-bg: rgba(2, 10, 3, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════════
+   BODY STYLES (সব থিমের জন্য)
+   ═══════════════════════════════════════════════════════ */
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  margin: 0;
+  overflow: hidden;
+  height: 100vh;
+  transition: background-color 0.6s ease, color 0.6s ease;
+  position: relative;
+}
+
+/* Deep Space — নিয়ন গ্র্যাডিয়েন্ট ব্যাকগ্রাউন্ড */
+body.dark {
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(0, 243, 255, 0.06) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(188, 19, 254, 0.05) 0%, transparent 40%);
+}
+
+
+
+body.light::before,
+body.light::after {
+  display: none;
+}
+
+/* Sunset Ember — আগুন-কণা ইফেক্ট */
+body.sunset {
+  background-image:
+    radial-gradient(circle at 20% 80%, rgba(249, 115, 22, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(225, 29, 72, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.04) 0%, transparent 60%);
+}
+
+/* Matrix — ডিজিটাল রেইন ইফেক্ট */
+body.matrix {
+  background-image:
+    radial-gradient(circle at 30% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 70% 70%, rgba(5, 150, 105, 0.06) 0%, transparent 40%);
+}
+
+@keyframes clouds-drift {
+  from { background-position: 0 0; }
+  to { background-position: 1800px 0; }
+}
+
+/* Lightweight live atmosphere for operational shells. CSS-only, pointer-safe, and
+   automatically quiet when the user prefers reduced motion. */
+.dashboard-live-shell {
+  isolation: isolate;
+  position: relative;
+  background:
+    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--accent-primary) 10%, transparent), transparent 28%),
+    radial-gradient(circle at 88% 92%, color-mix(in srgb, var(--accent-secondary) 8%, transparent), transparent 30%),
+    var(--background);
+}
+
+.dashboard-live-shell > *:not(.dashboard-live-orb) {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-live-orb {
+  position: absolute;
+  width: 28rem;
+  height: 28rem;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(70px);
+  opacity: 0.14;
+  z-index: 0;
+  will-change: transform;
+  background: var(--accent-primary);
+  animation: dashboard-orb-drift 24s ease-in-out infinite alternate;
+}
+
+.dashboard-live-orb-one { top: -18rem; left: 8%; }
+.dashboard-live-orb-two {
+  right: -16rem;
+  bottom: -18rem;
+  background: var(--accent-secondary);
+  animation-delay: -9s;
+  animation-duration: 30s;
+}
+
+@keyframes dashboard-orb-drift {
+  from { transform: translate3d(-2%, -1%, 0) scale(0.96); }
+  to { transform: translate3d(5%, 4%, 0) scale(1.05); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-live-orb { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   SCROLLBAR
+   ═══════════════════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, var(--neon-blue), var(--neon-purple));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neon-blue);
+}
+
+/* ═══════════════════════════════════════════════════════
+   GLASSMORPHISM & COMPONENTS
+   ═══════════════════════════════════════════════════════ */
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 10px 40px color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  transform: translateY(-2px);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+}
+
+/* ═══════════════════════════════════════════════════════
+   GLASSMORPHISM LAYER (old plan, Feature 1)
+   1-Line Connect UX + dashboard polish-এর জন্য utilities —
+   Theme-1 token family (--neon-blue / --card-bg) ব্যবহার করে,
+   তাই .matrix ও body.light ওভাররাইডেও স্বয়ংক্রিয়ভাবে খাপ খায়।
+   ═══════════════════════════════════════════════════════ */
+.glass-panel {
+  background: rgba(11, 15, 23, 0.6);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(0, 243, 255, 0.12);
+  border-radius: 16px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+body.light .glass-panel {
+  background: rgba(255, 255, 255, 0.65);
+  border-color: rgba(0, 120, 255, 0.15);
+  box-shadow:
+    0 8px 32px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.glass-input {
+  background: rgba(6, 7, 11, 0.7);
+  border: 1px solid rgba(0, 243, 255, 0.2);
+  border-radius: 10px;
+  color: var(--foreground, #f8fafc);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.glass-input::placeholder {
+  color: var(--cyber-gray, #64748b);
+}
+.glass-input:focus {
+  outline: none;
+  border-color: rgba(0, 243, 255, 0.6);
+  box-shadow:
+    0 0 0 3px rgba(0, 243, 255, 0.1),
+    0 0 20px rgba(0, 243, 255, 0.15);
+}
+
+.pulse-ring {
+  animation: pulse-neon 2s infinite;
+}
+@keyframes pulse-neon {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(0, 243, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(0, 243, 255, 0.7);
+  }
+}
+
+.node-active {
+  animation: node-beat 1.5s ease-in-out infinite;
+}
+@keyframes node-beat {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-ring,
+  .node-active {
+    animation: none;
+  }
+}
+
+
+/* Cyber Buttons & Inputs */
+.cyber-button {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--neon-blue) 15%, transparent), color-mix(in srgb, var(--neon-purple) 15%, transparent));
+  border: 1px solid var(--neon-blue);
+  color: var(--text-main);
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--neon-blue) 20%, transparent);
+}
+
+.cyber-button:hover {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--neon-blue) 30%, transparent), color-mix(in srgb, var(--neon-purple) 30%, transparent));
+  box-shadow: 0 0 20px color-mix(in srgb, var(--neon-blue) 50%, transparent);
+  transform: translateY(-1px);
+}
+
+.glass-action-button {
+  background: var(--bg-cell);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.glass-action-button:hover {
+  border-color: var(--neon-blue);
+  background: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+  color: var(--text-main);
+}
+
+.cyber-danger-button {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid var(--danger);
+  color: var(--text-main);
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.15);
+}
+
+.cyber-danger-button:hover {
+  background: rgba(239, 68, 68, 0.25);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Chat Bubbles Animation */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-bubble-animated {
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Input Glow */
+.glow-input:focus {
+  outline: none;
+  border-color: var(--neon-blue);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent-primary) 25%, transparent);
+}
+
+.technical-data {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.font-bengali {
+  font-family: 'Hind Siliguri', sans-serif;
+}
+
+.tooltip-enter {
+  animation: tooltipFadeIn 0.15s ease-out;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.drag-region button,
+.drag-region input {
+  -webkit-app-region: no-drag;
+}
+
+/* CRT Scanlines Effect */
+.scanlines {
+  background: linear-gradient(
+    to bottom,
+    transparent 50%,
+    rgba(34, 211, 238, 0.03) 50%
+  );
+  background-size: 100% 4px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 40;
+  animation: scanlines-scroll 15s linear infinite;
+}
+
+@keyframes scanlines-scroll {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 600px; }
+}
+
+@keyframes pulse-glow-border {
+  0%   { box-shadow: 0 0 8px  rgba(188,19,254,0.25),  inset 0 0 6px rgba(188,19,254,0.06); }
+  50%  { box-shadow: 0 0 20px rgba(188,19,254,0.55), inset 0 0 14px rgba(188,19,254,0.12); }
+  100% { box-shadow: 0 0 8px  rgba(188,19,254,0.25),  inset 0 0 6px rgba(188,19,254,0.06); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow-border 1.6s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════
+   P2 MICRO-ANIMATIONS & SHIMMER
+   ═══════════════════════════════════════════════════════ */
+.glass-hover {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SUPREMEAI CALM COMMAND CENTER FOUNDATION
+   Lightweight operational identity: quiet telemetry, clear hierarchy, no glow.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --sa-canvas: #f6f7f4;
+  --sa-surface: #ffffff;
+  --sa-surface-muted: #eef1ee;
+  --sa-ink: #111615;
+  --sa-ink-muted: #66716d;
+  --sa-border: #dce3de;
+  --sa-primary: #176b5b;
+  --sa-primary-soft: #ddf3ea;
+  --sa-action: #2563eb;
+  --sa-action-soft: #e5eeff;
+  --sa-success: #16805b;
+  --sa-warning: #b7791f;
+  --sa-danger: #c24141;
+  --sa-radius: 12px;
+  --sa-radius-sm: 8px;
+  --sa-shadow-sm: 0 1px 2px rgb(17 22 21 / 0.05);
+  --sa-shadow-md: 0 12px 30px rgb(17 22 21 / 0.08);
+}
+
+:root.dark,
+[data-theme="dark"] {
+  --sa-canvas: #0d1412;
+  --sa-surface: #141d1a;
+  --sa-surface-muted: #1b2823;
+  --sa-ink: #f1f5f2;
+  --sa-ink-muted: #9aa9a2;
+  --sa-border: #2b3a34;
+  --sa-primary: #62d7b2;
+  --sa-primary-soft: #173c32;
+  --sa-action: #7ea8ff;
+  --sa-action-soft: #1c2e52;
+  --sa-success: #62d7b2;
+  --sa-warning: #f3c969;
+  --sa-danger: #f38b8b;
+  --sa-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.18);
+  --sa-shadow-md: 0 16px 36px rgb(0 0 0 / 0.24);
+}
+
+/* Prefer the calm product canvas for the default shell. Existing specialty
+   themes can still opt into their own surfaces through more specific rules. */
+body {
+  background: var(--sa-canvas);
+  color: var(--sa-ink);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.sa-surface {
+  background: var(--sa-surface);
+  border: 1px solid var(--sa-border);
+  border-radius: var(--sa-radius);
+  box-shadow: var(--sa-shadow-sm);
+}
+
+.sa-surface-raised {
+  background: var(--sa-surface);
+  border: 1px solid var(--sa-border);
+  border-radius: var(--sa-radius);
+  box-shadow: var(--sa-shadow-md);
+}
+
+.sa-eyebrow {
+  color: var(--sa-ink-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.sa-operational-pulse {
+  align-items: center;
+  color: var(--sa-success);
+  display: inline-flex;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.sa-operational-pulse::before {
+  background: currentColor;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 14%, transparent);
+  content: '';
+  height: 0.45rem;
+  width: 0.45rem;
+}
+
+.sa-operational-pulse[data-state="degraded"] { color: var(--sa-warning); }
+.sa-operational-pulse[data-state="unavailable"] { color: var(--sa-danger); }
+
+/* Keep feedback meaningful and inexpensive; never animate for users who opt out. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.glass-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 15px var(--neon-blue);
+}
+
+.page-transition-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 600ms, transform 600ms;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   SUPREMEAI DESIGN SYSTEM (MODULAR AUDIT 2.0.0 INTEGRATION)
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --supreme-bg: #0a0e1a;
+  --supreme-bg-elevated: #111827;
+  --supreme-bg-overlay: #1a2236;
+  --supreme-bg-modal: #0f172a;
+
+  --supreme-surface: #111827;
+  --supreme-surface-hover: #1a2236;
+  --supreme-surface-active: #1e293b;
+  --supreme-surface-disabled: #0f172a;
+
+  --supreme-border: #1f2937;
+  --supreme-border-hover: #374151;
+  --supreme-border-focus: #6366f1;
+  --supreme-border-error: #ef4444;
+
+  --supreme-text-primary: #f9fafb;
+  --supreme-text-secondary: #e5e7eb;
+  --supreme-text-muted: #9ca3af;
+  --supreme-text-disabled: #6b7280;
+  --supreme-text-inverse: #111827;
+
+  --supreme-primary: #6366f1;
+  --supreme-primary-light: #818cf8;
+  --supreme-primary-dark: #4f46e5;
+  --supreme-secondary: #a855f7;
+  --supreme-tertiary: #ec4899;
+
+  --supreme-success: #22c55e;
+  --supreme-success-light: #86efac;
+  --supreme-success-bg: rgba(34, 197, 94, 0.1);
+  --supreme-warning: #f59e0b;
+  --supreme-warning-light: #fcd34d;
+  --supreme-warning-bg: rgba(245, 158, 11, 0.1);
+  --supreme-danger: #ef4444;
+  --supreme-danger-light: #fca5a5;
+  --supreme-danger-bg: rgba(239, 68, 68, 0.1);
+  --supreme-info: #06b6d4;
+  --supreme-info-light: #67e8f9;
+  --supreme-info-bg: rgba(6, 182, 212, 0.1);
+
+  --supreme-gradient-primary: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+  --supreme-gradient-success: linear-gradient(135deg, #22c55e 0%, #10b981 100%);
+  --supreme-gradient-info: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+  --supreme-gradient-warning: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+  --supreme-gradient-dark: linear-gradient(180deg, #0a0e1a 0%, #111827 100%);
+
+  --supreme-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --supreme-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --supreme-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --supreme-shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
+  --supreme-shadow-glow-success: 0 0 20px rgba(34, 197, 94, 0.15);
+  --supreme-shadow-glow-danger: 0 0 20px rgba(239, 68, 68, 0.15);
+
+  --supreme-duration-fast: 150ms;
+  --supreme-duration-normal: 300ms;
+  --supreme-duration-slow: 500ms;
+}
+
+.supreme-bento-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.supreme-glass {
+  background: rgba(17, 24, 39, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--supreme-shadow-md);
+}
+
+.supreme-glass-hover {
+  transition: all var(--supreme-duration-normal) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.supreme-glass-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: var(--supreme-shadow-glow);
+}
+
+.supreme-gradient-text {
+  background: var(--supreme-gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 12px;
+}
+
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  background: var(--supreme-text-muted);
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes typing {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ELEGANT DASHBOARD SYSTEM (Aurora Sky + Glass Cards)
+   বাংলা মন্তব্য: ড্যাশবোর্ড/অ্যাডমিন কনসোলের জন্য শান্ত অ্যানিমেটেড
+   পিসফুল-স্কাই অরোরা ব্যাকগ্রাউন্ড ও গ্লাসমরফিজম কার্ড।
+   সব টোকেন-ভিত্তিক — নতুন হার্ডকোডেড রঙ নেই, থিম-অ্যাওয়ার।
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Peaceful Aurora/স্কাই ব্যাকগ্রাউন্ড (লাইট) ── */
+.dashboard-aurora {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(1200px 800px at 8% -12%, rgba(147, 197, 253, 0.18), transparent 60%),
+    radial-gradient(1000px 750px at 108% 8%, rgba(216, 180, 254, 0.16), transparent 55%),
+    radial-gradient(900px 720px at 50% 125%, rgba(125, 211, 252, 0.14), transparent 60%),
+    var(--background, #f8fafc);
+  background-attachment: fixed;
+  background-size: cover;
+  transition: background 0.5s ease;
+}
+
+.dark .dashboard-aurora {
+  background:
+    radial-gradient(1100px 780px at 12% -14%, rgba(0, 243, 255, 0.10), transparent 60%),
+    radial-gradient(950px 720px at 112% 12%, rgba(188, 19, 254, 0.12), transparent 55%),
+    radial-gradient(1050px 820px at 52% 128%, rgba(99, 102, 241, 0.12), transparent 60%),
+    var(--background, #0a0e1a);
+  background-attachment: fixed;
+  background-size: cover;
+}
+
+/* ভাসমান "স্কাই" অরব — ধীর, GPU-ফ্রেন্ডলি ট্রান্সফর্ম অ্যানিমেশন */
+.dashboard-aurora::before,
+.dashboard-aurora::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+  opacity: 0.55;
+  will-change: transform;
+}
+
+.dashboard-aurora::before {
+  width: 55vw;
+  height: 55vw;
+  left: -14vw;
+  top: -16vw;
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.5), transparent 68%);
+  animation: aurora-drift-a 30s ease-in-out infinite;
+}
+
+.dashboard-aurora::after {
+  width: 48vw;
+  height: 48vw;
+  right: -12vw;
+  bottom: -14vw;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.45), transparent 68%);
+  animation: aurora-drift-b 36s ease-in-out infinite;
+}
+
+.dark .dashboard-aurora::before {
+  background: radial-gradient(circle, rgba(0, 243, 255, 0.35), transparent 68%);
+}
+
+.dark .dashboard-aurora::after {
+  background: radial-gradient(circle, rgba(188, 19, 254, 0.38), transparent 68%);
+}
+
+@keyframes aurora-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(9vw, 5vh) scale(1.15); }
+}
+
+@keyframes aurora-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1.1); }
+  50%      { transform: translate(-7vw, -5vh) scale(0.95); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-aurora::before,
+  .dashboard-aurora::after {
+    animation: none;
+  }
+}
+
+
+/* ── ইলিগ্যান্ট গ্লাস কার্ড ── */
+.supreme-card {
+  position: relative;
+  background: var(--card-bg, rgba(255, 255, 255, 0.7));
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid var(--card-border, rgba(148, 163, 184, 0.18));
+  border-radius: var(--sa-radius-lg, 16px);
+  box-shadow: var(--sa-card-shadow, 0 8px 28px -12px rgba(0, 0, 0, 0.18));
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.3s ease;
+}
+
+.supreme-card-hover:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--neon-blue, #6366f1) 45%, transparent);
+  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.3),
+    0 0 0 1px color-mix(in srgb, var(--neon-blue, #6366f1) 18%, transparent);
+}
+
+/* মেট্রিক কার্ড */
+.supreme-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px;
+}
+
+.supreme-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #64748b);
+}
+
+.supreme-stat-value {
+  font-weight: 800;
+  line-height: 1.1;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  background: var(--supreme-gradient-primary, linear-gradient(135deg, #6366f1, #a855f7));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.dark .supreme-stat-value {
+  background: var(--supreme-gradient-primary, linear-gradient(135deg, #818cf8, #e879f9));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* হেডার ব্যান্ড — গ্র্যাডিয়েন্ট অ্যাকসেন্ট ব্যান্ড */
+.supreme-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-accent, #cbd5e1) 35%, transparent);
+}
+
+.supreme-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: var(--text-main, #0f172a);
+}
+
+/* গ্লো-চিপ / স্ট্যাটাস ব্যাজ */
+.supreme-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.supreme-chip-cyan {
+  background: rgba(0, 243, 255, 0.12);
+  color: var(--neon-blue, #0891b2);
+  border: 1px solid rgba(0, 243, 255, 0.28);
+}
+
+.supreme-chip-success {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--success, #059669);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+.supreme-chip-warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--warning, #d97706);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+}
+
+.supreme-chip-danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger, #dc2626);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+/* ড্যাশবোর্ড গ্রিড — বেন্টো-হাইব্রিড রেসপনসিভ */
+.supreme-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+/* অরোরা বল-ব্যাকড্রপ যেন ভেতরের প্যানেলও গ্লাসি দেখায় */
+.supreme-panel {
+  position: relative;
+  background: var(--panel-bg, rgba(255, 255, 255, 0.6));
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--border-accent, rgba(148, 163, 184, 0.18));
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* Guest chat detail polish (hardening-2 round 3): subtle entrance for
+   assistant bubbles + typing dots, with a reduced-motion guard so users
+   who opt out of animation get an instant, calm transcript. */
+@keyframes guest-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-guest-bubble-in {
+  animation: guest-bubble-in 0.22s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-guest-bubble-in,
+  .animate-bounce {
+    animation: none;
+  }
+}
+
+/* Guest chat detail polish (hardening-2 round 4):
+   (a) thin, dark-theme-friendly scrollbar for the chat transcript — the
+       default webkit scrollbar renders as a jarring light track on the
+       near-black page once the thread exceeds max-h-[38vh];
+   (b) a soft scale/fade entrance for the model picker menu, anchored to its
+       bottom-right origin so it grows out of the trigger it belongs to. */
+.guest-thread-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(51 65 85 / 0.6) transparent;
+}
+
+.guest-thread-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.guest-thread-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.guest-thread-scroll::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: rgb(51 65 85 / 0.6);
+}
+
+.guest-thread-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(71 85 105 / 0.8);
+}
+
+@keyframes guest-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-guest-menu-in {
+  animation: guest-menu-in 0.16s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-guest-menu-in {
+    animation: none;
+  }
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   GLOBAL DETAIL POLISH (final-test/hardening-8)
+   Keyboard/a11y + text-selection consistency for the cyber theme.
+
+   Before this block:
+   - text selection rendered the browser-default blue, which visually clashes
+     with the neon-on-ink design language (and can drop contrast on #06070B);
+   - keyboard focus was only styled locally (App.css button) — interactive
+     elements reached via Tab elsewhere (links, inputs, cards) either kept the
+     browser default ring or, where resets applied, showed NO ring at all.
+
+   Both additions are pure pseudo-element/pseudo-class rules: no component
+   class is shadowed, no markup changes, no JS. Token-driven so theme flips
+   (light roots at :root, dark at .dark) stay coherent.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Selection: neon-cyan wash on dark ink keeps selected text legible and
+      on-brand. A translucent layer is used instead of a solid accent so
+      glyphs never invert (white text stays white, colored text keeps hue). */
+::selection {
+  background-color: rgb(0 243 255 / 0.28);
+  color: var(--foreground);
+  text-shadow: none;
+}
+
+/* 2. Keyboard focus ring: consistent, visible, and distinctly NEON so it is
+      not confused with the mouse-hover state. :focus-visible (not :focus)
+      keeps pointer interactions clean; the offset separates the ring from
+      filled surfaces like sidebar items and tab bars. Respect reduced-motion
+      is not needed here — the ring is static by design. */
+:focus-visible {
+  outline: 2px solid var(--neon-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 3. Form fields: tie the field border to the ring color while focused so
+      the outline and the 1px border read as one continuous surface instead
+      of two competing rectangles (inputs in panels/cards especially). */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  border-color: color-mix(in srgb, var(--neon-blue) 55%, transparent);
+  transition: border-color 120ms ease-out;
+}
