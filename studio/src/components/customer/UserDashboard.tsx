@@ -87,7 +87,9 @@ export const UserDashboard: React.FC = () => {
           label: c.name,
           description: c.purpose,
           status: c.status,
-          href: c.category === 'agent' ? '/agents' : undefined,
+          // FIX(nav-truth 2026-10-24): /agents route does not exist (404) — the
+          // "Use" action falls through to the unified chat surface.
+          href: undefined,
         }));
         setServerCapabilities(mapped);
         const reasons: Record<string, string> = {};
