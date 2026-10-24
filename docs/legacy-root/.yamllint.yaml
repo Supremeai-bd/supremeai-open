@@ -1,0 +1,37 @@
+---
+# SupremeAI yamllint configuration.
+#
+# WHY (2026-09-02 prod incident): the default yamllint ruleset fails CI on
+# style pedantry (line-length/document-start/trailing-spaces) across ~15
+# files, including GENERATED files (pnpm-lock.yaml) that no human or bot can
+# reasonably reformat. The CI auto-fix bot then pushed "fix(ci)" commits in a
+# loop trying to repair unfixable lint errors, killing in-flight Render
+# deploys each push (deploy supersede -> update_failed).
+#
+# Policy: structural rules stay FAIL (syntax, duplicate keys, indentation),
+# style rules are WARNINGS, generated/vendored files are ignored entirely.
+extends: default
+
+rules:
+  line-length:
+    max: 160
+    level: warning
+  document-start:
+    level: warning
+  trailing-spaces:
+    level: warning
+  empty-lines:
+    level: warning
+  comments-indentation:
+    level: warning
+  indentation:
+    indent-sequences: consistent
+
+ignore: |
+  pnpm-lock.yaml
+  **/node_modules/**
+  **/.venv/**
+  **/venv/**
+  **/vendor/**
+  **/dist/**
+  **/build/**

@@ -1,0 +1,11 @@
+# SupremeAI Standalone Scraper Microservice
+# বাংলা মন্তব্য (DEP-AUDIT): আলাদা image — Playwright/Chromium শুধু এখানে।
+# Core backend image-এ playwright নেই। ভার্সনগুলো main backend-এর সাথে
+# সামঞ্জস্য রেখে রাখা হয়েছে।
+fastapi>=0.136.0,<1
+uvicorn[standard]>=0.51.0,<1
+pydantic>=2.10.0,<3
+httpx>=0.28.1,<1
+beautifulsoup4>=4.15.0,<5
+loguru>=0.7.3
+playwright==1.62.0

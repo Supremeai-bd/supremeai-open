@@ -1,0 +1,16 @@
+{
+  "artifact": {
+    "title": "string",
+    "domain": "string",
+    "claim": "string",
+    "solution": "string",
+    "assumptions": ["string"],
+    "invariants": ["string"],
+    "failure_modes": ["string"],
+    "counterarguments": ["string"],
+    "evidence": ["string"],
+    "confidence": 0.0,
+    "verification_status": "unverified|reviewed|verified",
+    "tags": ["string"]
+  }
+}

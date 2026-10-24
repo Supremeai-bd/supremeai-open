@@ -1,0 +1,28 @@
+/*
+  বাংলা মন্তব্য: VS Code-এর native variables-এর উপরে
+  SupremeAI brand layer override করা হচ্ছে।
+*/
+@import "@supremeai/design-tokens/outputs/tokens-vscode.css";
+
+.supremeai-panel {
+  --brand-primary: var(--supremeai-color-brand-primary-dark);
+
+  /* VS Code variables fallback হিসেবে ব্যবহার */
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+  font-family: var(--supremeai-font-family-body), var(--vscode-font-family);
+}
+
+.supremeai-btn {
+  background-color: var(--supremeai-color-brand-primary-dark);
+  color: var(--supremeai-color-bg-void-dark);
+  border-radius: var(--supremeai-radius-md);
+  padding: var(--supremeai-space-2) var(--supremeai-space-4);
+  border: none;
+  cursor: pointer;
+  transition: all var(--supremeai-duration-fast) var(--supremeai-easing-standard);
+}
+
+.supremeai-btn:hover {
+  background-color: var(--supremeai-color-brand-primary-light);
+}

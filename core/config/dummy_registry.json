@@ -1,0 +1,8 @@
+{
+    "skills": {
+        "DummySkill": {
+            "skill_name": "DummySkill",
+            "status": "DEPRECATED"
+        }
+    }
+}

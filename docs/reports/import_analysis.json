@@ -1,0 +1,1807 @@
+{
+  "total_files": 187,
+  "total_imports": 1734,
+  "unused_imports": [
+    {
+      "file": "backend\\core\\agent_supervisor.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 18
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\app.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\autonoguard_engine.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 14
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\auto_healer_service.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 10
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\error_handler.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\failure_fingerprint.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\feedback_loop.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 17
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\idempotency_middleware.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\lifespan.py",
+      "imports": [
+        {
+          "module": "core.metrics_collector",
+          "names": [
+            "record_api_request"
+          ],
+          "line": 47
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\llm_router.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 17
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\mcp_allowlist.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 13
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\metrics_collector.py",
+      "imports": [
+        {
+          "module": "loguru",
+          "names": [
+            "logger"
+          ],
+          "line": 24
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\otp_router.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 13
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\rate_limiter.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        },
+        {
+          "module": "typing",
+          "names": [
+            "Dict"
+          ],
+          "line": 5
+        },
+        {
+          "module": "typing",
+          "names": [
+            "List"
+          ],
+          "line": 5
+        },
+        {
+          "module": "typing",
+          "names": [
+            "Optional"
+          ],
+          "line": 5
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\reliability_controller.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\request_context.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\retry_budget.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\schema_validator.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\startup_validator.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\tenant_db.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 9
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\type_sync_bus.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 18
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\__init__.py",
+      "imports": [
+        {
+          "module": "optimization.performance_optimizer",
+          "names": [
+            "PerformanceOptimizer"
+          ],
+          "line": 34
+        },
+        {
+          "module": "optimization.performance_optimizer",
+          "names": [
+            "performance_monitor"
+          ],
+          "line": 34
+        },
+        {
+          "module": "optimization.performance_optimizer",
+          "names": [
+            "LRUCache"
+          ],
+          "line": 34
+        },
+        {
+          "module": "optimization.performance_optimizer",
+          "names": [
+            "AsyncLRUCache"
+          ],
+          "line": 34
+        },
+        {
+          "module": "optimization.performance_optimizer",
+          "names": [
+            "OptimizationLevel"
+          ],
+          "line": 34
+        },
+        {
+          "module": "accessibility.wcag_compliance",
+          "names": [
+            "HTMLAccessibilityChecker"
+          ],
+          "line": 43
+        },
+        {
+          "module": "accessibility.wcag_compliance",
+          "names": [
+            "ColorContrastChecker"
+          ],
+          "line": 43
+        },
+        {
+          "module": "accessibility.wcag_compliance",
+          "names": [
+            "AccessibilityIssue"
+          ],
+          "line": 43
+        },
+        {
+          "module": "accessibility.wcag_compliance",
+          "names": [
+            "WCAGPrinciple"
+          ],
+          "line": 43
+        },
+        {
+          "module": "accessibility.wcag_compliance",
+          "names": [
+            "WCAGGuideline"
+          ],
+          "line": 43
+        },
+        {
+          "module": "accessibility.wcag_compliance",
+          "names": [
+            "WCAGLevel"
+          ],
+          "line": 43
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "TestSuite"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "TestCase"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "TestCategory"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "TestPriority"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "TestResult"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "UnitTestGenerator"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "IntegrationTestRunner"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "SecurityTester"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "PerformanceTester"
+          ],
+          "line": 53
+        },
+        {
+          "module": "testing.qa_suite",
+          "names": [
+            "ChaosEngineer"
+          ],
+          "line": 53
+        },
+        {
+          "module": "deployment.production_deploy",
+          "names": [
+            "DeploymentManager"
+          ],
+          "line": 67
+        },
+        {
+          "module": "deployment.production_deploy",
+          "names": [
+            "ConfigManager"
+          ],
+          "line": 67
+        },
+        {
+          "module": "deployment.production_deploy",
+          "names": [
+            "ImageBuilder"
+          ],
+          "line": 67
+        },
+        {
+          "module": "deployment.production_deploy",
+          "names": [
+            "HealthChecker"
+          ],
+          "line": 67
+        },
+        {
+          "module": "deployment.production_deploy",
+          "names": [
+            "DeploymentConfig"
+          ],
+          "line": 67
+        },
+        {
+          "module": "deployment.production_deploy",
+          "names": [
+            "DeploymentEnvironment"
+          ],
+          "line": 67
+        },
+        {
+          "module": "deployment.production_deploy",
+          "names": [
+            "DeploymentStatus"
+          ],
+          "line": 67
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "DigitalTwinWorldModel"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "get_digital_twin_model"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "SystemTopologyMapper"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "ImpactSimulator"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "RemediationEngine"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "EWC"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "OnlineEWC"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "EWCTrainer"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "EWCConfig"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "AdversarialDefenseSystem"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "AdversarialTrainer"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "DefenseConfig"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "NeuralSymbolicIntegrator"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "MathematicalReasoningEngine"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "NeuralSymbolicConfig"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "FederatedLearningCoordinator"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "FLConfig"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "AggregationMethod"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "TheoryOfMindSystem"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "ToMConfig"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "ToMLevel"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "TemporalAbstractionSystem"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "TemporalAbstractionConfig"
+          ],
+          "line": 79
+        },
+        {
+          "module": "evolution",
+          "names": [
+            "TemporalGranularity"
+          ],
+          "line": 79
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\cache\\__init__.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 5
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\deployment\\production_deploy.py",
+      "imports": [
+        {
+          "module": "os",
+          "names": [
+            "os"
+          ],
+          "line": 28
+        },
+        {
+          "module": "sys",
+          "names": [
+            "sys"
+          ],
+          "line": 29
+        },
+        {
+          "module": "subprocess",
+          "names": [
+            "subprocess"
+          ],
+          "line": 30
+        },
+        {
+          "module": "json",
+          "names": [
+            "json"
+          ],
+          "line": 31
+        },
+        {
+          "module": "shutil",
+          "names": [
+            "shutil"
+          ],
+          "line": 33
+        },
+        {
+          "module": "tempfile",
+          "names": [
+            "tempfile"
+          ],
+          "line": 34
+        },
+        {
+          "module": "typing",
+          "names": [
+            "Union"
+          ],
+          "line": 35
+        },
+        {
+          "module": "boto3",
+          "names": [
+            "boto3"
+          ],
+          "line": 40
+        },
+        {
+          "module": "hashlib",
+          "names": [
+            "hashlib"
+          ],
+          "line": 44
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\evolution\\agent_breeder.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 14
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\evolution\\daily_learner.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 14
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\evolution\\evolution_engine.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 10
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\evolution\\performance_oracle.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 13
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\evolution\\skill_graph.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 9
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\llm\\distributed_budget.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 7
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\llm\\free_tier_tracker.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\llm\\token_budget.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\localization\\bhasha_bot.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 12
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\localization\\voice_didi.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 10
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\localization\\__init__.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 5
+        },
+        {
+          "module": "core.localization.bhasha_bot",
+          "names": [
+            "BhashaBot"
+          ],
+          "line": 7
+        },
+        {
+          "module": "core.localization.voice_didi",
+          "names": [
+            "VoiceDidi"
+          ],
+          "line": 8
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\messaging\\upstash_redis_queue.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\models\\shared_workspace.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 17
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\observability\\observability_middleware.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\orchestration\\__init__.py",
+      "imports": [
+        {
+          "module": "swarm_orchestrator",
+          "names": [
+            "SwarmOrchestrator"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\persistence\\pooled_pg.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 21
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\persistence\\write_behind.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 21
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\queue\\task_queue_enhanced.py",
+      "imports": [
+        {
+          "module": "celery",
+          "names": [
+            "celery"
+          ],
+          "line": 123
+        },
+        {
+          "module": "redis.asyncio",
+          "names": [
+            "redis.asyncio"
+          ],
+          "line": 132
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\resilience\\circuit_breaker.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 9
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\resilience\\rollback_monitor.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\resilience\\__init__.py",
+      "imports": [
+        {
+          "module": "circuit_breaker",
+          "names": [
+            "CircuitBreaker"
+          ],
+          "line": 15
+        },
+        {
+          "module": "circuit_breaker",
+          "names": [
+            "CircuitBreakerOpenError"
+          ],
+          "line": 15
+        },
+        {
+          "module": "circuit_breaker",
+          "names": [
+            "CircuitBreakerState"
+          ],
+          "line": 15
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\api_key_middleware.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 6
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\auth_middleware.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 6
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\autonoguard_middleware.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 12
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\compliance_bot.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 20
+        },
+        {
+          "module": "core.config",
+          "names": [
+            "settings"
+          ],
+          "line": 41
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\guardian_ai.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 20
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\honeypot_middleware.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\prompt_firewall.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 14
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\rbac.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 8
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\secret_hunter.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 20
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\secret_vault.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 9
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\secure_credential_store.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\security\\security_vault.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 6
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\telemetry\\__init__.py",
+      "imports": [
+        {
+          "module": "opentelemetry",
+          "names": [
+            "otel_trace"
+          ],
+          "line": 3
+        },
+        {
+          "module": "opentelemetry.sdk.trace",
+          "names": [
+            "TracerProvider"
+          ],
+          "line": 4
+        },
+        {
+          "module": "opentelemetry.sdk.trace.export",
+          "names": [
+            "BatchSpanProcessor"
+          ],
+          "line": 5
+        },
+        {
+          "module": "core.observability.telemetry",
+          "names": [
+            "_NoOpSpan"
+          ],
+          "line": 7
+        },
+        {
+          "module": "core.observability.telemetry",
+          "names": [
+            "_RealSpan"
+          ],
+          "line": 7
+        },
+        {
+          "module": "core.observability.telemetry",
+          "names": [
+            "get_tracer"
+          ],
+          "line": 7
+        },
+        {
+          "module": "core.observability.telemetry",
+          "names": [
+            "setup_tracing"
+          ],
+          "line": 7
+        },
+        {
+          "module": "core.observability.telemetry",
+          "names": [
+            "trace_span"
+          ],
+          "line": 7
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\testing\\qa_suite.py",
+      "imports": [
+        {
+          "module": "unittest",
+          "names": [
+            "unittest"
+          ],
+          "line": 29
+        },
+        {
+          "module": "pytest",
+          "names": [
+            "pytest"
+          ],
+          "line": 30
+        },
+        {
+          "module": "typing",
+          "names": [
+            "Tuple"
+          ],
+          "line": 31
+        },
+        {
+          "module": "string",
+          "names": [
+            "string"
+          ],
+          "line": 36
+        },
+        {
+          "module": "json",
+          "names": [
+            "json"
+          ],
+          "line": 37
+        },
+        {
+          "module": "requests",
+          "names": [
+            "requests"
+          ],
+          "line": 40
+        },
+        {
+          "module": "redis.asyncio",
+          "names": [
+            "aioredis"
+          ],
+          "line": 42
+        },
+        {
+          "module": "asyncpg",
+          "names": [
+            "asyncpg"
+          ],
+          "line": 43
+        },
+        {
+          "module": "unittest.mock",
+          "names": [
+            "Mock"
+          ],
+          "line": 44
+        },
+        {
+          "module": "unittest.mock",
+          "names": [
+            "MagicMock"
+          ],
+          "line": 44
+        },
+        {
+          "module": "unittest.mock",
+          "names": [
+            "patch"
+          ],
+          "line": 44
+        },
+        {
+          "module": "coverage",
+          "names": [
+            "coverage"
+          ],
+          "line": 45
+        },
+        {
+          "module": "hypothesis",
+          "names": [
+            "hypothesis"
+          ],
+          "line": 46
+        },
+        {
+          "module": "hypothesis",
+          "names": [
+            "given"
+          ],
+          "line": 47
+        },
+        {
+          "module": "hypothesis",
+          "names": [
+            "st"
+          ],
+          "line": 47
+        },
+        {
+          "module": "pytest_asyncio",
+          "names": [
+            "pytest_asyncio"
+          ],
+          "line": 48
+        },
+        {
+          "module": "locust",
+          "names": [
+            "task"
+          ],
+          "line": 62
+        },
+        {
+          "module": "locust",
+          "names": [
+            "constant_pacing"
+          ],
+          "line": 62
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\tier8\\agent_evolution_engine.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 13
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\tier8\\self_improvement_agent.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 10
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\tier8\\skill_marketplace_curator.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 10
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\tier8\\swarm_coordination_agent.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 10
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\tier8\\tier8_integration.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 10
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\tier8\\__init__.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 25
+        },
+        {
+          "module": "core.tier8.agent_evolution_engine",
+          "names": [
+            "AgentEvolutionEngine"
+          ],
+          "line": 27
+        },
+        {
+          "module": "core.tier8.agent_evolution_engine",
+          "names": [
+            "get_agent_evolution_engine"
+          ],
+          "line": 27
+        },
+        {
+          "module": "core.tier8.self_improvement_agent",
+          "names": [
+            "SelfImprovementAgent"
+          ],
+          "line": 35
+        },
+        {
+          "module": "core.tier8.self_improvement_agent",
+          "names": [
+            "get_self_improvement_agent"
+          ],
+          "line": 35
+        },
+        {
+          "module": "core.tier8.skill_marketplace_curator",
+          "names": [
+            "SkillMarketplaceCurator"
+          ],
+          "line": 39
+        },
+        {
+          "module": "core.tier8.skill_marketplace_curator",
+          "names": [
+            "get_skill_marketplace_curator"
+          ],
+          "line": 39
+        },
+        {
+          "module": "core.tier8.swarm_coordination_agent",
+          "names": [
+            "SwarmCoordinationAgent"
+          ],
+          "line": 43
+        },
+        {
+          "module": "core.tier8.swarm_coordination_agent",
+          "names": [
+            "get_swarm_coordination_agent"
+          ],
+          "line": 43
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\utils\\firestore_helpers.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 17
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\utils\\time_utils.py",
+      "imports": [
+        {
+          "module": "__future__",
+          "names": [
+            "annotations"
+          ],
+          "line": 1
+        }
+      ]
+    },
+    {
+      "file": "backend\\core\\utils\\__init__.py",
+      "imports": [
+        {
+          "module": "core.utils.lazy_loader",
+          "names": [
+            "lazy_import"
+          ],
+          "line": 1
+        }
+      ]
+    }
+  ],
+  "circular_imports": {},
+  "import_frequency": {
+    "os": 54,
+    "secrets": 7,
+    "contextlib": 14,
+    "datetime": 53,
+    "typing": 118,
+    "security.rbac": 3,
+    "universal_rules": 1,
+    "bcrypt": 1,
+    "core.config": 57,
+    "core.cache.redis_manager": 28,
+    "asyncio": 65,
+    "json": 56,
+    "base64": 3,
+    "hashlib": 18,
+    "hmac": 3,
+    "struct": 1,
+    "time": 55,
+    "uuid": 23,
+    "fastapi": 33,
+    "loguru": 120,
+    "api.dependencies": 1,
+    "core": 6,
+    "core.gcp_firestore": 5,
+    "core.messaging.events": 1,
+    "models.admin": 3,
+    "jose": 3,
+    "core.llm.free_tier_tracker": 7,
+    "core.llm.token_budget": 1,
+    "google.cloud": 8,
+    "sqlalchemy.ext.asyncio": 4,
+    "core.llm.llm_gateway": 19,
+    "models.dynamic_agent": 1,
+    "pathlib": 18,
+    "sqlalchemy": 10,
+    "__future__": 58,
+    "collections.abc": 18,
+    "dataclasses": 43,
+    "core.messaging.event_bus": 88,
+    "core.app_builder": 5,
+    "api.routers": 3,
+    "core.admin_routes": 1,
+    "core.health_check": 1,
+    "logging": 21,
+    "fastapi.middleware.cors": 3,
+    "middleware.anti_hacking": 1,
+    "re": 24,
+    "sys": 14,
+    "core.container_auditor": 1,
+    "core.lifespan": 1,
+    "core.logging_config": 3,
+    "core.security.api_key_middleware": 1,
+    "core.security.auth_middleware": 1,
+    "core.security.honeypot_middleware": 1,
+    "sentry_sdk": 1,
+    "sentry_sdk.integrations.fastapi": 1,
+    "sentry_sdk.integrations.logging": 1,
+    "pydantic": 22,
+    "core.error_remediation": 1,
+    "core.failure_fingerprint": 2,
+    "core.immune_system": 3,
+    "core.resilience.circuit_breaker": 9,
+    "core.otp_router": 1,
+    "core.health.health_probes": 5,
+    "core.pgbouncer_pool": 5,
+    "core.resilience.rollback_monitor": 1,
+    "core.swarm_pubsub": 6,
+    "abc": 4,
+    "decimal": 2,
+    "httpx": 14,
+    "ast": 4,
+    "urllib.parse": 4,
+    "importlib.util": 1,
+    "builtins": 2,
+    "dotenv": 2,
+    "pydantic_settings": 2,
+    "security.secret_vault": 1,
+    "threading": 10,
+    "database.session": 5,
+    "models.system_config": 2,
+    "core.utils.time_utils": 3,
+    "core.config_cache": 5,
+    "core.config_proxy": 2,
+    "subprocess": 6,
+    "tenacity": 4,
+    "inspect": 7,
+    "enum": 23,
+    "sqlite3": 6,
+    "core.persistence": 4,
+    "sentence_transformers": 1,
+    "qdrant_client": 1,
+    "qdrant_client.http": 1,
+    "qdrant_client.http.exceptions": 1,
+    "operator": 1,
+    "tools.knowledge.local_search_rag": 1,
+    "sympy": 1,
+    "traceback": 4,
+    "utils.firestore_helpers": 4,
+    "utils.environment": 5,
+    "grpc": 1,
+    "protos.supreme_engine_pb2": 1,
+    "protos.supreme_engine_pb2_grpc": 1,
+    "psutil": 7,
+    "random": 7,
+    "playwright.async_api": 5,
+    "fastapi.responses": 6,
+    "redis.asyncio": 6,
+    "starlette.responses": 1,
+    "ldclient": 1,
+    "ldai": 4,
+    "ldclient.config": 1,
+    "ldobserve": 2,
+    "ldclient.context": 1,
+    "core.agent_supervisor": 1,
+    "core.maintenance_pipeline": 1,
+    "core.metrics_collector": 5,
+    "core.orchestration.orchestrator": 1,
+    "core.persistence.write_behind": 2,
+    "core.reliability_controller": 1,
+    "core.startup_validator": 1,
+    "core.intelligent_silent_catcher": 1,
+    "core.cache.multi_layer_cache": 2,
+    "core.sentinel_agent": 2,
+    "database": 1,
+    "core.telemetry.system_telemetry": 1,
+    "scripts.devops.bug_prophet": 1,
+    "core.health.self_healer": 6,
+    "core.tier8.tier8_integration": 2,
+    "core.playwright_manager": 1,
+    "core.observability.telemetry": 17,
+    "core.cost_guard": 2,
+    "core.evolution.self_evolution_agent": 3,
+    "core.evolution.daily_learner": 1,
+    "core.auto_healer_service": 1,
+    "core.cache": 2,
+    "core.exceptions": 2,
+    "core.logging": 2,
+    "core.metrics": 2,
+    "core.universal_rules": 1,
+    "brain.expert_router": 1,
+    "starlette_context": 1,
+    "starlette_context.header_keys": 1,
+    "database.supabase_client": 10,
+    "api.routes.metrics": 4,
+    "functools": 4,
+    "collections": 9,
+    "platform": 2,
+    "shutil": 6,
+    "tempfile": 3,
+    "core.security.resource_guard": 4,
+    "brain.model_registry": 1,
+    "asyncpg": 2,
+    "asyncpg.connection": 1,
+    "core.request_context": 1,
+    "contextvars": 1,
+    "starlette.middleware.base": 5,
+    "main": 1,
+    "models.sentinel": 3,
+    "adaptive_engine.experience_db": 7,
+    "adaptive_engine.intent_parser": 1,
+    "admin.god": 1,
+    "brain.model_router": 5,
+    "brain.parallel_cloud_router": 1,
+    "core.intent": 1,
+    "core.messaging.upstash_redis_queue": 1,
+    "unittest.mock": 5,
+    "core.mcp_client": 2,
+    "core.skills.base": 3,
+    "tools.code.fuzz_sandbox": 4,
+    "tools.mcp.mcp_supabase": 4,
+    "optimization.performance_optimizer": 6,
+    "accessibility.wcag_compliance": 7,
+    "testing.qa_suite": 11,
+    "deployment.production_deploy": 8,
+    "evolution": 25,
+    "bs4": 1,
+    "requests": 3,
+    "cachetools": 2,
+    "core.cache.semantic_cache": 2,
+    "redis": 1,
+    "pybreaker": 1,
+    "yaml": 1,
+    "docker": 1,
+    "boto3": 1,
+    "copy": 1,
+    "litellm": 5,
+    "models.meta_ai": 8,
+    "core.evolution.fitness_engine": 3,
+    "core.tenant_db": 1,
+    "skills.installer": 1,
+    "skills.schema": 1,
+    "backend.tools.code.fuzz_sandbox": 2,
+    "tools.code.local_code_executor": 2,
+    "core.evolution.evolution_engine": 1,
+    "core.llm_router": 2,
+    "aiohttp": 2,
+    "prometheus_client": 4,
+    "core.evolution.auto_skill_creator": 2,
+    "core.database.supabase_client": 1,
+    "core.skill_manager": 3,
+    "sqlalchemy.future": 1,
+    "models.evolution": 1,
+    "networkx": 1,
+    "core.resilience.chaos_engine": 1,
+    "core.microvm_sandbox": 1,
+    "core.prompt_handler": 2,
+    "core.performance_enhancer": 1,
+    "brain.supreme_learning_engine": 1,
+    "core.llm": 1,
+    "core.localization.bhasha_bot": 2,
+    "core.localization.voice_didi": 1,
+    "firebase_admin": 5,
+    "nats": 1,
+    "nats.errors": 1,
+    "nats.js.errors": 1,
+    "models.execution_log": 1,
+    "starlette.requests": 1,
+    "core.observability.posthog_client": 1,
+    "posthog": 1,
+    "opentelemetry": 2,
+    "opentelemetry.sdk.trace": 2,
+    "opentelemetry.sdk.trace.export": 2,
+    "opentelemetry.trace": 4,
+    "opentelemetry.exporter.otlp.proto.grpc.trace_exporter": 1,
+    "tracemalloc": 1,
+    "gc": 1,
+    "concurrent.futures": 1,
+    "core.queue.task_queue_enhanced": 1,
+    "models.shared_workspace": 4,
+    "core.evolution.skill_graph": 1,
+    "core.agent_factory": 1,
+    "core.orchestration.crew_departments": 9,
+    "core.skills.core_skills": 7,
+    "core.skills.integrations": 3,
+    "core.orchestration.agent_orchestrator": 1,
+    "swarm_orchestrator": 1,
+    "atexit": 2,
+    "psycopg2": 1,
+    "psycopg2.pool": 1,
+    "queue": 1,
+    "celery": 2,
+    "core.orchestration.cloud_sandbox_orchestrator": 1,
+    "core.ld_client": 1,
+    "utils.text_helpers": 1,
+    "backend.core.resilience.predictive_metrics": 1,
+    "math": 1,
+    "circuit_breaker": 3,
+    "core.rate_limiter": 1,
+    "core.security": 3,
+    "models.api_key": 1,
+    "jose.exceptions": 1,
+    "starlette.types": 1,
+    "core.autonoguard_engine": 3,
+    "core.rules_mutator": 1,
+    "core.services": 2,
+    "infisical_client": 6,
+    "cryptography.fernet": 3,
+    "core.security.secure_credential_store": 1,
+    "ipaddress": 1,
+    "socket": 1,
+    "jwt": 1,
+    "unittest": 1,
+    "pytest": 1,
+    "string": 1,
+    "coverage": 1,
+    "hypothesis": 3,
+    "pytest_asyncio": 1,
+    "selenium": 1,
+    "selenium.webdriver.common.by": 1,
+    "selenium.webdriver.support.ui": 1,
+    "selenium.webdriver.support": 1,
+    "locust": 4,
+    "core.base": 4,
+    "core.error_pattern_db": 1,
+    "core.feedback_loop": 1,
+    "core.health.health_monitor": 1,
+    "core.tier8": 4,
+    "core.tier8.agent_evolution_engine": 2,
+    "core.tier8.self_improvement_agent": 2,
+    "core.tier8.skill_marketplace_curator": 2,
+    "core.tier8.swarm_coordination_agent": 2,
+    "importlib": 1,
+    "core.utils.lazy_loader": 1
+  }
+}

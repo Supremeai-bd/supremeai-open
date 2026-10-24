@@ -1,0 +1,6 @@
+{
+  "sources": [
+    {"name":"official documentation","authority":1.0,"freshness":0.9,"provenance":1.0,"corroboration":0.9,"conflicts":0.0},
+    {"name":"community post","authority":0.45,"freshness":0.8,"provenance":0.5,"corroboration":0.4,"conflicts":0.2}
+  ]
+}

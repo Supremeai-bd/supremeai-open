@@ -8,8 +8,10 @@ import { UnifiedChatBubble } from './UnifiedChatBubble';
 import { controlPlane } from '../../services/controlPlane';
 import { useEventBus } from '../../hooks/useEventBus';
 import { eventBus, Events } from '../../lib/componentEventBus';
+import { getApiBaseUrl } from '../../utils/api';
+import { getAdminToken, getUserToken } from '../../services/tokenStorage';
 import { AudioPlaybackService } from '../../services/audio/AudioPlaybackService';
-import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2, Sparkles, Languages, Send } from 'lucide-react';
+import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2 } from 'lucide-react';
 
 import { ShareDialog } from '../share/ShareDialog';
 import { ImageUploadButton } from './ImageUploadButton';
@@ -30,7 +32,6 @@ import {
   type Artifact as WorkspaceArtifact,
   type ReasoningStep,
 } from '../../store/workspaceUiStateStore';
-import { apiClient } from '../../services/apiClient';
 
 // M10 (issue #453) বাংলা: backend orchestration response-এ চুক্তি-অনুযায়ী ফিল্ড
 // এলে সেগুলোই S2/S3 স্টোরে যাবে — টাইপ-গার্ড ছাড়া কিছুই গ্রহণ করা হবে না।
@@ -95,30 +96,6 @@ export const ChatInterface: React.FC = () => {
   // কথোপকথন শুরুর আগে share/export/branch সৎভাবে disabled থাকে — কোনো ভুয়া
   // id কখনো পাঠানো হয় না।
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const isCosmicChat = import.meta.env.VITE_COSMIC_CHAT !== 'false';
-  const [uiLang, setUiLang] = useState<'en' | 'bn'>(() => {
-    try {
-      return (localStorage.getItem('sa_ui_lang') as 'en' | 'bn') || 'en';
-    } catch {
-      return 'en';
-    }
-  });
-
-  const toggleUiLang = () => {
-    const next = uiLang === 'en' ? 'bn' : 'en';
-    setUiLang(next);
-    try {
-      localStorage.setItem('sa_ui_lang', next);
-    } catch {
-      // Ignored: private browsing or storage quota unavailable
-    }
-  };
-
-  const chatChips = [
-    { en: 'Audit my project', bn: 'প্রজেক্ট অডিট করুন' },
-    { en: 'Design a landing page', bn: 'ল্যান্ডিং পেজ ডিজাইন' },
-    { en: 'Explain this error', bn: 'এই এরর ব্যাখ্যা করুন' },
-  ];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -165,9 +142,13 @@ export const ChatInterface: React.FC = () => {
 
       // ২) fallback: backend TTS (auth header সহ fetch + blob playback)
       try {
-        // Issue #2522: raw fetch -> apiClient.stream — auth/timeout/queue অটোমেটিক।
-        const res = await apiClient.stream(
-          `/api/voice/stream_audio?text=${encodeURIComponent(text.slice(0, 1000))}`,
+        // Issue #521: tokenStorage (sessionStorage-first, legacy localStorage swept).
+        const token =
+          getUserToken() ||
+          getAdminToken();
+        const res = await fetch(
+          `${getApiBaseUrl()}/api/voice/stream_audio?text=${encodeURIComponent(text.slice(0, 1000))}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
         );
         if (!res.ok) {
           addMessage({
@@ -347,26 +328,7 @@ export const ChatInterface: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar area */}
-      <div className="flex justify-between p-2 border-b border-[var(--sa-border,rgba(255,255,255,0.1))] gap-2 items-center">
-        {/* Honest status pill */}
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono border border-[var(--sa-border)] text-[var(--sa-ink-muted)]">
-            <span className={`size-2 rounded-full ${isOffline ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
-            {isOffline ? (uiLang === 'bn' ? 'অফলাইন' : 'Offline') : (uiLang === 'bn' ? 'অনলাইন' : 'Online')}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Language Toggle */}
-          <button
-            onClick={toggleUiLang}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)] hover:bg-[var(--sa-border)] transition"
-            title="Toggle Bangla / English UI"
-            data-testid="lang-toggle"
-          >
-            <Languages size={14} />
-            <span>{uiLang === 'en' ? 'EN' : 'বাং'}</span>
-          </button>
+      <div className="flex justify-end p-2 border-b border-slate-800 gap-2 items-center">
         {/* S1: Share Button — conversation শুরুর আগে সৎভাবে disabled (M10) */}
         <button
           onClick={() => {
@@ -433,7 +395,6 @@ export const ChatInterface: React.FC = () => {
         >
           {voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
         </button>
-        </div>
       </div>
 
       {/* Issue #1457: prominent offline banner — the user must know WHY the
@@ -458,7 +419,6 @@ export const ChatInterface: React.FC = () => {
                 text={msg.content}
                 sender={msg.role === 'user' ? 'user' : 'system'}
                 timestamp={msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : ''}
-                onRegenerate={msg.role === 'assistant' ? () => handleSend(msg.content) : undefined}
               />
 
               {/* S11: Branch Button — সত্যিকার conversation_id থাকলেই রেন্ডার হয় */}
@@ -528,24 +488,6 @@ export const ChatInterface: React.FC = () => {
             </button>
           </div>
         )}
-        {/* WO4: Quick action chips */}
-        <div className="mb-2.5 flex flex-wrap gap-1.5" data-testid="chat-chips">
-          {chatChips.map((chip) => {
-            const label = uiLang === 'bn' ? chip.bn : chip.en;
-            return (
-              <button
-                key={chip.en}
-                type="button"
-                onClick={() => setInput(label)}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border border-[var(--sa-border)] text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)] hover:border-[var(--neon-purple)] hover:bg-[var(--surface-glass)] hover:shadow-[var(--glow-accent)] transition duration-200"
-              >
-                <Sparkles size={11} className="text-[var(--aurora-purple)]" />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
         {/* Issue #1526 (LOW): on narrow viewports the fixed 18px-icon button,
             textarea, and Send button fought for one row and the composer
             overflowed horizontally. flex-wrap + min-w-0 lets the composer
@@ -560,18 +502,17 @@ export const ChatInterface: React.FC = () => {
             value={input}
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}
-            placeholder={uiLang === 'bn' ? 'এআই এজেন্টকে আপনার মেসেজ লিখুন...' : 'Type your message to the AI agent...'}
-            className="min-w-0 flex-[1_1_12rem] bg-[var(--surface-glass,rgba(15,23,42,0.75))] border border-[var(--sa-border)] text-white rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-[var(--aurora-purple)] transition"
+            placeholder="Type your message to the AI agent..."
+            className="min-w-0 flex-[1_1_12rem] bg-slate-800 text-white rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
             rows={2}
             disabled={isOrchestrating}
           />
           <button
             onClick={handleSend}
             disabled={isOrchestrating || !input.trim()}
-            className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 bg-[var(--aurora-purple,#a855f7)] text-white font-medium rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200"
+            className="shrink-0 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <Send size={15} />
-            <span>{isOrchestrating ? (uiLang === 'bn' ? 'পাঠানো হচ্ছে...' : 'Sending...') : (uiLang === 'bn' ? 'পাঠান' : 'Send')}</span>
+            {isOrchestrating ? 'Sending...' : 'Send'}
           </button>
         </div>
       </div>

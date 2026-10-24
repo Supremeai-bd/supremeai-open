@@ -1,0 +1,377 @@
+/* ============================================
+ * SupremeAI VS Code Extension Design System
+ * Version: 2.0.0
+ * File: media/vscode-theme.css
+ * ============================================ */
+
+/* VS Code Webview UI - Theme-aware styles */
+/* These use VS Code CSS variables for native feel */
+
+:root {
+    /* VS Code provided variables - auto-adapt to theme */
+    --vscode-bg: var(--vscode-editor-background);
+    --vscode-fg: var(--vscode-foreground);
+    --vscode-border: var(--vscode-panel-border);
+    --vscode-input-bg: var(--vscode-input-background);
+    --vscode-input-fg: var(--vscode-input-foreground);
+    --vscode-input-border: var(--vscode-input-border);
+    --vscode-button-bg: var(--vscode-button-background);
+    --vscode-button-fg: var(--vscode-button-foreground);
+    --vscode-button-hover: var(--vscode-button-hoverBackground);
+    --vscode-list-hover: var(--vscode-list-hoverBackground);
+    --vscode-list-active: var(--vscode-list-activeSelectionBackground);
+    --vscode-list-active-fg: var(--vscode-list-activeSelectionForeground);
+    --vscode-accent: var(--vscode-focusBorder);
+    --vscode-error: var(--vscode-errorForeground);
+    --vscode-warning: var(--vscode-editorWarning-foreground);
+    --vscode-info: var(--vscode-editorInfo-foreground);
+    --vscode-success: var(--vscode-testing-iconPassed);
+}
+
+/* Base */
+.vscode-body {
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-fg);
+    background: var(--vscode-bg);
+    padding: 16px;
+    line-height: 1.6;
+}
+
+/* Supreme Card for VS Code */
+.vscode-card {
+    background: var(--vscode-input-bg);
+    border: 1px solid var(--vscode-border);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 12px;
+    transition: all 0.2s ease;
+}
+
+.vscode-card:hover {
+    border-color: var(--vscode-accent);
+}
+
+.vscode-card .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--vscode-border);
+}
+
+.vscode-card .card-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--vscode-fg);
+}
+
+/* Supreme Button for VS Code */
+.vscode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    background: var(--vscode-button-bg);
+    color: var(--vscode-button-fg);
+    transition: all 0.15s ease;
+}
+
+.vscode-btn:hover {
+    background: var(--vscode-button-hover);
+}
+
+.vscode-btn.secondary {
+    background: transparent;
+    border: 1px solid var(--vscode-border);
+    color: var(--vscode-fg);
+}
+
+.vscode-btn.secondary:hover {
+    background: var(--vscode-list-hover);
+}
+
+.vscode-btn.danger {
+    background: var(--vscode-error);
+    color: white;
+}
+
+/* Supreme Input for VS Code */
+.vscode-input {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--vscode-input-bg);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+    color: var(--vscode-input-fg);
+    font-family: var(--vscode-font-family);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.vscode-input:focus {
+    border-color: var(--vscode-accent);
+}
+
+.vscode-input::placeholder {
+    color: var(--vscode-fg);
+    opacity: 0.5;
+}
+
+/* Supreme Badge for VS Code */
+.vscode-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.vscode-badge.success {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.vscode-badge.warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+}
+
+.vscode-badge.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.vscode-badge.info {
+    background: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+}
+
+/* Supreme List for VS Code */
+.vscode-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.vscode-list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    font-size: 13px;
+}
+
+.vscode-list-item:hover {
+    background: var(--vscode-list-hover);
+}
+
+.vscode-list-item.active {
+    background: var(--vscode-list-active);
+    color: var(--vscode-list-active-fg);
+}
+
+/* Supreme Terminal for VS Code */
+.vscode-terminal {
+    background: #0d1117;
+    border: 1px solid var(--vscode-border);
+    border-radius: 6px;
+    overflow: hidden;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+}
+
+.vscode-terminal .terminal-header {
+    background: var(--vscode-input-bg);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--vscode-border);
+}
+
+.vscode-terminal .terminal-btn {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.vscode-terminal .terminal-btn.close {
+    background: #ff5f56;
+}
+
+.vscode-terminal .terminal-btn.min {
+    background: #ffbd2e;
+}
+
+.vscode-terminal .terminal-btn.max {
+    background: #27c93f;
+}
+
+.vscode-terminal .terminal-body {
+    padding: 12px;
+    line-height: 1.8;
+    color: var(--vscode-fg);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.vscode-terminal .terminal-body .line {
+    margin-bottom: 4px;
+}
+
+.vscode-terminal .terminal-body .line.error {
+    color: var(--vscode-error);
+}
+
+.vscode-terminal .terminal-body .line.success {
+    color: var(--vscode-success);
+}
+
+.vscode-terminal .terminal-body .line.info {
+    color: var(--vscode-info);
+}
+
+/* Supreme Chat for VS Code */
+.vscode-chat-bubble {
+    max-width: 90%;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.vscode-chat-bubble.user {
+    background: var(--vscode-accent);
+    color: white;
+    margin-left: auto;
+    border-bottom-right-radius: 2px;
+}
+
+.vscode-chat-bubble.ai {
+    background: var(--vscode-input-bg);
+    border: 1px solid var(--vscode-border);
+    border-bottom-left-radius: 2px;
+}
+
+.vscode-chat-bubble .bubble-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+.vscode-chat-bubble .bubble-content code {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+}
+
+.vscode-chat-bubble .bubble-content pre {
+    background: #0d1117;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+
+/* Supreme Status Bar for VS Code */
+.vscode-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 12px;
+    background: var(--vscode-input-bg);
+    border-top: 1px solid var(--vscode-border);
+    font-size: 12px;
+}
+
+.vscode-status-bar .status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.vscode-status-bar .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.vscode-status-bar .status-dot.online {
+    background: #22c55e;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+}
+
+.vscode-status-bar .status-dot.offline {
+    background: #ef4444;
+}
+
+.vscode-status-bar .status-dot.connecting {
+    background: #f59e0b;
+    animation: pulse 2s infinite;
+}
+
+/* Animations */
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.3s ease;
+}
+
+/* Scrollbar for VS Code Webview */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--vscode-border);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-fg);
+    opacity: 0.3;
+}

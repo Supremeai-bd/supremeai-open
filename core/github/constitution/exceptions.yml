@@ -1,0 +1,21 @@
+# SupremeAI Constitution Audit — Exemptions Registry
+# Each exemption record must include: owner, reason, and expires date.
+# Expired exemptions will fail CI and must be renewed or resolved.
+
+exemptions:
+  # Example (remove after first real exemption):
+  # - rule_id: "ARCH-001"
+  #   file_path: "backend/legacy_service/init.py"
+  #   owner: "@team-backend"  # GitHub handle or team
+  #   reason: "Legacy service not yet migrated to cloud-native; migration planned Q1 2026"
+  #   expires: "2026-03-31T23:59:59"
+  #   line_number: 42  # Optional: specific line number
+
+  # Add exemptions here when constitutional violations must be permitted temporarily.
+  # Format:
+  # - rule_id: "CATEGORY-NNN"
+  #   file_path: "path/to/file"
+  #   owner: "@github-username-or-team"
+  #   reason: "Justification for exemption"
+  #   expires: "YYYY-MM-DDTHH:MM:SS"  # ISO 8601; required
+  #   line_number: N  # Optional

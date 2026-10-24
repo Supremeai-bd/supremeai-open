@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package supremeai;
+
+option java_multiple_files = true;
+option java_package = "com.supremeai.grpc";
+option java_outer_classname = "SupremeEngineProto";
+
+// The WorkerService handles heavy background tasks and security auditing.
+service WorkerService {
+  // Submits a heavy background task for execution
+  rpc SubmitTask (TaskRequest) returns (TaskResponse);
+
+  // Retrieves the status of a previously submitted task
+  rpc GetTaskStatus (TaskStatusRequest) returns (TaskStatusResponse);
+
+  // Logs a security audit event
+  rpc LogAuditEvent (AuditLogRequest) returns (AuditLogResponse);
+}
+
+// Request to submit a new heavy task
+message TaskRequest {
+  string task_type = 1;      // E.g., "codeql_log_processing", "data_aggregation"
+  string payload_json = 2;   // JSON string containing task parameters
+  string requested_by = 3;   // User ID or service name
+}
+
+// Response after task submission
+message TaskResponse {
+  string task_id = 1;        // Unique identifier for the task
+  string status = 2;         // E.g., "QUEUED", "PROCESSING"
+  string message = 3;
+}
+
+// Request to get task status
+message TaskStatusRequest {
+  string task_id = 1;
+}
+
+// Response containing task status
+message TaskStatusResponse {
+  string task_id = 1;
+  string status = 2;         // E.g., "COMPLETED", "FAILED", "PROCESSING"
+  string result_json = 3;    // JSON string containing results (if completed)
+  string error_message = 4;
+}
+
+// Request to log a security event
+message AuditLogRequest {
+  string event_type = 1;     // E.g., "UNAUTHORIZED_ACCESS", "API_KEY_ROTATED"
+  string user_id = 2;
+  string resource = 3;
+  string details_json = 4;
+}
+
+// Response from logging a security event
+message AuditLogResponse {
+  bool success = 1;
+  string message = 2;
+}

@@ -1,0 +1,18 @@
+prompts:
+  - "You are SupremeAI, a helpful AI coding assistant. Answer the user's question: {{question}}"
+
+providers:
+  - id: openai:gpt-4o
+  # Google AI Studio Gemini Models. Options:
+  # - google:gemini-2.5-flash (Recommended stable alias)
+  # - google:gemini-2.0-flash (Standard model name)
+  # - google:gemini-3.5-flash (Next-gen flash)
+  # - google:gemini-2.5-pro (For complex reasoning)
+  - id: google:gemini-2.5-flash
+
+tests:
+  - vars:
+      question: "What is SupremeAI?"
+    assert:
+      - type: icontains
+        value: "AI"

@@ -1,0 +1,643 @@
+{
+  "version": "1.0.0",
+  "recipes": [
+    {
+      "recipe_id": "repair.async_timeout",
+      "recipe_name": "Self-Heal: Asyncio Timeout / Execution Timeout",
+      "intent": "REPAIR",
+      "trigger_patterns": [
+        "asyncio.TimeoutError",
+        "execution timeout",
+        "task timeout exceeded",
+        "TimeoutError",
+        "deadline exceeded",
+        "step timed out"
+      ],
+      "problem_description": "A runtime asyncio or execution timeout error has occurred. The tool chain identifies root cause, discovers an open-source resilience pattern, validates it in sandbox, and applies a governance-approved patch.",
+      "pipeline_chain": [
+        {
+          "tool_id": "radar.gap_miner.incident_replay",
+          "purpose": "Parse error log to extract timeout root cause",
+          "inputs_from_prev": [],
+          "outputs_key": "incident_fingerprint",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "engine.discovery_fabric.source_scout",
+          "purpose": "Find open-source async retry/timeout patterns",
+          "inputs_from_prev": [
+            "incident_fingerprint.affected_component"
+          ],
+          "outputs_key": "candidates",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "engine.discovery_fabric.trust_engine",
+          "purpose": "Score and rank candidates by trust/license",
+          "inputs_from_prev": [
+            "candidates"
+          ],
+          "outputs_key": "ranked_candidates",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.knowledge_quarantine",
+          "purpose": "Quarantine and verify top candidate",
+          "inputs_from_prev": [
+            "ranked_candidates[0]"
+          ],
+          "outputs_key": "quarantine_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "shield.governance_policy",
+          "purpose": "Validate target file is allowlisted for modification",
+          "inputs_from_prev": [
+            "incident_fingerprint.target_file"
+          ],
+          "outputs_key": "governance_result",
+          "can_skip_if": "quarantine_result.status != PASSED",
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "engine.solution_synthesizer",
+          "purpose": "Synthesize minimal patch and test in sandbox",
+          "inputs_from_prev": [
+            "incident_fingerprint",
+            "quarantine_result",
+            "governance_result"
+          ],
+          "outputs_key": "patch_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        }
+      ],
+      "merge_strategy": "sequential",
+      "success_criteria": [
+        "patch_result.verified_in_sandbox == True",
+        "governance_result.is_allowed == True",
+        "quarantine_result.status == PASSED"
+      ],
+      "failure_fallback": "repair.generic_static_fix",
+      "avg_confidence": 0.96,
+      "avg_duration_seconds": 45,
+      "token_budget": "low",
+      "requires_network": true,
+      "tags": [
+        "repair",
+        "async",
+        "timeout",
+        "self-healing"
+      ]
+    },
+    {
+      "recipe_id": "repair.security_vulnerability",
+      "recipe_name": "Self-Heal: Security Vulnerability / CVE / Hardcoded Secret",
+      "intent": "REPAIR",
+      "trigger_patterns": [
+        "hardcoded secret",
+        "plaintext password",
+        "CVE",
+        "security vulnerability",
+        "sql injection",
+        "SSRF",
+        "exposed API key",
+        "bare except security"
+      ],
+      "problem_description": "A security gap (hardcoded credential, injection vulnerability, or exposed secret) has been detected. The pipeline identifies the exact location, applies a secure pattern, and verifies via governance shield.",
+      "pipeline_chain": [
+        {
+          "tool_id": "radar.gap_finder",
+          "purpose": "Scan for security gaps with critical/high severity filter",
+          "inputs_from_prev": [],
+          "outputs_key": "gap_report",
+          "can_skip_if": "pre_existing_gap_report",
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "engine.discovery_fabric.source_scout",
+          "purpose": "Find OWASP/security best practices for this type of vulnerability",
+          "inputs_from_prev": [
+            "gap_report.category"
+          ],
+          "outputs_key": "candidates",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.knowledge_quarantine",
+          "purpose": "Quarantine security fix candidate",
+          "inputs_from_prev": [
+            "candidates[0]"
+          ],
+          "outputs_key": "quarantine_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "shield.governance_policy",
+          "purpose": "Double-check: security fixes NEVER touch core/security/ itself",
+          "inputs_from_prev": [
+            "gap_report.target_file"
+          ],
+          "outputs_key": "governance_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "engine.solution_synthesizer",
+          "purpose": "Generate minimal security patch with dry-run first",
+          "inputs_from_prev": [
+            "gap_report",
+            "quarantine_result",
+            "governance_result"
+          ],
+          "outputs_key": "patch_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "shield.artifact_integrity",
+          "purpose": "SHA-256 verify patch integrity before apply",
+          "inputs_from_prev": [
+            "patch_result.patch_file"
+          ],
+          "outputs_key": "integrity_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        }
+      ],
+      "merge_strategy": "sequential",
+      "success_criteria": [
+        "integrity_result.passed == True",
+        "patch_result.verified_in_sandbox == True"
+      ],
+      "failure_fallback": null,
+      "avg_confidence": 0.98,
+      "avg_duration_seconds": 60,
+      "token_budget": "low",
+      "requires_network": true,
+      "tags": [
+        "security",
+        "repair",
+        "cve",
+        "owasp"
+      ]
+    },
+    {
+      "recipe_id": "repair.generic_static_fix",
+      "recipe_name": "Self-Heal: Generic Static Code Fix (Test Failure / Lint Error)",
+      "intent": "REPAIR",
+      "trigger_patterns": [
+        "test failed",
+        "pytest failure",
+        "lint error",
+        "import error",
+        "ModuleNotFoundError",
+        "AttributeError",
+        "syntax error",
+        "AssertionError in test",
+        "CI failed"
+      ],
+      "problem_description": "A general code error (test failure, import error, syntax error, or lint issue) detected in CI or locally. Minimal fix without discovery fabric needed.",
+      "pipeline_chain": [
+        {
+          "tool_id": "radar.gap_miner.incident_replay",
+          "purpose": "Parse CI log to identify failing test/file",
+          "inputs_from_prev": [],
+          "outputs_key": "incident_fingerprint",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "shield.governance_policy",
+          "purpose": "Verify target file is safe to modify",
+          "inputs_from_prev": [
+            "incident_fingerprint.target_file"
+          ],
+          "outputs_key": "governance_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "engine.solution_synthesizer",
+          "purpose": "Generate minimal targeted patch",
+          "inputs_from_prev": [
+            "incident_fingerprint",
+            "governance_result"
+          ],
+          "outputs_key": "patch_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        }
+      ],
+      "merge_strategy": "sequential",
+      "success_criteria": [
+        "patch_result.verified_in_sandbox == True",
+        "governance_result.is_allowed == True"
+      ],
+      "failure_fallback": null,
+      "avg_confidence": 0.93,
+      "avg_duration_seconds": 25,
+      "token_budget": "low",
+      "requires_network": true,
+      "tags": [
+        "repair",
+        "ci",
+        "tests",
+        "syntax"
+      ]
+    },
+    {
+      "recipe_id": "synthesis.new_architectural_feature",
+      "recipe_name": "Deep Synthesis: New Architectural Feature / Complex Capability",
+      "intent": "FEATURE_SYNTHESIS",
+      "trigger_patterns": [
+        "build new feature",
+        "design architecture",
+        "implement capability",
+        "add to system",
+        "create component",
+        "how to build",
+        "design pattern for"
+      ],
+      "problem_description": "User or system demands a new complex capability or architectural component. The pipeline fingerprints the project, debates the best approach across multiple AI models, validates through truth hierarchy, and distills into a permanent skill.",
+      "pipeline_chain": [
+        {
+          "tool_id": "radar.gap_miner.project_fingerprint",
+          "purpose": "Generate project DNA context map",
+          "inputs_from_prev": [],
+          "outputs_key": "project_dna",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "radar.gap_miner.context_packager",
+          "purpose": "Package relevant code context for AI models",
+          "inputs_from_prev": [
+            "project_dna"
+          ],
+          "outputs_key": "context_package",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "intelligence.model_router_economist",
+          "purpose": "Select optimal AI models for this task complexity",
+          "inputs_from_prev": [
+            "context_package.complexity_score"
+          ],
+          "outputs_key": "model_selection",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "engine.knowledge_squeezer",
+          "purpose": "Multi-model adversarial debate and distillation",
+          "inputs_from_prev": [
+            "context_package",
+            "model_selection"
+          ],
+          "outputs_key": "distilled_knowledge",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.knowledge_quarantine",
+          "purpose": "Quarantine distilled knowledge",
+          "inputs_from_prev": [
+            "distilled_knowledge"
+          ],
+          "outputs_key": "quarantine_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.truth_hierarchy",
+          "purpose": "Resolve conflicts and establish canonical truth",
+          "inputs_from_prev": [
+            "quarantine_result"
+          ],
+          "outputs_key": "truth_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.knowledge_firewall",
+          "purpose": "Final security check before memory admission",
+          "inputs_from_prev": [
+            "truth_result"
+          ],
+          "outputs_key": "firewall_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "intelligence.skill_distiller",
+          "purpose": "Distill successful pattern into reusable skill",
+          "inputs_from_prev": [
+            "truth_result",
+            "firewall_result"
+          ],
+          "outputs_key": "new_skill",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        }
+      ],
+      "merge_strategy": "sequential",
+      "success_criteria": [
+        "truth_result.confidence >= 0.90",
+        "firewall_result.status == CLEAR",
+        "new_skill is not None"
+      ],
+      "failure_fallback": "synthesis.knowledge_injection_only",
+      "avg_confidence": 0.94,
+      "avg_duration_seconds": 120,
+      "token_budget": "medium",
+      "requires_network": true,
+      "tags": [
+        "synthesis",
+        "architecture",
+        "multi-model",
+        "knowledge"
+      ]
+    },
+    {
+      "recipe_id": "synthesis.knowledge_injection_only",
+      "recipe_name": "Deep Synthesis: Knowledge Injection Only (No Code Change)",
+      "intent": "FEATURE_SYNTHESIS",
+      "trigger_patterns": [
+        "learn about",
+        "understand",
+        "what is best practice for",
+        "store knowledge",
+        "remember this",
+        "inject knowledge"
+      ],
+      "problem_description": "Synthesize and permanently store expert knowledge into ai_memory without modifying code. Used for learning and knowledge enrichment.",
+      "pipeline_chain": [
+        {
+          "tool_id": "engine.knowledge_squeezer",
+          "purpose": "Multi-model distillation on topic",
+          "inputs_from_prev": [],
+          "outputs_key": "distilled_knowledge",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.knowledge_quarantine",
+          "purpose": "Quarantine before storage",
+          "inputs_from_prev": [
+            "distilled_knowledge"
+          ],
+          "outputs_key": "quarantine_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.truth_hierarchy",
+          "purpose": "Establish canonical truth",
+          "inputs_from_prev": [
+            "quarantine_result"
+          ],
+          "outputs_key": "truth_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.knowledge_firewall",
+          "purpose": "Security gate before ai_memory",
+          "inputs_from_prev": [
+            "truth_result"
+          ],
+          "outputs_key": "firewall_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        }
+      ],
+      "merge_strategy": "sequential",
+      "success_criteria": [
+        "firewall_result.status == CLEAR",
+        "truth_result.confidence >= 0.85"
+      ],
+      "failure_fallback": null,
+      "avg_confidence": 0.91,
+      "avg_duration_seconds": 60,
+      "token_budget": "medium",
+      "requires_network": true,
+      "tags": [
+        "knowledge",
+        "injection",
+        "learning",
+        "memory"
+      ]
+    },
+    {
+      "recipe_id": "audit.full_health_check",
+      "recipe_name": "Autonomous Audit: Full Project Health Radar",
+      "intent": "AUDIT_RADAR",
+      "trigger_patterns": [
+        "audit everything",
+        "full health check",
+        "project audit",
+        "codebase scan",
+        "weekly audit",
+        "comprehensive review",
+        "system health"
+      ],
+      "problem_description": "Complete autonomous audit of the SupremeAI codebase: gap detection, drift analysis, failure pattern mining, and memory revaluation. Run on weekly schedule.",
+      "pipeline_chain": [
+        {
+          "tool_id": "radar.gap_finder",
+          "purpose": "Scan all code for gaps, security issues, dead code",
+          "inputs_from_prev": [],
+          "outputs_key": "gap_report",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "radar.gap_miner.drift_detector",
+          "purpose": "Detect documentation/code drift",
+          "inputs_from_prev": [],
+          "outputs_key": "drift_report",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "intelligence.failure_pattern_miner",
+          "purpose": "Mine recent CI failures for patterns",
+          "inputs_from_prev": [],
+          "outputs_key": "failure_patterns",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.knowledge_revalidator",
+          "purpose": "Revalidate stale ai_memory entries",
+          "inputs_from_prev": [],
+          "outputs_key": "revaluation_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "intelligence.contradiction_hunter",
+          "purpose": "Hunt for contradictions in memory",
+          "inputs_from_prev": [],
+          "outputs_key": "contradiction_report",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        }
+      ],
+      "merge_strategy": "parallel_merge",
+      "success_criteria": [
+        "gap_report.critical_count == 0",
+        "drift_report.blocking_drifts == 0"
+      ],
+      "failure_fallback": null,
+      "avg_confidence": 0.98,
+      "avg_duration_seconds": 90,
+      "token_budget": "zero",
+      "requires_network": false,
+      "tags": [
+        "audit",
+        "health",
+        "weekly",
+        "comprehensive"
+      ]
+    },
+    {
+      "recipe_id": "audit.security_posture",
+      "recipe_name": "Autonomous Audit: Security Posture Check",
+      "intent": "AUDIT_RADAR",
+      "trigger_patterns": [
+        "security audit",
+        "vulnerability scan",
+        "pen test",
+        "security posture",
+        "check for secrets",
+        "owasp check",
+        "threat model"
+      ],
+      "problem_description": "Security-focused audit scanning for hardcoded secrets, injection vulnerabilities, SSRF risks, authentication gaps, and memory isolation integrity.",
+      "pipeline_chain": [
+        {
+          "tool_id": "radar.gap_finder",
+          "purpose": "Gap scan with security severity filter only",
+          "inputs_from_prev": [],
+          "outputs_key": "security_gaps",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "knowledge_os.autonomous_safety_gate",
+          "purpose": "Run autonomous safety gate checks",
+          "inputs_from_prev": [],
+          "outputs_key": "safety_gate_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        }
+      ],
+      "merge_strategy": "sequential",
+      "success_criteria": [
+        "security_gaps.critical_count == 0",
+        "safety_gate_result.passed == True"
+      ],
+      "failure_fallback": null,
+      "avg_confidence": 0.99,
+      "avg_duration_seconds": 30,
+      "token_budget": "zero",
+      "requires_network": false,
+      "tags": [
+        "security",
+        "audit",
+        "owasp",
+        "offline"
+      ]
+    },
+    {
+      "recipe_id": "evolution.governed_skill_creation",
+      "recipe_name": "Governed Evolution: Auto Create New Skill",
+      "intent": "EVOLUTION",
+      "trigger_patterns": [
+        "create new skill",
+        "auto-generate skill",
+        "build tool from workflow",
+        "skill creation",
+        "distill to permanent skill"
+      ],
+      "problem_description": "Creates a new permanent skill from a proven workflow pattern. Goes through full governance, benchmarking, and canary promotion before production deployment.",
+      "pipeline_chain": [
+        {
+          "tool_id": "intelligence.skill_distiller",
+          "purpose": "Distill workflow trace into skill definition",
+          "inputs_from_prev": [],
+          "outputs_key": "skill_definition",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "shield.governance_policy",
+          "purpose": "Validate skill target path is allowlisted",
+          "inputs_from_prev": [
+            "skill_definition.target_path"
+          ],
+          "outputs_key": "governance_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "backend.evolution.benchmark_runner",
+          "purpose": "Benchmark new skill vs baseline",
+          "inputs_from_prev": [
+            "skill_definition"
+          ],
+          "outputs_key": "benchmark_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "backend.evolution.canary_manager",
+          "purpose": "Deploy at 10% canary traffic",
+          "inputs_from_prev": [
+            "skill_definition",
+            "benchmark_result"
+          ],
+          "outputs_key": "canary_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        },
+        {
+          "tool_id": "shield.artifact_integrity",
+          "purpose": "SHA-256 verify before full promotion",
+          "inputs_from_prev": [
+            "canary_result.artifact_path"
+          ],
+          "outputs_key": "integrity_result",
+          "can_skip_if": null,
+          "timeout_seconds": 60
+        }
+      ],
+      "merge_strategy": "sequential",
+      "success_criteria": [
+        "integrity_result.passed == True",
+        "canary_result.error_rate < 0.01",
+        "benchmark_result.delta > 0"
+      ],
+      "failure_fallback": null,
+      "avg_confidence": 0.95,
+      "avg_duration_seconds": 180,
+      "token_budget": "zero",
+      "requires_network": false,
+      "tags": [
+        "evolution",
+        "skill",
+        "governed",
+        "canary"
+      ]
+    }
+  ]
+}

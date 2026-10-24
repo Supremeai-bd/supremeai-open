@@ -1,0 +1,191 @@
+/*
+  Aethel Core - Custom Futuristic CSS Styles
+  বাংলা মন্তব্য: একদম অরিজিনাল সাই-ফাই মুভির মতো প্রিমিয়াম গ্লাসমরফিজম ও অ্যানিমেশন।
+*/
+
+/* ═══════════════════════════════════════════════════════
+   PREMIUM GLASSMORPHISM & HUD ELEMENTS
+   ═══════════════════════════════════════════════════════ */
+.sci-fi-glass {
+  background: rgba(10, 15, 30, 0.45) !important;
+  backdrop-filter: blur(24px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(150%) !important;
+  border: 1px solid rgba(0, 243, 255, 0.15) !important;
+  box-shadow:
+    0 8px 32px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 20px rgba(0, 243, 255, 0.05),
+    0 0 15px rgba(0, 243, 255, 0.2) !important;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.sci-fi-glass::before {
+  content: "";
+  position: absolute;
+  top: 0; left: -100%; width: 50%; height: 100%;
+  background: linear-gradient(to right, transparent, rgba(0, 243, 255, 0.1), transparent);
+  transform: skewX(-20deg);
+  animation: shimmer 6s infinite;
+}
+
+.sci-fi-glass-panel {
+  background: linear-gradient(135deg, rgba(6, 11, 25, 0.8) 0%, rgba(13, 22, 45, 0.6) 100%) !important;
+  backdrop-filter: blur(20px) !important;
+  border-left: 2px solid #00f3ff !important;
+  border-right: 1px solid rgba(0, 243, 255, 0.2) !important;
+  border-top: 1px solid rgba(0, 243, 255, 0.2) !important;
+  border-bottom: 1px solid rgba(0, 243, 255, 0.2) !important;
+  box-shadow: 0 0 30px rgba(0, 243, 255, 0.15) !important;
+  border-radius: 4px 16px 4px 16px;
+}
+
+.sci-fi-glass-danger {
+  border-left: 2px solid #ff0055 !important;
+  box-shadow: 0 0 30px rgba(255, 0, 85, 0.15) !important;
+}
+
+.sci-fi-glass-success {
+  border-left: 2px solid #00ff66 !important;
+  box-shadow: 0 0 30px rgba(0, 255, 102, 0.15) !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   NODE SHAPES (Hexagon / Angled)
+   ═══════════════════════════════════════════════════════ */
+.hud-node {
+  clip-path: polygon(10% 0, 100% 0, 100% 80%, 90% 100%, 0 100%, 0 20%);
+  background: rgba(5, 10, 20, 0.85);
+  border: 1px solid rgba(0, 255, 102, 0.4);
+  padding: 15px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+.hud-node:hover {
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 15px rgba(0, 255, 102, 0.6));
+}
+
+/* ═══════════════════════════════════════════════════════
+   CENTRAL ORBITAL CORE
+   ═══════════════════════════════════════════════════════ */
+.central-orb-outer {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: 2px dashed rgba(0, 243, 255, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: spin-clockwise 30s linear infinite;
+  box-shadow: 0 0 40px rgba(0, 243, 255, 0.2), inset 0 0 30px rgba(0, 243, 255, 0.2);
+}
+
+.central-orb-inner {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  border: 4px double rgba(188, 19, 254, 0.8);
+  background: radial-gradient(circle, rgba(0, 243, 255, 0.15) 0%, rgba(5, 10, 20, 0.9) 70%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: spin-counter-clockwise 15s linear infinite;
+  box-shadow: 0 0 30px rgba(188, 19, 254, 0.4);
+}
+
+.central-orb-core {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: rgba(0, 243, 255, 0.9);
+  box-shadow: 0 0 60px #00f3ff, 0 0 100px rgba(0, 243, 255, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pulse-glow 2s ease-in-out infinite alternate;
+}
+
+.central-orb-core-icon {
+  animation: spin-counter-clockwise 30s linear infinite;
+}
+
+/* ═══════════════════════════════════════════════════════
+   BACKGROUND HEX GRID
+   ═══════════════════════════════════════════════════════ */
+.hex-grid-bg {
+  background-color: #030712;
+  background-image:
+    linear-gradient(rgba(0, 243, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 243, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: center center;
+}
+
+.scanlines {
+  background: linear-gradient(
+    to bottom,
+    transparent 50%,
+    rgba(0, 243, 255, 0.04) 50%
+  );
+  background-size: 100% 4px;
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 10;
+  animation: scanlines-scroll 10s linear infinite;
+}
+
+/* ═══════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════ */
+@keyframes spin-clockwise {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes spin-counter-clockwise {
+  0% { transform: rotate(360deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes pulse-glow {
+  0% { transform: scale(0.95); box-shadow: 0 0 40px #00f3ff; }
+  100% { transform: scale(1.05); box-shadow: 0 0 80px #00f3ff, 0 0 120px rgba(0, 243, 255, 0.5); }
+}
+
+@keyframes shimmer {
+  0% { left: -100%; }
+  20% { left: 200%; }
+  100% { left: 200%; }
+}
+
+@keyframes scanlines-scroll {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 600px; }
+}
+
+/* Overriding React Flow Edges for intensely glowing paths */
+.react-flow__edge-path {
+  stroke-width: 3 !important;
+  filter: drop-shadow(0 0 8px rgba(0, 243, 255, 0.8)) !important;
+}
+
+.edge-threat .react-flow__edge-path {
+  filter: drop-shadow(0 0 10px rgba(255, 0, 85, 0.8)) !important;
+  stroke: #ff0055 !important;
+}
+
+.edge-success .react-flow__edge-path {
+  filter: drop-shadow(0 0 10px rgba(0, 255, 102, 0.8)) !important;
+  stroke: #00ff66 !important;
+}
+
+/* Hiding default react flow node backgrounds */
+.react-flow__node-default {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}

@@ -1,0 +1,11 @@
+{
+  "shells": {
+    "bash": ["bash", "--noprofile", "--norc", "-eo", "pipefail", "{0}"]
+  },
+  "required_permissions": {
+    "contents": "read",
+    "checks": "none",
+    "pull-requests": "none"
+  },
+  "excludes": []
+}

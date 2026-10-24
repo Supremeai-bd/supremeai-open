@@ -35,14 +35,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-if sys.platform == "win32":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
 ROOT = Path(__file__).resolve().parents[2]
-REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
+REPO = os.environ.get("GH_REPO", "SaifulHaqueNiloy/supremeai")
 
 # ---------------------------------------------------------------- thresholds
 HEARTBEAT_STALE_S = 6 * 3600        # agent-loop heartbeat: ৬ ঘণ্টা নীরবতা = stale
@@ -104,7 +98,7 @@ def evaluate(observations: dict, now: float) -> list[dict]:
 
     # 1. heartbeats (প্রতি name আলাদা scope — আলাদা fix আলাদা issue)
     for hb in observations.get("heartbeats", []):
-        state = assess_heartbeat(hb.get("last_seen_epoch", hb.get("timestamp")), now)
+        state = assess_heartbeat(hb.get("last_seen_epoch"), now)
         if state["state"] != "healthy":
             _add("stale_heartbeat", hb.get("name", "unknown"),
                  f"state={state['state']}; {state['reason']}")
@@ -125,7 +119,7 @@ def evaluate(observations: dict, now: float) -> list[dict]:
 
     # 3. CI evaluator inactivity (একটিই স্কোপ: evaluator পুরোটা)
     ev = observations.get("evaluator") or {}
-    ev_state = assess_heartbeat(ev.get("last_success_epoch", ev.get("timestamp")), now, EVALUATOR_STALE_S)
+    ev_state = assess_heartbeat(ev.get("last_success_epoch"), now, EVALUATOR_STALE_S)
     if ev_state["state"] != "healthy":
         _add("stale_ci_evaluator", ev.get("name", "ai-pr-evaluator"),
              f"state={ev_state['state']}; {ev_state['reason']}")

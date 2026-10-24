@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquarePlus, Plus, RefreshCw, Settings2, X } from 'lucide-react';
-import { UnifiedChatPanel } from '../chat/UnifiedChatPanel';
+import { ArrowRight, FileText, Plus, RefreshCw, Settings2, Sparkles, X, Zap } from 'lucide-react';
 import AddNewWizard from './AddNewWizard';
 import { CapabilityUnavailableExplainer, ManageItem } from './CapabilityCards';
 import { capabilityFromModule, type UserCapability } from '../../types/contracts';
@@ -10,6 +9,12 @@ import { useWorkspaceSettings, WORKSPACE_MODULES } from '../../hooks/useWorkspac
 import { connectionsApi } from '../../services/connectionsApi';
 import { apiClient } from '../../services/apiClient';
 import TaskAutomationCard from './TaskAutomationCard';
+
+const quickStarts = [
+  { label: 'Research a topic', detail: 'Get a clear answer with useful context.', icon: Sparkles, href: '/workspace/live' },
+  { label: 'Analyze a file', detail: 'Bring a document into a focused workspace.', icon: FileText, href: '/files' },
+  { label: 'Build a workflow', detail: 'Turn a repeatable task into a helper.', icon: Zap, href: '/agents' },
+];
 
 interface RecentConversation {
   id: string;
@@ -33,13 +38,19 @@ export const UserDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [showTools, setShowTools] = useState(false);
   const [showAddWizard, setShowAddWizard] = useState(false);
+  // FIX(intent-carryover): the ask-box used to navigate to /workspace/live
+  // on Enter while discarding the typed text — the user's intent was lost
+  // every time. It is now kept in state and forwarded to the Studio via a
+  // URL param (consumed and stripped by AIStudio on mount).
+  const [ask, setAsk] = useState('');
   const { enabledModules, toggleModule } = useWorkspaceSettings();
   const name = user?.name?.split(' ')[0] || 'there';
-  // FIX(audit 2026-10-24): greeting was hardcoded "Good morning" — now time-of-day aware
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const isCosmic = import.meta.env.VITE_COSMIC_DASHBOARD !== 'false';
 
+  const submitAsk = () => {
+    const intent = ask.trim();
+    if (!intent) return;
+    navigate(`/workspace/live?intent=${encodeURIComponent(intent)}`);
+  };
 
   // State-based capabilities from live backend (Phase 2 Progressive Disclosure)
   const [serverCapabilities, setServerCapabilities] = useState<UserCapability[]>([]);
@@ -53,23 +64,15 @@ export const UserDashboard: React.FC = () => {
   const fetchWorkspaceState = async () => {
     setLoadingWorkspace(true);
     try {
-      const [data, prefs] = await Promise.all([
-        connectionsApi.getMyWorkspace(),
-        apiClient.get<{ preferences?: { hidden_tool_cards?: string[] } }>('/api/v1/user/preferences').catch(() => null),
-      ]);
-      const hiddenCards = new Set(prefs?.preferences?.hidden_tool_cards || []);
+      const data = await connectionsApi.getMyWorkspace();
       if (data && Array.isArray(data.capabilities) && data.capabilities.length > 0) {
-        const mapped: UserCapability[] = data.capabilities
-          .filter((c) => !hiddenCards.has(c.capabilityId))
-          .map((c) => ({
-            id: c.capabilityId,
-            label: c.name,
-            description: c.purpose,
-            status: c.status,
-            // FIX(nav-truth 2026-10-24): /agents route does not exist (404) — the
-            // "Use" action falls through to the unified chat surface.
-            href: undefined,
-          }));
+        const mapped: UserCapability[] = data.capabilities.map((c) => ({
+          id: c.capabilityId,
+          label: c.name,
+          description: c.purpose,
+          status: c.status,
+          href: c.category === 'agent' ? '/agents' : undefined,
+        }));
         setServerCapabilities(mapped);
         const reasons: Record<string, string> = {};
         for (const c of data.capabilities) {
@@ -97,7 +100,7 @@ export const UserDashboard: React.FC = () => {
         '/api/v1/conversations/',
       );
       const rows = Array.isArray(data) ? data : (data?.data ?? []);
-      setRecentConversations(rows.slice(0, 8));
+      setRecentConversations(rows.slice(0, 3));
     } catch {
       // Auth/permission or backend unavailable — show the honest empty state.
       setRecentConversations([]);
@@ -130,85 +133,60 @@ export const UserDashboard: React.FC = () => {
           <div>
             <p className="sa-eyebrow mb-3">Your workspace</p>
             <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-              {greeting}, {name}.
+              Good morning, {name}.
             </h1>
             <p className="mt-2 max-w-xl text-[var(--sa-ink-muted)]">
               A simple place to think, make progress, and keep your work moving.
             </p>
           </div>
-          {/* FIX(audit 2026-10-24): /settings route does not exist (404) — Personalize
-              now opens the existing "Choose your tools" dialog instead. */}
-          <button
-            type="button"
-            onClick={() => setShowTools(true)}
+          <Link
+            to="/settings"
             className="inline-flex items-center gap-2 self-start rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] px-4 py-2.5 text-sm font-medium transition hover:border-[var(--sa-primary)] hover:text-[var(--sa-primary)]"
           >
             <Settings2 size={16} /> Personalize
-          </button>
+          </Link>
         </header>
 
         <TaskAutomationCard />
 
-        {/* CHAT-FIRST HOME (owner request 2026-10-24): the dashboard landing page
-            IS the chat tab now — a history rail on the left and the shared
-            UnifiedChatPanel (same engine as AI Studio and guest chat) on the
-            right. The old "Start anywhere" ask-box navigated away on Enter;
-            users can now chat inline without leaving home. */}
-        <section aria-label="Chat home" className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
-          <aside className="flex min-w-0 flex-col gap-3">
+        <section className="sa-surface-raised p-5 sm:p-7" aria-labelledby="intent-heading">
+          <p className="sa-eyebrow mb-2">Start anywhere</p>
+          <h2 id="intent-heading" className="text-xl font-semibold">
+            What would you like to do?
+          </h2>
+          <div className="mt-5 flex rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] bg-[var(--sa-canvas)] p-1.5 focus-within:border-[var(--sa-primary)] focus-within:ring-4 focus-within:ring-[var(--sa-primary-soft)]">
+            <input
+              type="text"
+              aria-label="Ask SupremeAI what to accomplish"
+              placeholder="Ask a question, describe a task, or share an idea..."
+              className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm outline-none placeholder:text-[var(--sa-ink-muted)]"
+              value={ask}
+              onChange={(event) => setAsk(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229)
+                  submitAsk();
+              }}
+            />
             <button
               type="button"
-              onClick={() => navigate('/workspace/live')}
-              className="inline-flex items-center justify-center gap-2 rounded-[var(--sa-radius-sm)] bg-[var(--sa-primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+              aria-label="Open SupremeAI Studio"
+              onClick={submitAsk}
+              className="flex size-11 shrink-0 items-center justify-center rounded-[var(--sa-radius-sm)] bg-[var(--sa-primary)] text-white transition hover:opacity-90"
             >
-              <MessageSquarePlus size={16} /> New chat
+              <ArrowRight size={17} />
             </button>
-            <div className="sa-surface-raised flex min-w-0 flex-col gap-2 p-3">
-              <p className="sa-eyebrow">Recent conversations</p>
-              {recentLoading ? (
-                <div className="flex flex-col gap-2" data-testid="recent-skeleton">
-                  {[1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      className="h-9 w-full animate-pulse rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] bg-[var(--sa-border)]/40"
-                    />
-                  ))}
-                </div>
-              ) : recentConversations && recentConversations.length > 0 ? (
-                <ul className="flex min-w-0 flex-col gap-1.5">
-                  {recentConversations.map((conversation) => (
-                    <li key={conversation.id} className="min-w-0">
-                      <Link
-                        to={`/workspace/live?conversation=${encodeURIComponent(conversation.id)}`}
-                        className="flex min-w-0 items-center justify-between gap-2 rounded-[var(--sa-radius-sm)] border border-transparent px-2.5 py-2 text-sm transition hover:border-[var(--sa-border)] hover:bg-[var(--sa-primary-soft)]"
-                      >
-                        <span className="min-w-0 flex-1 truncate">
-                          {conversation.title?.trim() || 'Untitled conversation'}
-                        </span>
-                        <span className="shrink-0 text-[10px] text-[var(--sa-ink-muted)]">
-                          {formatRelativeTime(conversation.updated_at)}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-[var(--sa-ink-muted)]">
-                  {recentConversations === null
-                    ? 'Loading your recent conversations…'
-                    : 'Your conversations will appear here once you start chatting.'}
-                </p>
-              )}
-            </div>
-          </aside>
-          <div
-            className={`sa-surface-raised relative flex min-h-[32rem] lg:h-[calc(100dvh-15rem)] flex-col overflow-hidden p-2 sm:p-3 ${
-              isCosmic
-                ? 'before:absolute before:inset-0 before:bg-[radial-gradient(ellipse_at_top,rgba(168,85,247,0.10),transparent_70%)] before:pointer-events-none'
-                : ''
-            }`}
-          >
-            <UnifiedChatPanel fit="fill" className="relative" />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {quickStarts.map(({ label, icon: Icon, href }) => (
+              <Link
+                key={label}
+                to={href}
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] transition hover:border-[var(--sa-primary)] hover:bg-[var(--sa-primary-soft)] hover:text-[var(--sa-primary)]"
+              >
+                <Icon size={13} />
+                {label}
+              </Link>
+            ))}
           </div>
         </section>
 
@@ -247,17 +225,13 @@ export const UserDashboard: React.FC = () => {
               <ManageItem
                 key={item.id}
                 item={item}
-                onUse={() => navigate(`${item.href || '/workspace/live'}?intent=${encodeURIComponent(item.label)}`)}
-                onManage={() => setShowTools(true)}
+                onUse={() => navigate(item.href || '/workspace/live')}
+                onManage={() => navigate(item.href || '/settings')}
                 onRemove={() => {
                   if (enabledModules.includes(item.id as typeof enabledModules[number])) {
                     toggleModule(item.id as typeof enabledModules[number]);
                   }
                   setServerCapabilities((prev) => prev.filter((c) => c.id !== item.id));
-                  // Persist removal to backend SQLite preferences
-                  apiClient.delete(`/api/v1/user/preferences/tool-card/${encodeURIComponent(item.id)}`).catch((err) => {
-                    console.warn('Failed to persist tool-card removal:', err);
-                  });
                 }}
               />
             ))}
@@ -284,7 +258,7 @@ export const UserDashboard: React.FC = () => {
                   <CapabilityUnavailableExplainer
                     key={item.id}
                     item={item}
-                    onRequest={() => setShowTools(true)}
+                    onRequest={() => navigate('/settings')}
                   />
                 ))}
               </div>
@@ -292,7 +266,52 @@ export const UserDashboard: React.FC = () => {
           })()}
         </section>
 
-
+        <section className="grid gap-4 lg:grid-cols-2">
+          <div className="sa-surface-raised p-5">
+            <div className="flex items-center justify-between">
+              <p className="sa-eyebrow">Recent work</p>
+              {recentLoading && <RefreshCw size={13} className="animate-spin text-[var(--sa-ink-muted)]" />}
+            </div>
+            {recentConversations && recentConversations.length > 0 ? (
+              <>
+                <h2 className="mt-2 text-lg font-semibold">Pick up where you left off</h2>
+                <ul className="mt-3 flex flex-col gap-2">
+                  {recentConversations.map((conversation) => (
+                    <li key={conversation.id}>
+                      <Link
+                        to="/workspace/live"
+                        className="flex items-center justify-between gap-3 rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] px-3 py-2.5 text-sm transition hover:border-[var(--sa-primary)] hover:bg-[var(--sa-primary-soft)]"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {conversation.title?.trim() || 'Untitled conversation'}
+                        </span>
+                        <span className="shrink-0 text-xs text-[var(--sa-ink-muted)]">
+                          {formatRelativeTime(conversation.updated_at)}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <>
+                <h2 className="mt-2 text-lg font-semibold">Nothing here yet</h2>
+                <p className="mt-2 text-sm text-[var(--sa-ink-muted)]">
+                  {recentConversations === null
+                    ? 'Loading your recent conversations…'
+                    : 'Your conversations, projects, and completed tasks will appear here.'}
+                </p>
+              </>
+            )}
+          </div>
+          <div className="sa-surface-raised p-5">
+            <p className="sa-eyebrow">Need a starting point?</p>
+            <h2 className="mt-2 text-lg font-semibold">Begin with a small task</h2>
+            <p className="mt-2 text-sm text-[var(--sa-ink-muted)]">
+              You can always add more tools later from Settings.
+            </p>
+          </div>
+        </section>
       </div>
 
       {showAddWizard && (
@@ -313,7 +332,7 @@ export const UserDashboard: React.FC = () => {
 
       {showTools && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--sa-overlay)] p-4 sm:items-center"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-4 sm:items-center"
           role="dialog"
           aria-modal="true"
           aria-labelledby="tools-dialog-title"

@@ -1,0 +1,20 @@
+# architecture-rules.yml — M11 Phase-1: স্থাপত্য-নিয়ম কোডে নয়, ডেটায়।
+#
+# বাংলা: M11-এর নিজস্ব zero-hardcode গ্রহণ-শর্ত অনুযায়ী cross-circle
+# নিষিদ্ধ-আমদানি নিয়মগুলো এখানে বাস করে (আগে scripts/ci/
+# circle_architecture_gate.py-এর ইন-কোড dict-এ ছিল)। নিয়ম বদল = কোড-
+# পরিবর্তন নয়, এই ডেটা-ফাইল বদল।
+#
+# স্কিমা:
+#   forbidden_cross_circle_imports:
+#     "<source-root>":
+#       - "<target-root-or-file>"   # backend/... পাথ (মডিউল-ডট বা ফাইল-পাথ)
+version: 1
+
+forbidden_cross_circle_imports:
+  backend/memory:
+    - backend/brain
+    - backend/core/browser_session_manager.py
+  backend/brain:
+    - backend/memory
+    - backend/core/browser_session_manager.py

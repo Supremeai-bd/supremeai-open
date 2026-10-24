@@ -1,0 +1,71 @@
+{
+  "manifest_version": "1.0.0",
+  "source_version": "2026-09-04",
+  "records": [
+    {
+      "knowledge_key": "core.governance.human_in_the_loop",
+      "title": "Human-In-The-Loop Permanent Governance and Safeguards",
+      "domain": "governance",
+      "namespace": "core",
+      "content": "SupremeAI enforces strict Human-In-The-Loop (HITL) policies for all sensitive, destructive, external, or irreversible actions. Low-risk operations may run automatically, but irreversible state modifications require explicit human authorization and cryptographically logged audit records.",
+      "source_document": "docs/SUPREMEAI_MASTER_ROADMAP_2026-09.md",
+      "source_section": "1. Product North Star",
+      "confidence": 0.99,
+      "risk_level": "high",
+      "status": "approved",
+      "tags": ["hitl", "governance", "security", "policy"]
+    },
+    {
+      "knowledge_key": "core.architecture.chat_control_plane",
+      "title": "Chat as Governed Central Control Plane",
+      "domain": "architecture",
+      "namespace": "core",
+      "content": "Chat operates as the unified control plane for SupremeAI. All tasks, models, memory modules, browsers, and background tools are governed spokes orchestrated through the central chat interface carrying standardized ExecutionRecords.",
+      "source_document": "docs/SUPREMEAI_MASTER_ROADMAP_2026-09.md",
+      "source_section": "1. Product North Star",
+      "confidence": 0.98,
+      "risk_level": "medium",
+      "status": "approved",
+      "tags": ["architecture", "orchestration", "chat", "execution_record"]
+    },
+    {
+      "knowledge_key": "core.infrastructure.zero_cost_free_tier",
+      "title": "Zero-Cost Infrastructure and Free-Tier Optimization",
+      "domain": "devops",
+      "namespace": "core",
+      "content": "System architecture is designed for zero infrastructure costs, maximizing free-tier resiliency across Render, Supabase, Cloudflare, and Vercel. Remote persistent storage is delegated to Supabase PostgreSQL (pgvector) without relying on paid persistent disks.",
+      "source_document": "docs/ADMIN_TASKS.md",
+      "source_section": "1. Run the Vector DB Migration",
+      "confidence": 0.95,
+      "risk_level": "low",
+      "status": "approved",
+      "tags": ["zero-cost", "free-tier", "render", "supabase", "postgres"]
+    },
+    {
+      "knowledge_key": "core.learning.flywheel_provenance",
+      "title": "Learning Flywheel and Provenance-Bearing Records",
+      "domain": "learning",
+      "namespace": "core",
+      "content": "Long-term learning is preserved through provenance-bearing records, semantic memory vectors, and offline-evaluated curriculum manifests. Candidate skills and lessons remain quarantined until approved and signed.",
+      "source_document": "docs/SUPREMEAI_BOARD_STRATEGY_AND_TODO_BN.md",
+      "source_section": "Stage 4 - Learning Flywheel",
+      "confidence": 0.96,
+      "risk_level": "medium",
+      "status": "approved",
+      "tags": ["learning-flywheel", "memory", "curriculum", "provenance"]
+    },
+    {
+      "knowledge_key": "core.browser.session_isolation_and_ssrf",
+      "title": "Browser Automation Isolation and SSRF Protection",
+      "domain": "security",
+      "namespace": "core",
+      "content": "Browser automation enforces per-user session isolation, strict anti-SSRF filtering against internal/loopback/cloud metadata IP ranges, and deterministic lifecycle termination on idle or shutdown.",
+      "source_document": "docs/ADMIN_TASKS.md",
+      "source_section": "BROWSER FOUNDATION",
+      "confidence": 0.97,
+      "risk_level": "critical",
+      "status": "approved",
+      "tags": ["browser", "ssrf", "isolation", "security"]
+    }
+  ]
+}

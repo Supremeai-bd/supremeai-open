@@ -1,0 +1,32 @@
+# বাংলা মন্তব্য: CodeQL analysis scope ছোট করার config (৫-ধাপ প্ল্যান, ধাপ ৪)।
+# আগে গোটা repo (node_modules বাদে) default query-suite দিয়ে scan হতো, যার মধ্যে
+# test fixture, archived code, vendored/generated ফাইলও ছিল — এতে analysis সময়
+# বাড়ছিল অথচ কোনো নতুন real vulnerability coverage যোগ হচ্ছিল না।
+# এখানে শুধু সেই path বাদ দেওয়া হলো যেগুলো:
+#   ১. archived/অব্যবহৃত কোড (archive/)
+#   ২. test ফাইল (production risk তৈরি করে না, কিন্তু scan সময় খায়)
+#   ৩. generated/vendored/build আউটপুট
+name: "SupremeAI CodeQL Config"
+
+paths-ignore:
+  - "archive/**"
+  - "**/node_modules/**"
+  - "**/.venv/**"
+  - "**/venv/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/.dart_tool/**"
+  - "**/coverage/**"
+  - "**/*.min.js"
+  - "backend/tests/**"
+  - "backend/core/testing/**"
+  - "tests/**"
+  - "scripts/testenv/**"
+  - "scripts/testing/**"
+  - "tools/vscode-extension/test/**"
+  - "apps/mobile/test/**"
+  - "**/*.generated.*"
+
+# বাংলা: query-suite ইচ্ছাকৃতভাবে override করা হয়নি — default suite-ই থাকছে,
+# কারণ লক্ষ্য ছিল শুধু scan scope (path) ছোট করে সময় কমানো, query বাড়িয়ে
+# আরও ধীর করা না।

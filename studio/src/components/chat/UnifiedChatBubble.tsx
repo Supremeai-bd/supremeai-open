@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { getApiBaseUrl } from '../../utils/api';
+import { adminTokenStore } from '../../services/adminTokenStore';
 import { apiClient } from '../../services/apiClient';
 
 // --- Bangla comment: UnifiedChatBubble-এ action button-এর জন্য প্রপস ---
@@ -19,23 +21,14 @@ interface UnifiedChatBubbleProps {
   action?: PromptActionMeta | null;
   onSaveToProject?: (code: string) => void;
   onPreview?: (code: string) => void;
-  onRegenerate?: () => void;
 }
 
-// Bangla comment: Cosmic token-based styling (Refs #861, #862)
-// FIX(contrast-mix 2026-10-24, owner screenshot): দুটো রুট-বাগ ছিল —
-// (1) Tailwind-এর opacity modifier (/20, /40) arbitrary var() রঙের সাথে কাজ করে না:
-// `bg-[var(--neon-purple,#bc13fe)]/20` কম্পাইল হতো না, ফলে user bubble-এর ব্যাকগ্রাউন্ড/
-// বর্ডার রেন্ডারই হতো না। (2) `text-[var(--sa-ink)]` থিম-নির্ভর (light theme-এ #111615
-// প্রায়-কালো) অথচ bubble-এর ব্যাকগ্রাউন্ড সব থিমেই hardcoded dark glass — light mode-এ
-// কালো টেক্সট কালো bubble-এ মিশে যেত (owner-এর "text colour and background colour
-// mixing" রিপোর্ট)। Root-cause fix: explicit rgba ব্যাকগ্রাউন্ড + সবসময়-dark glass
-// bubble-এর ভেতরে থিম-নিরপেক্ষ fixed light text (text-slate-50)।
-const COSMIC_USER_BUBBLE =
-  'bg-[rgba(188,19,254,0.16)] border border-[rgba(188,19,254,0.45)] text-slate-50 font-medium rounded-2xl rounded-tr-none shadow-[0_0_18px_rgba(188,19,254,0.2)] backdrop-blur-md';
+// Bangla comment: ডার্ক সাই-ফাই Cold Glass ইফেক্টের CSS ক্লাস
+const SCI_FI_USER_BUBBLE =
+  'bg-gradient-to-br from-[#00f3ff]/90 to-[#0891b2] text-black font-bold rounded-tr-none shadow-[0_0_18px_rgba(0,243,255,0.35)] border border-[#00f3ff]/40';
 
-const COSMIC_SYSTEM_BUBBLE =
-  'bg-[var(--surface-glass,rgba(15,23,42,0.75))] border border-[var(--sa-border,rgba(255,255,255,0.1))] text-slate-50 rounded-2xl rounded-tl-none shadow-[0_0_14px_rgba(0,0,0,0.3)] backdrop-blur-md';
+const SCI_FI_SYSTEM_BUBBLE =
+  'bg-[#0a0c14]/85 border border-[#bc13fe]/18 text-slate-200 rounded-tl-none shadow-[0_0_14px_rgba(188,19,254,0.12)] backdrop-blur-md';
 
 // Bangla comment: Action item interface
 interface ActionItem {
@@ -63,12 +56,11 @@ export function UnifiedChatBubble({
   action,
   onSaveToProject,
   onPreview,
-  onRegenerate,
 }: UnifiedChatBubbleProps) {
   const [copied, setCopied] = useState(false);
   const [actionStatus, setActionStatus] = useState('');
 
-  const bubbleClass = sender === 'user' ? COSMIC_USER_BUBBLE : COSMIC_SYSTEM_BUBBLE;
+  const bubbleClass = sender === 'user' ? SCI_FI_USER_BUBBLE : SCI_FI_SYSTEM_BUBBLE;
 
   // Bangla comment: action badge ইন্টারফেসে দেখানো হবে AI কি করবে তা
   const actionBadge = action && action.label
@@ -126,13 +118,22 @@ export function UnifiedChatBubble({
       } else if (act.type === 'deploy') {
         setActionStatus('🚀 Deploying...');
         try {
-          // Issue #2522: raw fetch -> apiClient.post — admin token ক্লায়েন্ট নিজেই বসায়।
-          const data = await apiClient.post<{ message?: string }>('/admin-api/deploy', {
-            code: content, filename: filename || 'component.tsx',
+          const res = await fetch(`${getApiBaseUrl()}/admin-api/deploy`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${adminTokenStore.getRawToken()}`
+            },
+            body: JSON.stringify({ code: content, filename: filename || 'component.tsx' })
           });
-          setActionStatus(`✅ ${data.message || 'Deployed!'}`);
+          if (res.ok) {
+            const data = await res.json();
+            setActionStatus(`✅ ${data.message || 'Deployed!'}`);
+          } else {
+            setActionStatus('❌ Deploy failed (unauthorized or server error).');
+          }
         } catch (e: unknown) {
-          setActionStatus(e instanceof Error ? `❌ Deploy failed: ${e.message}` : '❌ Deploy failed (unauthorized or server error)');
+          setActionStatus(e instanceof Error ? `❌ Deploy failed: ${e.message}` : '❌ Deploy failed');
         }
       } else if (act.type === 'share') {
         setActionStatus('🔗 Share link copied!');
@@ -152,7 +153,7 @@ export function UnifiedChatBubble({
       return (
         <div className={`max-w-[85%] flex flex-col gap-1 self-start items-start`}>
           {actionBadge}
-          <div className={`p-3.5 rounded-2xl text-xs leading-relaxed w-full ${COSMIC_SYSTEM_BUBBLE}`}>
+          <div className={`p-3.5 rounded-2xl text-xs leading-relaxed w-full ${SCI_FI_SYSTEM_BUBBLE}`}>
             {parsed.type === 'code' && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-1.5">
@@ -203,38 +204,14 @@ export function UnifiedChatBubble({
                 ))}
               </div>
             )}
-            <div className="mt-1 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  await navigator.clipboard.writeText(text);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-                className="text-[10px] text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)] transition"
-                title="Copy response"
-              >
-                {copied ? '✓ Copied' : 'Copy'}
-              </button>
-              {onRegenerate && (
-                <button
-                  type="button"
-                  onClick={onRegenerate}
-                  className="text-[10px] text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)] transition"
-                  title="Regenerate response"
-                >
-                  Regenerate
-                </button>
-              )}
-            </div>
             {actionStatus && (
-              <div className="text-[10px] text-[var(--sa-ink-muted)] font-mono italic animate-pulse mt-1">
+              <div className="text-[10px] text-slate-400 font-mono italic animate-pulse mt-1">
                 {actionStatus}
               </div>
             )}
           </div>
           {timestamp && (
-            <span className="text-[9px] text-[var(--sa-ink-muted)] px-1 font-mono">{timestamp}</span>
+            <span className="text-[9px] text-slate-400 px-1 font-mono">{timestamp}</span>
           )}
         </div>
       );
@@ -247,37 +224,13 @@ export function UnifiedChatBubble({
         <div className={`p-3.5 rounded-2xl text-xs leading-relaxed ${bubbleClass}`}>
           {text}
         </div>
-        <div className="flex items-center gap-2 px-1">
-          <button
-            type="button"
-            onClick={async () => {
-              await navigator.clipboard.writeText(text);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }}
-            className="text-[10px] text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)] transition"
-            title="Copy response"
-          >
-            {copied ? '✓ Copied' : 'Copy'}
-          </button>
-          {onRegenerate && (
-            <button
-              type="button"
-              onClick={onRegenerate}
-              className="text-[10px] text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)] transition"
-              title="Regenerate response"
-            >
-              Regenerate
-            </button>
-          )}
-        </div>
         {actionStatus && (
-          <div className="text-[10px] text-[var(--sa-ink-muted)] font-mono italic animate-pulse">
+          <div className="text-[10px] text-slate-400 font-mono italic animate-pulse">
             {actionStatus}
           </div>
         )}
         {timestamp && (
-          <span className="text-[9px] text-[var(--sa-ink-muted)] px-1 font-mono">{timestamp}</span>
+          <span className="text-[9px] text-slate-400 px-1 font-mono">{timestamp}</span>
         )}
       </div>
     );
@@ -289,7 +242,7 @@ export function UnifiedChatBubble({
         {text}
       </div>
       {timestamp && (
-        <span className="text-[9px] text-[var(--sa-ink-muted)] px-1 font-mono">{timestamp}</span>
+        <span className="text-[9px] text-slate-400 px-1 font-mono">{timestamp}</span>
       )}
     </div>
   );

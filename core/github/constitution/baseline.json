@@ -1,0 +1,8 @@
+{
+  "description": "Constitution Audit Baseline — Ratchet Protection (Strict Mode)",
+  "mode": "strict",
+  "created_at": "2025-09-12T00:00:00Z",
+  "rules_locked": true,
+  "notes": "Baseline captures current violations as of initial audit setup. New violations beyond baseline will BLOCK CI. Legacy violations already in baseline may remain until explicitly addressed.",
+  "baseline_violations": []
+}

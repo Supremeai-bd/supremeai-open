@@ -1,0 +1,5 @@
+{
+  "baseline_violations": 0,
+  "scope": "cycles + boundary (architecture-rules.yml)",
+  "schema_version": 1
+}

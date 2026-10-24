@@ -1,0 +1,25 @@
+# Agent Registry — multi-AI governance Phase 1 (issue #1150)
+# Admin এই ফাইল সম্পাদনা করে agent role + AI/provider assign করেন
+# (API POST /api/v1/agents দিয়েও হয় — রানটাইমে ফাইল আপডেট হয়)।
+# provider মুক্ত-ফর্ম: যে-কোনো ভেন্ডর (no vendor hardcoding)।
+# নিরাপত্তা: প্রতিটি agent নিজস্ব branch-এ কাজ করে, সরাসরি main-এ লেখা নিষিদ্ধ।
+version: '1'
+agents:
+  - id: agent-1
+    role: planner
+    provider: gemini
+    workspace_branch: agent-1
+    active: false
+    notes: Planner — breaks goals into issues/tasks
+  - id: agent-2
+    role: coder
+    provider: claude
+    workspace_branch: agent-2
+    active: true
+    notes: Solver — claims issue, implements, opens PR
+  - id: agent-3
+    role: tester
+    provider: gpt
+    workspace_branch: agent-3
+    active: false
+    notes: Verifier — reviews PRs, runs checks

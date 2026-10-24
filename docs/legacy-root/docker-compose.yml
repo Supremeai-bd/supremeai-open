@@ -1,0 +1,245 @@
+services:
+  # ----------------------------------------------------------
+  # 1. CORE API SERVICE (FastAPI Engine & Business Logic)
+  # ----------------------------------------------------------
+  core:
+    # R-04 fix (issue #563): the hardcoded `:test` tag was mutable and
+    # non-reproducible — every rebuild silently moved it, so deploys could not
+    # be pinned or rolled back to a known-good image and the tag lied about
+    # what was running. All five service images are now tagged from the
+    # VERSION variable (shell env or .env):
+    #   VERSION=2.0.0 docker compose build   -> reproducible semver tag
+    #   VERSION=<digest> docker compose up   -> supply-chain-pinned deploy
+    # The `dev` default marks the local-build lineage (this compose file
+    # builds all five images locally) and, unlike `latest`, can never collide
+    # with a release tag or clobber docker-compose.production.yml's latest.
+    image: supremeai/core:${VERSION:-dev}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: supremeai-core
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - SUPREMEAI_SERVICE_ROLE=core
+      - BACKEND_URL=http://core:8080
+      - WORKER_URL=http://worker:8081
+      - SCRAPER_URL=http://scraper:8082
+      - MCP_URL=http://mcp:3771
+      - CHROMA_PERSIST_DIR=/app/data/chromadb_store
+      - QDRANT_PERSIST_DIR=/app/data/qdrant_storage
+      - SUPABASE_ALLOW_DB_DEGRADATION=true
+    env_file:
+      - .env
+    volumes:
+      - supremeai_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health/live', timeout=3)\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      supremeai-network:
+        aliases:
+          - backend
+          - core
+          - supremeai-core
+
+  # ----------------------------------------------------------
+  # 2. WORKER SERVICE (Background Queue & Celery Worker)
+  # ----------------------------------------------------------
+  worker:
+    image: supremeai/worker:${VERSION:-dev} # R-04: VERSION-tagged (see core)
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: supremeai-worker
+    command: ["python", "worker_service.py"]
+    environment:
+      - PORT=8081
+      - SUPREMEAI_SERVICE_ROLE=worker
+      - SUPABASE_ALLOW_DB_DEGRADATION=true
+    env_file:
+      - .env
+    volumes:
+      - supremeai_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/health/ready', timeout=3)\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - supremeai-network
+    profiles:
+      - workers
+      - full
+
+  # ----------------------------------------------------------
+  # 3. SCRAPER SERVICE (Headless Browser & Automation)
+  # ----------------------------------------------------------
+  scraper:
+    image: supremeai/scraper:${VERSION:-dev} # R-04: VERSION-tagged (see core)
+    build:
+      context: ./backend
+      # INF-07 fix (issue #530): the base backend/Dockerfile installs no
+      # Playwright/Chromium, so services.scraper.main:app (import
+      # playwright.async_api) crashed on boot with ModuleNotFoundError.
+      # services/scraper/Dockerfile is the browser-ready image (poetry
+      # --only main,browser + `playwright install --with-deps chromium`);
+      # it is built from the same ./backend context, so COPY paths still
+      # resolve (pyproject.toml, poetry.lock, full backend tree).
+      dockerfile: services/scraper/Dockerfile
+    container_name: supremeai-scraper
+    command: ["uvicorn", "services.scraper.main:app", "--host", "0.0.0.0", "--port", "8082"]
+    environment:
+      - PORT=8082
+      - SUPREMEAI_SERVICE_ROLE=scraper
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8082/health', timeout=3)\" || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    networks:
+      - supremeai-network
+    profiles:
+      - scraper
+      - full
+
+  # ----------------------------------------------------------
+  # 4. MCP CONTROL TOWER (Model Context Protocol Gateway)
+  # ----------------------------------------------------------
+  mcp:
+    image: supremeai/mcp:${VERSION:-dev} # R-04: VERSION-tagged (see core)
+    build:
+      # Build context remains the service directory so the existing .dockerignore
+      # (which excludes node_modules, dist, *.ts test scripts, etc.) still applies.
+      # R-05 fix (issue #538): backend/ is no longer bind-mounted at runtime —
+      # it is baked into the image via the named build context below
+      # (COPY --from=backend in the Dockerfile), so the memory sidecar works
+      # on hostless/container-only deploys where no repo checkout exists.
+      context: ./infrastructure/mcp-control-plane
+      dockerfile: Dockerfile
+      # Named build context consumed by `COPY --from=backend` in the
+      # Dockerfile (requires Docker Compose v2.17+ / BuildKit, which is the
+      # default for `docker compose build`). Equivalent plain-docker build:
+      #   docker build --build-context backend=./backend infrastructure/mcp-control-plane
+      additional_contexts:
+        backend: ./backend
+    container_name: supremeai-mcp
+    ports:
+      - "3771:3771"
+    environment:
+      - MCP_PORT=3771
+      - NODE_ENV=production
+      # Point the MemorySubAdapter at the backend source BAKED into the image
+      # (see Dockerfile COPY --from=backend), not a host mount.
+      - SUPREMEAI_BACKEND_DIR=/app/backend
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3771/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));\""]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - supremeai-network
+    profiles:
+      - mcp
+      - full
+
+  # ----------------------------------------------------------
+  # FRONTEND (Single Unified SupremeAI Studio)
+  # ----------------------------------------------------------
+  frontend:
+    image: supremeai/frontend:${VERSION:-dev} # R-04: VERSION-tagged (see core)
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      # FIX(localhost-bake): VITE_* values are baked into the bundle at build
+      # time. The old environment block shipped http://localhost:8080 inside
+      # the JS bundle, so the containerized frontend only worked when the
+      # browser ran on the docker host itself. nginx already proxies /api,
+      # /admin-api, /auth and /ws to backend:8080 — relative paths work from
+      # every host (localhost, LAN, reverse-proxied domains).
+      args:
+        VITE_USE_RELATIVE_PATH: "true"
+    container_name: supremeai-frontend
+    ports:
+      - "3000:8080"
+    depends_on:
+      - core
+    healthcheck:
+      # INF-02 fix (issue #527): the runtime image is nginx:alpine (frontend/Dockerfile),
+      # which ships busybox wget but NOT curl — the previous curl-based probe always
+      # failed, so Docker marked the container unhealthy and dependents never started.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - supremeai-network
+
+  # ----------------------------------------------------------
+  # INFRASTRUCTURE: REDIS & POSTGRESQL (Local Profiles)
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: supremeai-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - supremeai-network
+    # R-06 fix (issue #539): redis was gated behind profiles [local, full], so
+    # a plain `docker compose up` started core/worker with NO cache and the
+    # services crash-looped. Core always needs redis, so it is default-on now
+    # (profile users are unaffected: unprofiled services run in every profile).
+
+  db:
+    # R-03 fix (issue #537): was postgres:16-alpine, which ships NO pgvector —
+    # vector code paths were untested in dev and diverged from prod. Both dev
+    # and prod now run the same pgvector/pgvector:pg16 image so the Postgres
+    # major version and extension set match everywhere.
+    image: pgvector/pgvector:pg16
+    container_name: supremeai-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:?POSTGRES_USER must be set}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      - POSTGRES_DB=${POSTGRES_DB:?POSTGRES_DB must be set}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:?POSTGRES_USER must be set} -d $${POSTGRES_DB:?POSTGRES_DB must be set}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - supremeai-network
+    # R-06 fix (issue #539): db was gated behind profiles [local, full] like
+    # redis, leaving the default `docker compose up` without a database. It is
+    # default-on now; the required-var interpolation above still fails fast
+    # with a clear message if POSTGRES_* is not configured in .env.
+
+networks:
+  supremeai-network:
+    driver: bridge
+
+volumes:
+  supremeai_data:
+  postgres_data:

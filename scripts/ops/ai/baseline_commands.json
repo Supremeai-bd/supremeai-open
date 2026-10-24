@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "commands": {
+    "backend": ["pnpm run backend:test"],
+    "frontend": ["pnpm run typecheck", "pnpm run lint", "pnpm run build"],
+    "ci": ["pnpm run format:check", "pnpm run typecheck", "pnpm run lint", "pnpm run test"],
+    "packaging": ["pnpm install --frozen-lockfile"],
+    "deployment": ["pnpm run docker:build", "pnpm run deploy:frontend", "pnpm run deploy:gcp", "pnpm run docker:up", "pnpm run clean:full:confirm"]
+  },
+  "policy": {
+    "never_execute_automatically": [
+      "pnpm run deploy:gcp",
+      "pnpm run deploy:frontend",
+      "pnpm run docker:up",
+      "pnpm run clean:full:confirm"
+    ],
+    "requires_human_approval": ["deployment", "database_migration", "production_configuration"]
+  }
+}

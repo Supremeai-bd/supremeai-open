@@ -1,0 +1,20 @@
+{
+    "skill_id": "core_doc_summarizer",
+    "owner": "Operations_Security_Team",
+    "allowed_data": {
+        "Admin": ["*"],
+        "Manager": ["shared_documents", "team_reports"],
+        "Standard_User": ["temporary_uploads"]
+    },
+    "allowed_roles": ["Standard_User", "Manager", "Admin"],
+    "tools_allowed": ["docker_sandbox_parser"],
+    "human_approval_points": {
+        "on_ingestion": true,
+        "on_execution": false
+    },
+    "budget": {
+        "max_cost_per_invocation_usd": 0.03,
+        "max_latency_seconds": 8.0
+    },
+    "audit_logging": ["user_id", "file_hash", "file_size_bytes", "execution_time_ms"]
+}

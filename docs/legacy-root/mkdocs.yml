@@ -1,0 +1,123 @@
+site_name: SupremeAI 2.0 Documentation
+site_description: Developer documentation for SupremeAI 2.0 - Autonomous AI Orchestration Platform
+site_author: SupremeAI Team
+site_url: https://supremeai.dev/docs
+
+# Repository info
+repo_url: https://github.com/SaifulHaqueNiloy/supremeai
+repo_name: SaifulHaqueNiloy/supremeai
+edit_uri: edit/main/docs/
+
+# Theme
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.annotate
+    - content.code.copy
+    - content.tooltips
+
+# Plugins
+plugins:
+  - search
+  - swagger-ui-tag:
+      urls:
+        - url: /api/v1/openapi.yaml
+          name: API v1
+  - gen-files:
+      scripts:
+        - scripts/generate_api_docs.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+
+# Markdown extensions
+markdown_extensions:
+  - admonition
+  - codehilite:
+      guess_lang: false
+      linenums: true
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex
+  - pymdownx.betterem
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: "materialx.emoji.twemoji"
+      emoji_generator: "materialx.emoji.to_svg"
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mkdocs_plugins.mdx.mermaid.fence_mermaid
+  - pymdownx.tabbed
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Navigation
+nav:
+  - Home: index.md
+  - API Documentation:
+      - Overview: api/v1/index.md
+      - Authentication: api/v1/authentication.md
+      - Agents: api/v1/agents.md
+      - Tools: api/v1/tools.md
+      - Workflows: api/v1/workflows.md
+      - Webhooks: api/v1/webhooks.md
+  - Developer Guide:
+      - Overview: developer-guide/index.md
+      - Getting Started: developer-guide/getting-started.md
+      - Architecture: developer-guide/architecture.md
+      - Coding Standards: developer-guide/coding-standards.md
+      - Testing: developer-guide/testing.md
+      - Deployment: developer-guide/deployment.md
+      - Contributing: developer-guide/contributing.md
+      - Troubleshooting: developer-guide/troubleshooting.md
+      - Configuration Management: developer-guide/configuration-management.md
+      - Database Management: developer-guide/database-management.md
+  - Architecture:
+      - Master Blueprint: SUPREMEAI_MASTER_BLUEPRINT.md
+      - Architecture Overview: architecture-overview.md
+      - Deployment Architecture: DEPLOYMENT_ARCHITECTURE.md
+  - Roadmap:
+      - Implementation Summary: ROADMAP_IMPLEMENTATION_SUMMARY.md
+      - Feature Status: docs/FEATURE_STATUS.md
+  - Security:
+      - Security Audit: BANGLA_SECURITY_AUDIT_REPORT.md
+      - Phase 0 Audit: PHASE0_AUDIT_REPORT.md
+
+# Extra context for templates
+extra:
+  version: 2.0
+  repo_url: https://github.com/SaifulHaqueNiloy/supremeai
+  docs_url: https://supremeai.dev/docs
+  version_warning:
+    default: false
+    mirror: false
+    origin: false
