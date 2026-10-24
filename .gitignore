@@ -14,6 +14,7 @@ node_modules/
 dist/
 .wrangler/
 vscode/out/
+vscode/extension/out/
 
 # Local planning and internal docs (do not commit to GitHub)
 ARCHITECTURE_PLAN.md
@@ -22,3 +23,13 @@ docs/*_BN.md
 docs/GHOST_TOWER_MULTI_AI_ROADMAP_BN.md
 docs/SUPREMEAI_API_KEY_AND_GUEST_SOLUTION_BN.md
 pr_body*.txt
+
+# Ephemeral audit and graphify artifacts
+graphify-out/
+.cache/graphify*/
+audit-out/
+audit.raw.json
+.agents/**/audit-out/
+.agents/**/audit.raw.json
+.agents/**/test_shot.png
+
