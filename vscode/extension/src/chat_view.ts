@@ -53,6 +53,28 @@ export class SupremeAIChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === "clear") {
         this.messages = [];
         this.post({ type: "cleared" });
+      } else if (msg.type === "secure_get" || msg.type === "secure_set" || msg.type === "secure_remove") {
+        // FIX(secure-store 2026-10-24): implement the SecureStore host contract.
+        // The webview bridge (platform.ts) posts secure_get/secure_set/secure_remove;
+        // the host previously handled none of them, so stored values were silently
+        // dropped and get() could never resolve. Secrets persist in VS Code
+        // SecretStorage (context.secrets) — same message names as the desktop
+        // (Tauri) contract.
+        const secretKey = String(msg.key || "");
+        try {
+          if (msg.type === "secure_get") {
+            const value = secretKey ? await this.context.secrets.get(secretKey) : null;
+            this.post({ type: "secure_get_result", reqId: msg.reqId, value: value ?? null });
+          } else if (msg.type === "secure_set" && secretKey) {
+            await this.context.secrets.store(secretKey, String(msg.value ?? ""));
+          } else if (msg.type === "secure_remove" && secretKey) {
+            await this.context.secrets.delete(secretKey);
+          }
+        } catch (err) {
+          if (msg.type === "secure_get") {
+            this.post({ type: "secure_get_result", reqId: msg.reqId, value: null });
+          }
+        }
       }
     });
   }
