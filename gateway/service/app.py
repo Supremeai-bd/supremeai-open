@@ -595,47 +595,98 @@ async def health_aggregation():
         {"id": "worker", "name": "Worker Node", "url": os.getenv("RENDER_WORKER_URL", "http://localhost:8003/health")},
     ]
 
+    import httpx
+
+    def _candidate_urls(raw_url: str) -> list[str]:
+        clean = raw_url.strip().rstrip("/")
+        if any(clean.endswith(p) for p in ("/health", "/healthz", "/live", "/ready", "/health/live")):
+            return [clean]
+        return [f"{clean}/health", clean, f"{clean}/health/live", f"{clean}/healthz"]
+
+    async def _probe_node(client: httpx.AsyncClient, node: dict) -> dict:
+        start_t = time.time()
+        try:
+            if node["id"] == "api":
+                return {
+                    "id": node["id"],
+                    "name": node["name"],
+                    "status": "healthy",
+                    "message": f"{node['name']} online (5ms)",
+                    "response_time_ms": 5,
+                }
+
+            candidates = _candidate_urls(node["url"])
+            res_status = None
+            last_err = None
+            for probe_url in candidates:
+                try:
+                    r = await client.get(probe_url)
+                    res_status = r.status_code
+                    if res_status == 200:
+                        break
+                except Exception as probe_err:
+                    last_err = probe_err
+
+            latency = max(1, int((time.time() - start_t) * 1000))
+            if res_status == 200:
+                return {
+                    "id": node["id"],
+                    "name": node["name"],
+                    "status": "healthy",
+                    "message": f"{node['name']} online ({latency}ms)",
+                    "response_time_ms": latency,
+                }
+            elif res_status is not None and 500 <= res_status < 600:
+                return {
+                    "id": node["id"],
+                    "name": node["name"],
+                    "status": "degraded",
+                    "message": f"{node['name']} waking up / cold start",
+                    "response_time_ms": latency,
+                }
+            elif res_status is not None:
+                return {
+                    "id": node["id"],
+                    "name": node["name"],
+                    "status": "unhealthy",
+                    "message": f"{node['name']} returned HTTP {res_status}",
+                    "response_time_ms": latency,
+                }
+            else:
+                return {
+                    "id": node["id"],
+                    "name": node["name"],
+                    "status": "degraded",
+                    "message": f"{node['name']} sleeping / timeout ({last_err})",
+                    "response_time_ms": latency,
+                }
+        except Exception as e:
+            latency = max(1, int((time.time() - start_t) * 1000))
+            return {
+                "id": node["id"],
+                "name": node["name"],
+                "status": "degraded",
+                "message": f"{node['name']} sleeping / timeout ({e})",
+                "response_time_ms": latency,
+            }
+
+    async with httpx.AsyncClient(timeout=4.0) as client:
+        results = await asyncio.gather(*[_probe_node(client, node) for node in nodes])
+
     checks = {}
     total_latency = 0
     healthy_count = 0
 
-    import httpx
-
-    async with httpx.AsyncClient(timeout=4.0) as client:
-        for node in nodes:
-            start_t = time.time()
-            try:
-                # The current gateway is local self
-                if node["id"] == "api":
-                    res_status = 200
-                    latency = 5
-                else:
-                    r = await client.get(node["url"])
-                    res_status = r.status_code
-                    latency = int((time.time() - start_t) * 1000)
-
-                if res_status == 200:
-                    status_val = "healthy"
-                    msg = f"{node['name']} online ({latency}ms)"
-                    healthy_count += 1
-                elif 500 <= res_status < 600:
-                    status_val = "degraded"
-                    msg = f"{node['name']} waking up / cold start"
-                else:
-                    status_val = "unhealthy"
-                    msg = f"{node['name']} returned HTTP {res_status}"
-            except Exception as e:
-                latency = int((time.time() - start_t) * 1000)
-                status_val = "degraded"
-                msg = f"{node['name']} sleeping / timeout ({e})"
-
-            checks[node["id"]] = {
-                "name": node["name"],
-                "status": status_val,
-                "message": msg,
-                "response_time_ms": latency,
-            }
-            total_latency += latency
+    for res in results:
+        checks[res["id"]] = {
+            "name": res["name"],
+            "status": res["status"],
+            "message": res["message"],
+            "response_time_ms": res["response_time_ms"],
+        }
+        total_latency += res["response_time_ms"]
+        if res["status"] == "healthy":
+            healthy_count += 1
 
     return {
         "status": "healthy" if healthy_count >= 3 else "degraded",

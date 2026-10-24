@@ -161,6 +161,18 @@ class TestStorageAndEndpoints(unittest.TestCase):
         self.assertEqual(r_restore.status_code, 200)
         self.assertEqual(r_restore.json()["action"], "restored")
 
+    def test_07_health_aggregation(self):
+        r = self.client.get("/api/health-aggregation")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertIn("checks", data)
+        self.assertIn("api", data["checks"])
+        self.assertEqual(data["checks"]["api"]["status"], "healthy")
+        self.assertIn("scraper", data["checks"])
+        self.assertIn("tower", data["checks"])
+        self.assertIn("primary", data["checks"])
+        self.assertIn("worker", data["checks"])
+
 
 if __name__ == "__main__":
     unittest.main()
