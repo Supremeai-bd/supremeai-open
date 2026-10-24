@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { OrbState } from './jarvisPersona';
 
 const STATE_COLORS: Record<OrbState, string> = {
