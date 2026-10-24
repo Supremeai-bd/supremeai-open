@@ -53,9 +53,9 @@ const LoginPage = React.lazy(() =>
 const RegisterPage = React.lazy(() =>
   import("./pages/auth/RegisterPage").then((m) => ({ default: m.RegisterPage }))
 );
-const UserDashboard = React.lazy(() =>
-  import("./components/customer/UserDashboard").then((m) => ({ default: m.UserDashboard }))
-);
+// OWNER DECISION (2026-10-24, 3-tab progressive disclosure): UserDashboard is
+// no longer the landing route — /workspace now renders the Chat tab (AI
+// Studio). The component file is kept per the no-delete doctrine.
 const AIStudio = React.lazy(() =>
   import("./pages/user/AIStudio").then((m) => ({ default: m.AIStudio }))
 );
@@ -193,13 +193,14 @@ export const App: React.FC = () => {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
 
-              {/* Authenticated workspace */}
+              {/* OWNER DECISION (2026-10-24): the Chat tab IS the landing tab —
+                  /workspace renders the unified chat surface directly. */}
               <Route
                 path="/workspace"
                 element={
                   <ProtectedRoute>
                     <WorkspaceLayout>
-                      <UserDashboard />
+                      <AIStudio />
                     </WorkspaceLayout>
                   </ProtectedRoute>
                 }

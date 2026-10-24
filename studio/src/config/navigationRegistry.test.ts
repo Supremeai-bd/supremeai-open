@@ -8,7 +8,9 @@ describe('canonical navigation registry', () => {
       .filter((item) => item.kind === 'route')
       .map((item) => item.path);
 
-    expect(paths).toContain('/workspace');
+    // OWNER DECISION (2026-10-24): Home left the visible rail — /workspace is
+    // now the Chat landing surface (AI Studio), reachable directly.
+    expect(paths).not.toContain('/workspace');
     // FIX(nav-truth 2026-10-24): /integrations has no route yet — the registry
     // entry is 'planned' (hidden) per dead-link prevention, so it must NOT appear.
     expect(paths).not.toContain('/integrations');

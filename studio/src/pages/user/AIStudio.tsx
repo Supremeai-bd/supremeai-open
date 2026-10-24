@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { UnifiedChatPanel } from '../../components/chat/UnifiedChatPanel';
-import { Bot, Code, Smartphone } from 'lucide-react';
+import { UnifiedChatPanel, listStoredConversations, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
+import { Bot, Code, MessageSquarePlus, Smartphone } from 'lucide-react';
 import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
 
 // Honest preview contract: the preview tabs only make sense AFTER the AI has
@@ -61,6 +61,17 @@ const PreviewEmptyState: React.FC<{ device: 'browser' | 'mobile'; onBack: () => 
 export const AIStudio: React.FC = () => {
   const [input, setInput] = useState('');
   const [resumeConvId, setResumeConvId] = useState<string | null>(null);
+  // CHAT LANDING (owner decision 2026-10-24): Chat is the landing tab with a
+  // local history sidebar (mainstream-AI pattern). Home and Prompt Library
+  // left the rail; users enable features from Settings/Profile.
+  const [history, setHistory] = useState<StoredConversationMeta[]>([]);
+  useEffect(() => {
+    setHistory(listStoredConversations());
+  }, [activeTab, resumeConvId]);
+  const startNewChat = () => {
+    const freshId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setResumeConvId(freshId);
+  };
   const [activeTab, setActiveTab] = useState<'chat' | 'preview' | 'mobile'>('chat');
   const [code, setCode] = useState(CODE_PLACEHOLDER);
   const hasPreview = code.trim() !== '' && code !== CODE_PLACEHOLDER;
@@ -132,12 +143,50 @@ export const AIStudio: React.FC = () => {
 
       <div className="flex-1 min-h-0 relative">
         {activeTab === 'chat' && (
-          <div className="absolute inset-0 p-4">
+          <div className="absolute inset-0 flex gap-4 p-4">
             {/* Unified Chat Phase 2: uses the canonical UnifiedChatPanel with live streaming,
                 thinking indicator, brand badge, and intent carry-over */}
+            <aside className="hidden w-56 shrink-0 flex-col gap-2 md:flex" data-testid="chat-history-rail">
+              <button
+                type="button"
+                onClick={startNewChat}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2.5 text-sm font-medium text-slate-200 transition hover:border-purple-400/40 hover:text-white"
+              >
+                <MessageSquarePlus size={15} /> New chat
+              </button>
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-xl border border-white/10 bg-slate-900/40 p-2">
+                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Recent</p>
+                {history.length === 0 ? (
+                  <p className="px-2 py-2 text-xs text-slate-500">Your conversations will appear here once you start chatting.</p>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {history.map((h) => (
+                      <li key={h.id}>
+                        <button
+                          type="button"
+                          onClick={() => setResumeConvId(h.id)}
+                          className={`w-full rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                            h.id === resumeConvId
+                              ? 'border-purple-500/40 bg-purple-500/10 text-slate-100'
+                              : 'border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.03] hover:text-slate-200'
+                          }`}
+                          title={h.title}
+                        >
+                          <span className="block truncate">{h.title}</span>
+                          <span className="mt-0.5 block text-[10px] text-slate-600">
+                            {new Date(h.updatedAt).toLocaleDateString()}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </aside>
+            <div className="relative min-w-0 flex-1">
             <UnifiedChatPanel
+              key={resumeConvId ?? 'new'}
               fit="fill"
-              className="max-w-4xl"
               initialConversationId={resumeConvId ?? undefined}
               showStarter={true}
               initialInput={input}
@@ -147,6 +196,7 @@ export const AIStudio: React.FC = () => {
                 setActiveTab('preview');
               }}
             />
+            </div>
           </div>
         )}
 

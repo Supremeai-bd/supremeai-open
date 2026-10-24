@@ -260,12 +260,14 @@ export interface NavFilterOptions {
 // Viewer-first contract: keep the normal user navigation understandable. Advanced
 // routes may remain reachable by direct URL for compatibility, but they must not
 // become part of the viewer mental model without an explicit product requirement.
+// OWNER DECISION (2026-10-24, 3-tab progressive disclosure): Home and Prompt
+// Library are out of the visible user rail — the customer journey starts on
+// Chat; users enable features themselves from Settings/Profile, and the team
+// suggests features once they understand each customer's needs. The registry
+// entries (and direct URLs) are kept for compatibility; they are simply not
+// part of the default viewer model any more.
 const SIMPLE_VIEWER_ENTRY_IDS = new Set([
-  'nav-home',
-  // M10 (issue #453) বাংলা: Chat ও Prompt Library মূল ইউজার ফিচার — simple viewer
-  // nav-এও দৃশ্যমান হওয়া উচিত।
   'nav-chat',
-  'nav-prompt-library',
   // FIX(nav-truth 2026-10-24): removed — no /integrations route exists yet.
   'nav-profile',
   'nav-settings',
