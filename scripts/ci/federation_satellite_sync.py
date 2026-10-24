@@ -118,6 +118,28 @@ def copy_tree_contents(src: Path, dst: Path) -> None:
             shutil.copy2(s_file, d_file)
 
 
+def sync_workflows(src_wf_dir: Path, target_wf_dir: Path) -> None:
+    """Sync workflows from src to target, pruning stale workflow files from target."""
+    if not src_wf_dir.exists():
+        return
+    target_wf_dir.mkdir(parents=True, exist_ok=True)
+    src_files = {f.name for f in src_wf_dir.glob("*.yml")}
+    src_files.update({f.name for f in src_wf_dir.glob("*.yaml")})
+
+    # Copy / update from source
+    for f_name in src_files:
+        shutil.copy2(src_wf_dir / f_name, target_wf_dir / f_name)
+
+    # Prune stale workflow files from target that do not exist in source
+    for t_file in list(target_wf_dir.glob("*.yml")) + list(target_wf_dir.glob("*.yaml")):
+        if t_file.name not in src_files:
+            try:
+                t_file.unlink()
+                print(f"🗑️ Pruned stale workflow file from satellite: {t_file.name}")
+            except Exception as e:
+                print(f"⚠️ Could not delete stale workflow file {t_file.name}: {e}")
+
+
 def sync_satellite(
     target_repo: str,
     source_dir: str,
@@ -172,19 +194,11 @@ def sync_satellite(
                 print(
                     f"📋 Synced runtime service 'gateway/service' -> 'service' in {target_repo}"
                 )
-            # Sync CI and secret-scan workflows into supremeai-api
-            api_ci_src = repo_root / "gateway" / ".github" / "workflows" / "ci.yml"
-            if api_ci_src.exists():
-                target_wf_dir = tmp_repo / ".github" / "workflows"
-                target_wf_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(api_ci_src, target_wf_dir / "ci.yml")
-                print(f"📋 Synced CI workflow to .github/workflows/ci.yml in {target_repo}")
-            api_secret_src = repo_root / "gateway" / ".github" / "workflows" / "secret-scan.yml"
-            if api_secret_src.exists():
-                target_wf_dir = tmp_repo / ".github" / "workflows"
-                target_wf_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(api_secret_src, target_wf_dir / "secret-scan.yml")
-                print(f"📋 Synced secret-scan workflow to .github/workflows/secret-scan.yml in {target_repo}")
+            # Sync workflows cleanly with pruning for supremeai-api
+            api_wf_src = repo_root / "gateway" / ".github" / "workflows"
+            if api_wf_src.exists():
+                sync_workflows(api_wf_src, tmp_repo / ".github" / "workflows")
+                print(f"📋 Synchronized workflows (with stale pruning) in {target_repo}")
             # Sync clean admin_auth into root of supremeai-api
             root_auth = repo_root / "gateway" / "admin_auth.py"
             if root_auth.exists():
@@ -198,6 +212,10 @@ def sync_satellite(
         elif target_repo == "Supremeai-bd/supremeai-studio":
             # Copy domain files into the satellite root
             copy_tree_contents(src_path, tmp_repo)
+            # Sync workflows with pruning
+            studio_wf_src = src_path / ".github" / "workflows"
+            if studio_wf_src.exists():
+                sync_workflows(studio_wf_src, tmp_repo / ".github" / "workflows")
             # Sync cloudflare-studio-proxy into satellite infrastructure directory
             cf_src = repo_root / "infrastructure" / "cloudflare-studio-proxy"
             if cf_src.exists():
@@ -208,6 +226,10 @@ def sync_satellite(
         else:
             # Copy domain files into the satellite root
             copy_tree_contents(src_path, tmp_repo)
+            # Sync workflows with pruning if domain mirror has .github/workflows
+            dom_wf_src = src_path / ".github" / "workflows"
+            if dom_wf_src.exists():
+                sync_workflows(dom_wf_src, tmp_repo / ".github" / "workflows")
 
         # Copy contract mirror pairs specific to this satellite
         for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
