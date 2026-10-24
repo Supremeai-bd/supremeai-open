@@ -25,7 +25,7 @@ def test_health_check() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "healthy"
-    assert "supremeai-browser" in data["service"]
+    assert "supremeai-browser" in data.get("browser_service", data.get("service", ""))
 
 
 def test_stealth_secret_auth_guard() -> None:
