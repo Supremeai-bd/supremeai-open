@@ -10,6 +10,9 @@ Exposes:
 from __future__ import annotations
 
 import logging
+import threading
+import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -18,6 +21,132 @@ from pydantic import BaseModel
 logger = logging.getLogger("supremeai.epistemic")
 
 router = APIRouter(prefix="/api/v1", tags=["epistemic"])
+
+
+class EpistemicTelemetry:
+    """Thread-safe telemetry collector for ChronoFact, SPINE, and security invariants (Way 10)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.reset()
+
+    def reset(self) -> None:
+        with getattr(self, "_lock", threading.Lock()):
+            self.started_at = time.time()
+            self.pruning_calls = 0
+            self.total_tools_evaluated = 0
+            self.total_tools_pruned = 0
+            self.total_tokens_evaluated = 0
+            self.total_tokens_saved = 0
+
+            self.memory_gate_calls = 0
+            self.total_memory_evaluated = 0
+            self.total_memory_retained = 0
+            self.total_memory_rejected = 0
+
+            self.total_injections_scanned = 0
+            self.total_injections_detected = 0
+
+            self.total_horizon_intercepts = 0
+
+            self.total_sanitizer_runs = 0
+            self.total_cushions_stripped = 0
+            self.total_capitulations_mitigated = 0
+
+    def record_pruning(self, evaluated: int, pruned: int, original_tokens: int, retained_tokens: int) -> None:
+        with self._lock:
+            self.pruning_calls += 1
+            self.total_tools_evaluated += evaluated
+            self.total_tools_pruned += pruned
+            self.total_tokens_evaluated += original_tokens
+            saved = max(0, original_tokens - retained_tokens)
+            self.total_tokens_saved += saved
+
+    def record_memory_gate(self, evaluated: int, retained: int, rejected: int) -> None:
+        with self._lock:
+            self.memory_gate_calls += 1
+            self.total_memory_evaluated += evaluated
+            self.total_memory_retained += retained
+            self.total_memory_rejected += rejected
+
+    def record_injection_scan(self, is_injection: bool) -> None:
+        with self._lock:
+            self.total_injections_scanned += 1
+            if is_injection:
+                self.total_injections_detected += 1
+
+    def record_horizon_intercept(self) -> None:
+        with self._lock:
+            self.total_horizon_intercepts += 1
+
+    def record_sanitizer(self, stripped_cushion: bool, mitigated_capitulation: bool = False) -> None:
+        with self._lock:
+            self.total_sanitizer_runs += 1
+            if stripped_cushion:
+                self.total_cushions_stripped += 1
+            if mitigated_capitulation:
+                self.total_capitulations_mitigated += 1
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            uptime = round(time.time() - self.started_at, 2)
+            token_savings_pct = (
+                round((self.total_tokens_saved / self.total_tokens_evaluated) * 100.0, 2)
+                if self.total_tokens_evaluated > 0
+                else 0.0
+            )
+            pruning_rate_pct = (
+                round((self.total_tools_pruned / self.total_tools_evaluated) * 100.0, 2)
+                if self.total_tools_evaluated > 0
+                else 0.0
+            )
+            memory_rejection_rate_pct = (
+                round((self.total_memory_rejected / self.total_memory_evaluated) * 100.0, 2)
+                if self.total_memory_evaluated > 0
+                else 0.0
+            )
+            injection_rate_pct = (
+                round((self.total_injections_detected / self.total_injections_scanned) * 100.0, 2)
+                if self.total_injections_scanned > 0
+                else 0.0
+            )
+
+            return {
+                "uptime_seconds": uptime,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "counters": {
+                    "pruning_calls": self.pruning_calls,
+                    "tools_evaluated": self.total_tools_evaluated,
+                    "tools_pruned": self.total_tools_pruned,
+                    "tokens_evaluated": self.total_tokens_evaluated,
+                    "tokens_saved": self.total_tokens_saved,
+                    "memory_gate_calls": self.memory_gate_calls,
+                    "memory_evaluated": self.total_memory_evaluated,
+                    "memory_retained": self.total_memory_retained,
+                    "memory_rejected": self.total_memory_rejected,
+                    "injections_scanned": self.total_injections_scanned,
+                    "injections_detected": self.total_injections_detected,
+                    "horizon_intercepts": self.total_horizon_intercepts,
+                    "sanitizer_runs": self.total_sanitizer_runs,
+                    "cushions_stripped": self.total_cushions_stripped,
+                    "capitulations_mitigated": self.total_capitulations_mitigated,
+                },
+                "rates": {
+                    "token_savings_pct": token_savings_pct,
+                    "pruning_rate_pct": pruning_rate_pct,
+                    "memory_rejection_rate_pct": memory_rejection_rate_pct,
+                    "injection_rate_pct": injection_rate_pct,
+                },
+                "invariants": {
+                    "memory_cosine_threshold": 0.72,
+                    "tool_pruning_reduction_target": 0.70,
+                    "sampling_lock_logic": 0.2,
+                    "sampling_lock_chat": 0.4,
+                },
+            }
+
+
+telemetry_collector = EpistemicTelemetry()
 
 
 class ToolPruneRequest(BaseModel):
@@ -49,6 +178,7 @@ async def scan_prompt_injection(req: InjectionScanRequest) -> dict[str, Any]:
     except ImportError:
         from prompt_injection import detect_injection  # type: ignore[no-redef]
     res = detect_injection(req.text, threshold=req.threshold)
+    telemetry_collector.record_injection_scan(res.is_injection)
     return {
         "is_injection": res.is_injection,
         "score": res.score,
@@ -94,6 +224,7 @@ async def prune_tools(req: ToolPruneRequest) -> dict[str, Any]:
     ToolSchema, route_tools = _import_pruner()
     tools = [ToolSchema(name=t.get("name", ""), description=t.get("description", ""), tokens=int(t.get("tokens", 0))) for t in req.tools]
     res = route_tools(req.query, tools, threshold=req.threshold)
+    telemetry_collector.record_pruning(len(tools), len(res.pruned), res.original_tokens, res.retained_tokens)
     return {
         "retained": [{"name": t.name, "description": t.description, "tokens": t.tokens} for t in res.retained],
         "pruned": [{"name": t.name, "description": t.description, "tokens": t.tokens} for t in res.pruned],
@@ -110,6 +241,7 @@ async def gate_memory(req: MemoryGateRequest) -> dict[str, Any]:
     entries = [MemoryEntry(entry_id=e.get("id", ""), domain=e.get("domain", ""), content=e.get("content", ""), metadata=e.get("metadata") or {}) for e in req.entries]
     gate = MemoryGate(threshold=req.threshold)
     res = gate.gate(req.query, entries)
+    telemetry_collector.record_memory_gate(len(entries), len(res.retained), len(res.rejected))
     return {
         "retained": [{"id": e.entry_id, "domain": e.domain, "content": e.content} for e in res.retained],
         "rejected": [{"id": e.entry_id, "domain": e.domain, "content": e.content} for e in res.rejected],
@@ -150,6 +282,7 @@ async def intercept_horizon(req: HorizonInterceptRequest) -> dict[str, Any]:
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid as_of date (expected YYYY-MM-DD)")
     ev = intercept_drift(req.model_id, as_of=as_of)
+    telemetry_collector.record_horizon_intercept()
     return {"model_id": ev.model_id, "kind": ev.kind, "detail": ev.detail, "successor": ev.successor}
 
 
@@ -219,4 +352,11 @@ async def epistemic_health() -> dict[str, Any]:
             "sampling_lock_chat": 0.4,
         },
     }
+
+
+@router.get("/epistemic/telemetry")
+async def epistemic_telemetry() -> dict[str, Any]:
+    """Way 10: Live Telemetry Cockpit metrics for ChronoFact & SPINE engines."""
+    return telemetry_collector.snapshot()
+
 
