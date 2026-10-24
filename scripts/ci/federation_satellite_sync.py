@@ -235,8 +235,8 @@ def sync_satellite(
                 copy_tree_contents(schemas_src, tmp_repo / "contracts" / "schemas", prune=True)
                 print(f"📋 Synced API schemas -> contracts/schemas in {target_repo}")
         elif target_repo == "Supremeai-bd/supremeai-studio":
-            # Copy domain files into the satellite root with pruning
-            copy_tree_contents(src_path, tmp_repo, prune=True)
+            # Copy domain files into the satellite root (non-destructive)
+            copy_tree_contents(src_path, tmp_repo, prune=False)
             # Sync workflows with pruning
             studio_wf_src = src_path / ".github" / "workflows"
             if studio_wf_src.exists():
@@ -249,8 +249,8 @@ def sync_satellite(
                     f"📋 Synced Cloudflare edge proxy & keep-warm cron 'infrastructure/cloudflare-studio-proxy' in {target_repo}"
                 )
         else:
-            # Copy domain files into the satellite root with pruning
-            copy_tree_contents(src_path, tmp_repo, prune=True)
+            # Copy domain files into the satellite root (non-destructive)
+            copy_tree_contents(src_path, tmp_repo, prune=False)
             # Sync workflows with pruning if domain mirror has .github/workflows
             dom_wf_src = src_path / ".github" / "workflows"
             if dom_wf_src.exists():

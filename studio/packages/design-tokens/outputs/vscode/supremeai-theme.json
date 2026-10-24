@@ -1,0 +1,12 @@
+{
+  "name": "SupremeAI Theme",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#0F172A",
+    "editor.foreground": "#F8FAFC",
+    "button.background": "#6366F1",
+    "button.foreground": "#FFFFFF",
+    "button.hoverBackground": "#4F46E5"
+  },
+  "tokenColors": []
+}

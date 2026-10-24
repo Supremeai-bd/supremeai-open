@@ -1,0 +1,14 @@
+{
+  "name": "@supremeai/design-tokens",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Single source of truth for SupremeAI 2.0 design tokens",
+  "main": "outputs/tokens.js",
+  "types": "outputs/tokens.d.ts",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "style-dictionary": "^5.5.2"
+  }
+}

@@ -1,0 +1,96 @@
+/* ═══════════════════════════════════════════════════════════════════════════ *
+ * AETHEL Command Center — Design Tokens                                      *
+ * বাংলা মন্তব্য: সমস্ত থিমের কেন্দ্রীয় টোকেন — কোনো হার্ডকোডেড রঙ নয়        *
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+    /* ── Primary Palette ────────────────────────────────────────────────── */
+    --sa-cyan: #00f3ff;
+    --sa-violet: #bc13fe;
+    --sa-emerald: #10b981;
+    --sa-amber: #f59e0b;
+    --sa-rose: #ef4444;
+    --sa-indigo: #6366f1;
+    --sa-pink: #ec4899;
+
+    /* ── Backgrounds ────────────────────────────────────────────────────── */
+    --sa-bg-0: #030611;
+    --sa-bg-1: #0c0d12;
+    --sa-bg-2: #10131c;
+    --sa-bg-3: #161b26;
+    --sa-bg-hover: rgba(0, 243, 255, 0.04);
+    --sa-bg-active: rgba(0, 243, 255, 0.10);
+
+    /* ── Borders ────────────────────────────────────────────────────────── */
+    --sa-line: rgba(0, 243, 255, 0.14);
+    --sa-line-strong: rgba(0, 243, 255, 0.30);
+    --sa-line-warn: rgba(245, 158, 11, 0.30);
+    --sa-line-error: rgba(239, 68, 68, 0.30);
+
+    /* ── Text ────────────────────────────────────────────────────────────── */
+    --sa-text-0: #f1f5f9;
+    --sa-text-1: #94a3b8;
+    --sa-text-2: #64748b;
+    --sa-text-3: #475569;
+
+    /* ── Fonts ────────────────────────────────────────────────────────────── */
+    --sa-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --sa-font-hud: 'Space Grotesk', 'Inter', sans-serif;
+    --sa-font-body: 'Inter', system-ui, sans-serif;
+
+    /* ── Shadows & Glows ─────────────────────────────────────────────────── */
+    --sa-glow-cyan: 0 0 12px rgba(0, 243, 255, 0.25);
+    --sa-glow-violet: 0 0 12px rgba(188, 19, 254, 0.25);
+    --sa-glow-rose: 0 0 12px rgba(239, 68, 68, 0.25);
+    --sa-glow-amber: 0 0 12px rgba(245, 158, 11, 0.25);
+    --sa-inner-glow: inset 0 0 24px rgba(0, 0, 0, 0.6);
+    --sa-card-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+
+    /* ── Sizes & Radii ───────────────────────────────────────────────────── */
+    --sa-radius-sm: 6px;
+    --sa-radius-md: 10px;
+    --sa-radius-lg: 16px;
+    --sa-radius-xl: 22px;
+    --sa-bar-height: 48px;
+    --sa-rail-width: 220px;
+    --sa-deck-height: 40px;
+}
+
+/* ── Light Ops Theme ─────────────────────────────────────────────────────── */
+[data-theme="light"] {
+    --sa-bg-0: #f0f2f5;
+    --sa-bg-1: #ffffff;
+    --sa-bg-2: #f8fafc;
+    --sa-bg-3: #e2e8f0;
+    --sa-bg-hover: rgba(0, 243, 255, 0.06);
+    --sa-bg-active: rgba(0, 243, 255, 0.12);
+    --sa-line: rgba(0, 0, 0, 0.08);
+    --sa-line-strong: rgba(0, 243, 255, 0.40);
+    --sa-text-0: #0f172a;
+    --sa-text-1: #334155;
+    --sa-text-2: #64748b;
+    --sa-text-3: #94a3b8;
+    --sa-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Sunset War Theme ─────────────────────────────────────────────────────── */
+[data-theme="sunset"] {
+    --sa-cyan: #f97316;
+    --sa-violet: #e879f9;
+    --sa-emerald: #22c55e;
+    --sa-line: rgba(249, 115, 22, 0.14);
+    --sa-line-strong: rgba(249, 115, 22, 0.30);
+    --sa-glow-cyan: 0 0 12px rgba(249, 115, 22, 0.25);
+}
+
+/* ── Matrix Theme ────────────────────────────────────────────────────────── */
+[data-theme="matrix"] {
+    --sa-cyan: #00ff41;
+    --sa-violet: #00cc33;
+    --sa-bg-0: #000a00;
+    --sa-bg-1: #001a00;
+    --sa-bg-2: #002200;
+    --sa-line: rgba(0, 255, 65, 0.14);
+    --sa-line-strong: rgba(0, 255, 65, 0.30);
+    --sa-glow-cyan: 0 0 12px rgba(0, 255, 65, 0.25);
+}

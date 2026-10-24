@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-10-05T17:23:52.763061+00:00",
+  "typescript": {
+    "SkillGovernance": "08913ad423e34e1f34056287f242b48ece4be09bbb6859c37af7359c7ef6f9c2",
+    "SkillManifest": "81c22289db27152265482e96a28c1eb1527818ecaea54610c7b5abad7212917b",
+    "SkillPermissions": "72872a6a350e893734bc0ade35c697098540c296e6df3b6e31f87ae5ba616b34",
+    "index": "3652e0aedf0c20bf4da806fc24c0ea15d8abaf34c5738207a6d57f092946bdb8"
+  },
+  "dart": {
+    "SkillGovernance": "c4e63f0e50b599d02d59b89965182533d9aa13c1b5fe77d3ff6049129d51da7b",
+    "SkillManifest": "225eac6e748c9ab864c16cbc703609908668c68857f1534b114017592d5e2d9d",
+    "SkillPermissions": "e564a6824167c6af7cfbdabc74ea3b5f0a1ed63f95fcb8e1b3c247fd559233c8",
+    "index": "c621ac4e5f9a06ee661a36fd2f4b28ac3b474972fe9c13f04db6d41b919fd955"
+  }
+}

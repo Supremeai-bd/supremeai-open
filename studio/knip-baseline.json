@@ -1,0 +1,16 @@
+{
+  "files": 18,
+  "issues": {
+    "binaries": 1,
+    "catalog": 0,
+    "dependencies": 10,
+    "devDependencies": 4,
+    "duplicates": 48,
+    "exports": 83,
+    "optionalPeerDependencies": 0,
+    "types": 11,
+    "unlisted": 0,
+    "unresolved": 0
+  },
+  "total": 175
+}
