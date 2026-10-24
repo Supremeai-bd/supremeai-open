@@ -739,7 +739,7 @@ jobs:
   # ---------------------------------------------------------------------------
   auto-landing:
     name: "🛬 Autonomous Auto-Landing"
-    needs: [branch-naming-guard, claim-gate-guard, boundary-sanitization-guard, test-matrix, secrets-scan, mcp-tower]
+    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower]
     if: |
       github.event_name == 'pull_request' &&
       github.event.pull_request.draft == false
