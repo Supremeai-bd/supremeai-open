@@ -55,6 +55,40 @@ export interface ThreatScanResult {
   total_findings: number;
 }
 
+export interface EpistemicTelemetryData {
+  uptime_seconds?: number;
+  timestamp?: string;
+  counters?: {
+    pruning_calls: number;
+    tools_evaluated: number;
+    tools_pruned: number;
+    tokens_evaluated: number;
+    tokens_saved: number;
+    memory_gate_calls: number;
+    memory_evaluated: number;
+    memory_retained: number;
+    memory_rejected: number;
+    injections_scanned: number;
+    injections_detected: number;
+    horizon_intercepts: number;
+    sanitizer_runs: number;
+    cushions_stripped: number;
+    capitulations_mitigated: number;
+  };
+  rates?: {
+    token_savings_pct: number;
+    pruning_rate_pct: number;
+    memory_rejection_rate_pct: number;
+    injection_rate_pct: number;
+  };
+  invariants?: {
+    memory_cosine_threshold: number;
+    tool_pruning_reduction_target: number;
+    sampling_lock_logic: number;
+    sampling_lock_chat: number;
+  };
+}
+
 // 🛡️ অডিটর ফিক্স: টোকেন চেক হেল্পার এবং useErrorHandler integrate করা হয়েছে
 const hasToken = (): boolean => !!adminTokenStore.getDecodedToken();
 
@@ -244,3 +278,49 @@ export function useDashboardSSE() {
     };
   }, [qc]);
 }
+
+export function useEpistemicTelemetry() {
+  return useQuery<EpistemicTelemetryData>({
+    queryKey: ['epistemic', 'telemetry'],
+    queryFn: async () => {
+      try {
+        return await apiClient.get<EpistemicTelemetryData>('/api/v1/epistemic/telemetry');
+      } catch {
+        return {
+          counters: {
+            pruning_calls: 0,
+            tools_evaluated: 0,
+            tools_pruned: 0,
+            tokens_evaluated: 0,
+            tokens_saved: 0,
+            memory_gate_calls: 0,
+            memory_evaluated: 0,
+            memory_retained: 0,
+            memory_rejected: 0,
+            injections_scanned: 0,
+            injections_detected: 0,
+            horizon_intercepts: 0,
+            sanitizer_runs: 0,
+            cushions_stripped: 0,
+            capitulations_mitigated: 0,
+          },
+          rates: {
+            token_savings_pct: 0,
+            pruning_rate_pct: 0,
+            memory_rejection_rate_pct: 0,
+            injection_rate_pct: 0,
+          },
+          invariants: {
+            memory_cosine_threshold: 0.72,
+            tool_pruning_reduction_target: 0.7,
+            sampling_lock_logic: 0.2,
+            sampling_lock_chat: 0.4,
+          },
+        };
+      }
+    },
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
+}
+
