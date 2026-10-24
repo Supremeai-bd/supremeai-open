@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ShieldAlert, Fingerprint, KeyRound, X, CheckCircle2 } from 'lucide-react';
 import { ArcReactorOrb } from './ArcReactorOrb';
 
