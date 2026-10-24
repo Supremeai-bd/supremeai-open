@@ -199,11 +199,27 @@ export interface UnifiedChatPanelProps {
   extraActions?: React.ReactNode;
   /** Hide the starter cards when a dashboard supplies its own intro. */
   showStarter?: boolean;
+  /** Initial input text (e.g. from ?intent= URL query param). */
+  initialInput?: string;
+  /** Optional callback when input changes. */
+  onInputChange?: (value: string) => void;
+  /** Optional callback when code block is previewed. */
+  onPreview?: (code: string) => void;
+  /** Optional custom styling classes. */
+  className?: string;
 }
 
-export function UnifiedChatPanel({ extraHeader, extraActions, showStarter = true }: UnifiedChatPanelProps) {
+export function UnifiedChatPanel({
+  extraHeader,
+  extraActions,
+  showStarter = true,
+  initialInput,
+  onInputChange,
+  onPreview,
+  className = '',
+}: UnifiedChatPanelProps) {
   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }[]>([]);
-  const [input, setInput] = React.useState('');
+  const [input, setInput] = React.useState(initialInput || '');
   const [model, setModel] = React.useState(chatModels[0]?.name ?? 'Supreme Auto');
   const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
   const [busy, setBusy] = React.useState(false);
@@ -212,10 +228,22 @@ export function UnifiedChatPanel({ extraHeader, extraActions, showStarter = true
 
   React.useEffect(() => { listRef.current?.scrollTo(0, listRef.current.scrollHeight); }, [messages]);
 
+  React.useEffect(() => {
+    if (initialInput !== undefined && initialInput !== '') {
+      setInput(initialInput);
+    }
+  }, [initialInput]);
+
+  const handleInputChange = (val: string) => {
+    setInput(val);
+    onInputChange?.(val);
+  };
+
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
     setInput('');
+    onInputChange?.('');
     setMessages((m) => [...m, { role: 'user', text }, { role: 'assistant', text: '' }]);
     setBusy(true);
     setAwaitingFirst(true);
@@ -249,7 +277,7 @@ export function UnifiedChatPanel({ extraHeader, extraActions, showStarter = true
     }
   }
 
-  return <section className="mx-auto flex min-h-[calc(100dvh-13rem)] w-full max-w-3xl flex-1 flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md">
+  return <section className={`mx-auto flex min-h-[calc(100dvh-13rem)] w-full max-w-3xl flex-1 flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md ${className}`}>
     <div className="flex items-center gap-2">
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {chatModels.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
@@ -272,7 +300,7 @@ export function UnifiedChatPanel({ extraHeader, extraActions, showStarter = true
           </div>
           <div className="grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
             {chatIntents.map(({ label, prompt, icon: Icon }) => (
-              <button key={label} type="button" onClick={() => setInput(prompt)} className="group flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-left transition hover:border-purple-500/40 hover:bg-purple-500/5 hover:shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))]">
+              <button key={label} type="button" onClick={() => handleInputChange(prompt)} className="group flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-left transition hover:border-purple-500/40 hover:bg-purple-500/5 hover:shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))]">
                 <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-slate-900 text-emerald-300 group-hover:text-purple-300"><Icon size={15} /></span>
                 <span>
                   <span className="block text-sm font-semibold text-slate-200">{label}</span>
@@ -285,7 +313,7 @@ export function UnifiedChatPanel({ extraHeader, extraActions, showStarter = true
       )}
       {messages.map((m, i) => <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
         {/* Refs #861: shared Cosmic UnifiedChatBubble — আর কোনো ফর্কড legacy bubble নেই */}
-        <UnifiedChatBubble text={m.text} sender={m.role === 'user' ? 'user' : 'system'} />
+        <UnifiedChatBubble text={m.text} sender={m.role === 'user' ? 'user' : 'system'} onPreview={onPreview} />
         {m.role === 'assistant' && (
           m.brand ? (
             <div
@@ -307,8 +335,26 @@ export function UnifiedChatPanel({ extraHeader, extraActions, showStarter = true
       {busy && awaitingFirst && <ThinkingIndicator />}
     </div>
     <div className="flex gap-2">
-      <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={2} placeholder="Ask SupremeAI…" className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50" />
-      <button type="button" onClick={send} disabled={busy || !input.trim()} className="rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95 disabled:opacity-50">Send</button>
+      <textarea
+        value={input}
+        onChange={(e) => handleInputChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+        rows={2}
+        placeholder="Ask SupremeAI…"
+        aria-label="Message SupremeAI"
+        data-testid="chat-input"
+        className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50"
+      />
+      <button
+        type="button"
+        onClick={send}
+        disabled={busy || !input.trim()}
+        aria-label="Send message"
+        data-testid="send-message-button"
+        className="rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95 disabled:opacity-50"
+      >
+        Send
+      </button>
       {extraActions}
     </div>
   </section>;
