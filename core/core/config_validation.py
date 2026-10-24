@@ -46,7 +46,7 @@ class SettingsValidationMixin:
     }
 
     FIX_SUGGESTIONS = {
-        "supabase_database_url": "Set SUPABASE_DATABASE_URL in Render dashboard. Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pool.supabase.com:6543/postgres",
+        "supabase_database_url": "Set SUPABASE_DATABASE_URL in Render dashboard. Format: postgresql://:@:/",
         "redis_url": "Set REDIS_URL for Upstash Redis. Get URL from: https://console.upstash.io/redis",
         "openai_api_key": "Set OPENAI_API_KEY for OpenAI integration. Get key from: https://platform.openai.com/api-keys",
     }
