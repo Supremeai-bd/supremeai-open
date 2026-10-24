@@ -65,12 +65,10 @@ def get_jwt_secret() -> str:
     env_name = os.environ.get("ENV", "local").lower()
     if env_name in ("local", "dev", "development", "test"):
         return "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
-    # FIX(auth 2026-10-24): production previously fell back to a hardcoded secret,
-    # letting anyone forge admin JWTs. Fail-closed like service.keygen instead.
     raise RuntimeError(
-        "CRITICAL: SUPREMEAI_JWT_SECRET (or JWT_SECRET / SUPREMEAI_MASTER_KEY / "
-        "API_KEY_SIGNING_SECRET) is missing. Fail-closed: refusing to sign or "
-        "verify admin JWTs with a hardcoded default in production."
+        "CRITICAL: SUPREMEAI_JWT_SECRET / JWT_SECRET is missing in a production "
+        "environment. Fail-closed: refusing to sign or verify admin JWTs without "
+        "a configured vault secret."
     )
 
 
@@ -194,9 +192,6 @@ def _verify_password(provided_password: str) -> bool:
         except (ImportError, ValueError, TypeError) as exc:
             logger.debug("Bcrypt check failed or not available: %s", exc)
 
-    # FIX(auth 2026-10-24): removed the hardcoded fallback ("admin123",
-    # "supremeadmin", "password") — it allowed full admin login on any deployment
-    # that had not set SUPREMEAI_ADMIN_PASSWORD. Fail-closed instead.
     return False
 
 
