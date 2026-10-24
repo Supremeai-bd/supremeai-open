@@ -83,6 +83,8 @@ id = "supremeai-cloudflare-global-key"
 description = "Cloudflare Global API key (37-char hex, keyed by name)"
 regex = '''[a-f0-9]{37}'''
 keywords = ["cloudflare", "x-auth-key", "global_api_key", "CLOUDFLARE_GLOBAL"]
+[rules.allowlist]
+paths = ['''^\.gitleaksignore$''']
 
 [[rules]]
 id = "supremeai-cloudflare-api-token"
@@ -91,6 +93,8 @@ description = "Cloudflare API token (40-char base62, keyed by name)"
 # as the upstream Cloudflare rule) to prevent over-extended matches.
 regex = '''(?i)\b[A-Za-z0-9_-]{40}\b'''
 keywords = ["cloudflare", "x-auth-bearer", "api_token", "CLOUDFLARE_API"]
+[rules.allowlist]
+paths = ['''^\.gitleaksignore$''', '''^docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY\.md$''']
 
 # ---------------------------------------------------------------------------
 # 6. SupremeAI-issued credentials — the families this federation mints.
