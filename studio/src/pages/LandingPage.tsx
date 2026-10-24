@@ -10,7 +10,7 @@ export const LandingHeader: React.FC = () => {
   const { pathname } = useLocation();
   const onLanding = pathname === '/';
   return (
-    <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-white/10 bg-slate-950/70 px-6 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 sm:px-6 backdrop-blur-xl">
       <Link to="/" className="flex items-center gap-3">
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 font-bold text-white shadow-lg shadow-purple-500/20">
           S
@@ -35,21 +35,56 @@ export const LandingHeader: React.FC = () => {
       </nav>
 
       <div className="flex items-center gap-3">
+        {/* Mobile hamburger: nav links were hidden md:flex with no mobile fallback */}
+        <button
+          type="button"
+          aria-label="Toggle navigation menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+          className="md:hidden rounded-lg p-2 text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+        >
+          {menuOpen ? (
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => navigate('/login')}
-          className="rounded-lg px-3.5 py-1.5 text-sm font-medium text-slate-300 hover:text-white transition-colors"
+          className="hidden sm:block rounded-lg px-3.5 py-1.5 text-sm font-medium text-slate-300 hover:text-white transition-colors"
         >
           Sign In
         </button>
         <button
           type="button"
           onClick={() => navigate('/register')}
-          className="rounded-lg bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-1.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity"
+          className="hidden sm:block rounded-lg bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-1.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity"
         >
           Get Started
         </button>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {menuOpen && (
+        <nav className="absolute top-16 left-0 right-0 z-50 flex flex-col gap-1 border-b border-white/10 bg-slate-950/95 px-4 py-4 backdrop-blur-xl md:hidden">
+          {onLanding ? (
+            <a href="#features" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Features</a>
+          ) : (
+            <Link to="/#features" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Features</Link>
+          )}
+          {onLanding ? (
+            <a href="#demo" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Live Demo</a>
+          ) : (
+            <Link to="/#demo" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Live Demo</Link>
+          )}
+          <button type="button" onClick={() => navTo('/about')} className="rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Our Story</button>
+          <div className="mt-2 flex flex-col gap-2 border-t border-white/10 pt-3">
+            <button type="button" onClick={() => navTo('/login')} className="rounded-lg border border-white/10 px-3 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 transition-colors">Sign In</button>
+            <button type="button" onClick={() => navTo('/register')} className="rounded-lg bg-gradient-to-r from-emerald-500 to-purple-600 px-3 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity">Get Started</button>
+          </div>
+        </nav>
+      )}
     </header>
   );
 };
