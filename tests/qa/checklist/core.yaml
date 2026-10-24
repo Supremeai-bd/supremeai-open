@@ -1,0 +1,101 @@
+# Lightweight, contract-first QA inventory.
+# Detailed browser scenarios remain separate until stable staging fixtures exist.
+- id: QA-001
+  area: frontend
+  role: guest
+  name: Frontend build is reproducible
+  route: /
+  severity: P1
+  automated: true
+  automation_key: frontend-build
+  check: pnpm --filter supremeai-studio-client build
+- id: QA-002
+  area: frontend
+  role: guest
+  name: Frontend type contract passes
+  route: /
+  severity: P1
+  automated: true
+  automation_key: frontend-typecheck
+  check: pnpm --filter supremeai-studio-client typecheck
+- id: QA-003
+  area: frontend
+  role: guest
+  name: Frontend unit suite passes
+  route: /
+  severity: P1
+  automated: true
+  automation_key: frontend-unit-tests
+  check: pnpm --filter supremeai-studio-client test
+- id: QA-004
+  area: backend
+  role: service
+  name: Backend health contract is verified in deployment
+  route: /health
+  severity: P1
+  automated: false
+  manual_note: Requires a deployed backend URL and production-like dependencies.
+- id: QA-005
+  area: integration
+  role: customer
+  name: Frontend API origin matches deployed backend
+  route: /
+  severity: P1
+  automated: false
+  manual_note: Verify build-time VITE_USER_BACKEND and VITE_ADMIN_BACKEND values.
+- id: QA-006
+  area: security
+  role: customer
+  name: Authenticated preflight preserves required security headers
+  route: /api/v1
+  severity: P0
+  automated: false
+  manual_note: Verify CORS, Authorization, CSRF, device fingerprint, and JIT OTP in staging.
+- id: QA-007
+  area: security
+  role: customer
+  name: Tenant data is isolated between two users
+  route: /projects
+  severity: P0
+  automated: false
+  manual_note: Requires two dedicated non-production accounts and persistent test data.
+- id: QA-008
+  area: release
+  role: operator
+  name: Rollback and restore evidence exists
+  route: null
+  severity: P0
+  automated: false
+  manual_note: Execute the deployment rollback and backup-restore drills before launch.
+- id: QA-009
+  area: product
+  role: reviewer
+  name: AI response quality is acceptable for release
+  route: /
+  severity: P2
+  automated: false
+  manual_note: Human review required; syntax checks cannot establish semantic quality.
+- id: QA-010
+  area: accessibility
+  role: reviewer
+  name: Critical journeys are usable with assistive technology
+  route: /
+  severity: P2
+  automated: false
+  manual_note: Human screen-reader and keyboard review remains required.
+- id: QA-011
+  area: mcp
+  role: operator
+  name: MCP gateway transport works against deployed nodes
+  route: /api/v1/mcp
+  severity: P1
+  automated: false
+  manual_note: Requires deployed nodes, persistence, credentials, and transport verification.
+- id: QA-012
+  area: privacy
+  role: operator
+  name: Memory retention and deletion policy is approved
+  route: null
+  severity: P0
+  automated: false
+  manual_note: Requires Supabase schema/RLS/retention execution and privacy sign-off.

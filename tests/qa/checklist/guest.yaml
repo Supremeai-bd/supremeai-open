@@ -1,0 +1,190 @@
+# SupremeAI QA checklist — Guest journey (G-01..G-10)
+# Schema: docs/plans/features/qa_engine_auto_checking_implementation_plan.md (Part 1)
+# All routes verified against frontend/src/App.tsx route graph (see qa/scripts/route-audit.ts).
+# Guest chat DOM facts grounded in frontend/src/pages/PublicPages.tsx (GuestChatPage):
+#   - form[aria-label="Guest chat"] with textarea[aria-label="Message SupremeAI"]
+#   - submit button (aria-label "Send message") is disabled when input empty or typing
+#   - "Save this chat" renders as <a href="/register"> once messages exist
+- id: G-01
+  area: chat
+  role: guest
+  name: Guest chat surface loads at root
+  description: >
+    Visiting / as an anonymous user renders the guest chat experience
+    ("What would you like to work on?" hero with the Guest chat form)
+    without any sign-in wall.
+  route: /
+  severity: P0
+  automated: true
+  action:
+    - navigate: /
+    - assert: form[aria-label="Guest chat"]
+  assert:
+    - url_matches: ^/$
+    - selector_visible: form[aria-label="Guest chat"]
+    - selector_visible: textarea[aria-label="Message SupremeAI"]
+  manual_note: null
+
+- id: G-02
+  area: chat
+  role: guest
+  name: Empty submit is disabled
+  description: >
+    When the chat input is empty, the send button is disabled
+    (button[disabled]) so no empty message can be submitted.
+  route: /
+  severity: P1
+  automated: true
+  action:
+    - navigate: /
+    - assert: button[aria-label="Send message"][disabled]
+  assert:
+    - selector_disabled: button[aria-label="Send message"]
+  manual_note: null
+
+- id: G-03
+  area: chat
+  role: guest
+  name: Enter sends message and conversation view appears
+  description: >
+    Pressing Enter in the chat input submits the message: the composed
+    text leaves the input and the guest conversation strip
+    ("Your conversation is temporary...") appears.
+  route: /
+  severity: P1
+  automated: true
+  action:
+    - navigate: /
+    - fill: textarea[aria-label="Message SupremeAI"] =Hello SupremeAI
+    - press: Enter
+  assert:
+    - text_visible: Your conversation is temporary
+  manual_note: null
+
+- id: G-04
+  area: chat
+  role: guest
+  name: Shift+Enter creates a newline without sending
+  description: >
+    Shift+Enter inserts a newline into the guest chat textarea instead of
+    submitting the message (keydown handler ignores Enter-with-Shift).
+  route: /
+  severity: P2
+  automated: true
+  action:
+    - navigate: /
+    - focus: textarea[aria-label="Message SupremeAI"]
+    - press: Shift+Enter
+  assert:
+    - input_value_contains: '\n'
+  manual_note: null
+
+- id: G-05
+  area: navigation
+  role: guest
+  name: Guest header exposes Sign in and Get started
+  description: >
+    The public header shows a "Sign in" link to /login and a "Get started"
+    button/link to /register so guests can always reach authentication.
+  route: /
+  severity: P1
+  automated: true
+  action:
+    - navigate: /
+    - assert: a[href="/login"]
+  assert:
+    - selector_visible: 'a[href="/login"]'
+    - selector_visible: 'a[href="/register"]'
+  manual_note: null
+
+- id: G-06
+  area: chat
+  role: guest
+  name: Model picker is available in guest chat
+  description: >
+    A model picker control is rendered inside the guest chat composer and
+    opens its menu (aria-expanded flips to true) so guests can choose a model.
+  route: /
+  severity: P2
+  automated: true
+  action:
+    - navigate: /
+    - click: 'form[aria-label="Guest chat"] button[aria-expanded]'
+  assert:
+    - selector_visible: 'form[aria-label="Guest chat"] button[aria-expanded="true"]'
+  manual_note: null
+
+- id: G-07
+  area: chat
+  role: guest
+  name: New chat resets the conversation
+  description: >
+    Clicking the "Start a new chat" control clears the guest conversation:
+    the temporary-conversation strip disappears again because messages
+    return to zero.
+  route: /
+  severity: P2
+  automated: true
+  action:
+    - navigate: /
+    - fill: textarea[aria-label="Message SupremeAI"] =Hello SupremeAI
+    - press: Enter
+    - click: 'button[aria-label="Start a new chat"]'
+  assert:
+    - text_hidden: Your conversation is temporary
+  manual_note: null
+
+- id: G-08
+  area: navigation
+  role: guest
+  name: Public info pages render without auth
+  description: >
+    /models, /pricing and /docs are served as public pages (HTTP 200,
+    SPA fallback) and never redirect guests to /login.
+  route: /models
+  severity: P2
+  automated: true
+  action:
+    - navigate: /models
+    - navigate: /pricing
+    - navigate: /docs
+  assert:
+    - response_status: "200"
+    - url_matches: ^/(models|pricing|docs)$
+  manual_note: null
+
+- id: G-09
+  area: chat
+  role: guest
+  name: Bangla input is accepted
+  description: >
+    The guest chat textarea accepts Bangla script input (multi-byte text
+    survives controlled-component round-trip unchanged).
+  route: /
+  severity: P3
+  automated: true
+  action:
+    - navigate: /
+    - fill: textarea[aria-label="Message SupremeAI"] =তুমি কি বাংলায় কথা বলতে পারো?
+  assert:
+    - input_value_contains: বাংলা
+  manual_note: null
+
+- id: G-10
+  area: chat
+  role: guest
+  name: Save chat CTA sends guest to register
+  description: >
+    After the first message, the "Save this chat" call-to-action appears and
+    links to /register — a guest is never silently denied persistence.
+  route: /
+  severity: P1
+  automated: true
+  action:
+    - navigate: /
+    - fill: textarea[aria-label="Message SupremeAI"] =Hello SupremeAI
+    - press: Enter
+    - click: 'a[href="/register"]:has-text("Save this chat")'
+  assert:
+    - url_matches: ^/register$
+  manual_note: null
