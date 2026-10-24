@@ -179,7 +179,7 @@ def batch_convert_images(folder_path, credentials_path=None):
 
 if __name__ == "__main__":
     # Usage example
-    folder = r"C:\Users\Nazifa\supremeai\Image purbolch"
+    folder = os.environ.get("OCR_FOLDER", ".")  # FIX(P6 tier-8): personal machine path -> env override
 
     # If you have credentials file, specify the path
     # credentials_path = r"path\to\your\service-account-key.json"

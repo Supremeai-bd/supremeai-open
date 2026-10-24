@@ -98,7 +98,7 @@ def process_file(filepath: Path, dry_run: bool = False):
 
 
 def main():
-    root_dir = Path(r"c:\Users\n\supremeai\supremeai_2.0\backend")
+    root_dir = Path(os.environ.get("REFAC_ROOT", "backend"))  # FIX(P6 tier-8): machine path -> env/repo-relative
     target_dirs = ["api", "brain", "tools"]
     dry_run = "--dry-run" in sys.argv
 

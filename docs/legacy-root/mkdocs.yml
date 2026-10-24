@@ -74,7 +74,6 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:mkdocs_plugins.mdx.mermaid.fence_mermaid
   - pymdownx.tabbed
   - pymdownx.tasklist:
       custom_checkbox: true

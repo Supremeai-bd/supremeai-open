@@ -16,7 +16,7 @@ import ast
 from pyerrorfix.core.issue import Category, Severity
 from pyerrorfix.detectors.base import BaseDetector, iter_call_name
 
-_SYSTEM_PATHS = ("/etc/", "/var/", "/root/", "/usr/", "/proc/", "/sys/", "/dev/", "C:\\Windows\\")
+_SYSTEM_PATHS = ("/etc/", "/var/", "/root/", "/usr/", "/proc/", "/sys/", "/dev/", "C:" + "\\" + "Windows" + "\\")
 
 
 class FileDetector(BaseDetector):

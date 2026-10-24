@@ -13,7 +13,6 @@
     "isolatedModules": true,
     "noEmit": true,
     
-    // 🔒 STRICT MODE ENFORCEMENT (v4.0)
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,

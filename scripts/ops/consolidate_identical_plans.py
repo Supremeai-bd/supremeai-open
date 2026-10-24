@@ -1,7 +1,7 @@
 import os
 
-plans_base = r'f:\supremeai\docs\plans'
-archive_base = r'f:\supremeai\docs\archive\plans'
+plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
+archive_base = os.environ.get("ARCHIVE_BASE", "docs/archive/plans")  # FIX(P6 tier-8): machine path -> env
 
 identical_redundant_removals = [
     os.path.join(plans_base, 'features', 'mcp_gateway_dynamic_hub_plan.md'),
