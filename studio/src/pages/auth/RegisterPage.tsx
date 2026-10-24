@@ -10,6 +10,7 @@ export const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -29,6 +30,16 @@ export const RegisterPage: React.FC = () => {
     setError('');
     if (!email || !password || !name) {
       setError('দয়া করে সব ফিল্ড পূরণ করুন।');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
       return;
     }
 
@@ -120,6 +131,16 @@ export const RegisterPage: React.FC = () => {
                     className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30"
                   />
                 </div>
+                <div>
+                  <input
+                    type="password"
+                    placeholder="Confirm password"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    aria-label="Confirm password"
+                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30"
+                  />
+                </div>
 
                 <button
                   type="submit"
@@ -131,9 +152,11 @@ export const RegisterPage: React.FC = () => {
 
                 <button
                   type="button"
-                  className="mt-4 w-full rounded-xl border border-white/15 py-3 font-semibold text-slate-200 transition hover:bg-white/5"
+                  disabled
+                  title="Google sign-up is coming soon"
+                  className="mt-4 w-full cursor-not-allowed rounded-xl border border-white/10 py-3 font-semibold text-slate-500/70 transition"
                 >
-                  Authenticate with Google
+                  Authenticate with Google (coming soon)
                 </button>
               </form>
 
