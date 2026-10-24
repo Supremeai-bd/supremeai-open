@@ -69,7 +69,7 @@ All incoming work items, failure alerts, and bridge work orders are ingested str
 
 ### 3.1 The Guard (automated, this charter's teeth)
 
-`scripts/ci/satellite_board_guard.py` audits all 12 satellites against the
+`scripts/ci/satellite_board_guard.py` audits all active satellites against the
 0/0 mandate using the same zero-credential plane external bridge agents
 operate on:
 

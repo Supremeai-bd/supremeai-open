@@ -7,7 +7,7 @@
 
 > [!NOTE]
 > **Orientation for New AI Agents (Directory Mapping & Single Door):**  
-> This repo (`supremeai-open`) contains mirror folders (`core/`, `command/`, `studio/`, `infrastructure/`, etc.). These are **NOT legacy duplicates**; they are the public transit surfaces for the 12 satellite repositories.  
+> This repo (`supremeai-open`) contains mirror folders (`core/`, `command/`, `studio/`, `infrastructure/`, etc.). These are **NOT legacy duplicates**; they are the public transit surfaces for the federation satellites (consolidated into 5 active product satellites: `studio`, `api`, `core`, `browser`, `vscode`, plus `archive`).  
 > - **Never push directly to satellites:** Satellites enforce a strict 0 Issues / 0 PRs policy ([`FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)).  
 > - **Code right here:** Make your edits inside this repository in the respective domain directory. Once your PR merges into `supremeai-open:main`, `landing.yml` automatically dispatches the commit to the target satellite repo.  
 > - **Satellite Dispatch Invariants:**  
@@ -38,7 +38,7 @@ flowchart TD
     subgraph TRANSIT ["3. Ephemeral Transit & Landing (§4)"]
         S6 --> GATE{"Merge Gate<br>(Fail-Closed)"}
         GATE -- Green --> MERGE["Landing to main"]
-        MERGE --> DISPATCH["Dispatch to Target Repository<br>(Monorepo / 1 of 12 Satellites)"]
+        MERGE --> DISPATCH["Dispatch to Target Repository<br>(Monorepo / Target Satellite)"]
         DISPATCH --> PRUNE["Auto-Prune Transit Patch<br>(Zero-Residue #416)"]
     end
 
