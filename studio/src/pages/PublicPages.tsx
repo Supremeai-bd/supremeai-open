@@ -83,7 +83,7 @@ export function PublicHeader() {
 export function PublicLayout({ children }: { children: React.ReactNode }) { return <div className="min-h-screen bg-slate-950 text-[var(--sa-ink,#f8fafc)]">{children}</div>; }
 
 type Message = { role: 'user' | 'assistant'; text: string };
-function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
+// Removed: fabricated "high demand" fallback copy — honest offline message inline in send().
 
 async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via?: string; brand?: Brand }> {
   const env = (import.meta as unknown as { env: Record<string, string> }).env || {};
@@ -199,20 +199,47 @@ export function GuestChat() {
       const reply = await callLiveAI(text, model, apiKey);
       setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
     } catch {
-      setMessages((m) => [...m, { role: 'assistant', text: responseFor(text), via: 'fallback' }]);
+      // FIX(audit 2026-10-24): honest fallback — the old "high demand" copy blamed
+      // load instead of telling the guest the relay is actually unreachable.
+      setMessages((m) => [...m, { role: 'assistant', text: 'Webhook relay is currently offline or unreachable. Please try again in a moment.', via: 'fallback' }]);
     } finally {
       setBusy(false);
     }
   }
 
-  return <section className="mx-auto flex w-full max-w-3xl flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md">
+  return <section className="mx-auto flex min-h-[calc(100dvh-13rem)] w-full max-w-3xl flex-1 flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md">
     <div className="flex items-center gap-2">
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {models.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
       </select>
     </div>
-    <div ref={listRef} className="flex max-h-[min(60vh,32rem)] flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
-      {messages.length === 0 && <p className="text-sm text-slate-500">Ask SupremeAI anything to get started.</p>}
+    <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
+      {messages.length === 0 && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 py-8 text-center">
+          {/* OWNER REQUEST (2026-10-24): fill the empty middle of the guest chat
+              with an attractive starter surface and sink the composer toward the
+              bottom of the viewport. Marketing model names (Supreme Auto /
+              Reasoning Pro / Fast Chat) are intentionally unchanged. */}
+          <div className="relative flex size-16 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-tr from-emerald-400/20 via-indigo-500/20 to-purple-600/20 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.25))]">
+            <span className="bg-gradient-to-r from-emerald-400 to-purple-500 bg-clip-text text-2xl font-bold text-transparent">S</span>
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-slate-100 sm:text-2xl">How can SupremeAI help you today?</h2>
+            <p className="mt-2 text-sm text-slate-500">Ask anything — or pick a starting point below.</p>
+          </div>
+          <div className="grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
+            {intents.map(({ label, prompt, icon: Icon }) => (
+              <button key={label} type="button" onClick={() => setInput(prompt)} className="group flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-left transition hover:border-purple-500/40 hover:bg-purple-500/5 hover:shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))]">
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-slate-900 text-emerald-300 group-hover:text-purple-300"><Icon size={15} /></span>
+                <span>
+                  <span className="block text-sm font-semibold text-slate-200">{label}</span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">{prompt}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {messages.map((m, i) => <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
         {/* Refs #861: shared Cosmic UnifiedChatBubble — আর কোনো ফর্কড legacy bubble নেই */}
         <UnifiedChatBubble text={m.text} sender={m.role === 'user' ? 'user' : 'system'} />
