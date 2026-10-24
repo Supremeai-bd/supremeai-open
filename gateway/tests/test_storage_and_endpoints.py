@@ -198,6 +198,20 @@ class TestStorageAndEndpoints(unittest.TestCase):
         r_invalid = self.client.post("/api/v1/auth/login", json={"username": "unknown@example.com", "password": "123"})
         self.assertEqual(r_invalid.status_code, 401)
 
+    def test_09_workspace_and_conversation_aliases(self):
+        headers = {"X-Guest-Mode": "true"}
+        # Workspace contract
+        r_ws = self.client.get("/api/v1/connections/my-workspace", headers=headers)
+        self.assertEqual(r_ws.status_code, 200)
+        ws_data = r_ws.json()
+        self.assertIn("capabilities", ws_data)
+        self.assertGreaterEqual(len(ws_data["capabilities"]), 1)
+
+        # Conversation alias (/api/v1/conversations/)
+        r_convs = self.client.get("/api/v1/conversations/", headers=headers)
+        self.assertEqual(r_convs.status_code, 200)
+        self.assertIn("conversations", r_convs.json())
+
 
 if __name__ == "__main__":
     unittest.main()
