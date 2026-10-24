@@ -79,6 +79,10 @@ permissions:
   pull-requests: write
   issues: write
 
+concurrency:
+  group: landing-${{ github.workflow }}-${{ github.event.workflow_run.pull_requests[0].number || github.event.pull_request.number || github.event.inputs.pr_number || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   auto_merge:
     name: "🛬 Autonomous Auto-Landing"
