@@ -1,5 +1,5 @@
 import React from 'react';
-import { RotateCcw, Search, Sparkles, WandSparkles, Zap } from 'lucide-react';
+import { Activity, RefreshCcw, RotateCcw, Search, Sparkles, WandSparkles, X, Zap } from 'lucide-react';
 import { UnifiedChatBubble } from './UnifiedChatBubble';
 import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../../lib/brandLabel';
 
@@ -27,6 +27,15 @@ type Message = { role: 'user' | 'assistant'; text: string };
 // OWNER NOTE (2026-10-24): the "high demand" message is an intentional marketing
 // strategy (upsell toward sign-in / paid plan) — restored per owner decision.
 export function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
+
+// HIGH DEMAND AUTO-RETRY (owner request 2026-10-25): the earlier studio PR
+// showed a beautiful high-demand warning screen with automatic retry during
+// web build; it was lost in the Unified Chat extraction. Restored here: on
+// relay failure the panel surfaces HighDemandScreen and re-sends the exact
+// same prompt automatically (5s -> 10s backoff) before falling back to the
+// canned message (the previous behavior) once retries are exhausted.
+const MAX_DEMAND_RETRIES = 2;
+const DEMAND_BACKOFF_SECONDS: readonly number[] = [5, 10];
 
 export interface LiveAIOptions {
   conversationId?: string;
@@ -327,6 +336,127 @@ export function listStoredConversations(): StoredConversationMeta[] {
   }
 }
 
+// HIGH DEMAND SCREEN (owner request 2026-10-25): recreate the beautiful
+// high-demand warning screen with automatic retry that the earlier studio PR
+// showed during web build. While the AI relay is busy or failing, this
+// full-panel surge card takes over and the panel re-sends the EXACT same
+// prompt automatically (MAX_DEMAND_RETRIES automatic retries with backoff)
+// before falling back to the canned message. Purely presentational — the
+// parent UnifiedChatPanel owns the countdown and retry state. Design language
+// matches RouteBoundary / ErrorPage (cyan-indigo-purple surge aesthetic).
+interface HighDemandScreenProps {
+  /** Failed attempts so far — the upcoming automatic attempt is attempt+1. */
+  attempt: number;
+  /** Total attempts (initial send + automatic retries). */
+  maxAttempts: number;
+  /** Seconds left until the automatic retry fires. */
+  nextIn: number;
+  /** Full countdown window in seconds (drives the ring progress). */
+  windowSeconds: number;
+  onRetryNow: () => void;
+  onCancel: () => void;
+}
+
+export function HighDemandScreen({ attempt, maxAttempts, nextIn, windowSeconds, onRetryNow, onCancel }: HighDemandScreenProps) {
+  const pct = windowSeconds > 0 ? Math.min(1, Math.max(0, nextIn / windowSeconds)) : 0;
+  const RADIUS = 26;
+  const CIRC = 2 * Math.PI * RADIUS;
+  return (
+    <div
+      role="alertdialog"
+      aria-label="SupremeAI is experiencing high demand"
+      data-testid="high-demand-screen"
+      className="absolute inset-0 z-40 flex items-center justify-center bg-[#080B11]/75 p-6 backdrop-blur-md"
+    >
+      <div className="sa-surface-raised relative w-full max-w-md overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#0d121f]/90 p-8 text-center shadow-[0_15px_40px_rgba(0,0,0,0.5),0_0_25px_rgba(6,182,212,0.15)] backdrop-blur-xl">
+        {/* Glowing top line */}
+        <div className="absolute left-0 right-0 top-0 h-1 bg-gradient-to-r from-cyan-400 via-indigo-500 to-purple-500" />
+
+        {/* Surge badge */}
+        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold tracking-wide text-cyan-300">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
+          </span>
+          High Demand · Auto-Scaling
+        </div>
+
+        {/* Pulse icon */}
+        <div className="mx-auto mb-4 inline-flex size-14 items-center justify-center rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-indigo-500/20 via-purple-500/10 to-cyan-500/20 shadow-[0_0_20px_rgba(6,182,212,0.25)]">
+          <Zap className="size-7 animate-pulse text-cyan-400" aria-hidden="true" />
+        </div>
+
+        <h2 className="text-xl font-bold tracking-tight text-white">Servers at High Demand</h2>
+        <p className="mt-2 text-sm leading-relaxed text-gray-300">
+          SupremeAI compute clusters are auto-scaling to serve your build. Your request
+          is safely queued — it will retry automatically, no action needed.
+        </p>
+
+        {/* Countdown ring + attempt status */}
+        <div className="mt-5 flex items-center justify-center gap-4">
+          <div className="relative size-16" data-testid="high-demand-countdown" aria-live="polite">
+            <svg viewBox="0 0 64 64" className="size-16 -rotate-90">
+              <circle cx="32" cy="32" r={RADIUS} fill="none" stroke="rgba(148,163,184,0.2)" strokeWidth="5" />
+              <circle
+                cx="32"
+                cy="32"
+                r={RADIUS}
+                fill="none"
+                stroke="url(#high-demand-ring)"
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeDasharray={CIRC}
+                strokeDashoffset={CIRC * (1 - pct)}
+                style={{ transition: 'stroke-dashoffset 900ms linear' }}
+              />
+              <defs>
+                <linearGradient id="high-demand-ring" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#818cf8" />
+                  <stop offset="100%" stopColor="#22d3ee" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center font-mono text-sm font-semibold text-cyan-300">
+              {nextIn}s
+            </span>
+          </div>
+          <div className="text-left">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-gray-200">
+              <Activity className="size-3.5 text-cyan-400" aria-hidden="true" />
+              Auto-retry armed
+            </p>
+            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-gray-500">
+              Next attempt {Math.min(attempt + 1, maxAttempts)} / {maxAttempts}
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="mt-6 flex flex-col items-center justify-center gap-2.5 sm:flex-row">
+          <button
+            type="button"
+            data-testid="high-demand-retry-now"
+            onClick={onRetryNow}
+            className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_15px_rgba(99,102,241,0.35)] transition-all hover:from-indigo-500 hover:to-cyan-500 sm:w-auto"
+          >
+            <RefreshCcw size={14} />
+            Retry now
+          </button>
+          <button
+            type="button"
+            data-testid="high-demand-cancel"
+            onClick={onCancel}
+            className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-gray-700 px-5 py-2.5 text-sm font-semibold text-gray-300 transition-colors hover:border-gray-500 hover:text-white sm:w-auto"
+          >
+            <X size={14} />
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function UnifiedChatPanel({
   extraHeader,
   extraActions,
@@ -346,6 +476,11 @@ export function UnifiedChatPanel({
   const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
   const [busy, setBusy] = React.useState(false);
   const [awaitingFirst, setAwaitingFirst] = React.useState(false);
+  // HIGH DEMAND AUTO-RETRY state: while set, the surge screen is visible and
+  // the countdown effect owns the automatic retry. The ref mirrors the attempt
+  // count for the failure path (the state is cleared while a retry runs).
+  const [demandRetry, setDemandRetry] = React.useState<{ prompt: string; attempt: number; nextIn: number; windowSeconds: number } | null>(null);
+  const demandRetryRef = React.useRef(0);
   const [conversationId, setConversationId] = React.useState<string>(() => {
     if (initialConversationId) {
       if (typeof localStorage !== 'undefined') {
@@ -388,6 +523,14 @@ export function UnifiedChatPanel({
     abortRef.current?.abort();
   };
 
+  // HIGH DEMAND AUTO-RETRY: one shared closer — success, cancel and the final
+  // failure all clear the surge screen through this, keeping the attempt
+  // counter consistent across paths.
+  const dismissDemandScreen = () => {
+    demandRetryRef.current = 0;
+    setDemandRetry(null);
+  };
+
   React.useEffect(() => {
     if (initialInput !== undefined && initialInput !== '') {
       setInput(initialInput);
@@ -409,12 +552,20 @@ export function UnifiedChatPanel({
     setInput('');
   };
 
-  async function send() {
-    const text = input.trim();
+  async function send(overrideText?: string, isRetry = false) {
+    const text = (overrideText ?? input).trim();
     if (!text || busy) return;
-    setInput('');
-    onInputChange?.('');
-    setMessages((m) => [...m, { role: 'user', text }, { role: 'assistant', text: '' }]);
+    if (!isRetry) {
+      // A fresh (human-initiated) send clears the composer; an automatic
+      // high-demand retry must NOT wipe whatever the user is typing.
+      setInput('');
+      onInputChange?.('');
+    }
+    setMessages((m) => (
+      isRetry
+        ? [...m, { role: 'assistant', text: '' }]
+        : [...m, { role: 'user', text }, { role: 'assistant', text: '' }]
+    ));
     setBusy(true);
     setAwaitingFirst(true);
     const controller = new AbortController();
@@ -465,6 +616,7 @@ export function UnifiedChatPanel({
         dropEmptyPlaceholder();
         return;
       }
+      dismissDemandScreen();
       setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
     } catch {
       setAwaitingFirst(false);
@@ -472,13 +624,21 @@ export function UnifiedChatPanel({
         dropEmptyPlaceholder();
         return;
       }
-      setMessages((m) => {
-        const last = m[m.length - 1];
-        if (last && last.role === 'assistant' && !last.text) {
-          return [...m.slice(0, -1), { role: 'assistant', text: responseFor(text), via: 'fallback' }];
-        }
-        return m;
-      });
+      // HIGH DEMAND AUTO-RETRY (owner request 2026-10-25): drop the empty
+      // placeholder and surface the surge screen; the countdown effect re-sends
+      // the exact same prompt automatically. Once the automatic retries are
+      // exhausted, fall back to the canned high-demand message (the previous
+      // behavior) so the failure is still explained inside the conversation.
+      dropEmptyPlaceholder();
+      if (demandRetryRef.current < MAX_DEMAND_RETRIES) {
+        const attempt = demandRetryRef.current + 1;
+        const backoff = DEMAND_BACKOFF_SECONDS[Math.min(attempt - 1, DEMAND_BACKOFF_SECONDS.length - 1)] ?? 5;
+        demandRetryRef.current = attempt;
+        setDemandRetry({ prompt: text, attempt, nextIn: backoff, windowSeconds: backoff });
+      } else {
+        dismissDemandScreen();
+        setMessages((m) => [...m, { role: 'assistant', text: responseFor(text), via: 'fallback' }]);
+      }
     } finally {
       abortRef.current = null;
       stopRequestedRef.current = false;
@@ -486,7 +646,25 @@ export function UnifiedChatPanel({
     }
   }
 
-  return <section className={`mx-auto flex w-full ${fit === 'fill' ? 'h-full min-h-0' : 'min-h-[calc(100dvh-13rem)] max-w-3xl flex-1'} flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md ${className}`}>
+  // HIGH DEMAND AUTO-RETRY countdown: ticks the surge screen every second and
+  // fires the automatic retry at zero. send is a hoisted function declaration
+  // in this component scope — stable identity, intentionally not a dep.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useEffect(() => {
+    if (!demandRetry) return;
+    if (demandRetry.nextIn <= 0) {
+      const retryPrompt = demandRetry.prompt;
+      setDemandRetry(null);
+      void send(retryPrompt, true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setDemandRetry((current) => (current ? { ...current, nextIn: current.nextIn - 1 } : current));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [demandRetry]);
+
+  return <section className={`relative mx-auto flex w-full ${fit === 'fill' ? 'h-full min-h-0' : 'min-h-[calc(100dvh-13rem)] max-w-3xl flex-1'} flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md overflow-hidden ${className}`}>
     <div className="flex items-center gap-2">
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {chatModels.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
@@ -567,7 +745,7 @@ export function UnifiedChatPanel({
       />
       <button
         type="button"
-        onClick={send}
+        onClick={() => { void send(); }}
         disabled={busy || !input.trim()}
         aria-label="Send message"
         data-testid="send-message-button"
@@ -588,6 +766,16 @@ export function UnifiedChatPanel({
       )}
       {extraActions}
     </div>
+    {demandRetry && (
+      <HighDemandScreen
+        attempt={demandRetry.attempt}
+        maxAttempts={MAX_DEMAND_RETRIES + 1}
+        nextIn={demandRetry.nextIn}
+        windowSeconds={demandRetry.windowSeconds}
+        onRetryNow={() => { const current = demandRetry; if (!current) return; setDemandRetry(null); void send(current.prompt, true); }}
+        onCancel={() => { const current = demandRetry; dismissDemandScreen(); if (current) setMessages((m) => [...m, { role: 'assistant', text: responseFor(current.prompt), via: 'fallback' }]); }}
+      />
+    )}
   </section>;
 }
 
