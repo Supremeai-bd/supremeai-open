@@ -50,18 +50,21 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
     reason: string | null;
   }>({ isOpen: false, command: '', reason: null });
   const [graceUntil, setGraceUntil] = useState<number>(0);
+  const voiceControlsRef = useRef<{
+    speak: (text: string, onEnd?: () => void) => void;
+  } | null>(null);
 
   const handleVoiceCommand = (spokenText: string) => {
     setAdminInput?.(spokenText);
     const reason = detectDestructiveReason(spokenText);
     if (reason && Date.now() > graceUntil) {
       setSentinelModal({ isOpen: true, command: spokenText, reason });
-      speak('Authorization required for this command, Sir.');
+      voiceControlsRef.current?.speak('Authorization required for this command, Sir.');
       return;
     }
     setTimeout(() => {
       handleSendAdmin?.();
-      speak(`Processing ${spokenText}, Sir.`);
+      voiceControlsRef.current?.speak(`Processing ${spokenText}, Sir.`);
     }, 400);
   };
 
@@ -78,6 +81,10 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
     stopSpeaking,
     toggleMute,
   } = useAdminVoice(handleVoiceCommand);
+
+  useEffect(() => {
+    voiceControlsRef.current = { speak };
+  }, [speak]);
 
   // Auto-greeting & oral briefing upon initial admin dashboard mount
   const briefedRef = useRef(false);
