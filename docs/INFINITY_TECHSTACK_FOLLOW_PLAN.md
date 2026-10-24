@@ -43,7 +43,7 @@
 8. **Zero-Admin / ≤0.01%:** দুটোই "human-in-the-loop কম, automation বেশি" ফিলোসফি।
 9. **Open-core embassy:** দুটোই public boundary + private core।
 
-**মূল পার্থক্য:** Infinity = single engineer, Rust-first, from-scratch engines, heavy on academies/dev-tools. SupremeAI = federation of 12 satellites, Python/TS, FastAPI gateway, agent orchestration focus. Infinity-এর **content/education + dev-tools + anti-sycophancy** দিকগুলো SupremeAI-তে দুর্বল — এখানেই অনুসরণের সুযোগ।
+**মূল পার্থক্য:** Infinity = single engineer, Rust-first, from-scratch engines, heavy on academies/dev-tools. SupremeAI = consolidated federation of active product satellites, Python/TS, FastAPI gateway, agent orchestration focus. Infinity-এর **content/education + dev-tools + anti-sycophancy** দিকগুলো SupremeAI-তে দুর্বল — এখানেই অনুসরণের সুযোগ।
 
 ---
 

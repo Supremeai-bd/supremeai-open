@@ -12,7 +12,7 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
 > 1. **Single Door for Work:** All tasks, bug reports, and PRs live exclusively in **`Supremeai-bd/supremeai-open`**. Satellite repositories maintain a strict 0 Issues / 0 PRs policy ([`FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)).
 > 2. **Where to Write Code:** Edit the corresponding domain folders inside this repository (`studio/`, `command/`, `core/`, `vscode/`, etc.). Do NOT attempt to push directly to satellite repos.
 > 3. **Automated Dispatch & Zero Residue:** When your PR merges into `supremeai-open:main`, the automated bridge pipeline dispatches your changes to the target satellite repo and cleans up transit files automatically ([`AUTONOMOUS_TRANSIT_PIPELINE.md`](./AUTONOMOUS_TRANSIT_PIPELINE.md)).
-> 4. **Boundary Restrictions:** You do not need private credentials. Access to `supremeai` (core monorepo) is restricted to admin, and `supremeai-api` is air-gapped (ghost-cloaked). All other 12 satellites are accessible via MCP.
+> 4. **Boundary Restrictions:** You do not need private credentials. Access to `supremeai` (core monorepo) is restricted to admin, and `supremeai-api` is air-gapped (ghost-cloaked). All other satellites are accessible via MCP.
 >
 > **MCP Tower call conventions (avoid argument/format errors):**
 > - Tool names use **underscores** (`github_read_file`, `github_repo_tree`, `github_list_prs`, `github_workflow_runs`), never dots.
