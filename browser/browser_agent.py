@@ -33,18 +33,15 @@ logger = logging.getLogger("supremeai.browser")
 # বাংলা মন্তব্য: Dual-path import — standalone scraper-এ top-level `security`/\n# `web_scraper`, backend-এ embedded হলে `services.scraper.*`। Scraper-এর নিজস্ব\n# self-contained security.py ব্যবহার হয় (core.security টানে না — SSRF-minimal)।
 try:
     from security import (  # standalone scraper microservice
-        is_safe_url,
         is_safe_url_resolved,
     )
 except ImportError:  # embedded in main backend
     try:
         from services.scraper.security import (  # type: ignore[no-redef]
-            is_safe_url,
             is_safe_url_resolved,
         )
     except ImportError:
         from browser.security import (  # type: ignore[no-redef]
-            is_safe_url,
             is_safe_url_resolved,
         )
 

@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
-from gemini_web_engine import GeminiWebEngine
+from gemini_web_engine import GeminiWebEngine  # noqa: E402  # must follow the sys.path bootstrap above (script-mode support)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
