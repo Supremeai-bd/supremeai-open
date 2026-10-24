@@ -61,6 +61,7 @@ const PreviewEmptyState: React.FC<{ device: 'browser' | 'mobile'; onBack: () => 
 export const AIStudio: React.FC = () => {
   const [input, setInput] = useState('');
   const [resumeConvId, setResumeConvId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'chat' | 'preview' | 'mobile'>('chat');
   // CHAT LANDING (owner decision 2026-10-24): Chat is the landing tab with a
   // local history sidebar (mainstream-AI pattern). Home and Prompt Library
   // left the rail; users enable features from Settings/Profile.
@@ -72,7 +73,6 @@ export const AIStudio: React.FC = () => {
     const freshId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setResumeConvId(freshId);
   };
-  const [activeTab, setActiveTab] = useState<'chat' | 'preview' | 'mobile'>('chat');
   const [code, setCode] = useState(CODE_PLACEHOLDER);
   const hasPreview = code.trim() !== '' && code !== CODE_PLACEHOLDER;
   const [searchParams, setSearchParams] = useSearchParams();
