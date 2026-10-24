@@ -50,4 +50,4 @@ def refactor_logging(root_dir):
 
 
 if __name__ == "__main__":
-    refactor_logging("F:/supremeai/backend")
+    refactor_logging(os.environ.get("REFAC_LOGGING_ROOT", "backend"))  # FIX(P6 tier-8): machine path -> env/repo-relative
