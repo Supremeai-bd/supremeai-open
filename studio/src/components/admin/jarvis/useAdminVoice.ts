@@ -46,10 +46,14 @@ export function useAdminVoice(onFinalTranscript?: (text: string) => void) {
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const isMutedRef = useRef(isMuted);
-  isMutedRef.current = isMuted;
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   const onFinalTranscriptRef = useRef(onFinalTranscript);
-  onFinalTranscriptRef.current = onFinalTranscript;
+  useEffect(() => {
+    onFinalTranscriptRef.current = onFinalTranscript;
+  }, [onFinalTranscript]);
 
   // Initialize Speech Recognition once on client
   useEffect(() => {

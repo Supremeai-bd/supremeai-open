@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArcReactorOrb } from './ArcReactorOrb';
+import { apiClient } from '../../../services/apiClient';
 
 interface JarvisAdminGateProps {
   onUnlocked: () => void;
@@ -22,16 +23,14 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
     }
 
     try {
-      const res = await fetch('/api/admin/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'gate', code: code.trim() }),
+      const data = await apiClient.post<{ ok?: boolean; error?: string }>('/api/admin/verify', {
+        mode: 'gate',
+        code: code.trim(),
       });
-      const data = await res.json();
-      if (res.ok && data.ok) {
+      if (data && data.ok) {
         onUnlocked();
       } else {
-        setError(data.error || 'Access denied.');
+        setError(data?.error || 'Access denied.');
         setCode('');
       }
     } catch {
