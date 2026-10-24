@@ -15,12 +15,12 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from datetime import datetime, timezone
+import hmac
 import json
 import logging
 import os
 import socket
 import time
-import hmac
 from typing import Optional, Tuple
 import uuid
 
@@ -355,31 +355,102 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
     return token in valid_keys
 
 
-def _extract_user_id(request: Request) -> str:
-    """Resolve caller user ID from a VERIFIED session token only.
+_ADMIN_PERMISSIONS = ["admin", "read", "write", "execute", "vault", "planner"]
 
-    FIX(auth 2026-10-24): caller-supplied user-id headers are no longer trusted
-    (they allowed arbitrary identity spoofing) and the old default no longer
-    attributes anonymous calls to the admin user. Identity comes from the
-    HMAC-verified bearer key; unauthenticated callers get an explicit
-    anonymous id.
+
+def _resolve_verified_identity(request: Request, allow_static_keys: bool = True) -> Optional[dict]:
+    """Resolve caller identity strictly from a verified token — never from
+    caller-supplied headers (RB audit fix: identity by assertion was trust).
+
+    Accepted credential classes (mirrors _verify_client_auth's contract):
+    1. keygen-signed 'sk-supreme-...' keys — client 'studio-admin' maps to the
+       admin identity; any other signed client maps to a per-client user id.
+    2. Configured static admin/pool keys (SUPREMEAI_API_KEY, SUPREMEAI_API_KEYS,
+       SUPERADMIN_KEY) — operator-held credentials, admin-class identity. Only
+       honored when allow_static_keys is True.
+    3. Signed admin JWTs (service.admin_auth.verify_admin_jwt) — payload
+       'uid'/'sub' and 'role' drive the identity.
+    Returns None when nothing verifies; callers decide 401 vs anonymous.
     """
-    auth_header = request.headers.get("authorization", "")
-    token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
-    if token:
-        # verify_key checks the keygen prefix + HMAC signature statelessly and
-        # returns None for any non-keygen token — no prefix sniffing here.
+    token = _extract_token(request, None)
+    if not token:
+        return None
+
+    # 1. Stateless cryptographic keygen-signed keys
+    if token.startswith("sk-supreme-"):
+        meta = verify_key(token)
+        if not meta:
+            return None
+        client = str(meta.get("client") or "").strip()
+        if client == "studio-admin":
+            return {
+                "user_id": "usr-admin-primary",
+                "email": os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "").strip(),
+                "name": "SupremeAI Admin",
+                "role": "admin",
+                "permissions": list(_ADMIN_PERMISSIONS),
+            }
+        clean = client[4:] if client.lower().startswith("usr-") else client
+        clean = "".join(c for c in clean if c.isalnum() or c in "-_")[:32] or "user"
+        return {
+            "user_id": f"usr-{clean}",
+            "email": "",
+            "name": clean,
+            "role": "user",
+            "permissions": ["read", "write"],
+        }
+
+    # 2. Static operator-held admin/pool keys (opt-in per caller contract)
+    if allow_static_keys:
+        valid_keys = set()
+        master = os.getenv("SUPREMEAI_API_KEY", "").strip()
+        if master:
+            valid_keys.add(master)
+        pool_str = os.getenv("SUPREMEAI_API_KEYS", "").strip()
+        if pool_str:
+            for k in pool_str.split(","):
+                if k.strip():
+                    valid_keys.add(k.strip())
+        if SUPERADMIN_KEY:
+            valid_keys.add(SUPERADMIN_KEY)
+        if valid_keys and token in valid_keys:
+            return {
+                "user_id": "usr-admin-primary",
+                "email": os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "").strip(),
+                "name": "SupremeAI Admin",
+                "role": "admin",
+                "permissions": list(_ADMIN_PERMISSIONS),
+            }
+
+    # 3. Signed admin JWT (HS256, exp-checked) from the admin_auth surface
+    try:
+        from service.admin_auth import verify_admin_jwt
+    except ImportError:
         try:
-            meta = verify_key(token)
-        except Exception:
-            meta = None
-        if meta:
-            client = str(meta.get("client") or "")
-            if client == "studio-admin":
-                return "usr-admin-primary"
-            if client:
-                return client if client.startswith("usr-") else f"usr-{client}"
-    return "usr-anonymous"
+            from gateway.service.admin_auth import verify_admin_jwt
+        except ImportError:
+            return None
+    try:
+        payload = verify_admin_jwt(token)
+    except Exception:
+        return None
+    uid = str(payload.get("uid") or payload.get("sub") or "").strip()
+    if not uid:
+        return None
+    role = str(payload.get("role") or "admin").strip()
+    return {
+        "user_id": uid if uid.startswith("usr-") else f"usr-{uid}",
+        "email": str(payload.get("email") or ""),
+        "name": str(payload.get("email") or uid),
+        "role": role,
+        "permissions": list(_ADMIN_PERMISSIONS) if role == "admin" else ["read", "write"],
+    }
+
+
+def _extract_user_id(request: Request) -> str:
+    """Resolve caller user ID from the verified token only; 'usr-anonymous' otherwise."""
+    identity = _resolve_verified_identity(request)
+    return identity["user_id"] if identity else "usr-anonymous"
 
 
 # ── Liveness & Readiness Probes ──────────────────────────────────────────────
@@ -577,41 +648,45 @@ async def studio_auth_login(request: Request):
     email = str(body.get("email") or body.get("username") or "").strip().lower()
     password = str(body.get("password", "")).strip()
 
-    admin_email = os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "niloyjoy7@gmail.com").strip().lower()
+    admin_email = os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "").strip().lower()
     admin_pass = os.getenv("SUPREMEAI_ADMIN_PASSWORD", "").strip()
 
-    # FIX(auth 2026-10-24): fail-closed credential check. Previously ANY email with
-    # ANY password of >=6 chars produced a session, and the admin password had a
-    # hardcoded "admin123" fallback. Both bypasses removed: only the configured
-    # admin email + exact env password match is accepted (hmac.compare_digest).
-    # User accounts require the register flow / a real user store (tracked separately).
-    if admin_pass and email == admin_email and hmac.compare_digest(password, admin_pass):
-        # Generate stateless signed API token
-        try:
-            from service.keygen import generate_key
-            token = generate_key(client_name="studio-admin", quota="unlimited")
-        except Exception:
-            token = "sk-supreme-studio-admin-live-session"
+    # Fail-closed admin authentication (RB audit fix): the configured admin
+    # email plus the exact configured password only. No defaults, no
+    # length-based bypass, no permissive fallback branches.
+    if not admin_email or not admin_pass:
+        raise HTTPException(status_code=503, detail="Admin authentication is not configured")
+    if email != admin_email or not password or not hmac.compare_digest(password.encode("utf-8"), admin_pass.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-        user_id = "usr-admin-primary" if email == admin_email else f"usr-{int(time.time())}"
-        role = "admin" if email == admin_email else "user"
-        perms = ["admin", "read", "write", "execute", "vault", "planner"] if email == admin_email else ["read", "write"]
-        name = "SupremeAI Admin" if email == admin_email else (email.split("@")[0].capitalize() if "@" in email else "User")
+    # Generate stateless signed API token (keygen-signed; no static fallback)
+    try:
+        from service.keygen import generate_key
+        token = generate_key(client_name="studio-admin", quota="unlimited")
+    except Exception:
+        token = ""
+    if not token:
+        raise HTTPException(status_code=503, detail="Key signing service unavailable")
 
-        return {
-            "token": token,
-            "access_token": token,
-            "token_type": "bearer",
-            "user_id": user_id,
+    user_id = "usr-admin-primary"
+    role = "admin"
+    perms = list(_ADMIN_PERMISSIONS)
+    name = "SupremeAI Admin"
+
+    return {
+        "token": token,
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": user_id,
+        "role": role,
+        "permissions": perms,
+        "user": {
+            "id": user_id,
+            "email": email,
+            "name": name,
             "role": role,
-            "permissions": perms,
-            "user": {
-                "id": user_id,
-                "email": email or admin_email,
-                "name": name,
-                "role": role,
-            },
-        }
+        },
+    }
 
     raise HTTPException(status_code=401, detail="Invalid email or password")
 
@@ -667,63 +742,17 @@ async def studio_auth_register(request: Request):
 @app.get("/api/v1/auth/me")
 @app.get("/v1/auth/me")
 async def studio_auth_me(request: Request):
-    """Validates session and returns current user profile."""
-    auth_header = request.headers.get("authorization", "")
-    token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
-
-    # FIX(auth 2026-10-24): previously returned an admin profile unconditionally,
-    # ignoring the bearer token entirely. The token must now verify: first as a
-    # keygen-issued HMAC key (service.keygen.verify_key checks prefix+signature
-    # statelessly), else as a signed admin JWT (gateway.service.admin_auth).
-    # Fail-closed 401 otherwise.
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-
-    try:
-        meta = verify_key(token)
-    except Exception:
-        meta = None
-    if meta:
-        client = str(meta.get("client") or "user")
-        if client == "studio-admin":
-            return {
-                "authenticated": True,
-                "user_id": "usr-admin-primary",
-                "email": os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "niloyjoy7@gmail.com"),
-                "name": "SupremeAI Admin",
-                "role": "admin",
-                "permissions": ["admin", "read", "write", "execute", "vault", "planner"],
-            }
-        user_id = client if client.startswith("usr-") else f"usr-{client}"
-        return {
-            "authenticated": True,
-            "user_id": user_id,
-            "email": "",
-            "name": (client[4:] if client.startswith("usr-") else client).capitalize() or "User",
-            "role": "user",
-            "permissions": ["read", "write"],
-        }
-
-    try:
-        try:
-            from gateway.service.admin_auth import verify_admin_jwt
-        except Exception:  # pragma: no cover - root-layout import fallback
-            from service.admin_auth import verify_admin_jwt
-        jwt_payload = verify_admin_jwt(token)
-    except HTTPException:
-        raise HTTPException(status_code=401, detail="Invalid or expired session token")
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired session token")
-
-    role = str(jwt_payload.get("role") or "user")
-    jwt_email = str(jwt_payload.get("email") or "")
+    """Validates session and returns current user profile from the verified token."""
+    identity = _resolve_verified_identity(request, allow_static_keys=False)
+    if not identity:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
     return {
         "authenticated": True,
-        "user_id": str(jwt_payload.get("uid") or jwt_payload.get("sub") or "usr-admin-primary"),
-        "email": jwt_email,
-        "name": "SupremeAI Admin" if role == "admin" else (jwt_email.split("@")[0].capitalize() or "User"),
-        "role": role,
-        "permissions": ["admin", "read", "write", "execute", "vault", "planner"] if role == "admin" else ["read", "write"],
+        "user_id": identity["user_id"],
+        "email": identity["email"],
+        "name": identity["name"],
+        "role": identity["role"],
+        "permissions": identity["permissions"],
     }
 
 
