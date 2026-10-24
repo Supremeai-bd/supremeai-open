@@ -174,6 +174,7 @@ class TestStorageAndEndpoints(unittest.TestCase):
         self.assertIn("primary", data["checks"])
         self.assertIn("worker", data["checks"])
 
+    @patch.dict(os.environ, {"SUPREMEAI_ADMIN_PASSWORD": "password123"})
     def test_08_auth_login_and_register(self):
         # 1. Login with username field (what studio authStore sends)
         r_username = self.client.post("/api/v1/auth/login", json={"username": "niloyjoy7@gmail.com", "password": "password123"})

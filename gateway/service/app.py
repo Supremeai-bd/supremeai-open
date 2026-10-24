@@ -132,6 +132,38 @@ except ImportError:
         save_conversation = None  # type: ignore[assignment]
         save_user_preferences = None  # type: ignore[assignment]
 
+# ── Provider-Agnostic Context Compiler, Response Guard & Canonical Memory ──
+try:
+    from service.context_compiler import compile_chat_context, resolve_sampling_knobs
+    from service.response_guard import is_stub_content, purge_identity_bleed, repair_markdown, validate_and_sanitize
+    from service.memory_store import (
+        append_canonical_message,
+        get_recent_history,
+        get_user_durable_memories,
+        log_provider_attempt,
+    )
+except ImportError:
+    try:
+        from gateway.service.context_compiler import compile_chat_context, resolve_sampling_knobs
+        from gateway.service.response_guard import is_stub_content, purge_identity_bleed, repair_markdown, validate_and_sanitize
+        from gateway.service.memory_store import (
+            append_canonical_message,
+            get_recent_history,
+            get_user_durable_memories,
+            log_provider_attempt,
+        )
+    except ImportError:
+        compile_chat_context = None  # type: ignore[assignment]
+        resolve_sampling_knobs = None  # type: ignore[assignment]
+        validate_and_sanitize = None  # type: ignore[assignment]
+        purge_identity_bleed = None  # type: ignore[assignment]
+        is_stub_content = None  # type: ignore[assignment]
+        repair_markdown = None  # type: ignore[assignment]
+        append_canonical_message = None  # type: ignore[assignment]
+        get_recent_history = None  # type: ignore[assignment]
+        get_user_durable_memories = None  # type: ignore[assignment]
+        log_provider_attempt = None  # type: ignore[assignment]
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("supremeai.gateway")
 
@@ -237,6 +269,18 @@ except ImportError:
 
 if admin_auth_router is not None:
     app.include_router(admin_auth_router)
+
+# Epistemic router (ChronoFact/SPINE patterns): tool pruning, memory gate, model horizon.
+try:
+    from service.epistemic_router import router as epistemic_router
+except ImportError:
+    try:
+        from gateway.service.epistemic_router import router as epistemic_router
+    except ImportError:
+        epistemic_router = None
+
+if epistemic_router is not None:
+    app.include_router(epistemic_router)
 
 
 # ── Guest Rate Limit (cost guard for the keyless bypass) ─────────────────────
@@ -926,11 +970,45 @@ async def _execute_chat_completion(
         or request.headers.get("x-session-id")
     )
     user_id = _extract_user_id(request)
-    if conv_id and add_message:
-        incoming_msgs = body.get("messages", [])
-        last_user_msg = next((m.get("content") for m in reversed(incoming_msgs) if m.get("role") == "user"), None)
-        if last_user_msg:
-            add_message(conv_id, "user", str(last_user_msg), user_id=user_id)
+    incoming_msgs = body.get("messages", [])
+    last_user_msg = next((m.get("content") for m in reversed(incoming_msgs) if isinstance(m, dict) and m.get("role") == "user"), None)
+
+    # 1. Message persistence (Canonical 3-tier memory store & legacy storage)
+    if conv_id and last_user_msg:
+        if append_canonical_message:
+            try:
+                append_canonical_message(conv_id, "user", str(last_user_msg), user_id=user_id)
+            except Exception as exc:
+                logger.warning(f"Canonical memory store error (user msg): {exc}")
+        if add_message:
+            try:
+                add_message(conv_id, "user", str(last_user_msg), user_id=user_id)
+            except Exception as exc:
+                logger.warning(f"Legacy storage error (user msg): {exc}")
+
+    # 2. Server-Side Context Compiler (Phase 1):
+    # Injects Core Identity Anchor + Platform Grounding Sheet + 3-Tier Memory + Deterministic Sampling Lock
+    if compile_chat_context:
+        try:
+            if resolve_sampling_knobs:
+                knobs = resolve_sampling_knobs(
+                    messages=body.get("messages", []),
+                    mode=body.get("mode") or requested_model,
+                    max_tokens=body.get("max_tokens", 4096),
+                )
+                for k, v in knobs.items():
+                    if k not in body or body[k] is None:
+                        body[k] = v
+
+            body["messages"] = compile_chat_context(
+                messages=body.get("messages", []),
+                conversation_id=conv_id,
+                user_id=user_id,
+                language_pref=body.get("language_pref", "bn"),
+                response_style=body.get("response_style", "technical-architect"),
+            )
+        except Exception as exc:
+            logger.warning(f"Context compiler error, continuing with incoming messages: {exc}")
 
     # ═══════════════════════════════════════════════════════════════════════
     # 🔒 HEADLINE — ADMIN ER COMMAND CHARA ENABLE KORA JABE NA
@@ -953,6 +1031,7 @@ async def _execute_chat_completion(
     )
     if use_priority_1:
         w_status, w_response = None, None
+        start_time = time.time()
         try:
             w_status, w_response = await forward_stealth_webhook(
                 STEALTH_WEBHOOK_URL,
@@ -995,10 +1074,54 @@ async def _execute_chat_completion(
         ):
             chat_content = str(w_response["choices"][0]["message"].get("content", "")).strip()
 
+        # SPINE-style stream sanitization: strip unearned cushions / reflexive
+        # apologies from the relay output before serving (no mid-stream pivot
+        # here because the full content is already buffered).
+        if chat_content:
+            try:
+                from gateway.service.stream_sanitizer import sanitize_stream as _sanitize_stream
+            except ImportError:
+                try:
+                    from service.stream_sanitizer import sanitize_stream as _sanitize_stream
+                except ImportError:
+                    _sanitize_stream = None
+            if _sanitize_stream is not None:
+                chat_content = _sanitize_stream(chat_content).text
+
         # Reject mock/dummy stubs and require genuine non-empty content
         is_valid_chat = bool(chat_content) and not any(
             marker in chat_content for marker in ("Web Session Active", "health=", "Authenticated via")
         )
+
+        # 3. Post-Generation Response Guard (Phase 2): Identity Bleed Scrubbing & Stub/Markdown Sanitization
+        if validate_and_sanitize and is_valid_chat:
+            try:
+                w_response = validate_and_sanitize(w_response)
+                if (
+                    isinstance(w_response, dict)
+                    and w_response.get("choices")
+                    and isinstance(w_response["choices"][0].get("message"), dict)
+                ):
+                    chat_content = str(w_response["choices"][0]["message"].get("content", "")).strip()
+            except Exception as exc:
+                logger.warning(f"Response guard rejected output: {exc}")
+                is_valid_chat = False
+
+        # 4. Provider Attempts Ledger (Phase 3 persistence)
+        if log_provider_attempt:
+            try:
+                latency_ms = int((time.time() - start_time) * 1000)
+                log_provider_attempt(
+                    request_id=f"req-{uuid.uuid4().hex[:10]}",
+                    conversation_id=conv_id or "ephemeral",
+                    provider="stealth-webhook",
+                    model=body.get("model", "auto"),
+                    status_code=w_status or 500,
+                    latency_ms=latency_ms,
+                    error_message=None if is_valid_chat else "Invalid chat or stub content rejected by guard",
+                )
+            except Exception as exc:
+                logger.debug(f"Failed to log provider attempt: {exc}")
 
         if w_status is not None and 200 <= w_status < 300 and is_valid_chat:
             # Server-decided reply badge (e.g. "SupremeAI w.ge Turbo"); UI only displays it.
@@ -1016,14 +1139,31 @@ async def _execute_chat_completion(
             if conv_id:
                 w_response["conversation_id"] = conv_id
                 w_response["session_id"] = conv_id
-                if add_message and chat_content:
-                    add_message(
-                        conv_id,
-                        "assistant",
-                        chat_content,
-                        extra={"supremeai": w_response.get("supremeai")},
-                        user_id=user_id,
-                    )
+                if chat_content:
+                    if append_canonical_message:
+                        try:
+                            append_canonical_message(
+                                conv_id,
+                                "assistant",
+                                chat_content,
+                                user_id=user_id,
+                                provider="stealth-webhook",
+                                model=served_model or "auto",
+                                metadata={"supremeai": w_response.get("supremeai")},
+                            )
+                        except Exception as exc:
+                            logger.warning(f"Canonical memory store error (assistant msg): {exc}")
+                    if add_message:
+                        try:
+                            add_message(
+                                conv_id,
+                                "assistant",
+                                chat_content,
+                                extra={"supremeai": w_response.get("supremeai")},
+                                user_id=user_id,
+                            )
+                        except Exception as exc:
+                            logger.warning(f"Legacy storage error (assistant msg): {exc}")
 
             if body.get("stream"):
                 async def stream_generator():
