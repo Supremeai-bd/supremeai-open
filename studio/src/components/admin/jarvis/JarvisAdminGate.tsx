@@ -45,7 +45,11 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
 
   // Generate QR code when setup modal opens or secret changes
   useEffect(() => {
-    if (!showSetupModal) return;
+    let isMounted = true;
+    if (!showSetupModal) {
+      setQrDataUrl(null);
+      return;
+    }
     const uri = buildOtpAuthUri('admin', totpSecret, 'SupremeAI JARVIS');
     QRCode.toDataURL(uri, {
       width: 256,
@@ -55,8 +59,16 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
         light: '#050b14',
       },
     })
-      .then((url) => setQrDataUrl(url))
-      .catch(() => setQrDataUrl(null));
+      .then((url) => {
+        if (isMounted) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (isMounted) setQrDataUrl(null);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [showSetupModal, totpSecret]);
 
   const recordSuccess = useCallback(() => {

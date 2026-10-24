@@ -76,9 +76,15 @@ describe('JarvisAdminGate', () => {
     expect(screen.getByText(/Setup Google Authenticator/i)).toBeInTheDocument();
     expect(screen.getByText(/Scan this QR code with/i)).toBeInTheDocument();
 
+    await waitFor(() => {
+      expect(screen.getByAltText(/Google Authenticator QR Code/i)).toBeInTheDocument();
+    });
+
     const closeBtn = screen.getByRole('button', { name: /Close setup modal/i });
     fireEvent.click(closeBtn);
 
-    expect(screen.queryByText(/Scan this QR code with/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/Scan this QR code with/i)).not.toBeInTheDocument();
+    });
   });
 });
