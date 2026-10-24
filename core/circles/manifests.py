@@ -53,7 +53,7 @@ def default_manifests() -> tuple[CircleManifest, ...]:
         CircleManifest(
             name=CircleName.TASK,
             display_name="Tasks and workers",
-            owner="backend/core/queue",
+            owner="backend/core/task_queue",
             capabilities=(
                 CapabilityRef(
                     name="task.submit", owner_circle=CircleName.TASK, risk_level=RiskLevel.MEDIUM

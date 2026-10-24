@@ -33,7 +33,9 @@ from contextlib import asynccontextmanager
 
 import httpx
 
-from core import services
+from core import service_container as services
+
+service_container = services
 from core.config import settings
 from core.logging_config import logger
 from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
@@ -144,14 +146,14 @@ async def app_lifespan(app):
     # Sequential dependency: HTTP client must be initialized first (others depend on it).
 
     # Global HTTP client initialization (sequential — dependency for others)
-    services.global_http_client = httpx.AsyncClient(
+    service_container.global_http_client = httpx.AsyncClient(
         limits=httpx.Limits(max_keepalive_connections=50, max_connections=200),
         timeout=httpx.Timeout(30.0),
         headers={"User-Agent": "SupremeAI-Orchestrator/2.0"},
     )
-    app.state.http_client = services.global_http_client
-    set_shared_client(services.global_http_client)
-    services.model_router._http_client = services.global_http_client
+    app.state.http_client = service_container.global_http_client
+    set_shared_client(service_container.global_http_client)
+    service_container.model_router._http_client = service_container.global_http_client
     logger.info("✅ Global HTTP Connection Pool initialized [Max Cons: 200].")
 
     # Parallel Phase: DB pool, Config cache, Redis, Tracing, CostGuard

@@ -56,8 +56,8 @@ IMPORT_MAP = {
     "from core.audit_logger": "from core.observability.audit_logger",
     "from core.log_batcher": "from core.observability.log_batcher",
     # Queue moves
-    "from core.task_queue_enhanced": "from core.queue.task_queue_enhanced",
-    "from core.task_router": "from core.queue.task_router",
+    "from core.task_queue_enhanced": "from core.task_queue.task_queue_enhanced",
+    "from core.task_router": "from core.task_queue.task_router",
     # Evolution moves
     "from core.evolution_engine": "from core.self_evolution.evolution_engine",
 }

@@ -13,12 +13,12 @@ PATCH v4 (2026-08-30):
   Cumulative RSS at import time was >460 MB before any request was served.
 - Fix: convert eager singletons to lazy factories backed by `functools.lru_cache`.
   Singletons are only constructed on FIRST attribute access, not at import.
-  Callers using `services.model_router` (etc.) keep working unchanged —
+  Callers using `service_container.model_router` (etc.) keep working unchanged —
   the module-level `__getattr__` returns the lazily-constructed instance.
 - Memory benefit: ~80-120 MB freed at boot. Cold-start memory pressure
   drops from 90.78% → expected ~72-78%, eliminating the warning log spam.
-- Backward compat: every existing caller (`services.model_router`,
-  `services.redis_queue`, etc.) keeps working. New code should prefer the
+- Backward compat: every existing caller (`service_container.model_router`,
+  `service_container.redis_queue`, etc.) keeps working. New code should prefer the
   `get_*()` factory functions for explicitness.
 """
 
@@ -281,7 +281,7 @@ def _get_service_attr(name: str) -> Any:
             return _SINGLETON_FACTORIES[name]()
         except Exception:
             # If construction fails, return None for callers that already check
-            # truthiness (e.g. `if services.redis_queue and services.redis_queue.configured:`).
+            # truthiness (e.g. `if service_container.redis_queue and service_container.redis_queue.configured:`).
             # Construction errors will be logged by the underlying constructor.
             return None
 

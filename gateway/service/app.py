@@ -577,7 +577,22 @@ async def readiness_check():
     )
 
 
-# ── Studio Public Config & Auth Endpoints ─────────────────────────────────────
+# Graceful shutdown: close pooled stealth HTTP client
+@app.on_event("shutdown")
+async def _close_stealth_http_client():
+    try:
+        from service.providers.adapters import close_stealth_client
+    except ImportError:
+        try:
+            from gateway.service.providers.adapters import close_stealth_client
+        except ImportError:
+            close_stealth_client = None  # type: ignore[assignment]
+    if close_stealth_client is not None:
+        try:
+            await close_stealth_client()
+        except Exception:  # noqa: BLE001
+            pass
+
 
 @app.get("/api/config/public")
 @app.get("/api/config/public/branding")

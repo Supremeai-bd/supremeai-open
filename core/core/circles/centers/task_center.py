@@ -1,7 +1,7 @@
 """Task Circle Center — queue, retry, cancellation, progress.
 
 Owns (per FCC plan): queue, retry, cancellation, progress.
-Domain adapter: ``core.queue.task_queue.RedisTaskQueue`` (lazy import).
+Domain adapter: ``core.task_queue.task_queue.RedisTaskQueue`` (lazy import).
 Zero-infrastructure principle honored: when Redis is not configured the
 center fails the execution with a clear, machine-readable error instead of
 pretending success.
@@ -16,7 +16,7 @@ from core.circles.contracts import CircleName, RiskLevel
 class TaskCenter(CircleCenter):
     circle = CircleName.TASK
     display_name = "Tasks and workers"
-    owner = "backend/core/queue"
+    owner = "backend/core/task_queue"
 
     def __init__(self) -> None:
         super().__init__()
@@ -39,7 +39,7 @@ class TaskCenter(CircleCenter):
         return None
 
     def resolve_adapter(self, envelope: ExecutionEnvelope):  # noqa: ANN201
-        from core.queue import task_queue  # local adapter selection
+        from core.task_queue import task_queue  # local adapter selection
 
         return task_queue
 

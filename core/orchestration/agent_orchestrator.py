@@ -252,7 +252,7 @@ class AsyncTaskManager:
 
         if self._queue is None and not self._queue_init_failed:
             try:
-                from core.queue.task_queue_enhanced import EnhancedTaskQueue
+                from core.task_queue.task_queue_enhanced import EnhancedTaskQueue
 
                 self._queue = EnhancedTaskQueue()
             except Exception as exc:
