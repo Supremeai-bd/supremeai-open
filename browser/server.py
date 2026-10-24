@@ -459,9 +459,14 @@ async def on_startup():
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     cookies = relay_engine._infisical_cookies or relay_engine.get_cookies()
+    service_name = os.getenv("SERVICE_NAME", "supremeai-scraper")
+    max_concurrency = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
     return {
         "status": "healthy",
-        "service": "supremeai-browser-cookie-relay",
+        "service": service_name,
+        "browser_service": "supremeai-browser-cookie-relay",
+        "playwright_available": True,
+        "max_concurrency": max_concurrency,
         "cookies_loaded": bool(cookies),
         "total_cookies": len(cookies),
         "infisical_configured": bool(os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET")),
