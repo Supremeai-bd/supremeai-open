@@ -129,7 +129,7 @@ export const OperatorCockpit: React.FC = () => {
           </section>
           <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
             <h2 className="mb-3 text-sm font-medium text-slate-300">Consensus</h2>
-            <ConsensusWidget responses={[]} consensusCount={0} onRerun={() => {}} />
+            <ConsensusWidget responses={[]} consensusCount={0} />
           </section>
           <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
             <h2 className="mb-3 text-sm font-medium text-slate-300">Defense</h2>
