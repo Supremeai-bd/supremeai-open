@@ -4,14 +4,25 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
 
 
 def log(icon: str, msg: str) -> None:
-    print(f"{icon} {msg}")
+    try:
+        print(f"{icon} {msg}")
+    except UnicodeEncodeError:
+        print(f"[*] {msg}")
 
 
 def run_cmd(
