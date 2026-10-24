@@ -41,12 +41,38 @@ Structure:
 """
 
 
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+def get_telegram_client() -> httpx.AsyncClient:
+    """Returns a shared, pooled AsyncClient with connection reuse for low-latency delivery."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(20.0, connect=4.0),
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+        )
+    return _http_client
+
+
+async def send_chat_action(chat_id: int | str, action: str = "typing") -> None:
+    """Delivers instant typing status indicator to Telegram so users see immediate responsiveness."""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendChatAction"
+    try:
+        client = get_telegram_client()
+        await client.post(url, json={"chat_id": chat_id, "action": action})
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"Failed to send typing chat action: {exc}")
+
+
 async def send_telegram_message(
     chat_id: int | str,
     text: str,
     reply_to_message_id: Optional[int] = None
 ) -> bool:
-    """Delivers formatted message chunks to Telegram, with markdown and plain text fallback."""
+    """Delivers formatted message chunks to Telegram via shared keep-alive pool."""
     if not TELEGRAM_BOT_TOKEN:
         logger.warning("TELEGRAM_BOT_TOKEN not configured; cannot deliver message.")
         return False
@@ -55,40 +81,40 @@ async def send_telegram_message(
     # Auto-chunking for Telegram's 4096 character limit (safe margin at 3800)
     chunks = [text[i:i + 3800] for i in range(0, len(text), 3800)] if len(text) > 3800 else [text]
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        success = True
-        for chunk in chunks:
-            payload = {
-                "chat_id": chat_id,
-                "text": chunk,
-                "parse_mode": "Markdown",
-            }
-            if reply_to_message_id:
-                payload["reply_to_message_id"] = reply_to_message_id
+    client = get_telegram_client()
+    success = True
+    for chunk in chunks:
+        payload = {
+            "chat_id": chat_id,
+            "text": chunk,
+            "parse_mode": "Markdown",
+        }
+        if reply_to_message_id:
+            payload["reply_to_message_id"] = reply_to_message_id
 
-            try:
-                res = await client.post(url, json=payload)
-                if res.status_code != 200:
-                    # Markdown parsing failed on special chars; retry plain text
-                    payload.pop("parse_mode", None)
-                    res2 = await client.post(url, json=payload)
-                    if res2.status_code != 200:
-                        logger.error(f"Failed to deliver Telegram chunk: {res2.text}")
-                        success = False
-            except Exception as exc:  # noqa: BLE001
-                logger.error(f"Telegram network delivery error: {exc}")
-                success = False
+        try:
+            res = await client.post(url, json=payload)
+            if res.status_code != 200:
+                # Markdown parsing failed on special chars; retry plain text
+                payload.pop("parse_mode", None)
+                res2 = await client.post(url, json=payload)
+                if res2.status_code != 200:
+                    logger.error(f"Failed to deliver Telegram chunk: {res2.text}")
+                    success = False
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Telegram network delivery error: {exc}")
+            success = False
 
-        return success
+    return success
 
 
 async def query_strategy_ai(prompt: str) -> str:
     """
-    1. Priority-1: Queries $0 Stealth Engine (Ghost Tower / Web AI / Cloudflare Worker).
-    2. Priority-2: Falls back to Gemini 2.5 API Key.
-    3. Priority-3: Falls over to the 35-key Dynamic Squad pool.
+    1. Priority-1 (Chat Mandate): Queries $0 Stealth Webhook Relay.
+    2. Priority-2 (Ultra-fast API Keys): Direct Gemini -> Groq -> Perplexity.
+    3. Priority-3: Federation Squad pool failover.
     """
-    # 0. Priority-1: Check $0 Stealth Engine with OpenAI chat messages structure
+    # 0. Priority-1 (Chat Mandate): Stealth Webhook Relay
     stealth_url = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHOOK_URL", "")).strip()
     if stealth_url and forward_stealth_webhook:
         try:
@@ -113,13 +139,16 @@ async def query_strategy_ai(prompt: str) -> str:
                 if "reply" in resp and str(resp["reply"]).strip():
                     return str(resp["reply"]).strip()
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Stealth Priority-1 bypassed ({exc}), falling back to Gemini API...")
+            logger.warning(f"Stealth Priority-1 bypassed ({exc}), falling back to API keys...")
 
-    # 1. Priority-2: Gemini native endpoint with healthy slot key
+    # 1. Priority-2 (Top-Speed API Keys): Gemini -> Groq -> Perplexity
+    client = get_telegram_client()
+
+    # A) Gemini API Key
     gemini_pool = squad.pools.get("gemini") if squad else None
     healthy_gemini_slots = gemini_pool.healthy_slots if gemini_pool else []
     gemini_key = healthy_gemini_slots[0].key if healthy_gemini_slots else (
-        os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_1")
+        os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_1") or os.getenv("GOOGLE_API_KEY")
     )
 
     if gemini_key:
@@ -131,20 +160,62 @@ async def query_strategy_ai(prompt: str) -> str:
             "generationConfig": {"temperature": 0.4},
         }
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    candidates = data.get("candidates", [])
-                    if candidates and "content" in candidates[0]:
-                        parts = candidates[0]["content"].get("parts", [])
-                        if parts and "text" in parts[0]:
-                            return parts[0]["text"]
-                logger.warning(f"Direct Gemini call returned {res.status_code}, falling back to squad...")
+            res = await client.post(url, json=payload)
+            if res.status_code == 200:
+                data = res.json()
+                candidates = data.get("candidates", [])
+                if candidates and "content" in candidates[0]:
+                    parts = candidates[0]["content"].get("parts", [])
+                    if parts and "text" in parts[0]:
+                        return parts[0]["text"]
+            logger.warning(f"Direct Gemini call returned {res.status_code}, falling back to Groq...")
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Direct Gemini attempt failed ({exc}), falling back to squad...")
+            logger.warning(f"Direct Gemini attempt failed ({exc}), falling back to Groq...")
 
-    # 2. Dynamic Squad Failover (Groq, OpenRouter, Mistral, OpenAI)
+    # B) Groq API Key (Ultra-low latency, ~200ms)
+    groq_pool = squad.pools.get("groq") if squad else None
+    healthy_groq_slots = groq_pool.healthy_slots if groq_pool else []
+    groq_key = healthy_groq_slots[0].key if healthy_groq_slots else os.getenv("GROQ_API_KEY")
+
+    if groq_key and forward_chat_completion:
+        chat_payload = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.4,
+        }
+        try:
+            status_code, resp_data = await forward_chat_completion("groq", groq_key, chat_payload, timeout=12.0)
+            if 200 <= status_code < 300 and isinstance(resp_data, dict):
+                choices = resp_data.get("choices", [])
+                if choices and isinstance(choices[0], dict) and "message" in choices[0]:
+                    return choices[0]["message"].get("content", "")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Direct Groq attempt failed ({exc}), falling back to Perplexity...")
+
+    # C) Perplexity API Key
+    pplx_key = os.getenv("PERPLEXITY_API_KEY") or os.getenv("PPLX_API_KEY")
+    if pplx_key and forward_chat_completion:
+        chat_payload = {
+            "model": "sonar",
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.4,
+        }
+        try:
+            status_code, resp_data = await forward_chat_completion("perplexity", pplx_key, chat_payload, timeout=15.0)
+            if 200 <= status_code < 300 and isinstance(resp_data, dict):
+                choices = resp_data.get("choices", [])
+                if choices and isinstance(choices[0], dict) and "message" in choices[0]:
+                    return choices[0]["message"].get("content", "")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Direct Perplexity attempt failed ({exc}), falling back to squad...")
+
+    # 2. Dynamic Squad Failover (OpenRouter, Mistral, OpenAI, etc.)
     if squad and forward_chat_completion:
         candidates = squad.get_candidate_slots(preferred_provider=None)
         chat_payload = {
@@ -158,7 +229,7 @@ async def query_strategy_ai(prompt: str) -> str:
 
         for provider, slot in candidates:
             try:
-                status_code, response_data = await forward_chat_completion(provider, slot.key, chat_payload, timeout=20.0)
+                status_code, response_data = await forward_chat_completion(provider, slot.key, chat_payload, timeout=15.0)
                 if 200 <= status_code < 300 and isinstance(response_data, dict):
                     choices = response_data.get("choices", [])
                     if choices and isinstance(choices[0], dict) and "message" in choices[0]:
@@ -170,7 +241,7 @@ async def query_strategy_ai(prompt: str) -> str:
 
 
 async def _process_and_reply(chat_id: int | str, text: str, msg_id: Optional[int] = None):
-    """Background task to generate and reply without blocking Telegram webhook ACK."""
+    """Background task to generate and reply with instant typing status indicator."""
     # 1. Clean prompt
     clean_prompt = text
     for tag in TRIGGER_TAGS:
@@ -187,6 +258,9 @@ async def _process_and_reply(chat_id: int | str, text: str, msg_id: Optional[int
         )
         await send_telegram_message(chat_id, help_msg, reply_to_message_id=msg_id)
         return
+
+    # Send immediate typing action so Telegram shows "typing..." without lag
+    await send_chat_action(chat_id, "typing")
 
     logger.info(f"Processing Telegram strategy query for chat {chat_id}: {clean_prompt[:60]}...")
     ai_reply = await query_strategy_ai(clean_prompt)
