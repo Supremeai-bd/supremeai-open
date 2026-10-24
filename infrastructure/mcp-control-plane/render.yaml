@@ -20,7 +20,7 @@ services:
     # persisted, and backend/.venv/bin/python is the MemorySubAdapter's
     # preferred launcher. Only the `mcp` package is needed: the sidecar's
     # core.* imports are stdlib-light and memory stores degrade gracefully.
-    buildCommand: pip install uv && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build
+    buildCommand: pip install uv && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build && npm ci --prefix ../../.agents/skills/devtools-audit
     startCommand: python scripts/runtime/infisical_bootstrap.py npm run start
     envVars:
       - key: MCP_API_KEY

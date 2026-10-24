@@ -36,10 +36,9 @@ Check reachability first: `curl -s -o /dev/null -m 8 -w "%{http_code}" <url>`.
 
 ### 3. Run the audit
 ```bash
-# one-time setup (skip what is already installed)
-npm i playwright axe-core && npx playwright install chromium
-# in the claude.ai sandbox Chromium already exists; install axe-core with:
-#   npm i axe-core --prefix /tmp/axe && export NODE_PATH=/tmp/axe/node_modules:/home/claude/.npm-global/lib/node_modules
+# one-time setup (in .agents/skills/devtools-audit/)
+# @sparticuz/chromium + playwright-core are ~45 MB — no separate browser install needed
+npm ci
 
 node scripts/audit.mjs <url> --out audit.raw.json [--device mobile] [--throttle slow4g] [--wait 3000] [--screenshot shot.png]
 ```
