@@ -11,7 +11,7 @@ cd "$BACKEND_DIR"
 mkdir -p /tmp/suites
 export TESTING=true ENV=test
 export TEST_DATABASE_URL="sqlite+aiosqlite:///./test.db"
-export DATABASE_URL="postgresql://u:p@db.example.com:5432/supremeai"
+export DATABASE_URL="postgresql://db.example.com:5432/supremeai"
 export REDIS_URL="redis://localhost:6379/9"
 
 DIRS="adaptive_engine agents ai api brain byoc core database engine hitl learning llm memory middleware missions models monitoring orchestration p2p_tests rag runtime scout_tests scripts security services test_evolution test_strategic_patches tools unit unit_light utils verification workers"
