@@ -15,10 +15,35 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 const require = createRequire(import.meta.url);
 
-let playwright;
-try { playwright = require('playwright'); }
-catch { console.error('playwright not found. Run: npm i playwright && npx playwright install chromium'); process.exit(2); }
-const { chromium, devices } = playwright;
+// ── Browser bootstrap ──────────────────────────────────────────────────────
+// Cloud/Render: playwright-core + @sparticuz/chromium (~45 MB, no X11 needed)
+// Local dev:    falls back to full playwright if sparticuz not installed
+let chromium, devices;
+try {
+  // Prefer lightweight cloud-optimised build
+  const sparticuz = require('@sparticuz/chromium');
+  const pw = require('playwright-core');
+  chromium = {
+    launch: async (opts = {}) => pw.chromium.launch({
+      args: sparticuz.args,
+      executablePath: await sparticuz.executablePath(),
+      headless: sparticuz.headless,
+      ...opts,
+    }),
+    version: () => 'sparticuz-chromium',
+  };
+  devices = pw.devices;
+} catch {
+  // Local dev fallback — full playwright
+  try {
+    const pw = require('playwright');
+    chromium = pw.chromium;
+    devices = pw.devices;
+  } catch {
+    console.error('No browser driver found. Run: npm ci  (in .agents/skills/devtools-audit/)');
+    process.exit(2);
+  }
+}
 
 // ---------- args ----------
 const argv = process.argv.slice(2);
@@ -59,8 +84,15 @@ function cleanUrl(u) {
 const meta = { target: cleanUrl(target), startedAt: new Date().toISOString(), device: opts.device, throttle: opts.throttle || null, errors: [] };
 const safe = async (label, fn, fallback = null) => { try { return await fn(); } catch (e) { meta.errors.push(`${label}: ${redact(e.message).split('\n')[0]}`); return fallback; } };
 
-const browser = await chromium.launch();
-meta.browserVersion = browser.version();
+const browser = await (async () => {
+  try {
+    return await chromium.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+  } catch (e) {
+    meta.errors.push(`browser_launch: ${redact(e.message).split('\n')[0]}`);
+    throw e;
+  }
+})();
+meta.browserVersion = typeof browser.version === 'function' ? browser.version() : 'unknown';
 const ctxOpts = opts.device === 'mobile' ? { ...devices['Pixel 7'] } : { viewport: { width: 1366, height: 768 } };
 if (opts.storageState) ctxOpts.storageState = opts.storageState;
 if (Object.keys(opts.headers).length) ctxOpts.extraHTTPHeaders = opts.headers;
