@@ -152,7 +152,7 @@ export const OperatorCockpit: React.FC = () => {
 const PublicPageShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <PublicLayout>
     <PublicHeader />
-    <div className="pt-24 px-4 pb-12 max-w-4xl mx-auto">{children}</div>
+    <div className="pt-16 sm:pt-20 px-4 pb-12 max-w-4xl mx-auto">{children}</div>
   </PublicLayout>
 );
 

@@ -84,6 +84,64 @@ export function AdminShell() {
     }
   }, [adminAuthenticated, adminRole]);
 
+  // LiveLogs Real-Time Stream Hookup (SSE via /admin-api/logs/stream)
+  useEffect(() => {
+    if (!adminAuthenticated) return;
+    const abortController = new AbortController();
+    const connectLiveLogs = async () => {
+      try {
+        const res = await apiClient.stream('/admin-api/logs/stream', {
+          signal: abortController.signal,
+        });
+        if (!res.ok || !res.body) {
+          // Fallback to initial log backlog polling
+          try {
+            const data = await apiClient.get<{ logs?: Array<{ message?: string } | string> }>('/admin-api/logs?limit=50');
+            if (data?.logs && Array.isArray(data.logs)) {
+              const formatted = data.logs.map((l) => (typeof l === 'string' ? l : l.message || JSON.stringify(l)));
+              setLiveLogs(formatted);
+            }
+          } catch {
+            // Silently degrade
+          }
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+          const lines = pending.split(/\r?\n/);
+          pending = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("data:")) {
+              const payload = line.slice(5).trim();
+              if (payload && payload !== "[DONE]") {
+                try {
+                  const parsed = JSON.parse(payload);
+                  const entry = typeof parsed === "string" ? parsed : (parsed.message || JSON.stringify(parsed));
+                  setLiveLogs((prev) => [...prev.slice(-499), entry]);
+                } catch {
+                  setLiveLogs((prev) => [...prev.slice(-499), payload]);
+                }
+              }
+            }
+          }
+          if (done) break;
+        }
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          if (import.meta.env.DEV) console.warn("[admin-shell] LiveLogs stream error:", err);
+        }
+      }
+    };
+    connectLiveLogs();
+    return () => {
+      abortController.abort();
+    };
+  }, [adminAuthenticated]);
+
   const handleAdminOtpVerify = () => {
     handleAdminLogin();
   };
@@ -163,15 +221,17 @@ export function AdminShell() {
     setLoading(true);
     abortRef.current = new AbortController();
     try {
-      // Same real chat endpoint the user-facing chat uses.
-      // Issue #2522: raw fetch -> apiClient.stream — auth/timeout/queue + abort passthrough।
-      const res = await apiClient.stream('/api/chat/stream', {
+      // Unified chat completions endpoint matching UnifiedChatPanel contract.
+      const res = await apiClient.stream('/v1/chat/completions', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: prompt,
-          project_id: "admin_sandbox",
-          idempotency_key: crypto.randomUUID(),
+          model: "auto",
+          messages: [
+            ...adminMessages.map((m) => ({ role: m.role, content: m.content })),
+            { role: "user", content: prompt },
+          ],
+          stream: true,
         }),
         signal: abortRef.current.signal,
       });
@@ -184,10 +244,22 @@ export function AdminShell() {
         if (!payload || payload === "[DONE]") return;
         let token = payload;
         try {
-          const parsed = JSON.parse(payload) as { token?: string; delta?: string; content?: string; response?: string };
-          token = parsed.token ?? parsed.delta ?? parsed.content ?? parsed.response ?? "";
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            token?: string;
+            delta?: string | { content?: string };
+            content?: string;
+            response?: string;
+          };
+          const deltaContent = typeof parsed.delta === 'object' ? parsed.delta?.content : parsed.delta;
+          token =
+            parsed.choices?.[0]?.delta?.content ??
+            deltaContent ??
+            parsed.token ??
+            parsed.content ??
+            parsed.response ??
+            "";
         } catch (err) {
-          // Plain-text SSE payloads are valid fallbacks — still log why parsing skipped.
           console.warn('[admin-shell] SSE payload JSON parse failed, using raw text:', err);
         }
         assistantContent += token;

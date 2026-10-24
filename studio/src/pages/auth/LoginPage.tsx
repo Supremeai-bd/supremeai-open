@@ -41,13 +41,17 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     // LIVE-002/003 FIX: Add 30s timeout so login doesn't hang forever.
     const LOGIN_TIMEOUT = 30000;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       const loginPromise = login(email, password);
       await Promise.race([
         loginPromise,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Connection timeout. Server may be starting up — please retry in 30s.')), LOGIN_TIMEOUT)
-        ),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('Connection timeout. Server may be starting up — please retry in 30s.')),
+            LOGIN_TIMEOUT
+          );
+        }),
       ]);
       navigate('/workspace');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,6 +90,7 @@ export const LoginPage: React.FC = () => {
       setError(userMessage);
       setErrorKey((k) => k + 1);
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setIsLoading(false);
     }
   };
