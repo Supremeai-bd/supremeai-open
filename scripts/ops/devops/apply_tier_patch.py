@@ -49,7 +49,7 @@ replace_in_file(r'.github/workflows/ci.yml', old_ci_inputs, new_ci_inputs)
 
 old_tests_step = '''      - name: Run tests with coverage
         env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/supremeai_test
+          DATABASE_URL: postgresql://localhost:5432/supremeai_test
           ENV: test
           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-padding-for-length
           SUPREMEAI_JWT_SECRET: test-supremeai-jwt-secret-key-for-ci-minimum-64-chars-padding-1234
@@ -73,7 +73,7 @@ old_tests_step = '''      - name: Run tests with coverage
 
 new_tests_step = '''      - name: Run Critical backend tests
         env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/supremeai_test
+          DATABASE_URL: postgresql://localhost:5432/supremeai_test
           ENV: test
           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-padding-for-length
           SUPREMEAI_JWT_SECRET: test-supremeai-jwt-secret-key-for-ci-minimum-64-chars-padding-1234
@@ -93,7 +93,7 @@ new_tests_step = '''      - name: Run Critical backend tests
 
       - name: Run Important backend tests
         env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/supremeai_test
+          DATABASE_URL: postgresql://localhost:5432/supremeai_test
           ENV: test
           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-padding-for-length
           SUPREMEAI_JWT_SECRET: test-supremeai-jwt-secret-key-for-ci-minimum-64-chars-padding-1234
@@ -115,7 +115,7 @@ new_tests_step = '''      - name: Run Critical backend tests
       - name: Run Overall backend tests
         if: ${{ github.ref == 'refs/heads/main' || github.event.inputs.run_backend_overall == 'true' }}
         env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/supremeai_test
+          DATABASE_URL: postgresql://localhost:5432/supremeai_test
           ENV: test
           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-padding-for-length
           SUPREMEAI_JWT_SECRET: test-supremeai-jwt-secret-key-for-ci-minimum-64-chars-padding-1234
