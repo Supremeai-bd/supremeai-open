@@ -41,6 +41,10 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
   const [selectedDevice, setSelectedDevice] = useState(DEVICES[0]);
   const [orientation, setOrientation] = useState<Orientation>('portrait');
   const [ticket, setTicket] = useState<string | null>(null);
+  // MOBILE DUAL-PATH (owner request 2026-10-25): the simulator is now a live
+  // mirror of Browser Preview — Sync re-fetches the render ticket and re-mounts
+  // the iframe so the phone shows the latest page the agent/user navigated to.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const needsProxy = /^https?:\/\//i.test(url.trim()) && !html;
 
@@ -57,7 +61,7 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
     return () => {
       cancelled = true;
     };
-  }, [needsProxy, url]);
+  }, [needsProxy, url, reloadKey]);
 
   const currentWidth = orientation === 'portrait' ? selectedDevice.width : selectedDevice.height;
   const currentHeight = orientation === 'portrait' ? selectedDevice.height : selectedDevice.width;
@@ -68,6 +72,18 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
         <h2 className="text-lg font-bold font-['Space_Grotesk'] tracking-widest text-[#00f3ff] uppercase">
           📱 Mobile Simulator
         </h2>
+        {url && (
+          <div className="flex min-w-0 items-center gap-2" data-testid="mobile-simulator-url">
+            <span className="max-w-[16rem] truncate font-mono text-[10px] text-slate-500" title={url}>{url}</span>
+            <button
+              onClick={() => setReloadKey(k => k + 1)}
+              className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-800 px-2 py-1 font-mono text-[10px] text-slate-400 transition-colors hover:border-[#00f3ff]/40 hover:text-white"
+              title="Re-render the mirrored page on the phone"
+            >
+              <RefreshCw size={12} /> Sync
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2 mb-6">
@@ -105,9 +121,10 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
             <div className="w-full h-full rounded-[2rem] overflow-hidden bg-white relative">
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/3 h-6 bg-slate-900 rounded-b-xl z-10" />
               {html ? (
-                <iframe srcDoc={html} title={selectedDevice.name} className="w-full h-full" sandbox="allow-scripts allow-forms" />
+                <iframe key={reloadKey} srcDoc={html} title={selectedDevice.name} className="w-full h-full" sandbox="allow-scripts allow-forms" />
               ) : ticket ? (
                 <iframe
+                  key={reloadKey}
                   src={`${getApiBaseUrl()}/api/browser/render?url=${encodeURIComponent(url)}&ticket=${ticket}`}
                   title={selectedDevice.name}
                   className="w-full h-full"
