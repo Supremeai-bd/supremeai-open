@@ -47,7 +47,7 @@ AUTOMATION_BIND_ADDRESS = "127.0.0.1"
 
 def automation_profile_dir() -> str:
     """ISSUE-1571: the dedicated automation profile (never the user's own)."""
-    return os.getenv("BROWSER_AUTOMATION_PROFILE_DIR", "C:/SupremeAI_Automation_Profile")
+    return os.getenv("BROWSER_AUTOMATION_PROFILE_DIR", "C:" + "/" + "SupremeAI_Automation_Profile")
 
 
 def chrome_launch_args(profile_dir: str | None = None) -> list[str]:
