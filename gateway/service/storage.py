@@ -19,12 +19,9 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("supremeai.gateway.storage")
 
-_DATA_DIR = os.getenv("SUPREMEAI_DATA_DIR", "").strip()
-if not _DATA_DIR:
-    if os.name == "nt":
-        _DATA_DIR = os.path.join(os.getenv("TEMP", "C:/tmp"), "supremeai_data")
-    else:
-        _DATA_DIR = "/tmp/supremeai_data"
+import tempfile
+
+_DATA_DIR = os.getenv("SUPREMEAI_DATA_DIR", "").strip() or os.path.join(tempfile.gettempdir(), "supremeai_data")
 
 os.makedirs(_DATA_DIR, exist_ok=True)
 _DB_PATH = os.getenv("SUPREMEAI_DB_PATH", os.path.join(_DATA_DIR, "gateway_state.db")).strip()
