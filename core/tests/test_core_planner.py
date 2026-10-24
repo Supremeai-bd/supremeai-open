@@ -3,15 +3,26 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.context_synthesizer import ContextStage, ContextSynthesizer
-from core.dag_planner import CycleDetectedError, DAGPlanner, TaskNode
-from core.decision_engine import AgentRole, DecisionEngine
-from core.state_machine import (
-    AgentState,
-    AgentStateMachine,
-    InvalidStateTransitionError,
-)
+try:
+    from core.context_synthesizer import ContextStage, ContextSynthesizer
+    from core.dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+    from core.decision_engine import AgentRole, DecisionEngine
+    from core.state_machine import (
+        AgentState,
+        AgentStateMachine,
+        InvalidStateTransitionError,
+    )
+except ImportError:
+    from context_synthesizer import ContextStage, ContextSynthesizer
+    from dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+    from decision_engine import AgentRole, DecisionEngine
+    from state_machine import (
+        AgentState,
+        AgentStateMachine,
+        InvalidStateTransitionError,
+    )
 
 
 class TestAgentStateMachine(unittest.TestCase):
