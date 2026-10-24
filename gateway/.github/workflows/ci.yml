@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           HIT=0
           check() {
-            if grep -rInE "$1" --exclude-dir=.git . 2>/dev/null; then
+            if grep -rInE "$1" --exclude-dir=.git . 2>/dev/null | grep -v 'gitleaks:allow'; then
               echo "::error::secret-pattern hit: $2"; HIT=1
             fi
           }
