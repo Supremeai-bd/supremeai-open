@@ -2,16 +2,28 @@
 // বাংলা মন্তব্য: এটি পিওর নেটিভ অ্যাডমিন লগইন ও টিওটিপি অথেন্টিকেশন সার্ভিস প্রোভাইড করে।
 
 import { apiClient } from './apiClient';
+import { clearTrustedBrowserToken, getTrustedBrowserToken, setTrustedBrowserToken } from './tokenStorage';
 
 export const authService = {
   // Native (zero-firebase) admin auth endpoints
   adminLogin: async (email: string, password: string): Promise<{ status: string; token?: string; uid?: string; email?: string }> => {
-    const response = await apiClient.post<{ status: string; token?: string; access_token?: string; jwt?: string; uid?: string; email?: string }>('/api/admin/login', { email, password });
+    const trustedBrowserToken = getTrustedBrowserToken();
+    const response = await apiClient.post<{ status: string; token?: string; access_token?: string; jwt?: string; uid?: string; email?: string }>(
+      '/api/admin/login',
+      { email, password, trusted_browser_token: trustedBrowserToken || undefined }
+    );
     return { ...response, token: response.token ?? response.access_token ?? response.jwt };
   },
 
-  adminTotpVerify: async (otp: string, rememberBrowser = false): Promise<{ status: string; token: string }> => {
-    return apiClient.post<{ status: string; token: string }>('/api/admin/totp-verify', { otp, remember_browser: rememberBrowser });
+  adminTotpVerify: async (otp: string, rememberBrowser = false): Promise<{ status: string; token: string; trusted_browser_token?: string }> => {
+    const response = await apiClient.post<{ status: string; token: string; trusted_browser_token?: string }>(
+      '/api/admin/totp-verify',
+      { otp, remember_browser: rememberBrowser }
+    );
+    if (response.trusted_browser_token) {
+      setTrustedBrowserToken(response.trusted_browser_token);
+    }
+    return response;
   },
 
   adminTotpSetup: async (): Promise<{ secret: string; provisioning_uri: string; recovery_codes?: string[] }> => {
@@ -21,6 +33,15 @@ export const authService = {
   adminLogout: async (): Promise<void> => {
     try {
       await apiClient.post('/api/admin/logout', {});
+    } catch {
+      // best-effort
+    }
+  },
+
+  revokeTrustedBrowser: async (): Promise<void> => {
+    clearTrustedBrowserToken();
+    try {
+      await apiClient.delete('/api/admin/trusted-browsers');
     } catch {
       // best-effort
     }

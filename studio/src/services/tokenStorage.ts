@@ -45,17 +45,39 @@ const readToken = (key: string): string | null => {
   const local = getLocal();
   if (hasStorage(local)) {
     try {
-      const legacy = local.getItem(key);
-      if (legacy) {
+      const persistent = local.getItem(key);
+      if (persistent) {
+        // Validate unexpired if JWT
+        try {
+          const part = persistent.split('.')[1];
+          if (part) {
+            const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
+            const payload = JSON.parse(
+              decodeURIComponent(
+                atob(base64)
+                  .split('')
+                  .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                  .join('')
+              )
+            );
+            if (typeof payload?.exp === 'number' && payload.exp * 1000 <= Date.now()) {
+              local.removeItem(key);
+              return null;
+            }
+          }
+        } catch {
+          // Non-JWT token preserved
+        }
+
+        // Hydrate sessionStorage cache without destroying persistent localStorage
         if (hasStorage(session)) {
           try {
-            session.setItem(key, legacy);
+            session.setItem(key, persistent);
           } catch (err) {
-            console.warn('[tokenStorage] legacy token migration to sessionStorage failed:', err);
+            console.warn('[tokenStorage] session hydration failed:', err);
           }
         }
-        local.removeItem(key);
-        return legacy;
+        return persistent;
       }
     } catch (err) {
       console.warn('[tokenStorage] localStorage read failed:', err);
@@ -65,13 +87,23 @@ const readToken = (key: string): string | null => {
   return null;
 };
 
-const writeToken = (key: string, token: string): void => {
+const writeToken = (key: string, token: string, persistToLocal = false): void => {
   const session = getSession();
   if (hasStorage(session)) {
     try {
       session.setItem(key, token);
     } catch (err) {
       console.warn('[tokenStorage] sessionStorage write failed, token kept in memory only:', err);
+    }
+  }
+  if (persistToLocal) {
+    const local = getLocal();
+    if (hasStorage(local)) {
+      try {
+        local.setItem(key, token);
+      } catch (err) {
+        console.warn('[tokenStorage] localStorage write failed:', err);
+      }
     }
   }
 };
@@ -95,12 +127,60 @@ const clearToken = (key: string): void => {
   }
 };
 
+// Trusted browser token for 7-day MFA bypass
+const TRUSTED_BROWSER_KEY = 'supreme_trusted_browser_token';
+export const TRUSTED_BROWSER_STORAGE_KEY = TRUSTED_BROWSER_KEY;
+
+export const getTrustedBrowserToken = (): string | null => {
+  const local = getLocal();
+  if (hasStorage(local)) {
+    try {
+      const tok = local.getItem(TRUSTED_BROWSER_KEY);
+      if (tok) return tok;
+    } catch (err) {
+      console.warn('[tokenStorage] trusted browser token read failed:', err);
+    }
+  }
+  const session = getSession();
+  if (hasStorage(session)) {
+    try {
+      return session.getItem(TRUSTED_BROWSER_KEY);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+export const setTrustedBrowserToken = (token: string): void => {
+  const local = getLocal();
+  if (hasStorage(local)) {
+    try {
+      local.setItem(TRUSTED_BROWSER_KEY, token);
+    } catch (err) {
+      console.warn('[tokenStorage] trusted browser token localStorage write failed:', err);
+    }
+  }
+  const session = getSession();
+  if (hasStorage(session)) {
+    try {
+      session.setItem(TRUSTED_BROWSER_KEY, token);
+    } catch (err) {
+      console.warn('[tokenStorage] trusted browser token sessionStorage write failed:', err);
+    }
+  }
+};
+
+export const clearTrustedBrowserToken = (): void => {
+  clearToken(TRUSTED_BROWSER_KEY);
+};
+
 // User session token
 export const getUserToken = (): string | null => readToken(USER_TOKEN_KEY);
 export const setUserToken = (token: string): void => writeToken(USER_TOKEN_KEY, token);
 export const clearUserToken = (): void => clearToken(USER_TOKEN_KEY);
 
-// Admin step-up JWT
+// Admin step-up JWT — persists to localStorage so closing the tab or browser doesn't trigger auto-logout
 export const getAdminToken = (): string | null => readToken(ADMIN_TOKEN_KEY);
-export const setAdminToken = (token: string): void => writeToken(ADMIN_TOKEN_KEY, token);
+export const setAdminToken = (token: string, persistToLocal = true): void => writeToken(ADMIN_TOKEN_KEY, token, persistToLocal);
 export const clearAdminToken = (): void => clearToken(ADMIN_TOKEN_KEY);
