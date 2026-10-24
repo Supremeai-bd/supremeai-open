@@ -1,6 +1,5 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
 
 // বাংলা মন্তব্য: লগইন পেজের জন্য Public Service Health Bar — কোনো Authentication লাগবে না
 // 5 Render Fleet Nodes: API Gateway, Scraper Relay, MCP Control Tower, Primary Node, Worker Node
@@ -65,68 +64,7 @@ export const getServiceLabel = (key: string): string => {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
-const StatusDot: React.FC<{ status: ServiceStatusProps['status'] }> = ({ status }) => {
-  const colors: Record<ServiceStatusProps['status'], string> = {
-    healthy: 'bg-emerald-400 shadow-emerald-400/50',
-    degraded: 'bg-amber-400 shadow-amber-400/50',
-    unhealthy: 'bg-rose-500 shadow-rose-500/50',
-    unknown: 'bg-gray-500 shadow-gray-500/50',
-    loading: 'bg-blue-400 animate-pulse shadow-blue-400/50',
-    not_configured: 'bg-slate-500 shadow-slate-500/30',
-    disabled: 'bg-slate-600 shadow-slate-600/30',
-  };
-
-  return (
-    <div className={`w-2 h-2 rounded-full ${colors[status] || colors.unknown} shadow-sm`} />
-  );
-};
-
-const ServiceStatusItem: React.FC<ServiceStatusProps> = ({ name, status, responseTime }) => {
-  const statusLabels: Record<ServiceStatusProps['status'], string> = {
-    healthy: 'Online',
-    degraded: 'Waking up',
-    unhealthy: 'Down',
-    unknown: 'Unknown',
-    loading: 'Checking...',
-    not_configured: 'Not Configured',
-    disabled: 'Disabled',
-  };
-
-  const statusColors: Record<ServiceStatusProps['status'], string> = {
-    healthy: 'text-emerald-400',
-    degraded: 'text-amber-400',
-    unhealthy: 'text-rose-400',
-    unknown: 'text-gray-400',
-    loading: 'text-blue-400',
-    not_configured: 'text-slate-400',
-    disabled: 'text-slate-500',
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-black/20 backdrop-blur-sm"
-    >
-      <div className="flex items-center gap-2">
-        <StatusDot status={status} />
-        <span className="text-xs font-medium text-gray-300">{name}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className={`text-xs font-semibold ${statusColors[status] || 'text-gray-400'}`}>
-          {statusLabels[status] || 'Unknown'}
-        </span>
-        {responseTime !== undefined && status === 'healthy' && (
-          <span className="text-[10px] text-gray-500 font-mono">
-            {responseTime.toFixed(0)}ms
-          </span>
-        )}
-      </div>
-    </motion.div>
-  );
-};
-
-// বাংলা মন্তব্য: Public Health Check Function — কোনো Auth Header ছাড়াই কল হবে
+// Public Health Check Function — called without any auth headers.
 const fetchPublicHealth = async (): Promise<HealthData> => {
   try {
     const res = await apiClient.stream('/api/health-aggregation', {
@@ -191,7 +129,6 @@ const fetchPublicHealth = async (): Promise<HealthData> => {
 };
 
 export const ServiceHealthBar: React.FC = () => {
-  const [isOpen, setIsOpen] = React.useState(false);
   const { data, error, isLoading, isError } = useQuery<HealthData>({
     queryKey: ['public-health-status'],
     queryFn: fetchPublicHealth,
@@ -205,26 +142,6 @@ export const ServiceHealthBar: React.FC = () => {
     return check.status as ServiceStatusProps['status'];
   };
 
-  const overallStatus = data?.status || (isError ? 'unhealthy' : 'loading');
-  const isHealthy = overallStatus === 'healthy';
-  const isDegraded = overallStatus === 'degraded';
-
-  // Subtle label for public users
-  const publicStatusLabel = isLoading
-    ? 'Connecting to Node...'
-    : isError
-      ? 'Sync Pending'
-      : isHealthy
-        ? 'Network Optimal'
-        : isDegraded
-          ? 'High Concurrency'
-          : 'Connecting...';
-
-  const avgLatency = data?.total_response_time_ms
-    ? `${Math.round(data.total_response_time_ms)}ms`
-    : isHealthy
-      ? 'Synced'
-      : '';
 
   // 5 mini circles mapping: check if fleet nodes exist, else fallback to received check keys
   const activeNodes = React.useMemo(() => {
@@ -278,98 +195,24 @@ export const ServiceHealthBar: React.FC = () => {
   };
 
   return (
-    <div className="relative flex flex-col items-center select-none" data-testid="fleet-health-bar">
-      {/* 🚀 5-Node Fleet Health Pill */}
-      <motion.button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        className="group relative flex items-center gap-3 rounded-full border border-white/10 bg-black/40 px-3.5 py-1.5 shadow-sm backdrop-blur-md transition-all hover:border-emerald-500/40 hover:bg-black/60 cursor-pointer"
-        title="Diagnostic Matrix (Click to toggle)"
+    <div className="flex items-center justify-center select-none" data-testid="fleet-health-bar">
+      {/* OWNER DECISION (2026-10-24): keep ONLY the 5 signal lights — no text label,
+          no healthy/total count, no diagnostics drawer. Public visitors just see
+          quiet dots changing colour; only admins know the mapping
+          (Gateway / Scraper / Tower / Core / Worker) via the title tooltip. */}
+      <div
+        className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 backdrop-blur-md"
+        aria-label="Render fleet node health"
+        role="status"
       >
-        {/* 5 mini status circles */}
-        <div className="flex items-center gap-1.5" aria-label="Render fleet node health">
-          {activeNodes.map((node) => (
-            <span
-              key={node.id}
-              className={`relative inline-flex rounded-full h-2 w-2 transition-colors ${getNodeColor(node.status)}`}
-              title={`${node.name}: ${node.status}${node.latency !== undefined ? ` (${node.latency}ms)` : ''}`}
-            />
-          ))}
-        </div>
-
-        <span className="text-[11px] font-mono tracking-wide text-slate-300 group-hover:text-white transition-colors">
-          {publicStatusLabel}
-        </span>
-
-        {(data?.summary || avgLatency) && (
-          <span className="border-l border-white/10 pl-2.5 text-[10px] font-mono text-slate-400 transition-colors group-hover:text-emerald-400">
-            {data?.summary ? `${data.summary.healthy}/${data.summary.total_checks}` : avgLatency}
-          </span>
-        )}
-      </motion.button>
-
-      {/* 🔍 Diagnostics Modal / Fleet Matrix Drawer */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.96 }}
-            transition={{ duration: 0.16 }}
-            className="absolute top-10 z-50 w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
-          >
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  {activeNodes.map((node) => (
-                    <div key={node.id} className={`w-1.5 h-1.5 rounded-full ${getNodeColor(node.status)}`} />
-                  ))}
-                </div>
-                <span className="text-xs font-mono font-semibold text-gray-200">System Telemetry</span>
-              </div>
-              <span className="text-[10px] font-mono text-gray-500" title="Time of the latest backend health check">
-                {data?.timestamp
-                  ? `Last check ${new Date(data.timestamp < 10_000_000_000 ? data.timestamp * 1000 : data.timestamp).toLocaleTimeString()}`
-                  : 'Live'}
-              </span>
-            </div>
-
-            {isError ? (
-              <div className="py-2 text-[11px] font-mono text-rose-400">
-                Connection check: {error?.message || 'Server unreachable'}
-              </div>
-            ) : isLoading && !data ? (
-              <div className="py-3 text-center text-xs font-mono text-gray-400 animate-pulse">
-                Probing clusters...
-              </div>
-            ) : (
-              <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                {activeNodes.map((node) => (
-                  <ServiceStatusItem
-                    key={node.id}
-                    name={node.name}
-                    status={node.status}
-                    responseTime={node.latency}
-                  />
-                ))}
-              </div>
-            )}
-
-            <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-[9px] font-mono text-gray-500">
-              <span>Status: {overallStatus.toUpperCase()}</span>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="hover:text-cyan-400 text-gray-400 underline cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        {activeNodes.map((node) => (
+          <span
+            key={node.id}
+            className={`inline-flex h-2 w-2 rounded-full transition-colors ${getNodeColor(node.status)}`}
+            title={`${node.name}: ${node.status}`}
+          />
+        ))}
+      </div>
     </div>
   );
 };
