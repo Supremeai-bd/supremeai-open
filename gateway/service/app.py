@@ -851,7 +851,7 @@ async def _execute_chat_completion(
     # DO NOT (any human, AI agent, bot or automated PR):
     #   - add an API-key / provider-pool fallback after the relay below
     #   - set ENABLE_API_FALLBACK=true in Infisical or Render
-    #   - re-add GEMINI_API_KEY to the scraper node (srv-dabm7gfqj5pc738jkicg)
+    #   - re-add GEMINI_API_KEY to the scraper node (scraper service node)
     # Re-enabling requires an explicit, written ADMIN_DECISION issue from the
     # admin. Any PR that re-enables fallback without it must be rejected.
     # ═══════════════════════════════════════════════════════════════════════
