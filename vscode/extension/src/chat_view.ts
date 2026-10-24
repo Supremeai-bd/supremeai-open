@@ -35,6 +35,30 @@ export class SupremeAIChatViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (msg) => {
       if (!msg || typeof msg !== "object") return;
+      if (msg.type === "secure_set") {
+        const key = String(msg.key || "");
+        const value = String(msg.value ?? "");
+        if (key) {
+          try { await this.context.secrets.store(key, value); } catch { /* ignore */ }
+        }
+        return;
+      }
+      if (msg.type === "secure_get") {
+        const key = String(msg.key || "");
+        let value: string | null = null;
+        if (key) {
+          try { value = (await this.context.secrets.get(key)) ?? null; } catch { value = null; }
+        }
+        webviewView.webview.postMessage({ type: "secure_value", key, value });
+        return;
+      }
+      if (msg.type === "secure_remove") {
+        const key = String(msg.key || "");
+        if (key) {
+          try { await this.context.secrets.delete(key); } catch { /* ignore */ }
+        }
+        return;
+      }
       if (msg.type === "send") {
         const text = String(msg.text || "").trim();
         const model = String(msg.model || "auto");
