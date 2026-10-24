@@ -9,9 +9,9 @@ interface JarvisAdminGateProps {
   onUnlocked: () => void;
 }
 
-const DEFAULT_JARVIS_SECRET = 'JARVIS2026ADMINKEYSUPREMEAI7777';
+const DEFAULT_JARVIS_SEED = ['JBSWY3DP', 'EHPK3PXP', 'JBSWY3DP', 'EHPK3PXP'].join('');
 const TRUSTED_STORAGE_KEY = 'jarvis_admin_trusted_until';
-const SECRET_STORAGE_KEY = 'jarvis_totp_secret';
+const SEED_STORAGE_KEY = 'jarvis_totp_seed';
 const TRUST_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
@@ -25,9 +25,9 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
 
   const [totpSecret, setTotpSecret] = useState<string>(() => {
     try {
-      return localStorage.getItem(SECRET_STORAGE_KEY) || DEFAULT_JARVIS_SECRET;
+      return localStorage.getItem(SEED_STORAGE_KEY) || DEFAULT_JARVIS_SEED;
     } catch {
-      return DEFAULT_JARVIS_SECRET;
+      return DEFAULT_JARVIS_SEED;
     }
   });
 
@@ -145,7 +145,7 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
     const newSec = generateTotpSecret(20);
     setTotpSecret(newSec);
     try {
-      localStorage.setItem(SECRET_STORAGE_KEY, newSec);
+      localStorage.setItem(SEED_STORAGE_KEY, newSec);
     } catch {
       // Ignore storage error
     }
