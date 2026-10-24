@@ -212,6 +212,34 @@ class TestStorageAndEndpoints(unittest.TestCase):
         self.assertEqual(r_convs.status_code, 200)
         self.assertIn("conversations", r_convs.json())
 
+    def test_10_chat_and_capability_aliases(self):
+        headers = {"X-Guest-Mode": "true"}
+        # 1. Capability execute alias (replaces 404 for controlPlane.executeCapability)
+        r_cap = self.client.post(
+            "/api/v1/capabilities/execute",
+            json={
+                "capability": "conversation.orchestrate",
+                "source": "chat",
+                "payload": {"prompt": "Hello test capability"},
+            },
+            headers=headers,
+        )
+        self.assertEqual(r_cap.status_code, 200)
+        cap_data = r_cap.json()
+        self.assertEqual(cap_data["status"], "completed")
+        self.assertEqual(cap_data["capability"], "conversation.orchestrate")
+        self.assertTrue(cap_data["verification"]["verified"])
+        self.assertIn("execution_id", cap_data)
+
+        # 2. Stream chat alias (replaces 404 for chatService.sendMessageStream)
+        # Should not 404; reaches chat completion pipeline
+        r_stream = self.client.post(
+            "/api/v1/stream/chat",
+            json={"message": "hello stream"},
+            headers=headers,
+        )
+        self.assertNotEqual(r_stream.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

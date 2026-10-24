@@ -32,7 +32,7 @@ export function CapabilityStrip({ onProtected }: { onProtected: (feature: string
   // Issue #1460: protected capability chips used to navigate straight to
   // /login (or /register), destroying the guest's in-progress chat. They now
   // raise an in-page auth prompt instead — no navigation, state intact.
-  return <nav className="relative z-10 mx-auto flex w-full max-w-7xl gap-2 overflow-x-auto px-4 pt-24 sm:px-8" aria-label="SupremeAI capabilities">
+  return <nav className="relative z-10 mx-auto flex w-full max-w-7xl gap-2 overflow-x-auto px-4 pt-16 sm:pt-20 sm:px-8" aria-label="SupremeAI capabilities">
     <Link to="/chat" className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">Chat</Link>
     {capabilityItems.map(({ title, icon: Icon }) => <button key={title} type="button" onClick={() => onProtected(title)} className="flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-slate-500 transition hover:border-purple-500/40 hover:text-slate-200"><Icon size={13} aria-hidden="true" />{title}</button>)}
   </nav>;
