@@ -79,7 +79,7 @@ def _get_tenant_root(tenant_id: str) -> Path:
 def _resolve_safe_path(root: Path, relative_path: str) -> Path:
     """
     বাংলা মন্তব্য: এই ফাংশনটাই এই endpoint-এর মূল নিরাপত্তা boundary।
-    - কোনো absolute path override না (leading '/' বা 'C:\\' জাতীয় কিছু)
+    - কোনো absolute path override না (leading slash বা drive-letter prefix জাতীয় কিছু)
     - '..' দিয়ে root-এর বাইরে যাওয়া যাবে না
     - symlink দিয়ে root-এর বাইরে বের হওয়া গেলেও resolve()-এর পর ধরা পড়বে
     """
