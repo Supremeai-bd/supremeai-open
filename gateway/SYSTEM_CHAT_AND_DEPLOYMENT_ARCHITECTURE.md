@@ -3,8 +3,8 @@
 > **Document Version:** 3.0.0  
 > **Status:** Production / Live  
 > **Target Frontend:** [https://supremeai-studio.pages.dev](https://supremeai-studio.pages.dev)  
-> **Target API Service:** `https://supremeai-api-ulw0.onrender.com`  
-> **Target Scraper Relay:** `https://supremeai-scraper-node.onrender.com`  
+> **Target API Service:** `supremeai-api-ulw0.onrender.com`  
+> **Target Scraper Relay:** `supremeai-scraper-node.onrender.com`  
 > **Zero-Local Dependency:** 100% Cloud-native ($0 Cost / 24/7 High-Availability)
 
 ---
@@ -58,7 +58,7 @@ flowchart TD
 ### Layer 1: ক্লায়েন্ট ও ফ্রন্টএন্ড এজ (Cloudflare Pages)
 - **হোস্টিং:** Cloudflare Pages (`supremeai-studio.pages.dev`)
 - **প্রযুক্তি:** Vite + React + TypeScript + TailwindCSS (Cosmic Dark Design)
-- **গেটওয়ে ইউআরএল বাইন্ডিং:** ফ্রন্টএন্ড বিল্ডের সময় `VITE_SUPREMEAI_API_URL` সরাসরি রেন্ডার গেটওয়ে (`https://supremeai-api-ulw0.onrender.com`) পয়েন্ট করে।
+- **গেটওয়ে ইউআরএল বাইন্ডিং:** ফ্রন্টএন্ড বিল্ডের সময় `VITE_SUPREMEAI_API_URL` সরাসরি রেন্ডার গেটওয়ে (`supremeai-api-ulw0.onrender.com` / `RENDER_EXTERNAL_URL`) পয়েন্ট করে।
 - **গেস্ট চ্যাট ও ব্র্যান্ড ব্যাজ রেন্ডারিং:**
   - প্রতিটি মেসেজের নিচে পুরোনো `[auto]` টেক্সটের পরিবর্তে প্রিমিয়াম ডাইনামিক ব্যাজ প্রদর্শিত হয়:
     - **ব্র্যান্ড:** `SupremeAI` (গ্রিন-পার্পল কসমিক গ্রেডিয়েন্ট)
