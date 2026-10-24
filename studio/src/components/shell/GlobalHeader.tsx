@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { canAccessAdminContext } from '../../auth/identity';
+import { useAuthStore } from '../../store/authStore';
 
 export interface HeaderNotification {
   id: string;
@@ -41,6 +43,12 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const isAdmin = context === 'admin' || location.pathname.startsWith('/admin');
+  // FIX(admin-button-visibility 2026-10-24): the User/Admin context switcher was
+  // rendered for EVERY identity — normal users saw an Admin button that only led
+  // to Access Denied. The switcher now renders only for admin-capable identities
+  // (post-TOTP admin JWT claim, or the backend-resolved session admin role).
+  const sessionRole = useAuthStore((s) => s.role);
+  const isAdminIdentity = canAccessAdminContext() || sessionRole === 'admin';
 
   return (
     <header className="sticky top-0 z-30 flex h-14 w-full items-center justify-between border-b border-white/10 bg-slate-950/80 px-4 md:px-6 backdrop-blur-xl transition-all">
@@ -67,7 +75,8 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Context role switch */}
+        {/* Context role switch — admin identities only (UX gate; backend stays authoritative) */}
+        {isAdminIdentity && (
         <div className="flex items-center rounded-lg bg-slate-900/90 p-0.5 border border-white/10 text-xs">
           <button
             type="button"
@@ -88,6 +97,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
             Admin
           </button>
         </div>
+        )}
 
         {actions}
 
