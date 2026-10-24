@@ -14,7 +14,7 @@ The SupremeAI federation consists of **14 interconnected repositories** operatin
 1. **Single Public Ingress:** All tasks, community PRs, and AI agent work enter exclusively through **`Supremeai-bd/supremeai-open`**.
 2. **Multi-Target Slice Dispatching:** When a landed PR touches multiple domain directories, [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml) automatically isolates target changes into dedicated per-satellite slice branches (`bridge/{task_id}-{slug}`), preventing cross-domain pollution.
 3. **Passive Umbrella Monorepo:** The central monorepo (**`Supremeai-bd/supremeai`**) receives the entire panoramic commit, while satellites receive only their scoped slices.
-4. **Zero-Issue / Zero-PR Satellite Mandate:** All 12 satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md)).
+4. **Zero-Issue / Zero-PR Satellite Mandate:** All active satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md)).
 5. **Auditing & The Zero-Credential Blind Spot:** Explains the unauthenticated `UNREACHABLE` status in [`scripts/ci/satellite_board_guard.py`](file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py) and provides the authenticated verification procedure that confirms 100% clean compliance.
 
 ---
@@ -100,11 +100,11 @@ The central board guard [`scripts/ci/satellite_board_guard.py`](file:///f:/supre
 
 However:
 1. **GitHub Security Cloaking:** GitHub REST API returns `HTTP 404` when an unauthenticated caller requests any private repository.
-2. **Resulting Blind Spot:** Because only `supremeai-studio` is currently public among the 12 satellites, an unauthenticated run yields:
+2. **Resulting Blind Spot:** Because only `supremeai-studio` and `supremeai-vscode` are currently public among the active satellites, an unauthenticated run yields:
    ```text
-   totals: 1 clean / 0 violations / 11 unreachable of 12
+   totals: 2 clean / 0 violations / 4 unreachable of 6
    ```
-3. `UNREACHABLE` is treated as a loud warning rather than a failure, but leaves 11 private satellites unverified in unauthenticated environments.
+3. `UNREACHABLE` is treated as a loud warning rather than a failure, but leaves 4 private satellites unverified in unauthenticated environments.
 
 ### 5.2 Resolution: Authenticated Verification
 Providing a valid token (`GH_TOKEN` or `GITHUB_TOKEN`) with organization read permissions eliminates the blind spot.
@@ -123,14 +123,8 @@ Zero-Issue Satellite Mandate audit — org Supremeai-bd (doctrine #626, docs/FED
   vscode             CLEAN       open_issues=0 open_prs=0
   browser            CLEAN       open_issues=0 open_prs=0
   core               CLEAN       open_issues=0 open_prs=0
-  command            CLEAN       open_issues=0 open_prs=0
-  skills             CLEAN       open_issues=0 open_prs=0
-  agents             CLEAN       open_issues=0 open_prs=0
-  sdk                CLEAN       open_issues=0 open_prs=0
   archive            CLEAN       open_issues=0 open_prs=0
-  infrastructure     CLEAN       open_issues=0 open_prs=0
-  mcp-control-plane  CLEAN       open_issues=0 open_prs=0
-  totals: 12 clean / 0 violations / 0 unreachable of 12
+  totals: 6 clean / 0 violations / 0 unreachable of 6
 ```
 
 ### 5.3 CI Nightly / Automated Pipeline Integration
@@ -147,8 +141,8 @@ To ensure the scheduled watchdog runs with full visibility without leaking crede
 
 ## 6. Summary Checklist for AI Agents & Maintainers
 
-- [x] **No Direct Satellite Writes:** Never push directly or open issues/PRs on the 12 satellites.
+- [x] **No Direct Satellite Writes:** Never push directly or open issues/PRs on the satellites.
 - [x] **Single Door Policy:** Open all PRs and track all tasks in `supremeai-open`.
 - [x] **Multi-Domain Changes:** When modifying multiple domain directories, verify that `landing.yml` generates proper slice branches (`bridge/{task_id}-{slug}`).
 - [x] **Sovereignty Boundary:** Do not attempt direct interaction with `supremeai` (monorepo) or `supremeai-api` vault; route exclusively via the public contracts.
-- [x] **100% Board Cleanliness:** Maintain the 12/12 CLEAN status across all satellites at all times.
+- [x] **100% Board Cleanliness:** Maintain the 6/6 CLEAN status across all active satellites at all times.

@@ -85,7 +85,7 @@ flowchart TD
 
 ### 3.2 Single Public Door & Zero Satellite Residue
 - External contributors, autonomous AI agents (Claude, Cursor, Antigravity), and web bots enter exclusively via **`Supremeai-bd/supremeai-open`**.
-- All 12 satellite repositories enforce the **Zero-Issue / Zero-PR Mandate** ([`FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md)).
+- All active satellite repositories enforce the **Zero-Issue / Zero-PR Mandate** ([`FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md)).
 - Contributors edit matching domain folders inside `supremeai-open` (`studio/`, `command/`, `core/`, `vscode/`, etc.). On merge into `main`, `landing.yml` automatically dispatches the changes to the target satellite repo and prunes ephemeral transit artifacts.
 
 ### 3.3 Boundary Security & Air-Gapping
@@ -94,7 +94,7 @@ flowchart TD
 
 ### 3.4 Decoupled Operations: Zero-Workload Passive Umbrella Mandate
 `Supremeai-bd/supremeai` executes **zero active CI workloads, zero nightly cron jobs, and zero operational dependencies**:
-- **Self-Contained Satellites:** Each of the 12 satellite repositories runs its own builds, unit tests, and CI/CD pipelines in total independence. No satellite depends on `supremeai` to test, deploy, or validate itself.
+- **Self-Contained Satellites:** Each of the active satellite repositories runs its own builds, unit tests, and CI/CD pipelines in total independence. No satellite depends on `supremeai` to test, deploy, or validate itself.
 - **Ingress Telemetry:** Any federation-wide cross-satellite telemetry or health checks run exclusively through `supremeai-open` (the public front desk).
 - **Pure Passive Master Mirror:** `supremeai` is strictly a passive, read-only panoramic mirror that receives mirror commits on merge to give an aggregated snapshot of the entire federation. No active workflows or scheduled cron jobs run on `supremeai`.
 
