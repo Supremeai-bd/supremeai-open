@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { UnifiedChatPanel, listStoredConversations, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
 import { Bot, Code, MessageSquarePlus, Pencil, Smartphone, Zap } from 'lucide-react';
 import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
+import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/BrowserPreview';
 
 // Honest preview contract: the preview tabs only make sense AFTER the AI has
 // generated real HTML and the user pressed Preview on a code block. Before that
@@ -160,6 +161,11 @@ export const AIStudio: React.FC = () => {
     localStorage.getItem(MANUAL_CODE_STORE) ?? MANUAL_STARTER);
   useEffect(() => { localStorage.setItem(PREVIEW_MODE_STORE, previewMode); }, [previewMode]);
   useEffect(() => { localStorage.setItem(MANUAL_CODE_STORE, manualCode); }, [manualCode]);
+  // PHASE A (owner plan: AI ওয়েব অপারেটর, 2026-10-24): Agent pause/resume —
+  // ইউজার যেকোনো সময় agent-এর automated browsing pause করে নিজে হাতে
+  // নিয়ে নিতে পারবে (HITL)। BrowserPreview কম্পোনেন্টের প্রপ-কন্ট্র্যাক্ট
+  // (agentPaused / onAgentPauseToggle) রিইউজ করা হয়েছে — নতুন UI বানানো হয়নি।
+  const [agentPaused, setAgentPaused] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const intentConsumedRef = useRef(false);
 
@@ -290,10 +296,23 @@ export const AIStudio: React.FC = () => {
             <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} />
             {previewMode === 'manual' ? (
               <ManualWorkbench device="browser" code={manualCode} onChange={setManualCode} />
-            ) : hasPreview ? (
-              <BrowserPreview html={code} />
             ) : (
-              <PreviewEmptyState device="browser" onBack={() => setActiveTab('chat')} />
+              <div className="flex h-full min-h-0 w-full flex-col gap-2">
+                {!hasPreview && (
+                  <p className="shrink-0 rounded-lg border border-[var(--sa-border)] bg-[var(--sa-surface)]/60 px-3 py-2 text-[11px] leading-5 text-[var(--sa-ink-muted)]">
+                    Nothing generated yet — ask the agent to build something, or type any
+                    https:// URL below to browse it through the server-side browser.
+                  </p>
+                )}
+                <div className="min-h-0 flex-1">
+                  <LiveBrowserPreview
+                    html={hasPreview ? code : undefined}
+                    showDeviceToolbar
+                    agentPaused={agentPaused}
+                    onAgentPauseToggle={() => setAgentPaused((p) => !p)}
+                  />
+                </div>
+              </div>
             )}
           </div>
         )}
