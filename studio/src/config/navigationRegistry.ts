@@ -104,14 +104,20 @@ export const NAVIGATION_REGISTRY: NavGroup[] = [
       // Sign-in/Get-started chrome. It now targets the shared unified chat surface.
       { id: 'nav-chat', label: 'Chat', icon: MessagesSquare, kind: 'route', path: '/workspace/live', contexts: ['user'], status: 'implemented', priority: 15 },
       { id: 'nav-ai-studio', label: 'AI Studio', icon: MessageSquare, kind: 'route', path: '/workspace/live', contexts: ['user'], status: 'implemented', priority: 20 },
-      { id: 'nav-agents', label: 'Agents', icon: Cpu, kind: 'route', path: '/workspace/agent', contexts: ['user'], status: 'implemented', priority: 30 },
+      // FIX(nav-truth 2026-10-24): no route for /workspace/agent in App.tsx or
+      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+      { id: 'nav-agents', label: 'Agents', icon: Cpu, kind: 'route', path: '/workspace/agent', contexts: ['user'], status: 'planned', priority: 30 },
       // Planned features — routes not yet implemented; rendered হয় না (dead-link prevention)।
       { id: 'nav-projects', label: 'Projects', icon: Box, kind: 'route', path: '/projects', contexts: ['user'], status: 'implemented', priority: 40 },
       { id: 'nav-activity', label: 'Activity', icon: Activity, kind: 'route', path: '/activity', contexts: ['user'], status: 'implemented', priority: 50 },
       // Parity-audit fixes: Tier-S প্যানেলগুলো রাউটেড ছিল কিন্তু nav rail-এ ছিল না —
       // ইউজার শুধু সরাসরি URL দিয়ে পৌঁছাতে পারত। এখন implemented status-এ exposed।
-      { id: 'nav-research', label: 'Deep Research', icon: Search, kind: 'route', path: '/research', contexts: ['user'], status: 'implemented', priority: 60 },
-      { id: 'nav-scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, kind: 'route', path: '/scheduled-tasks', contexts: ['user'], status: 'implemented', priority: 70 },
+      // FIX(nav-truth 2026-10-24): no route for /research in App.tsx or
+      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+      { id: 'nav-research', label: 'Deep Research', icon: Search, kind: 'route', path: '/research', contexts: ['user'], status: 'planned', priority: 60 },
+      // FIX(nav-truth 2026-10-24): no route for /scheduled-tasks in App.tsx or
+      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+      { id: 'nav-scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, kind: 'route', path: '/scheduled-tasks', contexts: ['user'], status: 'planned', priority: 70 },
       // বাংলা মন্তব্য: Task-12 ghost activation — KnowledgePage আগে dead ছিল; এখন
       // /knowledge route + backend POST /api/knowledge/search|seed দুটিই real, তাই
       // implemented স্ট্যাটাসে registry-তে exposed করা হলো (dead-link prevention মেনে)।
@@ -126,7 +132,9 @@ export const NAVIGATION_REGISTRY: NavGroup[] = [
     label: 'Extend',
     contexts: ['user'],
     items: [
-      { id: 'nav-skills', label: 'Skills', icon: Box, kind: 'route', path: '/skills-catalog', contexts: ['user'], status: 'implemented', priority: 10 },
+      // FIX(nav-truth 2026-10-24): no route for /skills-catalog in App.tsx or
+      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+      { id: 'nav-skills', label: 'Skills', icon: Box, kind: 'route', path: '/skills-catalog', contexts: ['user'], status: 'planned', priority: 10 },
       // FIX(nav-truth 2026-10-24): no /integrations route or page exists yet —
       // dead-link prevention (registry header rule) moves it to 'planned' (hidden)
       // until a real route lands.
@@ -152,7 +160,9 @@ export const NAVIGATION_REGISTRY: NavGroup[] = [
     label: 'Govern',
     contexts: ['user'],
     items: [
-      { id: 'nav-usage', label: 'Usage', icon: Activity, kind: 'route', path: '/usage', contexts: ['user'], status: 'implemented', priority: 10 },
+      // FIX(nav-truth 2026-10-24): no route for /usage in App.tsx or
+      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+      { id: 'nav-usage', label: 'Usage', icon: Activity, kind: 'route', path: '/usage', contexts: ['user'], status: 'planned', priority: 10 },
       { id: 'nav-billing', label: 'Billing', icon: CreditCard, kind: 'route', path: '/billing', contexts: ['user'], status: 'implemented', priority: 20 },
     ],
   },
@@ -162,10 +172,16 @@ export const NAVIGATION_REGISTRY: NavGroup[] = [
     contexts: ['user'],
     items: [
       { id: 'nav-profile', label: 'Profile', icon: Users, kind: 'route', path: '/profile', contexts: ['user'], status: 'implemented', priority: 10 },
-      { id: 'nav-ide', label: 'Code Editor', icon: Wrench, kind: 'route', path: '/workspace/ide', contexts: ['user'], status: 'implemented', priority: 20 },
+      // FIX(nav-truth 2026-10-24): no route for /workspace/ide in App.tsx or
+      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+      { id: 'nav-ide', label: 'Code Editor', icon: Wrench, kind: 'route', path: '/workspace/ide', contexts: ['user'], status: 'planned', priority: 20 },
       { id: 'nav-settings', label: 'Settings', icon: Wrench, kind: 'route', path: '/settings', contexts: ['user'], status: 'implemented', priority: 30 },
-      { id: 'nav-memory', label: 'Neural Memory', icon: BrainCircuit, kind: 'route', path: '/memory', contexts: ['user'], status: 'implemented', priority: 40 },
-      { id: 'nav-api-keys', label: 'API Keys', icon: KeyRound, kind: 'route', path: '/settings/api-keys', contexts: ['user'], status: 'implemented', priority: 50 },
+      // FIX(nav-truth 2026-10-24): no route for /memory in App.tsx or
+      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+      { id: 'nav-memory', label: 'Neural Memory', icon: BrainCircuit, kind: 'route', path: '/memory', contexts: ['user'], status: 'planned', priority: 40 },
+      // FIX(nav-truth 2026-10-24): no route for /settings/api-keys in App.tsx or
+      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+      { id: 'nav-api-keys', label: 'API Keys', icon: KeyRound, kind: 'route', path: '/settings/api-keys', contexts: ['user'], status: 'planned', priority: 50 },
     ],
   },
   {
