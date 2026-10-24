@@ -52,6 +52,7 @@ RUN apk add --no-cache python3 py3-pip curl \
 RUN python3 --version && uv --version
 
 COPY --from=builder /app/dist ./dist
+COPY sidecars ./sidecars
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
