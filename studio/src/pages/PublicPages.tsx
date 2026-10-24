@@ -87,7 +87,7 @@ type Message = { role: 'user' | 'assistant'; text: string };
 // strategy (upsell toward sign-in / paid plan) — restored per owner decision.
 function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
 
-async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via?: string; brand?: Brand }> {
+async function callLiveAI(prompt: string, modelName: string, apiKey: string = '', onToken?: (token: string) => void): Promise<{ text: string; via?: string; brand?: Brand }> {
   const env = (import.meta as unknown as { env: Record<string, string> }).env || {};
   const webhookTarget = (env.VITE_STEALTH_WEBHOOK_URL || env.VITE_WEBHOOK_URL || '').replace(/\/$/, '');
   const apiTarget = (env.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com').replace(/\/$/, '');
@@ -103,7 +103,9 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
       { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt },
     ],
-    stream: false,
+    // OWNER REQUEST (2026-10-24): request streaming — SSE-capable targets reply
+    // token-by-token; non-stream webhooks ignore it and return a single JSON body.
+    stream: true,
   });
 
   // Oct-23 outage lesson: when every relay target failed, the guest only saw the
@@ -129,13 +131,51 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
       });
       clearTimeout(timeoutId);
       if (res.ok) {
-        const data = await res.json();
-        const content = data?.choices?.[0]?.message?.content;
-        if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100') && !content.includes('[GROK Web Session Active]') && !content.includes('[CHATGPT Web Session Active]') && !content.includes('[PERPLEXITY Web Session Active]')) {
-          const brand = brandFrom(data);
-          return { text: content.trim(), brand, via: brand.label };
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('text/event-stream') && res.body) {
+          // Streaming target: render tokens progressively as they arrive.
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let streamed = '';
+          let pending = '';
+          let brand: Brand | undefined;
+          while (true) {
+            const { done, value } = await reader.read();
+            pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+            const lines = pending.split(/\r?\n/);
+            pending = lines.pop() ?? '';
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue;
+              const payload = line.slice(5).trim();
+              if (!payload || payload === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(payload);
+                const delta: string | undefined = parsed?.choices?.[0]?.delta?.content ?? parsed?.token ?? parsed?.delta;
+                if (delta) { streamed += delta; onToken?.(delta); }
+                const b = brandFrom(parsed);
+                if (b) brand = brand ?? b;
+              } catch {
+                streamed += payload;
+                onToken?.(payload);
+              }
+            }
+            if (done) break;
+          }
+          const clean = streamed.trim();
+          if (clean && !clean.includes('[GEMINI Web Session Active]') && !clean.includes('health=100') && !clean.includes('[GROK Web Session Active]') && !clean.includes('[CHATGPT Web Session Active]') && !clean.includes('[PERPLEXITY Web Session Active]')) {
+            return { text: clean, brand, via: brand?.label ?? 'stream' };
+          }
+          relayDetail = 'relay returned a non-chat or empty response';
+        } else {
+          // Non-stream target (webhook): one JSON body — the thinking stages cover the wait.
+          const data = await res.json();
+          const content = data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.delta?.content;
+          if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100') && !content.includes('[GROK Web Session Active]') && !content.includes('[CHATGPT Web Session Active]') && !content.includes('[PERPLEXITY Web Session Active]')) {
+            const brand = brandFrom(data);
+            return { text: content.trim(), brand, via: brand.label };
+          }
+          relayDetail = 'relay returned a non-chat or empty response';
         }
-        relayDetail = 'relay returned a non-chat or empty response';
       } else {
         try {
           const errData = await res.json();
@@ -217,6 +257,7 @@ export function GuestChat() {
   const [model, setModel] = React.useState(models[0]?.name ?? 'Supreme Auto');
   const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
   const [busy, setBusy] = React.useState(false);
+  const [awaitingFirst, setAwaitingFirst] = React.useState(false);
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => { listRef.current?.scrollTo(0, listRef.current.scrollHeight); }, [messages]);
@@ -225,14 +266,34 @@ export function GuestChat() {
     const text = input.trim();
     if (!text || busy) return;
     setInput('');
-    setMessages((m) => [...m, { role: 'user', text }]);
+    setMessages((m) => [...m, { role: 'user', text }, { role: 'assistant', text: '' }]);
     setBusy(true);
+    setAwaitingFirst(true);
     try {
       if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch (e) { void e; } }
-      const reply = await callLiveAI(text, model, apiKey);
-      setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
+      // Streaming path: tokens render live into the assistant placeholder and
+      // the thinking stages stop at the first token; non-stream webhooks keep
+      // the staged indicator until the full reply lands in one piece.
+      const reply = await callLiveAI(text, model, apiKey, (token) => {
+        setAwaitingFirst(false);
+        setMessages((m) => {
+          const next = [...m];
+          const last = next[next.length - 1];
+          if (last && last.role === 'assistant') next[next.length - 1] = { ...last, text: last.text + token };
+          return next;
+        });
+      });
+      setAwaitingFirst(false);
+      setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
     } catch {
-      setMessages((m) => [...m, { role: 'assistant', text: responseFor(text), via: 'fallback' }]);
+      setAwaitingFirst(false);
+      setMessages((m) => {
+        const last = m[m.length - 1];
+        if (last && last.role === 'assistant' && !last.text) {
+          return [...m.slice(0, -1), { role: 'assistant', text: responseFor(text), via: 'fallback' }];
+        }
+        return m;
+      });
     } finally {
       setBusy(false);
     }
@@ -292,7 +353,7 @@ export function GuestChat() {
           ) : null
         )}
       </div>)}
-      {busy && <ThinkingIndicator />}
+      {busy && awaitingFirst && <ThinkingIndicator />}
     </div>
     <div className="flex gap-2">
       <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={2} placeholder="Ask SupremeAI…" className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50" />
