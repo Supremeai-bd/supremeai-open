@@ -100,6 +100,7 @@ class TestStorageAndEndpoints(unittest.TestCase):
 
     def test_03_livelogs_ring_buffer(self):
         logger = logging.getLogger("supremeai.gateway")
+        logger.setLevel(logging.INFO)
         test_msg = "LiveLogs Verification Log Entry #42"
         logger.info(test_msg)
 
