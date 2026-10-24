@@ -31,6 +31,8 @@ export function responseFor(input: string) { return 'SupremeAI is experiencing h
 export interface LiveAIOptions {
   conversationId?: string;
   history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+  /** Abort signal — lets the caller stop an in-flight generation (Stop button). */
+  signal?: AbortSignal;
 }
 
 export async function callLiveAI(
@@ -87,6 +89,12 @@ export async function callLiveAI(
     if (!target) return null;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
+    // STOP FEATURE (owner request 2026-10-24): the caller's abort signal is
+    // chained into the fetch controller so Stop cancels the in-flight request.
+    const external = options?.signal;
+    const onExternalAbort = () => controller.abort();
+    external?.addEventListener('abort', onExternalAbort);
+    const detach = () => external?.removeEventListener('abort', onExternalAbort);
     try {
       // eslint-disable-next-line no-restricted-syntax
       const res = await fetch(`${target}/v1/chat/completions`, {
@@ -100,6 +108,7 @@ export async function callLiveAI(
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      detach();
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream') && res.body) {
@@ -161,6 +170,10 @@ export async function callLiveAI(
       }
     } catch (err) {
       clearTimeout(timeoutId);
+      detach();
+      // Abort from the Stop button must not fall through to the next relay
+      // target or the offline message — it is rethrown to the caller instead.
+      if (external?.aborted) throw err;
       relayDetail = 'network error (timeout, DNS or CORS)';
       console.warn('[GuestChat] target failed:', target, err);
     }
@@ -247,6 +260,43 @@ export interface UnifiedChatPanelProps {
    * size instead of a hardcoded dvh offset (owner-reported sizing issues).
    */
   fit?: 'page' | 'fill';
+  /**
+   * Resume a saved conversation: loads its locally-persisted messages so the
+   * chat continues with full context (history rail links use this).
+   */
+  initialConversationId?: string;
+}
+
+// CONVERSATION HISTORY (owner request 2026-10-24, parity with mainstream AI
+// web apps): every conversation's messages are persisted locally keyed by the
+// same conversation_id the backend receives — so a history entry can be
+// reopened with full context even before a server-side history endpoint exists.
+const HISTORY_KEY = 'supremeai_chat_history_v1';
+
+function loadStoredConversation(id: string): Array<{ role: 'user' | 'assistant'; text: string }> {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const store = JSON.parse(raw) as Record<string, { messages: Array<{ role: 'user' | 'assistant'; text: string }>; updatedAt: number }>;
+    const entry = store[id];
+    return Array.isArray(entry?.messages) ? entry.messages : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredConversation(id: string, messages: Array<{ role: 'user' | 'assistant'; text: string }>) {
+  if (typeof localStorage === 'undefined' || messages.length === 0) return;
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const store = raw ? (JSON.parse(raw) as Record<string, { messages: unknown[]; updatedAt: number }>) : {};
+    store[id] = { messages, updatedAt: Date.now() };
+    // Keep the 30 most recent conversations — bounded, no unbounded growth.
+    const ids = Object.keys(store).sort((a, b) => (store[a].updatedAt ?? 0) - (store[b].updatedAt ?? 0));
+    while (ids.length > 30) delete store[ids.shift() as string];
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(store));
+  } catch { /* storage full or unavailable — history is best-effort */ }
 }
 
 export function UnifiedChatPanel({
@@ -258,14 +308,23 @@ export function UnifiedChatPanel({
   onPreview,
   className = '',
   fit = 'page',
+  initialConversationId,
 }: UnifiedChatPanelProps) {
-  const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }[]>([]);
+  const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }[]>(() =>
+    initialConversationId ? loadStoredConversation(initialConversationId) : [],
+  );
   const [input, setInput] = React.useState(initialInput || '');
   const [model, setModel] = React.useState(chatModels[0]?.name ?? 'Supreme Auto');
   const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
   const [busy, setBusy] = React.useState(false);
   const [awaitingFirst, setAwaitingFirst] = React.useState(false);
   const [conversationId, setConversationId] = React.useState<string>(() => {
+    if (initialConversationId) {
+      if (typeof localStorage !== 'undefined') {
+        try { localStorage.setItem('supremeai_conversation_id', initialConversationId); } catch { /* ignore */ }
+      }
+      return initialConversationId;
+    }
     if (typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem('supremeai_conversation_id');
       if (stored) return stored;
@@ -279,6 +338,22 @@ export function UnifiedChatPanel({
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => { listRef.current?.scrollTo(0, listRef.current.scrollHeight); }, [messages]);
+
+  // Persist the running conversation so the history rail can reopen it with
+  // full context (best-effort, bounded to 30 conversations).
+  React.useEffect(() => {
+    if (conversationId && messages.length > 0) saveStoredConversation(conversationId, messages);
+  }, [conversationId, messages]);
+
+  // STOP FEATURE (owner request 2026-10-24): in-flight generations can be
+  // cancelled — the controller aborts the fetch and the empty assistant
+  // placeholder is removed instead of showing a fake fallback reply.
+  const abortRef = React.useRef<AbortController | null>(null);
+  const stopRequestedRef = React.useRef(false);
+  const handleStop = () => {
+    stopRequestedRef.current = true;
+    abortRef.current?.abort();
+  };
 
   React.useEffect(() => {
     if (initialInput !== undefined && initialInput !== '') {
@@ -309,6 +384,15 @@ export function UnifiedChatPanel({
     setMessages((m) => [...m, { role: 'user', text }, { role: 'assistant', text: '' }]);
     setBusy(true);
     setAwaitingFirst(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    stopRequestedRef.current = false;
+    const dropEmptyPlaceholder = () => {
+      setMessages((m) => {
+        const last = m[m.length - 1];
+        return last && last.role === 'assistant' && !last.text ? m.slice(0, -1) : m;
+      });
+    };
     try {
       if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch (e) { void e; } }
       let activeConvId = conversationId;
@@ -336,6 +420,7 @@ export function UnifiedChatPanel({
         {
           conversationId: activeConvId,
           history: messages,
+          signal: controller.signal,
         },
       );
       if (reply.conversationId && reply.conversationId !== activeConvId) {
@@ -343,9 +428,17 @@ export function UnifiedChatPanel({
         try { localStorage.setItem('supremeai_conversation_id', reply.conversationId); } catch { /* ignore */ }
       }
       setAwaitingFirst(false);
+      if (stopRequestedRef.current) {
+        dropEmptyPlaceholder();
+        return;
+      }
       setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
     } catch {
       setAwaitingFirst(false);
+      if (stopRequestedRef.current) {
+        dropEmptyPlaceholder();
+        return;
+      }
       setMessages((m) => {
         const last = m[m.length - 1];
         if (last && last.role === 'assistant' && !last.text) {
@@ -354,6 +447,8 @@ export function UnifiedChatPanel({
         return m;
       });
     } finally {
+      abortRef.current = null;
+      stopRequestedRef.current = false;
       setBusy(false);
     }
   }
@@ -447,6 +542,17 @@ export function UnifiedChatPanel({
       >
         Send
       </button>
+      {busy && (
+        <button
+          type="button"
+          onClick={handleStop}
+          aria-label="Stop generating"
+          data-testid="stop-button"
+          className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm font-medium text-slate-300 transition hover:border-red-400/40 hover:text-white"
+        >
+          Stop
+        </button>
+      )}
       {extraActions}
     </div>
   </section>;

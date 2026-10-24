@@ -81,6 +81,7 @@ const PreviewEmptyState: React.FC<{ device: 'browser' | 'mobile'; onBack: () => 
 
 export const AIStudio: React.FC = () => {
   const [input, setInput] = useState('');
+  const [resumeConvId, setResumeConvId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'preview' | 'mobile'>('chat');
   const [code, setCode] = useState(CODE_PLACEHOLDER);
   const hasPreview = code.trim() !== '' && code !== CODE_PLACEHOLDER;
@@ -93,6 +94,17 @@ export const AIStudio: React.FC = () => {
   // fix: প্যারামটি consume করে composer input-এ prefill + focus করা হয়, যাতে ব্যবহারকারী
   // টেক্সট নিজের চোখে দেখে স্পষ্টভাবে Send চাপে। ref guard StrictMode-এর double
   // effect-invoke-এ দ্বিগুণ prefill আটকায়; param strip (replace) রিফ্রেশে re-fire করে না।
+  // CONVERSATION RESUME (owner request 2026-10-24): history-rail links carry
+  // ?conversation=<id> — the Studio reopens that conversation with its full
+  // locally-persisted message history instead of only prefilling a prompt.
+  useEffect(() => {
+    const conv = searchParams.get('conversation');
+    if (!conv || intentConsumedRef.current) return;
+    intentConsumedRef.current = true;
+    setSearchParams({}, { replace: true });
+    setResumeConvId(conv);
+  }, [searchParams, setSearchParams]);
+
   useEffect(() => {
     if (intentConsumedRef.current) return;
     const intent = searchParams.get('intent');
@@ -147,6 +159,7 @@ export const AIStudio: React.FC = () => {
             <UnifiedChatPanel
               fit="fill"
               className="max-w-4xl"
+              initialConversationId={resumeConvId ?? undefined}
               showStarter={true}
               initialInput={input}
               onInputChange={setInput}

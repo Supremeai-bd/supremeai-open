@@ -179,7 +179,7 @@ export const UserDashboard: React.FC = () => {
                   {recentConversations.map((conversation) => (
                     <li key={conversation.id} className="min-w-0">
                       <Link
-                        to={conversation.title?.trim() ? `/workspace/live?intent=${encodeURIComponent(conversation.title.trim())}` : '/workspace/live'}
+                        to={`/workspace/live?conversation=${encodeURIComponent(conversation.id)}`}
                         className="flex min-w-0 items-center justify-between gap-2 rounded-[var(--sa-radius-sm)] border border-transparent px-2.5 py-2 text-sm transition hover:border-[var(--sa-border)] hover:bg-[var(--sa-primary-soft)]"
                       >
                         <span className="min-w-0 flex-1 truncate">
