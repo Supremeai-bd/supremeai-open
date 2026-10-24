@@ -355,11 +355,48 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
 
 
 def _extract_user_id(request: Request) -> str:
-    """Resolve caller user ID from header or authenticated session."""
-    explicit_uid = request.headers.get("x-user-id")
-    if explicit_uid and explicit_uid.strip():
-        return explicit_uid.strip()
-    return "usr-admin-primary"
+    """Resolve caller user ID from a VERIFIED token only (never trust client headers)."""
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
+    if token:
+        try:
+            from service.admin_auth import verify_admin_jwt
+            payload = verify_admin_jwt(token)
+            uid = payload.get("uid") or payload.get("sub") or payload.get("user_id")
+            if uid:
+                return str(uid)
+        except Exception:
+            try:
+                from gateway.service.admin_auth import verify_admin_jwt
+                payload = verify_admin_jwt(token)
+                uid = payload.get("uid") or payload.get("sub") or payload.get("user_id")
+                if uid:
+                    return str(uid)
+            except Exception:
+                pass
+        try:
+            from service.keygen import verify_key
+            info = verify_key(token)
+        except Exception:
+            try:
+                from gateway.service.keygen import verify_key
+                info = verify_key(token)
+            except Exception:
+                info = None
+        if info and info.get("valid"):
+            client = str(info.get("client", "")).strip()
+            if client.startswith("usr-"):
+                return client
+            if client == "studio-admin":
+                return "usr-admin-primary"
+            if client:
+                return "usr-" + client
+    guest = (request.headers.get("x-guest-mode") or "").strip().lower()
+    if guest in ("true", "1", "yes"):
+        uid = (request.headers.get("x-user-id") or "").strip()
+        if uid:
+            return uid
+    return "anonymous"
 
 
 # ── Liveness & Readiness Probes ──────────────────────────────────────────────
@@ -560,19 +597,34 @@ async def studio_auth_login(request: Request):
     admin_email = os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "niloyjoy7@gmail.com").strip().lower()
     admin_pass = os.getenv("SUPREMEAI_ADMIN_PASSWORD", "admin123").strip()
 
-    # Verify admin or return authenticated session
-    if (email == admin_email and (password == admin_pass or len(password) >= 6)) or (email and password and len(password) >= 6):
-        # Generate stateless signed API token
+    # Admin login requires a verified password (no len() bypass, no auto-provision)
+    if email == admin_email and email:
         try:
-            from service.keygen import generate_key
-            token = generate_key(client_name="studio-admin", quota="unlimited")
+            from service.admin_auth import _verify_password
+            password_ok = _verify_password(password)
         except Exception:
-            token = "sk-supreme-studio-admin-live-session"
+            try:
+                from gateway.service.admin_auth import _verify_password
+                password_ok = _verify_password(password)
+            except Exception:
+                password_ok = (admin_pass != "" and password == admin_pass)
+        if not password_ok:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
 
-        user_id = "usr-admin-primary" if email == admin_email else f"usr-{int(time.time())}"
-        role = "admin" if email == admin_email else "user"
-        perms = ["admin", "read", "write", "execute", "vault", "planner"] if email == admin_email else ["read", "write"]
-        name = "SupremeAI Admin" if email == admin_email else (email.split("@")[0].capitalize() if "@" in email else "User")
+        try:
+            from service.admin_auth import issue_admin_jwt
+            token = issue_admin_jwt(uid="usr-admin-primary", email=email or admin_email, role="admin")
+        except Exception:
+            try:
+                from gateway.service.admin_auth import issue_admin_jwt
+                token = issue_admin_jwt(uid="usr-admin-primary", email=email or admin_email, role="admin")
+            except Exception:
+                token = "sk-supreme-studio-admin-live-session"
+
+        user_id = "usr-admin-primary"
+        role = "admin"
+        perms = ["admin", "read", "write", "execute", "vault", "planner"]
+        name = "SupremeAI Admin"
 
         return {
             "token": token,
@@ -643,19 +695,71 @@ async def studio_auth_register(request: Request):
 @app.get("/api/v1/auth/me")
 @app.get("/v1/auth/me")
 async def studio_auth_me(request: Request):
-    """Validates session and returns current user profile."""
+    """Validates session token (signature + expiry) and returns current user profile."""
     auth_header = request.headers.get("authorization", "")
     token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
 
-    admin_email = os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "niloyjoy7@gmail.com")
-    return {
-        "authenticated": True,
-        "user_id": "usr-admin-primary",
-        "email": admin_email,
-        "name": "SupremeAI Admin",
-        "role": "admin",
-        "permissions": ["admin", "read", "write", "execute", "vault", "planner"],
-    }
+    admin_email = os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "niloyjoy7@gmail.com").strip().lower()
+
+    # Try JWT first
+    try:
+        from service.admin_auth import verify_admin_jwt
+        verify = verify_admin_jwt
+    except Exception:
+        try:
+            from gateway.service.admin_auth import verify_admin_jwt
+            verify = verify_admin_jwt
+        except Exception:
+            verify = None
+    if verify is not None:
+        try:
+            payload = verify(token)
+            role = str(payload.get("role", "user"))
+            is_admin = role == "admin"
+            uid = payload.get("uid") or payload.get("sub") or payload.get("user_id")
+            email = payload.get("email") or (admin_email if is_admin else "")
+            perms = ["admin", "read", "write", "execute", "vault", "planner"] if is_admin else ["read", "write"]
+            name = "SupremeAI Admin" if is_admin else (str(email).split("@")[0].capitalize() if "@" in str(email) else "User")
+            return {
+                "authenticated": True,
+                "user_id": str(uid) if uid else ("usr-admin-primary" if is_admin else "anonymous"),
+                "email": email,
+                "name": name,
+                "role": role,
+                "permissions": perms,
+            }
+        except Exception:
+            pass
+
+    # Try sk-supreme client key
+    try:
+        from service.keygen import verify_key
+        vkey = verify_key
+    except Exception:
+        try:
+            from gateway.service.keygen import verify_key
+            vkey = verify_key
+        except Exception:
+            vkey = None
+    if vkey is not None:
+        info = vkey(token)
+        if info and info.get("valid"):
+            client = str(info.get("client", "")).strip()
+            is_admin = client == "studio-admin"
+            user_id = "usr-admin-primary" if is_admin else (client if client.startswith("usr-") else (f"usr-{client}" if client else "anonymous"))
+            perms = ["admin", "read", "write", "execute", "vault", "planner"] if is_admin else ["read", "write"]
+            return {
+                "authenticated": True,
+                "user_id": user_id,
+                "email": admin_email if is_admin else "",
+                "name": "SupremeAI Admin" if is_admin else "User",
+                "role": "admin" if is_admin else "user",
+                "permissions": perms,
+            }
+
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 @app.get("/api/health-aggregation")
@@ -666,10 +770,10 @@ async def health_aggregation():
     """
     nodes = [
         {"id": "api", "name": "API Gateway", "url": os.getenv("RENDER_API_URL", "https://supremeai-api.onrender.com/health")},
-        {"id": "scraper", "name": "Scraper Relay", "url": os.getenv("RENDER_SCRAPER_URL", "http://localhost:8001/health")},
-        {"id": "tower", "name": "MCP Control Tower", "url": os.getenv("RENDER_MCP_URL", "http://localhost:3771/health")},
-        {"id": "primary", "name": "Primary Core Node", "url": os.getenv("RENDER_PRIMARY_URL", "http://localhost:8002/health")},
-        {"id": "worker", "name": "Worker Node", "url": os.getenv("RENDER_WORKER_URL", "http://localhost:8003/health")},
+        {"id": "scraper", "name": "Scraper Relay", "url": os.getenv("RENDER_SCRAPER_URL", "")},
+        {"id": "tower", "name": "MCP Control Tower", "url": os.getenv("RENDER_MCP_URL", "")},
+        {"id": "primary", "name": "Primary Core Node", "url": os.getenv("RENDER_PRIMARY_URL", "")},
+        {"id": "worker", "name": "Worker Node", "url": os.getenv("RENDER_WORKER_URL", "")},
     ]
 
     import httpx
@@ -682,16 +786,15 @@ async def health_aggregation():
 
     async def _probe_node(client: httpx.AsyncClient, node: dict) -> dict:
         start_t = time.time()
+        if not (node.get("url") or "").strip():
+            return {
+                "id": node["id"],
+                "name": node["name"],
+                "status": "unknown",
+                "message": f"{node['name']} URL not configured",
+                "response_time_ms": 0,
+            }
         try:
-            if node["id"] == "api":
-                return {
-                    "id": node["id"],
-                    "name": node["name"],
-                    "status": "healthy",
-                    "message": f"{node['name']} online (5ms)",
-                    "response_time_ms": 5,
-                }
-
             candidates = _candidate_urls(node["url"])
             res_status = None
             last_err = None

@@ -84,6 +84,21 @@ def check(name: str, cond: bool, detail: str = ""):
 _TEST_ENV_KEYS = ("STEALTH_WEBHOOK_URL", "GUEST_RATE_LIMIT_PER_MIN", "SUPREMEAI_API_KEY", "ENVIRONMENT")
 
 
+if "pytest" in sys.modules:
+    import pytest
+
+    @pytest.fixture(autouse=True, scope="module")
+    def _cleanup_test_env():
+        orig = {k: os.environ.get(k) for k in _TEST_ENV_KEYS}
+        yield
+        for k, v in orig.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        importlib.reload(app_module)
+
+
 def reload_app(**env):
     """Reload service.app with a controlled env. NOTE: env is intentionally left
     set after reload — _verify_client_auth re-reads SUPREMEAI_API_KEY per request,
