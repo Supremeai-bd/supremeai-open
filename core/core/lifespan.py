@@ -34,6 +34,8 @@ from contextlib import asynccontextmanager
 import httpx
 
 from core import service_container as services
+
+service_container = services
 from core.config import settings
 from core.logging_config import logger
 from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus

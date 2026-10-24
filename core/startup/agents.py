@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 
 from core import service_container as services
+
+service_container = services
 from core.agent_supervisor import agent_supervisor
 from core.logging_config import logger
 

@@ -11,7 +11,7 @@ class IPBlocklistManager:
         self.cooldown_seconds = 1800  # Default 30 minutes block
 
     def is_ip_blocked(self, ip_address: str) -> bool:
-        from core import service_container as services
+        from core import service_container
 
         if (
             hasattr(service_container, "redis_queue")
@@ -29,7 +29,7 @@ class IPBlocklistManager:
 
     def block_ip(self, ip_address: str, reason: str = "suspicious_activity") -> bool:
         logger.warning(f"IPBlocklistManager: Blocking IP {ip_address} due to {reason}.")
-        from core import service_container as services
+        from core import service_container
 
         if (
             hasattr(service_container, "redis_queue")
@@ -46,7 +46,7 @@ class IPBlocklistManager:
 
     def release_ip(self, ip_address: str) -> bool:
         logger.info(f"IPBlocklistManager: Releasing block on IP {ip_address}.")
-        from core import service_container as services
+        from core import service_container
 
         if (
             hasattr(service_container, "redis_queue")

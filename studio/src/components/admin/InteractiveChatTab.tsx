@@ -4,7 +4,7 @@ import { Terminal, Globe, Send, RefreshCw, TerminalSquare, Compass, Smartphone, 
 import { useDashboardStore } from '../../store/dashboardStore';
 import { useStore } from '../../store/useStore';
 import { UnifiedChatBubble, TypingIndicator } from '../chat';
-import { MobilePreviewPanel } from '../../common/MobilePreviewPanel';
+import { MobilePreviewPanel } from '../common/MobilePreviewPanel';
 import { useMobilePreview } from '../../hooks/useMobilePreview';
 import { classifyIntent, isDestructiveCommand } from '../../lib/jarvisIntent';
 

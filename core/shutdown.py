@@ -3,6 +3,8 @@ import os
 import time  # - Added for metrics collection
 
 from core import service_container as services
+
+service_container = services
 from core.agent_supervisor import agent_supervisor
 from core.cache.redis_manager import redis_manager
 from core.logging_config import logger

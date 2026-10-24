@@ -430,11 +430,17 @@ def _get_stealth_client() -> httpx.AsyncClient:
                 return _STEALTH_CLIENT
         except AttributeError:
             _STEALTH_CLIENT = None
-    client = httpx.AsyncClient(
-        timeout=httpx.Timeout(28.0, connect=5.0),
-        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        http2=True,
-    )
+    try:
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(28.0, connect=5.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            http2=True,
+        )
+    except Exception:
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(28.0, connect=5.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
     # Only cache real clients (fakes used in tests lack is_closed).
     if hasattr(client, "is_closed"):
         _STEALTH_CLIENT = client

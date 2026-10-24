@@ -8,8 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user_token, get_tenant_db
 from core.logging_config import logger
-from database.session import get_db_session
-from service_container import global_http_client  # FIX: reuse shared connection pool
+try:
+    from core.service_container import global_http_client  # FIX: reuse shared connection pool
+except ImportError:
+    try:
+        from service_container import global_http_client
+    except ImportError:
+        global_http_client = None
 from tools.devops.github_agent import GitHubAgent, get_user_github_token
 from tools.repo_discovery_agent import RepoDiscoveryAgent
 

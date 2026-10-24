@@ -144,6 +144,8 @@ async def _issue_admin_jwt(uid: str) -> str:
 
 from api.dependencies import get_current_user_token
 from core import service_container as services
+
+service_container = services
 from core.config import settings
 from core.firebase_auth import get_firebase_auth
 from models.admin import (
