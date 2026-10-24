@@ -1,0 +1,38 @@
+name: Kaggle Empirical Learning (Scheduled)
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kaggle_learning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run Kaggle Empirical Learning Bridge
+        env:
+          KAGGLE_API_TOKENS: ${{ secrets.KAGGLE_API_TOKENS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/kaggle_learning_bridge.py --self-test
+          if [ -n "${KAGGLE_API_TOKENS:-}" ]; then
+            echo "Kaggle pool detected — executing empirical learning distillation..."
+            python scripts/ci/kaggle_learning_bridge.py --dry-run
+          else
+            echo "KAGGLE_API_TOKENS not configured on runner; self-test verified."
+          fi

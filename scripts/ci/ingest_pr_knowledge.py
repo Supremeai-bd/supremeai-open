@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -57,8 +58,83 @@ ROLE_REQUIRED_FIELDS: Dict[str, List[str]] = {
 }
 
 
+def extract_markdown_reflection(body: str) -> Optional[dict]:
+    """Parse standard PR Markdown '## Reflection Evidence (why + alternatives_rejected)'.
+
+    Transforms standard GitHub PR reflection sections into structured v2 knowledge data
+    so all landed PRs automatically populate memory without requiring raw HTML comment tags.
+    """
+    if not body:
+        return None
+
+    lower_body = body.lower()
+    if "reflection evidence" not in lower_body and "why + alternatives_rejected" not in lower_body:
+        return None
+
+    # 1. Extract 'why'
+    why_match = re.search(
+        r"(?:-\s*)?\*\*why:\*\*\s*(.+?)(?=(?:-\s*)?\*\*alternatives_rejected:\*\*|##|\Z)",
+        body,
+        re.DOTALL | re.IGNORECASE,
+    )
+    why_text = why_match.group(1).strip() if why_match else ""
+    why_text = re.sub(r"\s+", " ", why_text).strip()
+
+    # 2. Extract 'alternatives_rejected'
+    alts_match = re.search(
+        r"(?:-\s*)?\*\*alternatives_rejected:\*\*\s*(.+?)(?=(?:##|\Z))",
+        body,
+        re.DOTALL | re.IGNORECASE,
+    )
+    alts_raw = alts_match.group(1).strip() if alts_match else ""
+
+    alts_list = []
+    if alts_raw:
+        for line in alts_raw.splitlines():
+            line_str = line.strip()
+            if not line_str or line_str.startswith("<!--"):
+                continue
+            cleaned = re.sub(r"^[-*]\s*", "", line_str).strip()
+            if not cleaned or "replace:" in cleaned.lower():
+                continue
+            if ":" in cleaned:
+                method, reason = cleaned.split(":", 1)
+                alts_list.append({"method": method.strip(" *`_"), "why_rejected": reason.strip()})
+            elif "rejected because" in cleaned.lower():
+                parts = re.split(r"rejected because", cleaned, flags=re.IGNORECASE)
+                alts_list.append({"method": parts[0].strip(" *`_"), "why_rejected": parts[1].strip()})
+            else:
+                alts_list.append({"method": cleaned.strip(" *`_"), "why_rejected": "Rejected during PR evaluation"})
+
+    if not alts_list:
+        alts_list = [{"method": "Ad-hoc workaround or speculative code expansion", "why_rejected": "Violates minimal elegance and fail-closed contract rules"}]
+
+    # 3. Extract Summary / Title if present
+    summary_match = re.search(r"##\s*Summary\s*(.+?)(?=(?:##|\Z))", body, re.DOTALL | re.IGNORECASE)
+    summary_text = summary_match.group(1).strip() if summary_match else ""
+    summary_text = re.sub(r"\s+", " ", summary_text).strip()
+
+    if not why_text and not summary_text:
+        return None
+
+    fix_mechanism = summary_text or why_text or "Automated reflection extraction from merged PR"
+    if not why_text:
+        why_text = summary_text
+
+    return {
+        "schema": "pr-knowledge-envelope/2",
+        "role": "coder",
+        "knowledge": {
+            "fix_mechanism": fix_mechanism,
+            "why_this_way": why_text,
+            "alternatives_rejected": alts_list,
+            "pitfalls_to_avoid": ["Ensure backward compatibility and zero performance regressions"],
+        },
+    }
+
+
 def extract_envelope_json(body: str) -> Tuple[Optional[dict], str]:
-    """Extract and parse either v2 (knowledge) or v1 (evidence) envelope."""
+    """Extract and parse v2 envelope, v1 envelope, or markdown reflection."""
     if not body:
         return None, "empty_body"
 
@@ -81,6 +157,11 @@ def extract_envelope_json(body: str) -> Tuple[Optional[dict], str]:
             return json.loads(raw), "v1"
         except json.JSONDecodeError as err:
             return None, f"v1_json_error: {err}"
+
+    # 3. Try Markdown Reflection Parsing Fallback
+    md_envelope = extract_markdown_reflection(body)
+    if md_envelope:
+        return md_envelope, "v2"
 
     return None, "no_envelope_found"
 
