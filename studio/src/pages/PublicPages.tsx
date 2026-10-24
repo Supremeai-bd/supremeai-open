@@ -364,10 +364,117 @@ export function GuestChat() {
 
 
 export const GuestChatPage = GuestChat;
-export const ModelsPage = GuestChat;
-export function PublicInfoPage(_props: { kind?: string }) { return <GuestChat />; }
-export const PricingPage = GuestChat;
-export const FeaturesPage = GuestChat;
-export const DocsPage = GuestChat;
 export const AboutPage = GuestChat;
+
+// ROOT-CAUSE FIX (public info aliases, 2026-10-24): /models, /pricing,
+// /docs, /features and /contact previously aliased GuestChat, so every
+// marketing link dumped visitors into the same chat. These are now real,
+// honest content pages (no fabricated prices, specs or dates); the guest
+// chat stays one click away via the links below.
+
+const infoCard = 'rounded-2xl border border-white/10 bg-slate-900/40 p-6 backdrop-blur-md';
+const infoCta = 'inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity';
+
+export const ModelsPage: React.FC = () => (
+  <div className="space-y-8 text-slate-300">
+    <header className="space-y-2">
+      <h1 className="text-3xl font-bold text-white">Models</h1>
+      <p className="text-sm leading-relaxed">Pick a tone, the federation handles the rest. Every reply is relayed through the SupremeAI mesh with automatic provider substitution if an engine goes dark.</p>
+    </header>
+    <div className="grid gap-4 sm:grid-cols-3">
+      <div className={infoCard}>
+        <h2 className="text-lg font-bold text-white">Fast Chat</h2>
+        <p className="mt-2 text-sm leading-relaxed">Snappy everyday answers for quick questions, drafting and brainstorming.</p>
+      </div>
+      <div className={infoCard}>
+        <h2 className="text-lg font-bold text-white">Supreme Auto</h2>
+        <p className="mt-2 text-sm leading-relaxed">The balanced default. Chooses the right depth automatically.</p>
+      </div>
+      <div className={infoCard}>
+        <h2 className="text-lg font-bold text-white">Reasoning Pro</h2>
+        <p className="mt-2 text-sm leading-relaxed">Step-by-step analysis for planning, code review and anything that needs thinking, not typing.</p>
+      </div>
+    </div>
+    <Link to="/chat" className={infoCta}>Try them in the guest chat</Link>
+  </div>
+);
+
+export const PricingPage: React.FC = () => (
+  <div className="space-y-8 text-slate-300">
+    <header className="space-y-2">
+      <h1 className="text-3xl font-bold text-white">Pricing</h1>
+      <p className="text-sm leading-relaxed">Honest answer: everything is free while SupremeAI is in early access.</p>
+    </header>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className={infoCard}>
+        <h2 className="text-lg font-bold text-white">Guest - Free</h2>
+        <p className="mt-2 text-sm leading-relaxed">Full guest chat at /chat. No account, no card, no limits during early access.</p>
+        <Link to="/chat" className={`${infoCta} mt-4`}>Start chatting</Link>
+      </div>
+      <div className={infoCard}>
+        <h2 className="text-lg font-bold text-white">Account - Free (early access)</h2>
+        <p className="mt-2 text-sm leading-relaxed">History, personalization and the workspace - free while we scale the mesh. Paid tiers have not been announced yet; this page changes the day they are.</p>
+        <Link to="/register" className={`${infoCta} mt-4`}>Create free account</Link>
+      </div>
+    </div>
+  </div>
+);
+
+export const FeaturesPage: React.FC = () => (
+  <div className="space-y-8 text-slate-300">
+    <header className="space-y-2">
+      <h1 className="text-3xl font-bold text-white">Features</h1>
+      <p className="text-sm leading-relaxed">Three pillars of the federated architecture.</p>
+    </header>
+    <div className="space-y-4">
+      <div className={infoCard}>
+        <h2 className="text-lg font-bold text-white">Understands your entire federation</h2>
+        <p className="mt-2 text-sm leading-relaxed">Single-door public ingress with automated slice dispatch across satellite repositories.</p>
+      </div>
+      <div className={infoCard}>
+        <h2 className="text-lg font-bold text-white">Multi-model consensus and auto-healing</h2>
+        <p className="mt-2 text-sm leading-relaxed">Dynamic routing across LLM providers with automatic substitution and fail-closed security.</p>
+      </div>
+      <div className={infoCard}>
+        <h2 className="text-lg font-bold text-white">Zero admin overhead</h2>
+        <p className="mt-2 text-sm leading-relaxed">Autonomous CI gates, pre-push verification and automated landing pipelines run 24/7.</p>
+      </div>
+    </div>
+    <Link to="/chat" className={infoCta}>See it live</Link>
+  </div>
+);
+
+export const DocsPage: React.FC = () => (
+  <div className="space-y-8 text-slate-300">
+    <header className="space-y-2">
+      <h1 className="text-3xl font-bold text-white">Docs</h1>
+      <p className="text-sm leading-relaxed">Three steps, no setup.</p>
+    </header>
+    <ol className="space-y-4 text-sm leading-relaxed">
+      <li className={infoCard}><strong className="text-white">1. Chat as a guest.</strong> Open /chat and ask anything - no account needed.</li>
+      <li className={infoCard}><strong className="text-white">2. Create a free account.</strong> Register to keep history, personalize replies and unlock the workspace.</li>
+      <li className={infoCard}><strong className="text-white">3. Open the workspace.</strong> Your conversations, tools and settings live together at /workspace.</li>
+    </ol>
+    <div className="flex flex-wrap gap-3">
+      <Link to="/chat" className={infoCta}>Open guest chat</Link>
+      <a href="https://github.com/Supremeai-bd/supremeai-open/issues" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/80 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition-colors">Report an issue on GitHub</a>
+    </div>
+  </div>
+);
+
+export function PublicInfoPage(_props: { kind?: string }) {
+  return (
+    <div className="space-y-8 text-slate-300">
+      <header className="space-y-2">
+        <h1 className="text-3xl font-bold text-white">Contact</h1>
+        <p className="text-sm leading-relaxed">Fastest way to reach us: guest chat for quick questions, GitHub issues for anything the team must see.</p>
+      </header>
+      <div className="flex flex-wrap gap-3">
+        <Link to="/chat" className={infoCta}>Chat with SupremeAI</Link>
+        <a href="https://github.com/Supremeai-bd/supremeai-open/issues" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/80 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition-colors">Open a GitHub issue</a>
+      </div>
+    </div>
+  );
+}
+
 export default GuestChat;
