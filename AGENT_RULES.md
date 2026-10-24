@@ -55,6 +55,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 | **U11** | **Contract Mirror Invariant & Zero-Drift** | Mirrored contract surfaces (`examples/gateway_client.py` ↔ `supremeai-api:scripts/clients/`, `api-schemas/gateway.openapi.yaml` ↔ `supremeai-api:contracts/`) are strict byte-level replicas. Arbitrary local formatter overrides or CRLF alterations are strictly forbidden. Must pass `python scripts/ci/contract_parity_guard.py --check` before push. |
 | **U12** | **Satellite-First & Tangible Product Value** | All autonomous agent tasks MUST deliver tangible user value to active product satellites (`studio/*`, `gateway/*` / `api/*`, `browser/*`, `vscode/*`, `core/*`). Autonomous PRs touching exclusively internal transit or tooling surfaces (`infrastructure/mcp-control-plane/*`, `scripts/ci/*`) that only land in the private monorepo are strictly banned without explicit human authorization. End the cycle of zero-value internal busywork. |
 | **U13** | **Domain Mirror Path Anchoring** | Code targeting product satellites must strictly touch its approved mirror folder (`studio/*` → `supremeai-studio`, `gateway/*` / `api/*` → `supremeai-api`, `vscode/*`, `browser/*`, `core/*`). Never submit root-level shadow paths (e.g. `src/*`). Must pass `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before patch submission or PR creation. |
+| **U14** | **Zero-Fail PR Submission Contract** | PRs opened by agents must comply strictly with the canonical machine format (`AGENTS.md` §2.1). (1) Exact header `## Reflection Evidence (why + alternatives_rejected)` with real, non-placeholder `- **why:**` and `- **alternatives_rejected:**` entries (`Knowledge Sharing Guard #392`). (2) Pre-claimed issue link via `Closes #N`, `Fixes #N`, or `<!-- atomic-claim: issue #N -->` (`Claim Gate Guard #392`). (3) Single-domain diff. (4) Rebased 0 behind `origin/main`. Creating malformed, unlinked, or unreflective PRs is a direct constitutional violation. |
 
 ---
 
@@ -74,6 +75,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
   2. **Solution Optimality:** Evaluate if the issue suggestion is truly the simplest/cleanest way, or if a better 1-line solution exists.
   3. **Defect-Class Elimination (P6):** Ban superficial symptom patches (no error masking/swallowing). Solve root cause.
   4. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.
+  5. **Canonical PR Blueprint Execution:** Every PR must be created strictly following `AGENTS.md` §2.1 format. Never open unlinked PRs or PRs with unfilled placeholders. Run `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before opening PR.
 
 ### 3.3 🔍 Auditor / Rules-Breaker Agent
 - **Work Area:** Governance compliance, boundary audits, secret scan triage, dead code & workflow consolidation.
