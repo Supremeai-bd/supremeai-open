@@ -14,7 +14,6 @@
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
 
-  // Forward public web & API ports; keep infrastructure services private
   "forwardPorts": [8000, 5173],
   "portsAttributes": {
     "8000": {
