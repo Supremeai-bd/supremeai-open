@@ -56,6 +56,14 @@ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
     ),
 ]
 
+ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
+ARCHIVE_MIRROR_PAIRS: list[tuple[str, str]] = [
+    (
+        "docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md",
+        "adrs/ADR-008-OPEN_FOUNDATION_BOUNDARY.md",
+    ),
+]
+
 # Monorepo sync ignores: files in supremeai-open that should not overwrite monorepo root configs
 MONOREPO_EXCLUDES = {
     ".git",
@@ -164,6 +172,18 @@ def sync_satellite(
                 print(
                     f"📋 Synced runtime service 'gateway/service' -> 'service' in {target_repo}"
                 )
+            # Sync CI workflow into supremeai-api
+            api_ci_src = repo_root / "gateway" / ".github" / "workflows" / "ci.yml"
+            if api_ci_src.exists():
+                target_wf_dir = tmp_repo / ".github" / "workflows"
+                target_wf_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(api_ci_src, target_wf_dir / "ci.yml")
+                print(f"📋 Synced CI workflow to .github/workflows/ci.yml in {target_repo}")
+            # Sync central API schemas into contracts/schemas/ in supremeai-api
+            schemas_src = repo_root / "api-schemas"
+            if schemas_src.exists():
+                copy_tree_contents(schemas_src, tmp_repo / "contracts" / "schemas")
+                print(f"📋 Synced API schemas -> contracts/schemas in {target_repo}")
         elif target_repo == "Supremeai-bd/supremeai-studio":
             # Copy domain files into the satellite root
             copy_tree_contents(src_path, tmp_repo)
@@ -312,6 +332,21 @@ def sync_monorepo(
             else:
                 shutil.copy2(item, dst_item)
 
+        # Prune legacy VS Code residue in monorepo that migrated to modern extension layout
+        legacy_vscode_paths = [
+            tmp_repo / "vscode" / "src",
+            tmp_repo / "vscode" / "media",
+            tmp_repo / "vscode" / "tsconfig.json",
+            tmp_repo / "vscode" / ".vscodeignore",
+        ]
+        for p in legacy_vscode_paths:
+            if p.is_dir():
+                shutil.rmtree(p, ignore_errors=True)
+                print(f"🧹 Pruned legacy directory in monorepo: {p.relative_to(tmp_repo)}")
+            elif p.is_file():
+                p.unlink(missing_ok=True)
+                print(f"🧹 Pruned legacy file in monorepo: {p.relative_to(tmp_repo)}")
+
         status = subprocess.check_output(
             ["git", "status", "--porcelain"],
             cwd=str(tmp_repo),
@@ -384,6 +419,102 @@ def sync_monorepo(
             return False
 
 
+def sync_archive(
+    repo_root: Path,
+    token: str,
+    commit_msg: str,
+) -> bool:
+    """Sync historical ADR records to cold storage satellite Supremeai-bd/supremeai-archive."""
+    target_repo = ARCHIVE_REPO
+    clone_url = f"https://x-access-token:{token}@github.com/{target_repo}.git"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_repo = Path(tmp_dir) / "archive"
+        print(f"📥 Cloning {target_repo}:main for archive sync...")
+        r = subprocess.run(
+            ["git", "clone", "--depth", "50", clone_url, str(tmp_repo)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if r.returncode != 0:
+            err = r.stderr.strip()
+            if any(term in err.lower() for term in ("not found", "forbidden", "authentication", "permission")):
+                print(f"⚠️ [GRACEFUL-DEGRADATION] Archive satellite {target_repo} cloaked or unauthorized: {err}. Skipping.")
+                return True
+            print(f"❌ Failed to clone {target_repo}: {err}")
+            return False
+
+        # Copy archive mirror pairs
+        for src_rel, dst_rel in ARCHIVE_MIRROR_PAIRS:
+            src_file = repo_root / src_rel
+            dst_file = tmp_repo / dst_rel
+            if src_file.exists():
+                dst_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_file, dst_file)
+                print(f"📋 Synced archive record '{src_rel}' -> '{dst_rel}' in {target_repo}")
+
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain"],
+            cwd=str(tmp_repo),
+            text=True,
+        ).strip()
+
+        if not status:
+            print(f"✅ [NO-OP] {target_repo} is already in perfect sync.")
+            return True
+
+        print(f"📝 Diff detected in {target_repo}:\n{status}")
+
+        subprocess.check_call(
+            ["git", "config", "user.name", "github-actions[bot]"],
+            cwd=str(tmp_repo),
+        )
+        subprocess.check_call(
+            [
+                "git",
+                "config",
+                "user.email",
+                "github-actions[bot]@users.noreply.github.com",
+            ],
+            cwd=str(tmp_repo),
+        )
+        subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
+        msg = f"sync(open->archive): {commit_msg} [skip ci]"
+        res = subprocess.run(
+            ["git", "commit", "--no-verify", "-m", msg],
+            cwd=str(tmp_repo),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            if "nothing to commit" in res.stdout or "nothing to commit" in res.stderr:
+                print(f"⏩ [CLEAN] No new code changes to commit for {target_repo}.")
+                return True
+            print(f"Git commit failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
+            return False
+
+        print(f"🚀 Pushing archive changes to {target_repo}:main...")
+        push_res = subprocess.run(
+            ["git", "push", "origin", "main"],
+            cwd=str(tmp_repo),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if push_res.returncode == 0:
+            print(f"🎉 [SUCCESS] Successfully synced archive satellite {target_repo}:main")
+            return True
+        else:
+            err = push_res.stderr.strip()
+            if any(term in err.lower() for term in ("permission", "forbidden", "not found")):
+                print(f"⚠️ [GRACEFUL-DEGRADATION] Archive push skipped due to permissions: {err}")
+                return True
+            print(f"❌ Failed to push to {target_repo}: {err}")
+            return False
+
+
 def detect_changed_targets(
     repo_root: Path,
     base_sha: str | None = None,
@@ -434,6 +565,8 @@ def detect_changed_targets(
                 targets.add("Supremeai-bd/supremeai-browser")
             elif f.startswith("vscode/"):
                 targets.add("Supremeai-bd/supremeai-vscode")
+            elif f.startswith("docs/adrs/"):
+                targets.add(ARCHIVE_REPO)
 
         return sorted(targets), umbrella
     except Exception:
@@ -475,6 +608,12 @@ def self_test() -> bool:
             f"Target repo {sat_repo} must exist in DOMAIN_MAP"
         )
         assert open_rel and sat_rel, "Mirror paths must be non-empty"
+    assert ARCHIVE_REPO == "Supremeai-bd/supremeai-archive"
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    for src_rel, dst_rel in ARCHIVE_MIRROR_PAIRS:
+        assert (repo_root / src_rel).exists(), (
+            f"Archive mirror source '{src_rel}' must exist in repository root"
+        )
     return True
 
 
@@ -554,6 +693,8 @@ def main() -> int:
             t = t.strip()
             if t == "Supremeai-bd/supremeai":
                 sync_umbrella = True
+            elif t == ARCHIVE_REPO:
+                targets_to_sync.append(ARCHIVE_REPO)
             elif t in DOMAIN_MAP:
                 targets_to_sync.append(t)
             else:
@@ -569,8 +710,11 @@ def main() -> int:
 
     success = True
     for target in targets_to_sync:
-        src_dir = DOMAIN_MAP[target]
-        ok = sync_satellite(target, src_dir, repo_root, token, args.commit_msg)
+        if target == ARCHIVE_REPO:
+            ok = sync_archive(repo_root, token, args.commit_msg)
+        else:
+            src_dir = DOMAIN_MAP[target]
+            ok = sync_satellite(target, src_dir, repo_root, token, args.commit_msg)
         if not ok:
             success = False
 

@@ -39,7 +39,7 @@ on:
       - 'bridge/**'
   pull_request:
     branches: [ main ]
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review]
   # schedule:
   #   - cron: "*/30 * * * *" # disabled per admin directive — Pipeline Cron does not run autonomous cycles unattended
   repository_dispatch:
@@ -50,6 +50,12 @@ on:
         description: "Step 7: autonomously open PR via gh CLI after verification passes (scheduled runs stay draft-only)"
         type: boolean
         default: false
+
+# Anti-duplicate workflow invariant: cancel previous in-flight PR runs when a new
+# commit is pushed. Main branch pushes serialize without cancelling.
+concurrency:
+  group: ci-open-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   # Least privilege: this workflow only reads. Landing/merge/bridge authority
