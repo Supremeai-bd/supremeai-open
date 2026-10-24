@@ -239,6 +239,14 @@ export interface UnifiedChatPanelProps {
   onPreview?: (code: string) => void;
   /** Optional custom styling classes. */
   className?: string;
+  /**
+   * Layout fit. 'page' (default) = standalone page surface with a
+   * viewport-based min-height (guest chat page). 'fill' = fill the parent
+   * flex container exactly — no viewport-height guessing; used by AI Studio
+   * and the chat-first dashboard so the panel auto-adjusts to any screen
+   * size instead of a hardcoded dvh offset (owner-reported sizing issues).
+   */
+  fit?: 'page' | 'fill';
 }
 
 export function UnifiedChatPanel({
@@ -249,6 +257,7 @@ export function UnifiedChatPanel({
   onInputChange,
   onPreview,
   className = '',
+  fit = 'page',
 }: UnifiedChatPanelProps) {
   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }[]>([]);
   const [input, setInput] = React.useState(initialInput || '');
@@ -349,7 +358,7 @@ export function UnifiedChatPanel({
     }
   }
 
-  return <section className={`mx-auto flex min-h-[calc(100dvh-13rem)] w-full max-w-3xl flex-1 flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md ${className}`}>
+  return <section className={`mx-auto flex w-full ${fit === 'fill' ? 'h-full min-h-0' : 'min-h-[calc(100dvh-13rem)] max-w-3xl flex-1'} flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md ${className}`}>
     <div className="flex items-center gap-2">
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {chatModels.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
