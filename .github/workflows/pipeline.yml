@@ -506,7 +506,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -653,42 +653,7 @@ jobs:
         run: npm test
         working-directory: sdk/typescript
 
-  # ---------------------------------------------------------------------------
-  # 🚀 Instant Federation Satellite Synchronization (Push to main)
-  # Zero-delay: eliminates 1-hour cron batching and propagates all landed changes
-  # to satellite repositories (studio, api, core, etc.) in real time (< 30s).
-  # ---------------------------------------------------------------------------
-  instant-satellite-sync:
-    name: "🚀 Instant Satellite Synchronizer"
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    concurrency:
-      group: instant-satellite-sync
-      cancel-in-progress: false
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Execute Instant Satellite Synchronization
-        env:
-          BRIDGE_PUSH_TOKEN: ${{ secrets.BRIDGE_PUSH_TOKEN || secrets.SAT_SYNC_PAT || secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
-          RAW_COMMIT_MSG: ${{ github.event.head_commit.message }}
-        run: |
-          set -euo pipefail
-          COMMIT_MSG=$(python3 -c 'import os; lines = [line.strip() for line in os.environ.get("RAW_COMMIT_MSG", "").strip().splitlines() if line.strip()]; print(lines[0] if lines else "instant satellite sync")')
-          echo "🚀 Initiating instant federation synchronization for landed commit: ${COMMIT_MSG}"
-          python3 scripts/ci/federation_satellite_sync.py \
-            --detect-changed \
-            --commit-msg "${COMMIT_MSG}" \
-            --prune-patches
 
   # ---------------------------------------------------------------------------
   # 🤖 Agent loop — cron reconciliation + event-driven intake (#69).

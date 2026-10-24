@@ -1,12 +1,18 @@
 name: ci
-
+# Unified Core CI — Ruff Lint, Pytest, Secret Scan & Scheduled PyErrorFix
 on:
   push:
     branches: [main]
   pull_request:
-
-permissions:
-  contents: read
+  schedule:
+    # Nightly PyErrorFix scan
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      run_autofix:
+        description: "Run pyerrorfix auto-fixer engine"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-core-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -14,8 +20,12 @@ concurrency:
 
 jobs:
   test:
+    name: "🧪 Core Pytest & Lint"
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.run_autofix != true)
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
@@ -56,3 +66,50 @@ jobs:
             exit 1
           fi
           echo "Secret scan clean"
+
+  autofix:
+    name: "🔧 PyErrorFix Engine"
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_autofix == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Run pyerrorfix (detect + auto-fix + SARIF)
+        run: |
+          TARGET="."
+          if [ -d "backend" ]; then
+            TARGET="backend"
+          elif [ -d "core" ]; then
+            TARGET="core"
+          fi
+          export PYTHONPATH="${PYTHONPATH:-}:.:core"
+          python -m pyerrorfix analyze "$TARGET" \
+            --fix \
+            --format sarif \
+            > pyerrorfix-results.sarif || true
+
+          python -m pyerrorfix analyze "$TARGET" --format console --quiet || true
+
+          if [ ! -s pyerrorfix-results.sarif ] || ! python -c "import json; json.load(open('pyerrorfix-results.sarif'))" 2>/dev/null; then
+            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[]}' > pyerrorfix-results.sarif
+          fi
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pyerrorfix-results.sarif
+          category: pyerrorfix

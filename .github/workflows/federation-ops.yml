@@ -1,0 +1,55 @@
+name: Federation Ops (Watchdog + Board Audit)
+
+on:
+  schedule:
+    - cron: "*/15 * * * *" # watchdog cadence
+    - cron: "0 6 * * *"    # daily satellite board audit
+  workflow_dispatch:
+
+concurrency:
+  group: federation-ops
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watchdog:
+    name: "🔍 Federation CI Watchdog"
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Poll federation repos for CI failures
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/federation_ci_watchdog.py --poll --max-age-hours 1
+
+  board-audit:
+    name: "🛡️ Satellite Board Audit"
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.event.schedule == '0 6 * * *')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Authenticated satellite board audit
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
+          AGENT_ALLOWED_DOMAINS: "studio,api,vscode,browser,core,command,skills,agents,sdk,archive,infrastructure,mcp-control-plane"
+        run: |
+          set -euo pipefail
+          python scripts/ci/satellite_board_guard.py --check --via-tower

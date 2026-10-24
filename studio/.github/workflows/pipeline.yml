@@ -1,13 +1,17 @@
-name: deploy-pages
-# Cloudflare Pages deployment pipeline with strict CI gate
+name: pipeline
+# Studio Unified Pipeline — Typecheck, Lint, Test, Build & Deploy to Cloudflare Pages
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: pages-deploy
-  cancel-in-progress: true
+  group: studio-pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -31,17 +35,21 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: pnpm run typecheck
 
       - name: Lint
-        run: pnpm lint
+        run: pnpm run lint
+
+      - name: Test
+        run: pnpm run test
 
       - name: Build Studio
         env:
           VITE_SUPREMEAI_API_URL: ${{ secrets.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com' }}
-        run: pnpm build
+        run: pnpm run build
 
       - name: Upload Build Artifact
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: studio-dist
@@ -51,6 +59,7 @@ jobs:
   deploy:
     name: Deploy to Cloudflare Pages
     needs: verify
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
