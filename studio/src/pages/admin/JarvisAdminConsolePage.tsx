@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, Send, Volume2, VolumeX, ShieldCheck } from 'lucide-react';
+import { Mic, MicOff, Send, Volume2, VolumeX, ShieldCheck, Lock } from 'lucide-react';
 import { ArcReactorOrb, orbLabel, type OrbState } from '../../components/admin/jarvis/ArcReactorOrb';
 import { JarvisAdminGate, JarvisBootSequence } from '../../components/admin/jarvis/JarvisAdminGate';
 import { TwoFASentinelModal } from '../../components/admin/jarvis/TwoFASentinelModal';
@@ -194,6 +194,23 @@ export function JarvisAdminConsolePage() {
             <ShieldCheck size={13} />
             <span>MFA: 2FA ARMED</span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                localStorage.removeItem('jarvis_admin_trusted_until');
+              } catch {
+                // ignore
+              }
+              setPhase('gate');
+            }}
+            title="Lock Terminal & Revoke 7-Day Trust"
+            className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-950/20 px-2.5 py-1 text-[11px] text-red-300 transition hover:bg-red-900/40 hover:text-white"
+          >
+            <Lock size={12} />
+            <span>LOCK</span>
+          </button>
 
           <a
             href="/workspace"

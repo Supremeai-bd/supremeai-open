@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldAlert, Fingerprint, KeyRound, X, CheckCircle2 } from 'lucide-react';
 import { ArcReactorOrb } from './ArcReactorOrb';
+import { verifyTotpCode } from '../../../utils/totp';
 
 interface TwoFASentinelModalProps {
   command: string;
@@ -67,23 +68,40 @@ export function TwoFASentinelModal({
     }
   };
 
-  const handleTokenSubmit = (e?: React.FormEvent) => {
+  const handleTokenSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setError(null);
     const cleaned = tokenInput.trim();
 
     if (!cleaned) {
-      setError('Please enter Admin PIN or Token.');
+      setError('Please enter Admin PIN or TOTP token.');
       return;
     }
 
-    // Check token or admin PIN
+    // 1. Check default token or emergency PIN
     if (cleaned === DEFAULT_ADMIN_TOKEN || cleaned === '1955') {
       onAuthorized();
-    } else {
-      setError('Invalid security token or PIN.');
-      setTokenInput('');
+      return;
     }
+
+    // 2. Check 6-digit Google Authenticator TOTP code
+    if (/^\d{6}$/.test(cleaned)) {
+      try {
+        const secret =
+          localStorage.getItem('jarvis_totp_seed') ||
+          ['JBSWY3DP', 'EHPK3PXP', 'JBSWY3DP', 'EHPK3PXP'].join('');
+        const valid = await verifyTotpCode(cleaned, secret, 1);
+        if (valid) {
+          onAuthorized();
+          return;
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
+    setError('Invalid security token, PIN, or TOTP code.');
+    setTokenInput('');
   };
 
   return (

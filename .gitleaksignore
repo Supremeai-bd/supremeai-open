@@ -4,3 +4,6 @@ ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/test_g
 ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/src/lib/masking.ts:supremeai-internal-database-url:6
 # Environment key name inventory listing in docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md
 c7f61dfaf1007c9fbcd573a758a55d69c89ccb70:docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md:generic-api-key:73
+# Standard RFC 6238 Appendix B test vector mock seed in totp.test.ts
+4b443bb448ec8fae1ccb677cc0bc4ec6ee9a3734:studio/src/utils/totp.test.ts:generic-api-key:13
+16ef58a43a29ed8efa781211f542923d5f4fd358:studio/src/utils/totp.test.ts:generic-api-key:13
