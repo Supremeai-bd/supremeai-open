@@ -2,7 +2,7 @@ import os
 import hashlib
 from difflib import SequenceMatcher
 
-plans_base = r'f:\supremeai\docs\plans'
+plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
 
 all_files = []
 for root, dirs, files in os.walk(plans_base):
@@ -51,7 +51,7 @@ for i in range(len(file_data)):
             if h_ratio > 0.8:
                 similar_pairs.append((f1['rel'], f2['rel'], f'Header ratio: {h_ratio:.2f}'))
 
-with open(r'f:\supremeai\scripts\duplicate_audit.txt', 'w', encoding='utf-8') as out:
+with open(os.environ.get('DUP_AUDIT_OUT', 'duplicate_audit.txt'), 'w', encoding='utf-8') as out:  # FIX(P6 tier-8): machine path -> env
     out.write('=== EXACT DUPLICATES ===\n')
     for orig, dup in duplicates:
         out.write(f'{orig} <===> {dup}\n')
