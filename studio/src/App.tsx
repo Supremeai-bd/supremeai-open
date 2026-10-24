@@ -66,6 +66,8 @@ const KnowledgePage = React.lazy(() =>
   import("./components/dashboard/KnowledgePage").then((m) => ({ default: m.KnowledgePage }))
 );
 const ErrorPage = React.lazy(() => import("./pages/ErrorPage"));
+const DevToolsPage = React.lazy(() => import("./pages/DevToolsPage"));
+const AcademyHubPage = React.lazy(() => import("./pages/AcademyHubPage"));
 const CommandBar = React.lazy(() =>
   import("./components/layout/CommandBar").then((m) => ({ default: m.CommandBar }))
 );
@@ -187,6 +189,10 @@ export const App: React.FC = () => {
               <Route path="/pricing" element={<PublicPageShell><PricingPage /></PublicPageShell>} />
               <Route path="/docs" element={<PublicPageShell><DocsPage /></PublicPageShell>} />
               <Route path="/contact" element={<PublicPageShell><PublicInfoPage kind="contact" /></PublicPageShell>} />
+              {/* Way 4: free developer tools (browser-native, zero sign-up) */}
+              <Route path="/tools" element={<PublicPageShell><DevToolsPage /></PublicPageShell>} />
+              {/* Way 5: interactive academies (localStorage progress) */}
+              <Route path="/academies" element={<PublicPageShell><AcademyHubPage /></PublicPageShell>} />
               <Route path="/knowledge" element={<KnowledgePage />} />
 
               {/* Split auth — /login + /register render immediately with zero blocking */}
