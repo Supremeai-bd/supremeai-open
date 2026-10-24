@@ -189,7 +189,7 @@ export const LandingPage: React.FC = () => {
             </div>
             <div className="rounded-xl bg-slate-800/50 border border-white/10 p-3 text-emerald-300">
               <span className="text-xs text-emerald-400 font-bold block mb-1">SupremeAI Mesh</span>
-              ⚡ 12 Satellites nominal. Consensus achieved across Gemini, Groq, and Mistral in 38ms.
+              ⚡ Active Satellites nominal. Consensus achieved across Gemini, Groq, and Mistral in 38ms.
             </div>
           </div>
         </div>
@@ -210,7 +210,7 @@ export const LandingPage: React.FC = () => {
               </div>
               <h3 className="text-lg font-bold text-white">Understands Your Entire Federation</h3>
               <p className="mt-2 text-sm text-slate-400 leading-relaxed">
-                Single-door public ingress with automated slice dispatch across 12 satellite repositories.
+                Single-door public ingress with automated slice dispatch across the product satellites.
               </p>
             </div>
 
