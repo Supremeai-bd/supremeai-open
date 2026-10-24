@@ -17,6 +17,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function defaultBackendDir(): string {
+  const bundled = path.resolve(__dirname, "..", "..", "..", "sidecars");
+  if (fs.existsSync(path.join(bundled, "memory", "mcp_server.py"))) {
+    return bundled;
+  }
   return path.resolve(__dirname, "..", "..", "..", "..", "..", "backend");
 }
 
@@ -56,7 +60,7 @@ export function resolveBackendDir(
 /**
  * Resolve how to launch the Python sidecar.
  * 1. Existing `.venv` interpreter inside backend/ (fast — no uv sync).
- * 2. Fallback: `uv run --directory <backendDir> python ...` (matches mcp.json).
+ * 2. Fallback: system python / python3 runner.
  */
 function resolvePythonLaunch(backendDir: string): { command: string; args: string[] } {
   const venvPython = process.platform === "win32"
@@ -66,8 +70,8 @@ function resolvePythonLaunch(backendDir: string): { command: string; args: strin
     fs.accessSync(venvPython, fs.constants.X_OK);
     return { command: venvPython, args: ["memory/mcp_server.py"] };
   } catch {
-    const uv = process.platform === "win32" ? "uv.exe" : "uv";
-    return { command: uv, args: ["run", "--directory", backendDir, "python", "memory/mcp_server.py"] };
+    const python = process.platform === "win32" ? "python.exe" : "python3";
+    return { command: python, args: ["memory/mcp_server.py"] };
   }
 }
 
