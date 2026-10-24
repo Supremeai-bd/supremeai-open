@@ -173,6 +173,31 @@ class TestStorageAndEndpoints(unittest.TestCase):
         self.assertIn("primary", data["checks"])
         self.assertIn("worker", data["checks"])
 
+    def test_08_auth_login_and_register(self):
+        # 1. Login with username field (what studio authStore sends)
+        r_username = self.client.post("/api/v1/auth/login", json={"username": "niloyjoy7@gmail.com", "password": "password123"})
+        self.assertEqual(r_username.status_code, 200)
+        data = r_username.json()
+        self.assertIn("access_token", data)
+        self.assertIn("user_id", data)
+        self.assertEqual(data["role"], "admin")
+        self.assertIn("permissions", data)
+
+        # 2. Login with email field
+        r_email = self.client.post("/api/v1/auth/login", json={"email": "niloyjoy7@gmail.com", "password": "password123"})
+        self.assertEqual(r_email.status_code, 200)
+
+        # 3. User registration
+        r_reg = self.client.post("/api/v1/auth/register", json={"username": "newuser@example.com", "password": "securepassword", "name": "New User"})
+        self.assertEqual(r_reg.status_code, 200)
+        reg_data = r_reg.json()
+        self.assertIn("access_token", reg_data)
+        self.assertEqual(reg_data["role"], "user")
+
+        # 4. Invalid credentials rejection
+        r_invalid = self.client.post("/api/v1/auth/login", json={"username": "unknown@example.com", "password": "123"})
+        self.assertEqual(r_invalid.status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()
