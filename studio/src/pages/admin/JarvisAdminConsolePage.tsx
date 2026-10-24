@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, Send, Volume2, VolumeX, ShieldCheck, Radio, Sparkles } from 'lucide-react';
-import { ArcReactorOrb, orbLabel } from '../../components/admin/jarvis/ArcReactorOrb';
+import { Mic, MicOff, Send, Volume2, VolumeX, ShieldCheck } from 'lucide-react';
+import { ArcReactorOrb, orbLabel, type OrbState } from '../../components/admin/jarvis/ArcReactorOrb';
 import { JarvisAdminGate, JarvisBootSequence } from '../../components/admin/jarvis/JarvisAdminGate';
 import { TwoFASentinelModal } from '../../components/admin/jarvis/TwoFASentinelModal';
 import { useAdminVoice } from '../../components/admin/jarvis/useAdminVoice';
@@ -32,12 +32,20 @@ export function JarvisAdminConsolePage() {
   const [graceUntil, setGraceUntil] = useState<number>(0);
   const [localVoiceActive, setLocalVoiceActive] = useState<boolean>(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const voiceControlsRef = useRef<{
+    speak: (t: string) => void;
+    setOrbState: (s: OrbState) => void;
+  }>({
+    speak: () => {},
+    setOrbState: () => {},
+  });
 
   // Probe local edge-tts server
   useEffect(() => {
     let mounted = true;
     const probe = async () => {
       try {
+        // eslint-disable-next-line no-restricted-syntax -- localhost edge-tts daemon probe
         const res = await fetch('http://127.0.0.1:8765/ping', { signal: AbortSignal.timeout(1500) });
         if (mounted && res.ok) setLocalVoiceActive(true);
       } catch {
@@ -77,12 +85,12 @@ export function JarvisAdminConsolePage() {
       const reason = detectDestructiveReason(text);
       if (reason && Date.now() > graceUntil) {
         setSentinelModal({ isOpen: true, command: text, reason });
-        speak('Authorization required for this destructive command, Sir.');
+        voiceControlsRef.current.speak('Authorization required for this destructive command, Sir.');
         return;
       }
 
       // Generate response
-      setOrbState('thinking');
+      voiceControlsRef.current.setOrbState('thinking');
       setTimeout(() => {
         let reply = '';
         const lower = text.toLowerCase();
@@ -103,7 +111,7 @@ export function JarvisAdminConsolePage() {
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         };
         setMessages((prev) => [...prev, assistantMsg]);
-        speak(reply);
+        voiceControlsRef.current.speak(reply);
       }, 500);
     },
     [graceUntil]
@@ -119,6 +127,10 @@ export function JarvisAdminConsolePage() {
     speak,
     toggleMute,
   } = useAdminVoice(handleCommand);
+
+  useEffect(() => {
+    voiceControlsRef.current = { speak, setOrbState };
+  }, [speak, setOrbState]);
 
   const on2FAAuthorized = () => {
     setGraceUntil(Date.now() + 5 * 60 * 1000);
