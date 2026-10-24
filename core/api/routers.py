@@ -126,7 +126,7 @@ ALL_ROUTERS = [
         "is_admin": False,
         "is_critical": False,
     },
-    # {"path": "api.routes.websocket_agent", "prefix": "", "is_admin": False, "is_critical": False},
+
     # R10 FIX: SSE stream for the /chat route (lightweight HTTP transport)
     {"path": "api.routes.stream_chat_sse", "prefix": "", "is_admin": False, "is_critical": False},
     {

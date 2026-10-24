@@ -50,7 +50,7 @@ DEFAULT_INTERVAL_SECONDS = 45
 TTL_SECONDS = 300
 KEY_PREFIX = "supremeai:agent-heartbeat:"
 
-# Same placeholder guard as core.queue.task_queue (R2-03): booting against a
+# Same placeholder guard as core.task_queue.task_queue (R2-03): booting against a
 # template URL burns quota with zero useful work.
 _PLACEHOLDER_TOKENS = ("<your-redis-url>", "<your", "example.com")
 

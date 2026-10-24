@@ -232,13 +232,13 @@ def _terminate_celery() -> None:
 
 
 def _queue_call(op: str, *args: Any, **kwargs: Any) -> Any:
-    """Run an async core.queue.task_queue_enhanced API in a fresh event loop.
+    """Run an async core.task_queue.task_queue_enhanced API in a fresh event loop.
 
     Runs inside a worker thread (via asyncio.to_thread) so asyncio.run is legal.
     Import is lazy: that module raises at import time when redis_url is missing
     (task_queue_enhanced.py ~line 583) — module top level here must never raise.
     """
-    from core.queue import task_queue_enhanced as tq
+    from core.task_queue import task_queue_enhanced as tq
 
     async def _inner() -> Any:
         result: Coroutine[Any, Any, Any] = getattr(tq, op)(*args, **kwargs)
@@ -249,7 +249,7 @@ def _queue_call(op: str, *args: Any, **kwargs: Any) -> Any:
 
 def _drain_once() -> dict[str, Any]:
     """Submit a no-op heartbeat through TaskQueue and await its result (e2e proof)."""
-    from core.queue.task_queue_enhanced import get_task_queue
+    from core.task_queue.task_queue_enhanced import get_task_queue
 
     async def _inner() -> dict[str, Any]:
         async def heartbeat() -> str:
@@ -536,7 +536,7 @@ async def submit_task(request: TaskContract) -> JSONResponse:
                 status_code=200,
             )
 
-        from core.queue.task_queue_enhanced import get_task_queue
+        from core.task_queue.task_queue_enhanced import get_task_queue
 
         queue = get_task_queue()
         task_id = await queue.submit_task(
@@ -563,7 +563,7 @@ async def submit_task(request: TaskContract) -> JSONResponse:
 @app.get("/tasks/{task_id}", dependencies=[Depends(_verify_worker_auth)])
 async def task_status(task_id: str) -> JSONResponse:
     try:
-        from core.queue.task_queue_enhanced import get_task_queue
+        from core.task_queue.task_queue_enhanced import get_task_queue
 
         status = await get_task_queue().get_status(task_id)
         if status == "unknown":
@@ -576,7 +576,7 @@ async def task_status(task_id: str) -> JSONResponse:
 @app.post("/tasks/{task_id}/cancel", dependencies=[Depends(_verify_worker_auth)])
 async def cancel_task(task_id: str) -> JSONResponse:
     try:
-        from core.queue.task_queue_enhanced import get_task_queue
+        from core.task_queue.task_queue_enhanced import get_task_queue
 
         cancelled = await get_task_queue().cancel_task(task_id)
         if not cancelled:
