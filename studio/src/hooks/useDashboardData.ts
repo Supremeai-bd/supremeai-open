@@ -22,6 +22,8 @@ export interface MetricsData {
   cpu_percent?: number;
   memory_percent?: number;
   active_agents?: number;
+  availability_percent?: number;
+  redis_commands?: number;
 }
 
 export interface CostReport {

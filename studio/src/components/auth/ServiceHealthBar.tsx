@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getApiBaseUrl } from '../../utils/api';
 
 interface HealthCheckResult {
+  name?: string;
   status: string;
   message: string;
   details?: Record<string, unknown>;
@@ -34,6 +35,7 @@ interface ServiceStatusProps {
 
 const SERVICE_LABEL_MAP: Record<string, string> = {
   application: 'Backend Core',
+  api: 'API Gateway',
   database: 'Data Store (Postgres)',
   redis: 'Cache Cluster (Redis)',
   scraper: 'Scraper Service',
@@ -302,7 +304,7 @@ export const ServiceHealthBar: React.FC = () => {
                 {Object.entries(data.checks || {}).map(([key, check]) => (
                   <ServiceStatusItem
                     key={key}
-                    name={getServiceLabel(key)}
+                    name={check?.name || getServiceLabel(key)}
                     status={getServiceStatus(check)}
                     responseTime={check?.response_time_ms}
                   />
