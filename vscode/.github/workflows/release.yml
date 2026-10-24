@@ -1,0 +1,143 @@
+name: release
+# Unified VS Code Extension & Client Hub Release Pipeline
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'extension/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+    inputs:
+      build_clients:
+        description: 'Build Desktop (Windows) and Mobile (Android) client binaries'
+        required: false
+        type: boolean
+        default: false
+      create_release:
+        description: 'Publish GitHub Release with binaries'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: vscode-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  package-extension:
+    name: "📦 Package & Release Extension"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js (LTS)
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile Extension
+        run: npm run compile --workspace=extension
+
+      - name: Run Extension Tests
+        run: npm test --workspace=extension
+
+      - name: Package VSIX Extension
+        run: npx --yes @vscode/vsce package --no-git-tag-version --out supremeai-vscode.vsix
+        working-directory: extension
+
+      - name: Upload VSIX Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: supremeai-vscode-vsix
+          path: extension/supremeai-vscode.vsix
+          if-no-files-found: error
+
+      - name: Determine Version
+        id: version
+        run: |
+          VER=$(node -p "require('./extension/package.json').version")
+          echo "version=v$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Create or Update GitHub Release
+        if: github.ref == 'refs/heads/main' || github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: extension/supremeai-vscode.vsix
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "SupremeAI IDE Bridge ${{ steps.version.outputs.version }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger Federation CI Watchdog on Failure
+        if: failure()
+        env:
+          DISPATCH_TOKEN: ${{ secrets.OPEN_SYNC_PAT || secrets.MERGE_PAT || secrets.OPEN_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            https://api.github.com/repos/Supremeai-bd/supremeai-open/dispatches \
+            -d "{\"event_type\": \"federation_ci_failed\", \"client_payload\": {\"repo\": \"${{ github.repository }}\", \"workflow_name\": \"${{ github.workflow }}\", \"run_id\": \"${{ github.run_id }}\", \"html_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"branch\": \"${{ github.ref_name }}\", \"commit_sha\": \"${{ github.sha }}\"}}" || true
+
+  build-desktop:
+    name: "🖥️ Build Desktop Client (Windows)"
+    if: github.event.inputs.build_clients == 'true'
+    needs: package-extension
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci --workspace=desktop
+      - run: npm run build --workspace=desktop
+      - run: New-Item -ItemType Directory -Force -Path desktop/dist | Out-Null; Set-Content -Path desktop/dist/index.html -Value '<!DOCTYPE html><html><body>SupremeAI Desktop</body></html>'
+      - run: npx tauri build --config src-tauri/tauri.conf.json --no-bundle
+        working-directory: desktop
+      - uses: actions/upload-artifact@v6
+        with:
+          name: exe
+          path: desktop/src-tauri/target/release/*.exe
+
+  build-mobile:
+    name: "📱 Build Mobile Client (Android)"
+    if: github.event.inputs.build_clients == 'true'
+    needs: package-extension
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci --workspace=mobile
+      - run: npm run build --workspace=mobile
+      - run: mkdir -p mobile/dist && printf '<!DOCTYPE html><html><body>SupremeAI Mobile</body></html>' > mobile/dist/index.html
+      - run: npx cap add android
+        working-directory: mobile
+      - run: npx cap sync android
+        working-directory: mobile
+      - run: cd mobile/android && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v6
+        with:
+          name: apk
+          path: mobile/android/app/build/outputs/apk/debug/*.apk

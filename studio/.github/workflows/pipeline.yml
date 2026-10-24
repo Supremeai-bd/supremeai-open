@@ -1,0 +1,102 @@
+name: pipeline
+# Studio Unified Pipeline — Typecheck, Lint, Test, Build & Deploy to Cloudflare Pages
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: studio-pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify & Build Studio
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Build Studio
+        env:
+          VITE_SUPREMEAI_API_URL: ${{ secrets.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com' }}
+        run: pnpm run build
+
+      - name: Upload Build Artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-dist
+          path: dist
+          retention-days: 1
+
+      - name: Trigger Federation CI Watchdog on Failure
+        if: failure()
+        env:
+          DISPATCH_TOKEN: ${{ secrets.OPEN_SYNC_PAT || secrets.MERGE_PAT || secrets.OPEN_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            https://api.github.com/repos/Supremeai-bd/supremeai-open/dispatches \
+            -d "{\"event_type\": \"federation_ci_failed\", \"client_payload\": {\"repo\": \"${{ github.repository }}\", \"workflow_name\": \"${{ github.workflow }}\", \"run_id\": \"${{ github.run_id }}\", \"html_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"branch\": \"${{ github.ref_name }}\", \"commit_sha\": \"${{ github.sha }}\"}}" || true
+
+  deploy:
+    name: Deploy to Cloudflare Pages
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: studio-dist
+          path: dist
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler pages deploy dist --project-name=supremeai-studio --branch=main
+
+      - name: Trigger Federation CI Watchdog on Failure
+        if: failure()
+        env:
+          DISPATCH_TOKEN: ${{ secrets.OPEN_SYNC_PAT || secrets.MERGE_PAT || secrets.OPEN_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            https://api.github.com/repos/Supremeai-bd/supremeai-open/dispatches \
+            -d "{\"event_type\": \"federation_ci_failed\", \"client_payload\": {\"repo\": \"${{ github.repository }}\", \"workflow_name\": \"${{ github.workflow }}\", \"run_id\": \"${{ github.run_id }}\", \"html_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"branch\": \"${{ github.ref_name }}\", \"commit_sha\": \"${{ github.sha }}\"}}" || true
