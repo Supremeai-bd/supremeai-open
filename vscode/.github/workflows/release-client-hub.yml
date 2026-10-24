@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: vscode-release-hub-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-extension:
     runs-on: ubuntu-latest

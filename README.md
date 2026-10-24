@@ -19,34 +19,105 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
 > - Use the correct tool name + `owner/repo` form or the call fails.
 > - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`). `work_claim` requires `issueNumber` (integer). `bridge_work_order`/`bridge_read_feedback` require `number` (issue number).
 
-## Federation at a glance
+## 📐 Federation Architecture & Mathematical Repository Model
+
+> **Canonical Mathematical Blueprint:** [`docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md`](./docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md) · [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)
+
+### 1. Mathematical Universe & Repository Set Model
 
 ```mermaid
-flowchart LR
-    AGENT["🤖 Autonomous agents<br/>(MCP bridge · fork+PR · JIT lease)"]
-
-    subgraph OPEN["supremeai-open · Public Window (this repo)"]
+flowchart TD
+    subgraph FEDERATION_UNIVERSE ["🌐 The Federation Universe (U)"]
         direction TB
-        TASKS["Task contracts (issues)"] --> GUARDS["7 PR guards<br/>+ CI Guardian"]
-        GUARDS --> GATE["Merge Gate<br/>(squash authority)"]
+        OPEN["supremeai-open (Public Task Hub & Embassy)<br>Total = 635 Files<br>(261 U_open + 374 T_transit)"]
+        MONO["supremeai (Central Umbrella Monorepo)<br>Total = 2073 Files"]
+        
+        subgraph ACTIVE_SATS ["5 Active Product Satellites (Σ = 1384 Executable Files)"]
+            S_STUDIO["supremeai-studio<br>(643 files · Vercel Web UI)"]
+            S_API["supremeai-api<br>(490 files · Render Gateway & FastMCP)"]
+            S_CORE["supremeai-core<br>(146 files · DAG Decision Moat)"]
+            S_BROWSER["supremeai-browser<br>(60 files · Stealth Playwright)"]
+            S_VSCODE["supremeai-vscode<br>(45 files · Extension & Tauri Desktop)"]
+        end
+
+        ARCHIVE["supremeai-archive (Cold Storage)<br>Total = 57 Files (55 Unique Decommissioned Specs)"]
     end
 
-    subgraph PRIVATE["Private federation cores"]
-        direction TB
-        TOWER["mcp-control-plane<br/>Control Tower · tool plane"]
-        API["supremeai-api<br/>Gateway"]
-        CORE["supremeai-core<br/>decision moat"]
-        STUDIO["supremeai-studio<br/>Studio UI"]
+    OPEN ==>|"Transit Mirrors (374 files)<br>Step 1: Direct Dispatch"| ACTIVE_SATS
+    ACTIVE_SATS ==>|"Step 2: Monorepo Ingestion"| MONO
+    ARCHIVE -.->|"Retired Architectural Delta<br>(Permanently removed from active repos)"| MONO
+
+    classDef open fill:#1d76db,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef sats fill:#059669,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef mono fill:#7c3aed,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef archive fill:#475569,stroke:#fff,stroke-width:1px,color:#fff;
+    class OPEN open;
+    class S_STUDIO,S_API,S_CORE,S_BROWSER,S_VSCODE sats;
+    class MONO mono;
+    class ARCHIVE archive;
+```
+
+#### Core Set Equations:
+- **Public Boundary Partition:** $\mathbf{Open} = T_{\text{transit}} \cup U_{\text{open}} \quad \text{where } T_{\text{transit}} \cap U_{\text{open}} = \emptyset$
+  - **$U_{\text{open}}$ (261 files):** Public front door, CI guards, 14 Anchor Hub configs, and constitution. **Never dispatched to satellites.**
+  - **$T_{\text{transit}}$ (374 files):** Scoped mirror surfaces (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`).
+- **Active Federation Surface:** $\mathbf{S_{\text{active}}} = S_{\text{studio}} \cup S_{\text{api}} \cup S_{\text{vscode}} \cup S_{\text{browser}} \cup S_{\text{core}} = \mathbf{1384 \text{ executable files}}$
+- **The Blocked State Law:** Any file in `supremeai-open` not in $U_{\text{open}}$ represents an in-flight or blocked transit payload.
+
+---
+
+### 2. 2-Step Cascading Bridge & Zero-Residue Lifecycle (#416)
+
+```mermaid
+flowchart TD
+    PR["Autonomous PR / Patch Submission<br>(supremeai-open:main)"] --> GATES{"Constitutional Gates &<br>Verification Battery"}
+    
+    GATES -- "Pass" --> LAND["Autonomous Landing<br>(Squash Merge into main)"]
+    GATES -- "Fail" --> REJECT["Fail-Closed Block & Feedback<br>(CI Incident Logged)"]
+    
+    LAND --> STEP1["🌉 Bridge Step 1:<br>supremeai-open ➔ Active Target Satellite<br>(studio, api, browser, vscode, core)"]
+    
+    STEP1 --> VERIFY1{"Satellite Ingestion<br>Verified?"}
+    VERIFY1 -- "Yes" --> STEP2["🌉 Bridge Step 2:<br>Satellite ➔ Central Monorepo (supremeai)<br>(Full Product Parity Ingestion)"]
+    
+    STEP2 --> VERIFY2{"Monorepo Sync<br>Verified?"}
+    
+    VERIFY2 -- "Verified Completed" --> PRUNE["🧹 Zero-Residue Auto-Prune (#416):<br>1. Delete ephemeral transit patch files<br>2. Delete bridge/* transit sync branches"]
+    
+    PRUNE --> CLEAN["✨ Clean Steady State<br>Open repo preserved at exactly U_open (261 files)"]
+```
+
+---
+
+### 3. Federation CI Watchdog & 14 Anchor Hubs Architecture
+
+```mermaid
+flowchart TD
+    subgraph ALL_SATS ["🌐 7 Federation Pipelines (Studio, API, Browser, VSCode, Core, Monorepo, Open)"]
+        RUNS["GitHub Actions Workflow Runs"]
     end
 
-    AGENT --> TASKS
-    AGENT <-.->|"MCP tools · zero credentials"| TOWER
-    GATE ==>|"auto-bridge<br/>(webhook / direct dispatch)"| PRIVATE
-
-    classDef boundary fill:none,stroke-width:2px;
-    classDef core fill:none,stroke-dasharray:4 3;
-    class OPEN boundary;
-    class PRIVATE core;
+    RUNS -->|"Failure Detected (Conclusion: failure)"| WATCHDOG["🔍 Federation CI Watchdog<br>(15-min cron & landing post-hook)"]
+    
+    WATCHDOG --> DEDUP{"Idempotent Marker Present?<br>(<!-- MIRROR_RUN: ... -->)"}
+    DEDUP -- "Already Open" --> NOOP["Clean Skip (Zero Spam)"]
+    DEDUP -- "New Incident" --> INGEST["Create P0 Incident Sub-Issue<br>(Database ID linking via REST API)"]
+    
+    INGEST --> HUB["🚨 [Federation Hub] #761<br>CI Failures & Incident Desk"]
+    
+    subgraph BOARD ["14 Persistent Anchor Hubs SSOT (gh issue list --search 'no:parent')"]
+        H761["#761 CI Incidents"]
+        H760["#760 Bridge Orders"]
+        H749["#749 Studio UI"]
+        H750["#750 API Gateway"]
+        H751["#751 Core Moat"]
+        H754["#754 VSCode Client"]
+        H756["#756 Browser Engine"]
+        H762["#762 Open Embassy"]
+        H_MORE["#752, #753, #755, #757, #758, #759"]
+    end
+    
+    HUB -.-> BOARD
 ```
 
 > Consuming the platform (not contributing)? Start at

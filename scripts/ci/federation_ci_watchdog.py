@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -436,6 +437,132 @@ def poll_federation_failures(
     return mirrored_count, failed_count
 
 
+def parse_mirror_marker(body: str) -> tuple[str, int] | None:
+    """Pure: extract (repo, run_id) from an issue body containing MIRROR_RUN marker."""
+    match = re.search(
+        r"<!-- MIRROR_RUN:\s*([^/\s]+/[^/\s]+)/actions/runs/(\d+)\s*-->", body or ""
+    )
+    if match:
+        return match.group(1), int(match.group(2))
+    return None
+
+
+def is_run_resolved(
+    failed_run_id: int, runs: list[dict[str, Any]], branch: str = "main"
+) -> dict[str, Any] | None:
+    """Pure: True if any completed run on the specified branch succeeded after failed_run_id."""
+    for r in runs:
+        if r.get("head_branch") != branch:
+            continue
+        if r.get("status") == "completed" and r.get("conclusion") == "success":
+            run_id = r.get("id")
+            if isinstance(run_id, int) and run_id > failed_run_id:
+                return r
+    return None
+
+
+def auto_resolve_fixed_incidents(token: str | None = None) -> tuple[int, int]:
+    """Audit open mirrored CI failure issues and auto-close ones that succeeded on main.
+
+    Returns (resolved_count, error_count).
+    """
+    resolved_count = 0
+    error_count = 0
+    print("🔍 [watchdog] Checking open CI failure incidents for auto-resolution...")
+
+    # 1. Fetch all open issues in supremeai-open
+    page = 1
+    open_mirrors: list[dict[str, Any]] = []
+    while True:
+        code, items = gh_api(
+            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
+            token=token,
+        )
+        if code != 200 or not isinstance(items, list) or not items:
+            break
+        for item in items:
+            if item.get("pull_request"):
+                continue
+            parsed = parse_mirror_marker(item.get("body") or "")
+            if parsed:
+                repo, failed_run_id = parsed
+                open_mirrors.append(
+                    {
+                        "issue_number": item["number"],
+                        "repo": repo,
+                        "failed_run_id": failed_run_id,
+                    }
+                )
+        if len(items) < 100:
+            break
+        page += 1
+
+    if not open_mirrors:
+        print("✅ [watchdog] No open CI failure incidents requiring resolution.")
+        return 0, 0
+
+    print(f"📋 [watchdog] Found {len(open_mirrors)} open CI incident(s) to verify.")
+
+    # Cache latest runs per repo to avoid redundant queries
+    repo_runs_cache: dict[str, list[dict[str, Any]]] = {}
+
+    for mirror in open_mirrors:
+        repo = mirror["repo"]
+        failed_run_id = mirror["failed_run_id"]
+        issue_number = mirror["issue_number"]
+
+        if repo not in repo_runs_cache:
+            code, resp = gh_api(
+                f"repos/{repo}/actions/runs?status=completed&per_page=10",
+                token=token,
+            )
+            if code == 200 and isinstance(resp, dict):
+                repo_runs_cache[repo] = resp.get("workflow_runs", [])
+            else:
+                repo_runs_cache[repo] = []
+
+        resolved_run = is_run_resolved(failed_run_id, repo_runs_cache[repo])
+        if resolved_run:
+            latest_run_id = resolved_run.get("id")
+            run_url = resolved_run.get("html_url", "")
+            print(
+                f"🎉 [watchdog] Incident #{issue_number} on {repo} resolved by run #{latest_run_id}!"
+            )
+
+            # Post resolution comment
+            comment_body = (
+                f"🎉 **Auto-Resolved:** The latest CI pipeline on `{repo}` is now passing on `main` "
+                f"in run [#{latest_run_id}]({run_url}).\n"
+                f"Auto-closing this incident issue as completed."
+            )
+            gh_api(
+                f"repos/{OPEN_REPO}/issues/{issue_number}/comments",
+                token=token,
+                method="POST",
+                data={"body": comment_body},
+            )
+
+            # Close issue as completed
+            code, _ = gh_api(
+                f"repos/{OPEN_REPO}/issues/{issue_number}",
+                token=token,
+                method="PATCH",
+                data={"state": "closed", "state_reason": "completed"},
+            )
+            if code == 200:
+                print(
+                    f"✅ [watchdog] Successfully auto-closed incident issue #{issue_number}."
+                )
+                resolved_count += 1
+            else:
+                print(
+                    f"❌ [watchdog] Failed to auto-close incident issue #{issue_number} (HTTP {code})."
+                )
+                error_count += 1
+
+    return resolved_count, error_count
+
+
 def find_loose_mirrors(
     items: list[dict[str, Any]] | None,
     linked_ids: set[int] | None = None,
@@ -661,7 +788,27 @@ def self_test() -> int:
             f"sub-issue endpoint must be snake_case 'sub_issues', got {_ssp!r}"
         )
 
-    print("✅ [self-test] All 9 contract assertion groups passed!")
+    # 10. Auto-resolution contract
+    marker_text = "prefix <!-- MIRROR_RUN: Supremeai-bd/supremeai-api/actions/runs/555123 --> suffix"
+    parsed_info = parse_mirror_marker(marker_text)
+    assert parsed_info == ("Supremeai-bd/supremeai-api", 555123)
+    assert parse_mirror_marker("no marker present") is None
+
+    sample_runs = [
+        {"id": 555120, "head_branch": "main", "status": "completed", "conclusion": "success"},
+        {"id": 555124, "head_branch": "fix-branch", "status": "completed", "conclusion": "success"},
+        {"id": 555125, "head_branch": "main", "status": "completed", "conclusion": "failure"},
+        {"id": 555126, "head_branch": "main", "status": "completed", "conclusion": "success", "html_url": "https://github.com/runs/555126"},
+    ]
+    # Older run (555120 < 555123) doesn't resolve
+    # Other branch (fix-branch) doesn't resolve main
+    # Failing run doesn't resolve
+    # Newer green run on main (555126 > 555123) resolves!
+    resolved = is_run_resolved(555123, sample_runs, branch="main")
+    assert resolved is not None and resolved["id"] == 555126
+    assert is_run_resolved(999999, sample_runs, branch="main") is None
+
+    print("✅ [self-test] All 10 contract assertion groups passed!")
     return 0
 
 
@@ -686,6 +833,11 @@ def main() -> int:
         action="store_true",
         help="Standalone backfill: scan open mirrored incidents and attach "
         "every loose one as a sub-issue of the CI Failure Hub (idempotent)",
+    )
+    parser.add_argument(
+        "--auto-resolve",
+        action="store_true",
+        help="Audit open mirrored CI failure incidents and auto-close resolved ones",
     )
     parser.add_argument(
         "--max-age-hours",
@@ -724,6 +876,16 @@ def main() -> int:
         )
         _relinked, _failed = relink_loose_mirrors(token=relink_token)
         return 1 if _failed else 0
+
+    if args.auto_resolve:
+        resolve_token = (
+            os.environ.get("OPEN_SYNC_PAT")
+            or os.environ.get("GH_TOKEN")
+            or os.environ.get("GITHUB_TOKEN")
+            or get_default_token()
+        )
+        _resolved, _resolve_failed = auto_resolve_fixed_incidents(token=resolve_token)
+        return 1 if _resolve_failed else 0
 
     token = (
         os.environ.get("OPEN_SYNC_PAT")
@@ -770,6 +932,8 @@ def main() -> int:
         _mirrored, _failed = poll_federation_failures(
             token=token, max_age_hours=args.max_age_hours
         )
+        # Check and auto-resolve any incidents where subsequent runs are green
+        _resolved, _resolve_failed = auto_resolve_fixed_incidents(token=token)
         # Self-healing board invariant: every poll tick ends with a relink
         # pass so mirrored incidents can never drift loose on the root board
         # again (the #910-#918 failure mode). Fail the tick if either half
@@ -777,7 +941,7 @@ def main() -> int:
         _relinked, _relink_failed = (0, 0)
         if not args.no_relink:
             _relinked, _relink_failed = relink_loose_mirrors(token=token)
-        return 1 if (_failed or _relink_failed) else 0
+        return 1 if (_failed or _resolve_failed or _relink_failed) else 0
 
     parser.print_help()
     return 1
