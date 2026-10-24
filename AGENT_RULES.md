@@ -88,6 +88,11 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
   1. **Root Cause over Workaround:** Ban hacking `--skip-tests`, `--ignore-scripts`, or `|| true` to force green.
   2. **Cross-Platform Invariant:** Test scripts must run deterministically on Linux, Windows, and macOS without unportable CLI dependencies.
   3. **Fast-Path Quota Protection:** Preserve < 5s fast paths for docs/metadata; protect the 2,000 min/mo free runner quota.
+  4. **Claim-Gate Invariant for Hotfixes & Satellite Repairs (Rule #392):**
+     Never open an unlinked PR without an active claim — it will immediately fail `Claim Gate Guard (#392)`. All CI repairs and satellite hotfixes MUST follow one of two machine-approved pathways:
+     - **Path A (Reopen & Claim Related Issue / #761 Sub-Issue):** Reopen the related closed regression issue (or claim a child task under #761 CI Anchor Hub) with `status:claimed` or an `<!-- atomic-claim -->` comment, and reference `Fixes #<num>` in the PR body/title.
+     - **Path B (Admin Emergency Escape Hatch — `guard-exempt`):** For urgent broken-satellite / blocking pipeline hotfixes, apply the `guard-exempt` label to the PR (explicitly supported in `pipeline.yml` line 188: `'guard-exempt' label present — guard skipped`).
+     Opening a blind, unlinked PR and abandoning it upon claim-gate rejection is strictly prohibited.
 
 ### 3.5 👁️ Human Eye (Admin & Supervisory Oversight)
 - **Work Area:** Architectural decisions (`ADMIN_DECISION`), strategic vision, security vault authorizations.
