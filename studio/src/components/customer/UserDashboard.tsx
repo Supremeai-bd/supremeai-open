@@ -220,7 +220,7 @@ export const UserDashboard: React.FC = () => {
             {quickStarts.map(({ label, icon: Icon, href }) => (
               <Link
                 key={label}
-                to={href}
+                to={`${href}?intent=${encodeURIComponent(label)}` }
                 className="inline-flex items-center gap-2 rounded-full border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] transition duration-200 hover:border-[var(--sa-primary)] hover:bg-[var(--sa-primary-soft)] hover:text-[var(--sa-primary)] hover:-translate-y-0.5"
               >
                 <Icon size={13} />
@@ -265,7 +265,7 @@ export const UserDashboard: React.FC = () => {
               <ManageItem
                 key={item.id}
                 item={item}
-                onUse={() => navigate(item.href || '/workspace/live')}
+                onUse={() => navigate(`${item.href || '/workspace/live'}?intent=${encodeURIComponent(item.label)}`)}
                 onManage={() => setShowTools(true)}
                 onRemove={() => {
                   if (enabledModules.includes(item.id as typeof enabledModules[number])) {
@@ -328,7 +328,7 @@ export const UserDashboard: React.FC = () => {
                   {recentConversations.map((conversation) => (
                     <li key={conversation.id}>
                       <Link
-                        to="/workspace/live"
+                        to={conversation.title?.trim() ? `/workspace/live?intent=${encodeURIComponent(conversation.title.trim())}` : '/workspace/live'}
                         className="flex items-center justify-between gap-3 rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] px-3 py-2.5 text-sm transition hover:border-[var(--sa-primary)] hover:bg-[var(--sa-primary-soft)]"
                       >
                         <span className="min-w-0 flex-1 truncate font-medium">
