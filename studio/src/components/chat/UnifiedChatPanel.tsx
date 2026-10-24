@@ -299,6 +299,34 @@ function saveStoredConversation(id: string, messages: Array<{ role: 'user' | 'as
   } catch { /* storage full or unavailable — history is best-effort */ }
 }
 
+/** Metadata of locally-persisted conversations for history sidebars. */
+export interface StoredConversationMeta {
+  id: string;
+  title: string;
+  updatedAt: number;
+}
+
+/** List persisted conversations (newest first) for history sidebars. */
+export function listStoredConversations(): StoredConversationMeta[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const store = JSON.parse(raw) as Record<string, { messages?: Array<{ role: string; text: string }>; updatedAt: number }>;
+    return Object.entries(store)
+      .map(([id, entry]) => ({
+        id,
+        title: (entry.messages?.find((m) => m.role === 'user')?.text ?? 'Untitled conversation').slice(0, 60),
+        updatedAt: entry.updatedAt ?? 0,
+      }))
+      .filter((meta) => meta.updatedAt > 0)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 30);
+  } catch {
+    return [];
+  }
+}
+
 export function UnifiedChatPanel({
   extraHeader,
   extraActions,
