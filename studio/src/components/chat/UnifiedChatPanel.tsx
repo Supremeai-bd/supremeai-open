@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Sparkles, WandSparkles, Zap } from 'lucide-react';
+import { RotateCcw, Search, Sparkles, WandSparkles, Zap } from 'lucide-react';
 import { UnifiedChatBubble } from './UnifiedChatBubble';
 import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../../lib/brandLabel';
 
@@ -28,7 +28,18 @@ type Message = { role: 'user' | 'assistant'; text: string };
 // strategy (upsell toward sign-in / paid plan) — restored per owner decision.
 export function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
 
-export async function callLiveAI(prompt: string, modelName: string, apiKey: string = '', onToken?: (token: string) => void): Promise<{ text: string; via?: string; brand?: Brand }> {
+export interface LiveAIOptions {
+  conversationId?: string;
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+}
+
+export async function callLiveAI(
+  prompt: string,
+  modelName: string,
+  apiKey: string = '',
+  onToken?: (token: string) => void,
+  options?: LiveAIOptions,
+): Promise<{ text: string; via?: string; brand?: Brand; conversationId?: string }> {
   const env = (import.meta as unknown as { env: Record<string, string> }).env || {};
   const webhookTarget = (env.VITE_STEALTH_WEBHOOK_URL || env.VITE_WEBHOOK_URL || '').replace(/\/$/, '');
   const apiTarget = (env.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com').replace(/\/$/, '');
@@ -38,15 +49,32 @@ export async function callLiveAI(prompt: string, modelName: string, apiKey: stri
   const today = new Date().toISOString().split('T')[0];
   const systemPrompt = `You are SupremeAI. Today is ${today}. Your training data has a knowledge cutoff and may not reflect very recent events (elections, resignations, political changes, breaking news). For any time-sensitive factual question, provide what you know but explicitly state your knowledge may be outdated and recommend verifying with a current news source. Never assert outdated information as a current fact without this caveat.`;
 
+  // Persistent conversation identifier across turns
+  const convId = options?.conversationId
+    || (typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_conversation_id') || undefined) : undefined);
+
+  // Carry forward up to 10 previous conversational turns for multi-turn coherence
+  const historyMessages = (options?.history || [])
+    .slice(-10)
+    .filter((m) => m.text && m.text.trim())
+    .map((m) => ({
+      role: m.role,
+      content: m.text,
+    }));
+
+  const messagesPayload = [
+    { role: 'system', content: systemPrompt },
+    ...historyMessages,
+    { role: 'user', content: prompt },
+  ];
+
   const body = JSON.stringify({
     model: modelId,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: prompt },
-    ],
+    messages: messagesPayload,
     // OWNER REQUEST (2026-10-24): request streaming — SSE-capable targets reply
     // token-by-token; non-stream webhooks ignore it and return a single JSON body.
     stream: true,
+    ...(convId ? { conversation_id: convId } : {}),
   });
 
   // Oct-23 outage lesson: when every relay target failed, the guest only saw the
@@ -55,7 +83,7 @@ export async function callLiveAI(prompt: string, modelName: string, apiKey: stri
   // surface it (truncated) so a config outage is self-explaining in chat.
   let relayDetail = '';
 
-  const tryTarget = async (target: string): Promise<{ text: string; via?: string; brand?: Brand } | null> => {
+  const tryTarget = async (target: string): Promise<{ text: string; via?: string; brand?: Brand; conversationId?: string } | null> => {
     if (!target) return null;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -66,6 +94,7 @@ export async function callLiveAI(prompt: string, modelName: string, apiKey: stri
         headers: {
           'Content-Type': 'application/json',
           ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
+          ...(convId ? { 'X-Conversation-Id': convId } : {}),
         },
         body,
         signal: controller.signal,
@@ -80,6 +109,7 @@ export async function callLiveAI(prompt: string, modelName: string, apiKey: stri
           let streamed = '';
           let pending = '';
           let brand: Brand | undefined;
+          let responseConvId = convId;
           while (true) {
             const { done, value } = await reader.read();
             pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
@@ -95,6 +125,7 @@ export async function callLiveAI(prompt: string, modelName: string, apiKey: stri
                 if (delta) { streamed += delta; onToken?.(delta); }
                 const b = brandFrom(parsed);
                 if (b) brand = brand ?? b;
+                if (parsed?.conversation_id) responseConvId = String(parsed.conversation_id);
               } catch {
                 streamed += payload;
                 onToken?.(payload);
@@ -104,7 +135,7 @@ export async function callLiveAI(prompt: string, modelName: string, apiKey: stri
           }
           const clean = streamed.trim();
           if (clean && !clean.includes('[GEMINI Web Session Active]') && !clean.includes('health=100') && !clean.includes('[GROK Web Session Active]') && !clean.includes('[CHATGPT Web Session Active]') && !clean.includes('[PERPLEXITY Web Session Active]')) {
-            return { text: clean, brand, via: brand?.label ?? 'stream' };
+            return { text: clean, brand, via: brand?.label ?? 'stream', conversationId: responseConvId };
           }
           relayDetail = 'relay returned a non-chat or empty response';
         } else {
@@ -113,7 +144,8 @@ export async function callLiveAI(prompt: string, modelName: string, apiKey: stri
           const content = data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.delta?.content;
           if (content && typeof content === 'string' && !content.includes('[GEMINI Web Session Active]') && !content.includes('health=100') && !content.includes('[GROK Web Session Active]') && !content.includes('[CHATGPT Web Session Active]') && !content.includes('[PERPLEXITY Web Session Active]')) {
             const brand = brandFrom(data);
-            return { text: content.trim(), brand, via: brand.label };
+            const responseConvId = data?.conversation_id ? String(data.conversation_id) : convId;
+            return { text: content.trim(), brand, via: brand.label, conversationId: responseConvId };
           }
           relayDetail = 'relay returned a non-chat or empty response';
         }
@@ -224,6 +256,17 @@ export function UnifiedChatPanel({
   const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
   const [busy, setBusy] = React.useState(false);
   const [awaitingFirst, setAwaitingFirst] = React.useState(false);
+  const [conversationId, setConversationId] = React.useState<string>(() => {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('supremeai_conversation_id');
+      if (stored) return stored;
+    }
+    const initialId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem('supremeai_conversation_id', initialId); } catch { /* ignore */ }
+    }
+    return initialId;
+  });
   const listRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => { listRef.current?.scrollTo(0, listRef.current.scrollHeight); }, [messages]);
@@ -239,6 +282,16 @@ export function UnifiedChatPanel({
     onInputChange?.(val);
   };
 
+  const handleNewChat = () => {
+    const nextId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setConversationId(nextId);
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem('supremeai_conversation_id', nextId); } catch { /* ignore */ }
+    }
+    setMessages([]);
+    setInput('');
+  };
+
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
@@ -249,18 +302,37 @@ export function UnifiedChatPanel({
     setAwaitingFirst(true);
     try {
       if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch (e) { void e; } }
+      let activeConvId = conversationId;
+      if (!activeConvId) {
+        activeConvId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setConversationId(activeConvId);
+        try { localStorage.setItem('supremeai_conversation_id', activeConvId); } catch { /* ignore */ }
+      }
       // Streaming path: tokens render live into the assistant placeholder and
       // the thinking stages stop at the first token; non-stream webhooks keep
       // the staged indicator until the full reply lands in one piece.
-      const reply = await callLiveAI(text, model, apiKey, (token) => {
-        setAwaitingFirst(false);
-        setMessages((m) => {
-          const next = [...m];
-          const last = next[next.length - 1];
-          if (last && last.role === 'assistant') next[next.length - 1] = { ...last, text: last.text + token };
-          return next;
-        });
-      });
+      const reply = await callLiveAI(
+        text,
+        model,
+        apiKey,
+        (token) => {
+          setAwaitingFirst(false);
+          setMessages((m) => {
+            const next = [...m];
+            const last = next[next.length - 1];
+            if (last && last.role === 'assistant') next[next.length - 1] = { ...last, text: last.text + token };
+            return next;
+          });
+        },
+        {
+          conversationId: activeConvId,
+          history: messages,
+        },
+      );
+      if (reply.conversationId && reply.conversationId !== activeConvId) {
+        setConversationId(reply.conversationId);
+        try { localStorage.setItem('supremeai_conversation_id', reply.conversationId); } catch { /* ignore */ }
+      }
       setAwaitingFirst(false);
       setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
     } catch {
@@ -282,6 +354,17 @@ export function UnifiedChatPanel({
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {chatModels.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
       </select>
+      {messages.length > 0 && (
+        <button
+          type="button"
+          onClick={handleNewChat}
+          className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-900/80 px-2.5 py-2 text-xs font-medium text-slate-300 transition hover:border-purple-400/40 hover:bg-slate-800 hover:text-white"
+          title="Start a new conversation"
+        >
+          <RotateCcw size={13} className="text-slate-400" />
+          <span>New</span>
+        </button>
+      )}
       {extraHeader}
     </div>
     <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">

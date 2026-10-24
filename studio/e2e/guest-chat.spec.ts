@@ -98,6 +98,44 @@ test.describe('Guest chat demo smoke', () => {
     await select.selectOption({ label: 'Reasoning Pro — Deep analysis and complex planning' });
     await expect(select).toHaveValue('Reasoning Pro');
   });
+
+  test('carries conversation_id across multi-turn messages and renders New Chat button', async ({ page }) => {
+    const capturedConvIds: string[] = [];
+    await page.route('**/v1/chat/completions', async (route: Route) => {
+      const postData = route.request().postDataJSON() || {};
+      if (postData.conversation_id) {
+        capturedConvIds.push(postData.conversation_id);
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'chatcmpl-mock-test',
+          conversation_id: postData.conversation_id || 'conv-turn-test',
+          choices: [{ message: { role: 'assistant', content: 'Turn acknowledged.' } }],
+          supremeai: { channel: 'w', engine: 'ge', tier: 'Turbo' },
+        }),
+      });
+    });
+
+    const composer = page.getByLabel('Message SupremeAI');
+    await composer.fill('First message');
+    await page.getByRole('button', { name: /send/i }).click();
+    await expect(page.getByText('Turn acknowledged.').first()).toBeVisible();
+
+    // Verify New Chat button appears when messages exist
+    const newChatBtn = page.getByRole('button', { name: /new/i });
+    await expect(newChatBtn).toBeVisible();
+
+    // Send second turn
+    await composer.fill('Second message');
+    await page.getByRole('button', { name: /send/i }).click();
+    await expect(page.getByText('Second message')).toBeVisible();
+
+    // Verify both requests carried the exact same persistent conversation_id
+    expect(capturedConvIds.length).toBeGreaterThanOrEqual(2);
+    expect(capturedConvIds[0]).toBe(capturedConvIds[1]);
+  });
 });
 
 test.describe('Public marketing pages render', () => {
