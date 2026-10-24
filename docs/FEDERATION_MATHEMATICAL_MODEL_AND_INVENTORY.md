@@ -124,20 +124,20 @@ $$\mathbf{|\Delta_{\text{retired}}|} = 55 \text{ files (শুধুমাত্
 2. `adrs/ADR-002-tier3-deferred.md`
 3. `adrs/ADR-003-main-repo-freeze-best-of.md`
 4. `adrs/ADR-004-topology-clarification.md`
-5. `adrs/ADR-005-topology-v3-private-archive-live-federation.md`
+5. `adrs/ADR-005-topology-v3-private-archive-live-federation.md` <!-- gitleaks:allow -->
 6. `adrs/ADR-006-federation-split-policy-agent-maintenance.md`
 7. `adrs/ADR-007-topology-v4-open-core-private-live.md`
 
 ### খ. লিগ্যাসি স্পেসিফিকেশনস (পুরনো সিস্টেম ব্লুপ্রিন্ট — ১১টি ফাইল)
 8. `legacy-specs/AIBRAIN-01-MASTER_AGENT_SPECIFICATION.md`
 9. `legacy-specs/AIBRAIN-02-AGENT-SYSTEM-2.0-MASTER-PLAN.md`
-10. `legacy-specs/ARCH-10-UNIVERSAL-ENGINE-MASTER-PLAN-GROUP-STAGING-RULE-ENGINE-BATCH-TRAIN-RED-TEAM.md`
+10. `legacy-specs/ARCH-10-UNIVERSAL-ENGINE-MASTER-PLAN-GROUP-STAGING-RULE-ENGINE-BATCH-TRAIN-RED-TEAM.md` <!-- gitleaks:allow -->
 11. `legacy-specs/FRONTEND_DASHBOARD_MASTER_PLAN_V1.md`
 12. `legacy-specs/GOVERNED_MULTI_AGENT_DECISION_ARCHITECTURE.md`
 13. `legacy-specs/ISSUE_PRIORITY_POLICY.md`
 14. `legacy-specs/MULTI_PLATFORM_AGENT_WORKSPACE_PLAN.md`
 15. `legacy-specs/MULTI_PLATFORM_WORKSPACE_IMPLEMENTATION_ROADMAP.md`
-16. `legacy-specs/OPS-09-POST-GROUP-JANITOR-AND-HYGIENE-PROTOCOL.md`
+16. `legacy-specs/OPS-09-POST-GROUP-JANITOR-AND-HYGIENE-PROTOCOL.md` <!-- gitleaks:allow -->
 17. `legacy-specs/README.md`
 18. `legacy-specs/RISK_TIERED_AUTONOMOUS_SAFETY_PIPELINE.md`
 

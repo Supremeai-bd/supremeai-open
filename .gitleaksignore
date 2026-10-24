@@ -4,3 +4,10 @@ ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/test_g
 ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/src/lib/masking.ts:supremeai-internal-database-url:6
 # Environment key name inventory listing in docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md
 c7f61dfaf1007c9fbcd573a758a55d69c89ccb70:docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md:generic-api-key:73
+# Archival inventory in docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md (hyphenated 40-char document names)
+d1c01d4b196a009c00afd63034c6ac1136647006:docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md:supremeai-cloudflare-api-token:127
+d1c01d4b196a009c00afd63034c6ac1136647006:docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md:supremeai-cloudflare-api-token:134
+d1c01d4b196a009c00afd63034c6ac1136647006:docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md:supremeai-cloudflare-api-token:140
+2310944b63df0719aa29f35e25da3536c1a21156:docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md:supremeai-cloudflare-api-token:127
+2310944b63df0719aa29f35e25da3536c1a21156:docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md:supremeai-cloudflare-api-token:134
+2310944b63df0719aa29f35e25da3536c1a21156:docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md:supremeai-cloudflare-api-token:140
