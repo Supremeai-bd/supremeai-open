@@ -53,17 +53,23 @@ export const UserDashboard: React.FC = () => {
   const fetchWorkspaceState = async () => {
     setLoadingWorkspace(true);
     try {
-      const data = await connectionsApi.getMyWorkspace();
+      const [data, prefs] = await Promise.all([
+        connectionsApi.getMyWorkspace(),
+        apiClient.get<{ preferences?: { hidden_tool_cards?: string[] } }>('/api/v1/user/preferences').catch(() => null),
+      ]);
+      const hiddenCards = new Set(prefs?.preferences?.hidden_tool_cards || []);
       if (data && Array.isArray(data.capabilities) && data.capabilities.length > 0) {
-        const mapped: UserCapability[] = data.capabilities.map((c) => ({
-          id: c.capabilityId,
-          label: c.name,
-          description: c.purpose,
-          status: c.status,
-          // FIX(nav-truth 2026-10-24): /agents route does not exist (404) — the
-          // "Use" action falls through to the unified chat surface.
-          href: undefined,
-        }));
+        const mapped: UserCapability[] = data.capabilities
+          .filter((c) => !hiddenCards.has(c.capabilityId))
+          .map((c) => ({
+            id: c.capabilityId,
+            label: c.name,
+            description: c.purpose,
+            status: c.status,
+            // FIX(nav-truth 2026-10-24): /agents route does not exist (404) — the
+            // "Use" action falls through to the unified chat surface.
+            href: undefined,
+          }));
         setServerCapabilities(mapped);
         const reasons: Record<string, string> = {};
         for (const c of data.capabilities) {
@@ -248,6 +254,10 @@ export const UserDashboard: React.FC = () => {
                     toggleModule(item.id as typeof enabledModules[number]);
                   }
                   setServerCapabilities((prev) => prev.filter((c) => c.id !== item.id));
+                  // Persist removal to backend SQLite preferences
+                  apiClient.delete(`/api/v1/user/preferences/tool-card/${encodeURIComponent(item.id)}`).catch((err) => {
+                    console.warn('Failed to persist tool-card removal:', err);
+                  });
                 }}
               />
             ))}
