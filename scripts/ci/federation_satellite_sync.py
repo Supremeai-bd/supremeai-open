@@ -237,6 +237,11 @@ def sync_satellite(
         elif target_repo == "Supremeai-bd/supremeai-studio":
             # Copy domain files into the satellite root (non-destructive)
             copy_tree_contents(src_path, tmp_repo, prune=False)
+            # Prune deleted files within public/ and src/ so route/asset removals reflect cleanly
+            if (src_path / "public").exists():
+                copy_tree_contents(src_path / "public", tmp_repo / "public", prune=True)
+            if (src_path / "src").exists():
+                copy_tree_contents(src_path / "src", tmp_repo / "src", prune=True)
             # Sync workflows with pruning
             studio_wf_src = src_path / ".github" / "workflows"
             if studio_wf_src.exists():

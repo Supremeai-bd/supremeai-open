@@ -1,1 +1,2 @@
+# Cloudflare Pages SPA rewrite: fallback all non-file routes to index.html
 /*    /index.html   200
