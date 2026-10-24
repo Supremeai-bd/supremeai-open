@@ -1,6 +1,7 @@
 # SupremeAI Open Foundation
 
-> **Open the implementation that teaches people how to use SupremeAI; keep private the implementation that reveals why SupremeAI performs better.**
+> **Open the implementation that teaches people how to use SupremeAI; keep private the implementation that reveals why SupremeAI performs better.**  
+> 🇧🇩 **বাংলা সংস্করণ:** [`docs/README.bn.md`](./docs/README.bn.md)
 
 This repository is the **public boundary** of the SupremeAI federation (roadmap §4.3 / Phase 8 foundation).
 It contains only artifacts that are useful *outside* SupremeAI's private intelligence:
