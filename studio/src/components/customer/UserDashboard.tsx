@@ -12,8 +12,10 @@ import TaskAutomationCard from './TaskAutomationCard';
 
 const quickStarts = [
   { label: 'Research a topic', detail: 'Get a clear answer with useful context.', icon: Sparkles, href: '/workspace/live' },
-  { label: 'Analyze a file', detail: 'Bring a document into a focused workspace.', icon: FileText, href: '/files' },
-  { label: 'Build a workflow', detail: 'Turn a repeatable task into a helper.', icon: Zap, href: '/agents' },
+  // FIX(audit 2026-10-24): /files and /agents routes do not exist — both
+  // quick-starts now route to the Studio (/workspace/live) instead of a 404.
+  { label: 'Analyze a file', detail: 'Bring a document into a focused workspace.', icon: FileText, href: '/workspace/live' },
+  { label: 'Build a workflow', detail: 'Turn a repeatable task into a helper.', icon: Zap, href: '/workspace/live' },
 ];
 
 interface RecentConversation {
@@ -45,6 +47,9 @@ export const UserDashboard: React.FC = () => {
   const [ask, setAsk] = useState('');
   const { enabledModules, toggleModule } = useWorkspaceSettings();
   const name = user?.name?.split(' ')[0] || 'there';
+  // FIX(audit 2026-10-24): greeting was hardcoded "Good morning" — now time-of-day aware
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const isCosmic = import.meta.env.VITE_COSMIC_DASHBOARD !== 'false';
 
   const submitAsk = (explicitIntent?: string) => {
@@ -144,18 +149,21 @@ export const UserDashboard: React.FC = () => {
           <div>
             <p className="sa-eyebrow mb-3">Your workspace</p>
             <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-              Good morning, {name}.
+              {greeting}, {name}.
             </h1>
             <p className="mt-2 max-w-xl text-[var(--sa-ink-muted)]">
               A simple place to think, make progress, and keep your work moving.
             </p>
           </div>
-          <Link
-            to="/settings"
+          {/* FIX(audit 2026-10-24): /settings route does not exist (404) — Personalize
+              now opens the existing "Choose your tools" dialog instead. */}
+          <button
+            type="button"
+            onClick={() => setShowTools(true)}
             className="inline-flex items-center gap-2 self-start rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] px-4 py-2.5 text-sm font-medium transition hover:border-[var(--sa-primary)] hover:text-[var(--sa-primary)]"
           >
             <Settings2 size={16} /> Personalize
-          </Link>
+          </button>
         </header>
 
         <TaskAutomationCard />
@@ -258,7 +266,7 @@ export const UserDashboard: React.FC = () => {
                 key={item.id}
                 item={item}
                 onUse={() => navigate(item.href || '/workspace/live')}
-                onManage={() => navigate(item.href || '/settings')}
+                onManage={() => setShowTools(true)}
                 onRemove={() => {
                   if (enabledModules.includes(item.id as typeof enabledModules[number])) {
                     toggleModule(item.id as typeof enabledModules[number]);
@@ -290,7 +298,7 @@ export const UserDashboard: React.FC = () => {
                   <CapabilityUnavailableExplainer
                     key={item.id}
                     item={item}
-                    onRequest={() => navigate('/settings')}
+                    onRequest={() => setShowTools(true)}
                   />
                 ))}
               </div>
