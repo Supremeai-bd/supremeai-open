@@ -12,18 +12,20 @@ Key Features:
 """
 from __future__ import annotations
 
+import asyncio
+from collections import deque
+from datetime import datetime, timezone
+import json
 import logging
 import os
 import socket
 import time
-import asyncio
-from collections import deque
-from datetime import datetime, timezone
 from typing import Optional, Tuple
+import uuid
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 try:
     from service.branding import build_brand
@@ -91,9 +93,95 @@ except ImportError:
             from service.telegram_webhook import telegram_router
         except ImportError:
             telegram_router = None  # type: ignore[assignment]
+try:
+    from service.webhook_scout import webhook_scout
+except ImportError:
+    try:
+        from gateway.service.webhook_scout import webhook_scout
+    except ImportError:
+        webhook_scout = None  # type: ignore[assignment]
+
+try:
+    from service.storage import (
+        add_message,
+        delete_conversation,
+        get_conversation,
+        get_user_preferences,
+        list_conversations,
+        save_conversation,
+        save_user_preferences,
+    )
+except ImportError:
+    try:
+        from gateway.service.storage import (
+            add_message,
+            delete_conversation,
+            get_conversation,
+            get_user_preferences,
+            list_conversations,
+            save_conversation,
+            save_user_preferences,
+        )
+    except ImportError:
+        add_message = None  # type: ignore[assignment]
+        delete_conversation = None  # type: ignore[assignment]
+        get_conversation = None  # type: ignore[assignment]
+        get_user_preferences = None  # type: ignore[assignment]
+        list_conversations = None  # type: ignore[assignment]
+        save_conversation = None  # type: ignore[assignment]
+        save_user_preferences = None  # type: ignore[assignment]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("supremeai.gateway")
+
+
+# ── LiveLogs Ring Buffer (Admin Console Server-Side Log Streaming) ───────────
+
+class RingBufferLogHandler(logging.Handler):
+    """In-memory thread-safe ring buffer capturing recent logs for Admin LiveLogs & SSE."""
+
+    def __init__(self, maxlen: int = 1000):
+        super().__init__()
+        self.buffer: deque = deque(maxlen=maxlen)
+        self.subscribers: set = set()
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            msg = self.format(record)
+            entry = {
+                "id": f"log-{int(record.created * 1000)}-{os.urandom(2).hex()}",
+                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                "time": record.created,
+                "level": record.levelname,
+                "name": record.name,
+                "message": msg,
+            }
+            self.buffer.append(entry)
+
+            # Broadcast to live SSE subscribers
+            if self.subscribers:
+                for q in list(self.subscribers):
+                    try:
+                        q.put_nowait(entry)
+                    except Exception:
+                        pass
+        except Exception:
+            self.handleError(record)
+
+    def get_logs(self, limit: int = 100, level: Optional[str] = None, search: Optional[str] = None) -> list:
+        items = list(self.buffer)
+        if level:
+            items = [item for item in items if item["level"].upper() == level.upper()]
+        if search:
+            s = search.lower()
+            items = [item for item in items if s in item["message"].lower() or s in item["name"].lower()]
+        return items[-limit:]
+
+
+log_ring_buffer = RingBufferLogHandler(maxlen=1000)
+log_ring_buffer.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logger.addHandler(log_ring_buffer)
+logging.getLogger().addHandler(log_ring_buffer)
 
 # Priority-1 Stealth Webhook & Web Session Configuration
 STEALTH_WEBHOOK_URL = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHOOK_URL", "")).strip()
@@ -250,6 +338,14 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
     return token in valid_keys
 
 
+def _extract_user_id(request: Request) -> str:
+    """Resolve caller user ID from header or authenticated session."""
+    explicit_uid = request.headers.get("x-user-id")
+    if explicit_uid and explicit_uid.strip():
+        return explicit_uid.strip()
+    return "usr-admin-primary"
+
+
 # ── Liveness & Readiness Probes ──────────────────────────────────────────────
 
 # Stealth relay DNS capability state (cached, TTL-refreshed). Oct-23 lesson:
@@ -332,11 +428,21 @@ async def health_check():
         "stealth_dns": stealth_dns,
         "web_sessions_active": bool(web_bridge and web_bridge.has_active_accounts),
         "web_session_status": web_bridge.status() if web_bridge else {},
+        "webhook_scout": webhook_scout.get_status() if webhook_scout else {},
         "telegram_webhook_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN")),
         "active_providers": [
             p for p, data in telemetry.get("providers", {}).items() if data.get("healthy", 0) > 0
         ],
     }
+
+
+@app.get("/webhook/scout/status")
+@app.get("/api/v1/webhook/scout")
+async def webhook_scout_status():
+    """Returns live fleet status of all Webhook & Multi-AI Session slots."""
+    if not webhook_scout:
+        return {"status": "unavailable", "detail": "Webhook Scout not initialized"}
+    return webhook_scout.get_status()
 
 
 @app.get("/readyz")
@@ -616,6 +722,20 @@ async def chat_completions(
     elif requested_model in PROVIDER_CONFIGS:
         preferred_provider = requested_model
 
+    # Conversation-ID carry-over & persistence
+    conv_id = (
+        body.get("conversation_id")
+        or body.get("session_id")
+        or request.headers.get("x-conversation-id")
+        or request.headers.get("x-session-id")
+    )
+    user_id = _extract_user_id(request)
+    if conv_id and add_message:
+        incoming_msgs = body.get("messages", [])
+        last_user_msg = next((m.get("content") for m in reversed(incoming_msgs) if m.get("role") == "user"), None)
+        if last_user_msg:
+            add_message(conv_id, "user", str(last_user_msg), user_id=user_id)
+
     # ═══════════════════════════════════════════════════════════════════════
     # 🔒 HEADLINE — ADMIN ER COMMAND CHARA ENABLE KORA JABE NA
     # (অ্যাডমিনের সরাসরি নির্দেশ ছাড়া API fallback চালু করা সম্পূর্ণ নিষিদ্ধ)
@@ -696,6 +816,52 @@ async def chat_completions(
                 "X-SupremeAI-Slot": "priority-1",
                 "X-SupremeAI-Tier": "priority-1-free",
             }
+
+            if conv_id:
+                w_response["conversation_id"] = conv_id
+                w_response["session_id"] = conv_id
+                if add_message and chat_content:
+                    add_message(
+                        conv_id,
+                        "assistant",
+                        chat_content,
+                        extra={"supremeai": w_response.get("supremeai")},
+                        user_id=user_id,
+                    )
+
+            if body.get("stream"):
+                async def stream_generator():
+                    # Stream tokens in progressive chunks
+                    words = chat_content.split(" ")
+                    for idx, word in enumerate(words):
+                        chunk_text = word + (" " if idx < len(words) - 1 else "")
+                        chunk_payload = {
+                            "id": w_response.get("id", "chatcmpl-stream"),
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": served_model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": chunk_text},
+                                    "finish_reason": None if idx < len(words) - 1 else "stop",
+                                }
+                            ],
+                            "supremeai": w_response.get("supremeai"),
+                        }
+                        if conv_id:
+                            chunk_payload["conversation_id"] = conv_id
+                            chunk_payload["session_id"] = conv_id
+                        yield f"data: {json.dumps(chunk_payload)}\n\n"
+                        await asyncio.sleep(0.012)
+                    yield "data: [DONE]\n\n"
+
+                return StreamingResponse(
+                    stream_generator(),
+                    media_type="text/event-stream",
+                    headers={**headers, "Cache-Control": "no-cache", "Connection": "keep-alive"},
+                )
+
             return JSONResponse(status_code=w_status, content=w_response, headers=headers)
 
         relay_detail = None
@@ -849,3 +1015,211 @@ async def admin_squad_reload(
     if squad:
         squad.reload_squad()
     return {"status": "reloaded", "stats": squad.stats() if squad else {}}
+
+
+# ── Conversation Carry-over & Chat History Endpoints ─────────────────────────
+
+@app.get("/api/v1/chat/conversations")
+@app.get("/v1/chat/conversations")
+async def get_conversations(
+    request: Request,
+    limit: int = 50,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """List recent conversation sessions for the current user."""
+    if not _verify_client_auth(request, x_supremeai_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    user_id = _extract_user_id(request)
+    convs = list_conversations(user_id=user_id, limit=limit) if list_conversations else []
+    return {"status": "ok", "conversations": convs, "count": len(convs)}
+
+
+@app.get("/api/v1/chat/conversations/{conversation_id}")
+@app.get("/v1/chat/conversations/{conversation_id}")
+async def get_conversation_details(
+    conversation_id: str,
+    request: Request,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Retrieve full message history for a conversation session."""
+    if not _verify_client_auth(request, x_supremeai_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    user_id = _extract_user_id(request)
+    conv = get_conversation(conversation_id, user_id=user_id) if get_conversation else None
+    if not conv:
+        raise HTTPException(status_code=404, detail=f"Conversation {conversation_id} not found")
+    return conv
+
+
+@app.post("/api/v1/chat/conversations")
+@app.post("/v1/chat/conversations")
+async def create_or_update_conversation(
+    request: Request,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Create or update conversation metadata."""
+    if not _verify_client_auth(request, x_supremeai_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    conv_id = str(body.get("id") or body.get("conversation_id") or f"conv-{uuid.uuid4().hex[:12]}").strip()
+    title = body.get("title")
+    metadata = body.get("metadata")
+    user_id = _extract_user_id(request)
+
+    res = save_conversation(conv_id, user_id=user_id, title=title, metadata=metadata) if save_conversation else {"id": conv_id}
+    return {"status": "ok", "conversation": res}
+
+
+@app.delete("/api/v1/chat/conversations/{conversation_id}")
+@app.delete("/v1/chat/conversations/{conversation_id}")
+async def delete_conversation_endpoint(
+    conversation_id: str,
+    request: Request,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Delete a conversation session and all its messages."""
+    if not _verify_client_auth(request, x_supremeai_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    user_id = _extract_user_id(request)
+    ok = delete_conversation(conversation_id, user_id=user_id) if delete_conversation else False
+    return {"status": "deleted" if ok else "not_found", "id": conversation_id}
+
+
+# ── LiveLogs Endpoints (Admin Console Server-Side Log Streaming) ─────────────
+
+@app.get("/admin-api/logs")
+@app.get("/api/v1/admin/logs")
+@app.get("/admin/logs")
+async def get_admin_logs(
+    request: Request,
+    limit: int = 100,
+    level: Optional[str] = None,
+    search: Optional[str] = None,
+    x_superadmin_key: Optional[str] = Header(None, alias="X-Superadmin-Key"),
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Fetches recent service logs for the Admin Console."""
+    is_super = bool(SUPERADMIN_KEY and x_superadmin_key == SUPERADMIN_KEY)
+    is_client = _verify_client_auth(request, x_supremeai_key)
+    if not is_super and not is_client:
+        raise HTTPException(status_code=403, detail="Admin authorization required to view server logs")
+
+    logs = log_ring_buffer.get_logs(limit=limit, level=level, search=search)
+    return {
+        "status": "ok",
+        "total": len(logs),
+        "limit": limit,
+        "logs": logs,
+    }
+
+
+@app.get("/admin-api/logs/stream")
+@app.get("/api/v1/admin/logs/stream")
+@app.get("/admin/logs/stream")
+async def stream_admin_logs(
+    request: Request,
+    limit: int = 50,
+    x_superadmin_key: Optional[str] = Header(None, alias="X-Superadmin-Key"),
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Real-time Server-Sent Events (SSE) log streamer for Admin Console."""
+    is_super = bool(SUPERADMIN_KEY and x_superadmin_key == SUPERADMIN_KEY)
+    is_client = _verify_client_auth(request, x_supremeai_key)
+    if not is_super and not is_client:
+        raise HTTPException(status_code=403, detail="Admin authorization required to stream server logs")
+
+    subscriber_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+    log_ring_buffer.subscribers.add(subscriber_queue)
+
+    async def log_event_generator():
+        try:
+            # Initial backlog burst
+            initial_logs = log_ring_buffer.get_logs(limit=limit)
+            for entry in initial_logs:
+                yield f"data: {json.dumps(entry)}\n\n"
+
+            # Stream real-time logs with heartbeat keep-alive
+            while True:
+                try:
+                    entry = await asyncio.wait_for(subscriber_queue.get(), timeout=12.0)
+                    yield f"data: {json.dumps(entry)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            log_ring_buffer.subscribers.discard(subscriber_queue)
+
+    return StreamingResponse(
+        log_event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── User Preferences & Tool-Card Persistence Endpoints ───────────────────────
+
+@app.get("/api/v1/user/preferences")
+@app.get("/api/user/preferences")
+async def get_preferences(
+    request: Request,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Retrieve stored user preferences (including hidden tool cards, pinned tools, theme)."""
+    user_id = _extract_user_id(request)
+    prefs = get_user_preferences(user_id=user_id) if get_user_preferences else {"user_id": user_id, "preferences": {}}
+    return prefs
+
+
+@app.post("/api/v1/user/preferences")
+@app.post("/api/user/preferences")
+@app.put("/api/v1/user/preferences")
+async def update_preferences(
+    request: Request,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Update user preferences (e.g. tool card removal / preference saving)."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    user_id = _extract_user_id(request)
+    res = save_user_preferences(user_id=user_id, patch_data=body) if save_user_preferences else {"user_id": user_id, "preferences": body}
+    return {"status": "ok", "user_preferences": res}
+
+
+@app.delete("/api/v1/user/preferences/tool-card/{tool_id}")
+@app.post("/api/v1/user/preferences/tool-card/{tool_id}/hide")
+async def hide_tool_card(
+    tool_id: str,
+    request: Request,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Persistently hides/removes a tool card from the user's dashboard."""
+    user_id = _extract_user_id(request)
+    patch = {"action": "hide_tool", "tool_id": tool_id}
+    res = save_user_preferences(user_id=user_id, patch_data=patch) if save_user_preferences else {"user_id": user_id}
+    return {"status": "ok", "action": "hidden", "tool_id": tool_id, "user_preferences": res}
+
+
+@app.delete("/api/v1/user/preferences/tool-card/{tool_id}/restore")
+@app.post("/api/v1/user/preferences/tool-card/{tool_id}/restore")
+async def restore_tool_card(
+    tool_id: str,
+    request: Request,
+    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
+):
+    """Restores a previously hidden tool card in the user's dashboard."""
+    user_id = _extract_user_id(request)
+    patch = {"action": "unhide_tool", "tool_id": tool_id}
+    res = save_user_preferences(user_id=user_id, patch_data=patch) if save_user_preferences else {"user_id": user_id}
+    return {"status": "ok", "action": "restored", "tool_id": tool_id, "user_preferences": res}
