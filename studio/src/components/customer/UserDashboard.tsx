@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowRight, FileText, Plus, RefreshCw, Settings2, Sparkles, X, Zap } from 'lucide-react';
+import { MessageSquarePlus, Plus, RefreshCw, Settings2, X } from 'lucide-react';
+import { UnifiedChatPanel } from '../chat/UnifiedChatPanel';
 import AddNewWizard from './AddNewWizard';
 import { CapabilityUnavailableExplainer, ManageItem } from './CapabilityCards';
 import { capabilityFromModule, type UserCapability } from '../../types/contracts';
@@ -9,14 +10,6 @@ import { useWorkspaceSettings, WORKSPACE_MODULES } from '../../hooks/useWorkspac
 import { connectionsApi } from '../../services/connectionsApi';
 import { apiClient } from '../../services/apiClient';
 import TaskAutomationCard from './TaskAutomationCard';
-
-const quickStarts = [
-  { label: 'Research a topic', detail: 'Get a clear answer with useful context.', icon: Sparkles, href: '/workspace/live' },
-  // FIX(audit 2026-10-24): /files and /agents routes do not exist — both
-  // quick-starts now route to the Studio (/workspace/live) instead of a 404.
-  { label: 'Analyze a file', detail: 'Bring a document into a focused workspace.', icon: FileText, href: '/workspace/live' },
-  { label: 'Build a workflow', detail: 'Turn a repeatable task into a helper.', icon: Zap, href: '/workspace/live' },
-];
 
 interface RecentConversation {
   id: string;
@@ -40,11 +33,6 @@ export const UserDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [showTools, setShowTools] = useState(false);
   const [showAddWizard, setShowAddWizard] = useState(false);
-  // FIX(intent-carryover): the ask-box used to navigate to /workspace/live
-  // on Enter while discarding the typed text — the user's intent was lost
-  // every time. It is now kept in state and forwarded to the Studio via a
-  // URL param (consumed and stripped by AIStudio on mount).
-  const [ask, setAsk] = useState('');
   const { enabledModules, toggleModule } = useWorkspaceSettings();
   const name = user?.name?.split(' ')[0] || 'there';
   // FIX(audit 2026-10-24): greeting was hardcoded "Good morning" — now time-of-day aware
@@ -52,11 +40,6 @@ export const UserDashboard: React.FC = () => {
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const isCosmic = import.meta.env.VITE_COSMIC_DASHBOARD !== 'false';
 
-  const submitAsk = (explicitIntent?: string) => {
-    const intent = (explicitIntent ?? ask).trim();
-    if (!intent) return;
-    navigate(`/workspace/live?intent=${encodeURIComponent(intent)}`);
-  };
 
   // State-based capabilities from live backend (Phase 2 Progressive Disclosure)
   const [serverCapabilities, setServerCapabilities] = useState<UserCapability[]>([]);
@@ -66,16 +49,6 @@ export const UserDashboard: React.FC = () => {
   // Recent work panel state: null = still loading, [] = honestly empty
   const [recentConversations, setRecentConversations] = useState<RecentConversation[] | null>(null);
   const [recentLoading, setRecentLoading] = useState(false);
-
-  const dynamicChips = (recentConversations && recentConversations.length > 0)
-    ? recentConversations.slice(0, 3).map((c) => ({
-        label: c.title?.trim() || 'Continue discussion',
-        intent: c.title?.trim() || 'Continue discussion',
-      }))
-    : quickStarts.slice(0, 3).map((q) => ({
-        label: q.label,
-        intent: q.label,
-      }));
 
   const fetchWorkspaceState = async () => {
     setLoadingWorkspace(true);
@@ -118,7 +91,7 @@ export const UserDashboard: React.FC = () => {
         '/api/v1/conversations/',
       );
       const rows = Array.isArray(data) ? data : (data?.data ?? []);
-      setRecentConversations(rows.slice(0, 3));
+      setRecentConversations(rows.slice(0, 8));
     } catch {
       // Auth/permission or backend unavailable — show the honest empty state.
       setRecentConversations([]);
@@ -170,65 +143,66 @@ export const UserDashboard: React.FC = () => {
 
         <TaskAutomationCard />
 
-        <section
-          className={`sa-surface-raised p-5 sm:p-7 relative overflow-hidden ${
-            isCosmic
-              ? 'before:absolute before:inset-0 before:bg-[radial-gradient(ellipse_at_top,rgba(168,85,247,0.12),transparent_70%)] before:pointer-events-none'
-              : ''
-          }`}
-          aria-labelledby="intent-heading"
-        >
-          <p className="sa-eyebrow mb-2">Start anywhere</p>
-          <h2 id="intent-heading" className="text-xl font-semibold">
-            What would you like to do?
-          </h2>
-          <div className="mt-5 flex rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] bg-[var(--sa-canvas)] p-1.5 focus-within:border-[var(--sa-primary)] focus-within:ring-4 focus-within:ring-[var(--sa-primary-soft)]">
-            <input
-              type="text"
-              aria-label="Ask SupremeAI what to accomplish"
-              placeholder="Ask a question, describe a task, or share an idea..."
-              className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm outline-none placeholder:text-[var(--sa-ink-muted)]"
-              value={ask}
-              onChange={(event) => setAsk(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229)
-                  submitAsk();
-              }}
-            />
+        {/* CHAT-FIRST HOME (owner request 2026-10-24): the dashboard landing page
+            IS the chat tab now — a history rail on the left and the shared
+            UnifiedChatPanel (same engine as AI Studio and guest chat) on the
+            right. The old "Start anywhere" ask-box navigated away on Enter;
+            users can now chat inline without leaving home. */}
+        <section aria-label="Chat home" className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
+          <aside className="flex min-w-0 flex-col gap-3">
             <button
               type="button"
-              aria-label="Open SupremeAI Studio"
-              onClick={() => submitAsk()}
-              className="flex size-11 shrink-0 items-center justify-center rounded-[var(--sa-radius-sm)] bg-[var(--sa-primary)] text-white transition hover:opacity-90"
+              onClick={() => navigate('/workspace/live')}
+              className="inline-flex items-center justify-center gap-2 rounded-[var(--sa-radius-sm)] bg-[var(--sa-primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
             >
-              <ArrowRight size={17} />
+              <MessageSquarePlus size={16} /> New chat
             </button>
-          </div>
-          {/* WO3: Dynamic quick-action chips */}
-          <div className="mt-4 flex flex-wrap gap-2" data-testid="intent-chips">
-            {dynamicChips.map(({ label, intent }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => submitAsk(intent)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--sa-border)] px-3 py-1.5 text-xs text-[var(--sa-ink-muted)] transition duration-200 hover:border-[var(--aurora-purple)] hover:bg-[var(--sa-primary-soft)] hover:text-[var(--sa-ink)] hover:shadow-[var(--glow-accent)] focus-visible:ring-2 focus-visible:ring-[var(--aurora-purple)]"
-              >
-                <Sparkles size={12} className="text-[var(--aurora-purple)]" />
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {quickStarts.map(({ label, icon: Icon, href }) => (
-              <Link
-                key={label}
-                to={`${href}?intent=${encodeURIComponent(label)}` }
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] transition duration-200 hover:border-[var(--sa-primary)] hover:bg-[var(--sa-primary-soft)] hover:text-[var(--sa-primary)] hover:-translate-y-0.5"
-              >
-                <Icon size={13} />
-                {label}
-              </Link>
-            ))}
+            <div className="sa-surface-raised flex min-w-0 flex-col gap-2 p-3">
+              <p className="sa-eyebrow">Recent conversations</p>
+              {recentLoading ? (
+                <div className="flex flex-col gap-2" data-testid="recent-skeleton">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="h-9 w-full animate-pulse rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] bg-[var(--sa-border)]/40"
+                    />
+                  ))}
+                </div>
+              ) : recentConversations && recentConversations.length > 0 ? (
+                <ul className="flex min-w-0 flex-col gap-1.5">
+                  {recentConversations.map((conversation) => (
+                    <li key={conversation.id} className="min-w-0">
+                      <Link
+                        to={conversation.title?.trim() ? `/workspace/live?intent=${encodeURIComponent(conversation.title.trim())}` : '/workspace/live'}
+                        className="flex min-w-0 items-center justify-between gap-2 rounded-[var(--sa-radius-sm)] border border-transparent px-2.5 py-2 text-sm transition hover:border-[var(--sa-border)] hover:bg-[var(--sa-primary-soft)]"
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {conversation.title?.trim() || 'Untitled conversation'}
+                        </span>
+                        <span className="shrink-0 text-[10px] text-[var(--sa-ink-muted)]">
+                          {formatRelativeTime(conversation.updated_at)}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-[var(--sa-ink-muted)]">
+                  {recentConversations === null
+                    ? 'Loading your recent conversations…'
+                    : 'Your conversations will appear here once you start chatting.'}
+                </p>
+              )}
+            </div>
+          </aside>
+          <div
+            className={`sa-surface-raised relative flex min-h-[32rem] flex-col overflow-hidden p-2 sm:p-3 ${
+              isCosmic
+                ? 'before:absolute before:inset-0 before:bg-[radial-gradient(ellipse_at_top,rgba(168,85,247,0.10),transparent_70%)] before:pointer-events-none'
+                : ''
+            }`}
+          >
+            <UnifiedChatPanel className="relative min-h-0 flex-1" />
           </div>
         </section>
 
@@ -308,61 +282,7 @@ export const UserDashboard: React.FC = () => {
           })()}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-2">
-          <div className="sa-surface-raised p-5">
-            <div className="flex items-center justify-between">
-              <p className="sa-eyebrow">Recent work</p>
-              {recentLoading && <RefreshCw size={13} className="animate-spin text-[var(--sa-ink-muted)]" />}
-            </div>
-            {recentLoading ? (
-              <div className="mt-3 flex flex-col gap-2" data-testid="recent-skeleton">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-10 w-full animate-pulse rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] bg-[var(--sa-border)]/40"
-                  />
-                ))}
-              </div>
-            ) : recentConversations && recentConversations.length > 0 ? (
-              <>
-                <h2 className="mt-2 text-lg font-semibold">Pick up where you left off</h2>
-                <ul className="mt-3 flex flex-col gap-2">
-                  {recentConversations.map((conversation) => (
-                    <li key={conversation.id}>
-                      <Link
-                        to={conversation.title?.trim() ? `/workspace/live?intent=${encodeURIComponent(conversation.title.trim())}` : '/workspace/live'}
-                        className="flex items-center justify-between gap-3 rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] px-3 py-2.5 text-sm transition hover:border-[var(--sa-primary)] hover:bg-[var(--sa-primary-soft)]"
-                      >
-                        <span className="min-w-0 flex-1 truncate font-medium">
-                          {conversation.title?.trim() || 'Untitled conversation'}
-                        </span>
-                        <span className="shrink-0 text-xs text-[var(--sa-ink-muted)]">
-                          {formatRelativeTime(conversation.updated_at)}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <>
-                <h2 className="mt-2 text-lg font-semibold">Nothing here yet</h2>
-                <p className="mt-2 text-sm text-[var(--sa-ink-muted)]">
-                  {recentConversations === null
-                    ? 'Loading your recent conversations…'
-                    : 'Your conversations, projects, and completed tasks will appear here.'}
-                </p>
-              </>
-            )}
-          </div>
-          <div className="sa-surface-raised p-5">
-            <p className="sa-eyebrow">Need a starting point?</p>
-            <h2 className="mt-2 text-lg font-semibold">Begin with a small task</h2>
-            <p className="mt-2 text-sm text-[var(--sa-ink-muted)]">
-              You can always add more tools later from Settings.
-            </p>
-          </div>
-        </section>
+
       </div>
 
       {showAddWizard && (
