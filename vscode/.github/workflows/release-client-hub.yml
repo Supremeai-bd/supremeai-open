@@ -37,7 +37,7 @@ jobs:
       - run: npm ci --workspace=desktop
       - run: npm run build --workspace=desktop
       - run: New-Item -ItemType Directory -Force -Path desktop/dist | Out-Null; Set-Content -Path desktop/dist/index.html -Value '<!DOCTYPE html><html><body>SupremeAI Desktop</body></html>'
-      - run: npx tauri build --config src-tauri/tauri.conf.json
+      - run: npx tauri build --config src-tauri/tauri.conf.json --no-bundle
         working-directory: desktop
       - uses: actions/upload-artifact@v4
         with:
