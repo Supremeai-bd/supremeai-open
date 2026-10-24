@@ -62,6 +62,9 @@ const AIStudio = React.lazy(() =>
 const AdminShell = React.lazy(() =>
   import("./pages/admin/AdminShell").then((m) => ({ default: m.AdminShell }))
 );
+const JarvisAdminConsolePage = React.lazy(() =>
+  import("./pages/admin/JarvisAdminConsolePage").then((m) => ({ default: m.JarvisAdminConsolePage }))
+);
 const KnowledgePage = React.lazy(() =>
   import("./components/dashboard/KnowledgePage").then((m) => ({ default: m.KnowledgePage }))
 );
@@ -222,7 +225,11 @@ export const App: React.FC = () => {
                 }
               />
 
-              {/* Admin — AdminShell (OTP/TOTP step-up preserved), NOT OperatorCockpit */}
+              {/* Supreme OS — JARVIS Admin Console */}
+              <Route path="/admin" element={<JarvisAdminConsolePage />} />
+              <Route path="/jarvis" element={<JarvisAdminConsolePage />} />
+
+              {/* Admin — AdminShell for nested sub-routes */}
               <Route
                 path="/admin/*"
                 element={
