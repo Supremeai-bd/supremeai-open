@@ -69,7 +69,7 @@ jobs:
   federation-ci-mirror:
     name: "📢 Federation CI Failure Ingress"
     if: github.event_name == 'repository_dispatch' && github.event.action == 'federation_ci_failed'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -78,7 +78,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Mirror Failure to Open Queue
@@ -95,7 +95,7 @@ jobs:
   bridge-intake-instant:
     name: "⚡ Instant Bridge Intake & PR Opener"
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/bridge/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -105,7 +105,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Run Auto-Bridge PR Opener
@@ -121,7 +121,7 @@ jobs:
   branch-naming-guard:
     name: "🌿 Branch Naming Guard"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Validate head branch name (event-context only, no checkout)
@@ -147,7 +147,7 @@ jobs:
   issue-reference-guard:
     name: "🔗 Issue Reference Guard"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Validate PR references an issue (event-context only, no checkout)
@@ -171,7 +171,7 @@ jobs:
   claim-guard:
     name: "🔒 Claim Gate Guard (#392)"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
       issues: read
@@ -230,7 +230,7 @@ jobs:
   knowledge-sharing-guard:
     name: "🧠 Knowledge Sharing Guard (#392)"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Verify PR body carries Reflection Evidence (event-context only, no checkout)
@@ -275,7 +275,7 @@ jobs:
   duplicate-pr-guard:
     name: "👥 Anti-Duplicate PR Guard"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Verify no competing open PR exists for the same issue
@@ -339,7 +339,7 @@ jobs:
   boundary_sanitization_guard:
     name: "🧱 Boundary Sanitization Guard (#107)"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
       docs_only: ${{ steps.scan.outputs.docs_only }}
@@ -406,7 +406,7 @@ jobs:
   loop_contract_parity_guard:
     name: "🔁 Loop-Contract Parity Guard (#118)"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Checkout repository (parity inspects file bodies)
@@ -418,7 +418,7 @@ jobs:
   ingress_hook_guard:
     name: "🛡️ Ingress Hook Guard (#161)"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Checkout repository (hook body required)
@@ -435,7 +435,7 @@ jobs:
   stale_base_guard:
     name: "⏳ Stale-Base Guard (#161)"
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Checkout repository (full history for merge-base arithmetic)
@@ -460,13 +460,13 @@ jobs:
   fast-lint-syntax-preflight:
     name: "⚡ Step 1: Fast Lint & Syntax Preflight (<10s)"
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install PyYAML
@@ -502,7 +502,7 @@ jobs:
       ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
        (needs.boundary_sanitization_guard.result == 'success' &&
         needs.loop_contract_parity_guard.result == 'success'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -512,7 +512,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -578,7 +578,7 @@ jobs:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       needs.boundary_sanitization_guard.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -597,7 +597,7 @@ jobs:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -622,7 +622,7 @@ jobs:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -639,7 +639,7 @@ jobs:
 
       - name: Setup Node
         if: steps.check_sdk_ts.outputs.exists == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "24"
 
@@ -661,7 +661,7 @@ jobs:
   instant-satellite-sync:
     name: "🚀 Instant Satellite Synchronizer"
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
       group: instant-satellite-sync
@@ -673,7 +673,7 @@ jobs:
           fetch-depth: 2
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -699,7 +699,7 @@ jobs:
   agent-loop:
     name: Start continuous_agent_loop.py --pick-next (30-min cadence)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -716,7 +716,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -791,7 +791,7 @@ jobs:
 
       - name: Upload verification evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: agent-loop-verify-evidence-${{ github.run_id }}
           path: agent-loop-verify-evidence.log
