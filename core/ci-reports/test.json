@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "merge_policy": {
+    "status": "passed"
+  },
+  "route_inventory": {
+    "status": "passed"
+  },
+  "route_graph": {
+    "status": "passed"
+  },
+  "preflight_evidence": {
+    "status": "passed"
+  },
+  "security_tests": {
+    "status": "passed"
+  },
+  "database": {
+    "status": "manual_pending"
+  }
+}

@@ -48,8 +48,6 @@ export interface RoleGuardProps {
 export const RoleGuard = ({ children, requiredRole, deniedReason }: RoleGuardProps) => {
   const { isChecking, isAuthenticated } = useAuthStatus();
   const location = useLocation();
-  // Backend-resolved session role (trusted state — never client-computed).
-  const sessionRole = useAuthStore((s) => s.role);
 
   if (isChecking) return <AuthLoadingSpinner />;
   if (!isAuthenticated) return <>{children}</>; // ProtectedRoute already handles unauthenticated redirect
@@ -58,13 +56,7 @@ export const RoleGuard = ({ children, requiredRole, deniedReason }: RoleGuardPro
     // বাংলা: step-up required route — authorized identity না হলেই deny।
     // যদি identity admin হয় কিন্তু এখনো step-up না করে থাকে, AdminShell নিজেই
     // OTP/TOTP flow দেখাবে (step-up preserved — roadmap §7.3)।
-    // FIX(admin-stepup-deadlock 2026-10-24): previously ONLY canAccessAdminContext()
-    // (post-TOTP server-signed JWT) was checked — a backend-resolved admin
-    // (authStore.role === 'admin') was denied BEFORE reaching AdminShell, whose
-    // OTP/TOTP form is the only way to obtain that JWT (chicken-and-egg). Now a
-    // session admin enters AdminShell, which itself renders the OTP/TOTP step-up;
-    // every privileged API call is still authorized server-side.
-    if (!canAccessAdminContext() && sessionRole !== 'admin') {
+    if (!canAccessAdminContext()) {
       return (
         <AccessDenied
           reason={deniedReason || 'Your identity is not authorized for the Admin context. Admin access requires an administrator account with two-factor verification.'}

@@ -1,0 +1,7 @@
+# FIX(FE-03): never ship source maps to production. `sourcemap: 'hidden'` in
+# vite.config.ts only stripped the //# sourceMappingURL comment — the .map
+# files themselves were still emitted into frontend/dist and uploaded by
+# Vercel, letting anyone recover original TS/TSX source from
+# /assets/*.js.map. vite build.sourcemap is now false; this is the
+# defense-in-depth net in case maps are ever re-enabled locally.
+**/*.map

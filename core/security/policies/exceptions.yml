@@ -1,0 +1,25 @@
+# Security Exceptions — Time-bound, Owner-based, Scoped bypasses
+# Per SG-14: No Permanent Bypass. Every exception MUST have expires_on + owner + scope.
+version: "1.0"
+
+# Empty initially — exceptions are added when needed, never permanent
+exceptions: []
+
+# Schema for future exceptions:
+# - id: "EXC-001"
+#   description: "Allow X for Y reason"
+#   scope:
+#     path: "backend/.../specific_file.py"
+#     invariant: "SG-07"  # which invariant is relaxed
+#   owner: "@SaifulHaqueNiloy"
+#   created_on: "2026-09-20"
+#   expires_on: "2026-10-20"  # MANDATORY — max 30 days
+#   justification: "Detailed reason why this exception is needed"
+#   review_status: "pending"  # pending | approved | rejected | expired
+
+validation_rules:
+  - "expires_on MUST be set and MUST be <= 30 days from created_on"
+  - "owner MUST be a GitHub username (not a bot)"
+  - "scope.path MUST be specific (no wildcards in exception scope)"
+  - "Auto-expiry: exceptions past expires_on are silently dropped"
+  - "Max 5 concurrent active exceptions"

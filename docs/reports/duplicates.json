@@ -1,0 +1,464 @@
+{
+  "total_duplicate_groups": 19,
+  "total_duplicate_blocks": 43,
+  "duplicates": [
+    {
+      "similarity_score": 1.0,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\_coverage_analysis3.py",
+          "function": "normalize_path",
+          "start_line": 9,
+          "end_line": 19,
+          "line_count": 11,
+          "complexity": 4
+        },
+        {
+          "file": "backend\\_coverage_analysis4.py",
+          "function": "normalize_path",
+          "start_line": 16,
+          "end_line": 24,
+          "line_count": 9,
+          "complexity": 4
+        }
+      ]
+    },
+    {
+      "similarity_score": 1.0,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\core\\factual_verifier.py",
+          "function": "_eval_node",
+          "start_line": 51,
+          "end_line": 72,
+          "line_count": 22,
+          "complexity": 8
+        },
+        {
+          "file": "backend\\tools\\code\\cot_reasoner.py",
+          "function": "_eval_node",
+          "start_line": 31,
+          "end_line": 51,
+          "line_count": 21,
+          "complexity": 8
+        }
+      ]
+    },
+    {
+      "similarity_score": 1.0,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\memory\\episodic_memory.py",
+          "function": "_connect",
+          "start_line": 25,
+          "end_line": 30,
+          "line_count": 6,
+          "complexity": 3
+        },
+        {
+          "file": "backend\\memory\\sliding_window.py",
+          "function": "_connect",
+          "start_line": 43,
+          "end_line": 48,
+          "line_count": 6,
+          "complexity": 3
+        }
+      ]
+    },
+    {
+      "similarity_score": 1.0,
+      "block_count": 4,
+      "blocks": [
+        {
+          "file": "backend\\tools\\creative\\audio_engineering_agent.py",
+          "function": "run",
+          "start_line": 52,
+          "end_line": 57,
+          "line_count": 6,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\tools\\creative\\brand_identity_agent.py",
+          "function": "run",
+          "start_line": 52,
+          "end_line": 57,
+          "line_count": 6,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\tools\\creative\\game_design_agent.py",
+          "function": "run",
+          "start_line": 52,
+          "end_line": 57,
+          "line_count": 6,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\tools\\creative\\video_production_agent.py",
+          "function": "run",
+          "start_line": 53,
+          "end_line": 58,
+          "line_count": 6,
+          "complexity": 1
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.9444,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\evolution\\adversarial_defense\\defense_system.py",
+          "function": "forward",
+          "start_line": 507,
+          "end_line": 513,
+          "line_count": 7,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\evolution\\federated_learning\\fed_learning.py",
+          "function": "forward",
+          "start_line": 598,
+          "end_line": 607,
+          "line_count": 10,
+          "complexity": 1
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.9423,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\adaptive_engine\\experience_db.py",
+          "function": "_cosine_similarity",
+          "start_line": 243,
+          "end_line": 251,
+          "line_count": 9,
+          "complexity": 3
+        },
+        {
+          "file": "backend\\services\\memory_service.py",
+          "function": "_cosine_similarity",
+          "start_line": 293,
+          "end_line": 299,
+          "line_count": 7,
+          "complexity": 3
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.9375,
+      "block_count": 4,
+      "blocks": [
+        {
+          "file": "backend\\tools\\creative\\audio_engineering_agent.py",
+          "function": "_enqueue",
+          "start_line": 74,
+          "end_line": 82,
+          "line_count": 9,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\tools\\creative\\brand_identity_agent.py",
+          "function": "_enqueue",
+          "start_line": 74,
+          "end_line": 82,
+          "line_count": 9,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\tools\\creative\\game_design_agent.py",
+          "function": "_enqueue",
+          "start_line": 74,
+          "end_line": 82,
+          "line_count": 9,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\tools\\creative\\video_production_agent.py",
+          "function": "_enqueue",
+          "start_line": 75,
+          "end_line": 83,
+          "line_count": 9,
+          "complexity": 1
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.9231,
+      "block_count": 3,
+      "blocks": [
+        {
+          "file": "backend\\core\\tier8\\agent_evolution_engine.py",
+          "function": "stop",
+          "start_line": 164,
+          "end_line": 171,
+          "line_count": 8,
+          "complexity": 4
+        },
+        {
+          "file": "backend\\core\\tier8\\self_improvement_agent.py",
+          "function": "stop",
+          "start_line": 119,
+          "end_line": 127,
+          "line_count": 9,
+          "complexity": 4
+        },
+        {
+          "file": "backend\\core\\tier8\\skill_marketplace_curator.py",
+          "function": "stop",
+          "start_line": 187,
+          "end_line": 194,
+          "line_count": 8,
+          "complexity": 4
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.8846,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\api\\routes\\repos.py",
+          "function": "list_repos",
+          "start_line": 37,
+          "end_line": 52,
+          "line_count": 16,
+          "complexity": 6
+        },
+        {
+          "file": "backend\\api\\routes\\tools_registry.py",
+          "function": "list_tools",
+          "start_line": 31,
+          "end_line": 43,
+          "line_count": 13,
+          "complexity": 5
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7941,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\evolution\\continual_learning\\ewc.py",
+          "function": "__init__",
+          "start_line": 423,
+          "end_line": 428,
+          "line_count": 6,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\evolution\\federated_learning\\fed_learning.py",
+          "function": "__init__",
+          "start_line": 589,
+          "end_line": 596,
+          "line_count": 8,
+          "complexity": 1
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7872,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\api\\routes\\repos.py",
+          "function": "create_repo",
+          "start_line": 56,
+          "end_line": 61,
+          "line_count": 6,
+          "complexity": 2
+        },
+        {
+          "file": "backend\\api\\routes\\tools_registry.py",
+          "function": "create_tool",
+          "start_line": 47,
+          "end_line": 52,
+          "line_count": 6,
+          "complexity": 2
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7759,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\tools\\comment_thread_ai.py",
+          "function": "_llm",
+          "start_line": 57,
+          "end_line": 66,
+          "line_count": 10,
+          "complexity": 2
+        },
+        {
+          "file": "backend\\tools\\code\\ai_pair_programmer.py",
+          "function": "_call_llm",
+          "start_line": 21,
+          "end_line": 30,
+          "line_count": 10,
+          "complexity": 2
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7705,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\api\\routes\\repos.py",
+          "function": "update_repo",
+          "start_line": 65,
+          "end_line": 72,
+          "line_count": 8,
+          "complexity": 3
+        },
+        {
+          "file": "backend\\api\\routes\\tools_registry.py",
+          "function": "update_tool",
+          "start_line": 56,
+          "end_line": 63,
+          "line_count": 8,
+          "complexity": 3
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.75,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\tools\\health_checker.py",
+          "function": "__init__",
+          "start_line": 15,
+          "end_line": 21,
+          "line_count": 7,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\tools\\billing\\monthly_cost_reporter.py",
+          "function": "__init__",
+          "start_line": 14,
+          "end_line": 19,
+          "line_count": 6,
+          "complexity": 1
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7241,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\memory\\long_term_memory.py",
+          "function": "__init__",
+          "start_line": 21,
+          "end_line": 26,
+          "line_count": 6,
+          "complexity": 2
+        },
+        {
+          "file": "backend\\tools\\ai_agents\\benchmark_agent.py",
+          "function": "__init__",
+          "start_line": 37,
+          "end_line": 42,
+          "line_count": 6,
+          "complexity": 2
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7143,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\api\\routes\\repos.py",
+          "function": "delete_repo",
+          "start_line": 76,
+          "end_line": 80,
+          "line_count": 5,
+          "complexity": 2
+        },
+        {
+          "file": "backend\\api\\routes\\tools_registry.py",
+          "function": "delete_tool",
+          "start_line": 67,
+          "end_line": 71,
+          "line_count": 5,
+          "complexity": 2
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7059,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\evolution\\continual_learning\\ewc.py",
+          "function": "create_example_model",
+          "start_line": 419,
+          "end_line": 439,
+          "line_count": 21,
+          "complexity": 1
+        },
+        {
+          "file": "backend\\evolution\\federated_learning\\fed_learning.py",
+          "function": "create_simple_model",
+          "start_line": 585,
+          "end_line": 609,
+          "line_count": 25,
+          "complexity": 1
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7027,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\tools\\code\\diagram_to_architecture.py",
+          "function": "_encode_image",
+          "start_line": 46,
+          "end_line": 50,
+          "line_count": 5,
+          "complexity": 2
+        },
+        {
+          "file": "backend\\tools\\code\\image_to_code.py",
+          "function": "_encode_image_file",
+          "start_line": 56,
+          "end_line": 60,
+          "line_count": 5,
+          "complexity": 2
+        }
+      ]
+    },
+    {
+      "similarity_score": 0.7011,
+      "block_count": 2,
+      "blocks": [
+        {
+          "file": "backend\\tools\\code\\diagram_to_architecture.py",
+          "function": "api_to_kubernetes",
+          "start_line": 279,
+          "end_line": 292,
+          "line_count": 14,
+          "complexity": 4
+        },
+        {
+          "file": "backend\\tools\\code\\image_to_code.py",
+          "function": "api_detect_tree",
+          "start_line": 290,
+          "end_line": 303,
+          "line_count": 14,
+          "complexity": 4
+        }
+      ]
+    }
+  ]
+}

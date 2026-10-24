@@ -1,0 +1,75 @@
+{
+  "description": "Known definition-shadowing findings (duplicate defs/classes/methods/dict keys). Ratchet baseline: CI fails only on findings NOT covered here. Shrink by fixing findings, then regenerate with --update-baseline. Wire-first: entries include owner-preserved duplicates (see _tasks.py docstring) \u2014 never delete without approval.",
+  "entries": {
+    "backend/api/routes/browser/_tasks.py": [
+      {
+        "count": 1,
+        "kind": "shadowed_def",
+        "name": "delete_task"
+      },
+      {
+        "count": 1,
+        "kind": "shadowed_def",
+        "name": "set_task_complete"
+      },
+      {
+        "count": 1,
+        "kind": "shadowed_def",
+        "name": "set_task_failed"
+      }
+    ],
+    "backend/api/routes/session_takeover.py": [
+      {
+        "count": 1,
+        "kind": "shadowed_def",
+        "name": "release_takeover"
+      }
+    ],
+    "scripts/backup/backup_telegram.py": [
+      {
+        "count": 1,
+        "kind": "shadowed_def",
+        "name": "get_fernet_crypto"
+      },
+      {
+        "count": 2,
+        "kind": "shadowed_def",
+        "name": "main"
+      }
+    ],
+    "scripts/devops/devops_ai_scribe.py": [
+      {
+        "count": 1,
+        "kind": "shadowed_def",
+        "name": "main"
+      }
+    ],
+    "scripts/devops/devops_security_scan.py": [
+      {
+        "count": 1,
+        "kind": "shadowed_def",
+        "name": "get_staged_files"
+      },
+      {
+        "count": 2,
+        "kind": "shadowed_def",
+        "name": "main"
+      }
+    ],
+    "scripts/resource_collection/scrapers.py": [
+      {
+        "count": 2,
+        "kind": "shadowed_def",
+        "name": "main"
+      }
+    ],
+    "scripts/testing/test_runners.py": [
+      {
+        "count": 1,
+        "kind": "shadowed_def",
+        "name": "main"
+      }
+    ]
+  },
+  "schema_version": 1
+}

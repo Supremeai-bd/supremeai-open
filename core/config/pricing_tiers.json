@@ -1,0 +1,25 @@
+{
+  "signup_bonus_usd": 5.00,
+  "tiers": {
+    "free": {
+      "name": "Free Tier",
+      "monthly_credits_usd": 0.00,
+      "max_parallel_tasks": 1
+    },
+    "pro": {
+      "name": "Pro Tier",
+      "monthly_credits_usd": 10.00,
+      "max_parallel_tasks": 5
+    },
+    "enterprise": {
+      "name": "Enterprise Tier",
+      "monthly_credits_usd": 100.00,
+      "max_parallel_tasks": 50
+    }
+  },
+  "token_rates_usd_per_1k": {
+    "input": 0.0015,
+    "output": 0.0020
+  },
+  "byoc_deployment_fee_usd": 0.05
+}

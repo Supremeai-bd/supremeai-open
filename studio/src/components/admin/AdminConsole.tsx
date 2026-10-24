@@ -72,7 +72,7 @@ export function AdminConsole(props: AdminConsoleProps) {
     );
   }
   return (
-    <div className="dashboard-aurora min-h-screen w-full flex flex-col">
+    <div className="dashboard-aurora min-h-screen w-full flex flex-col overflow-hidden">
       <DashboardErrorBoundary>
         <LoginView
           adminEmail={props.adminEmail}

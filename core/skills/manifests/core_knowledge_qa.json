@@ -1,0 +1,20 @@
+{
+    "skill_id": "core_knowledge_qa",
+    "owner": "Knowledge_Management_Team",
+    "allowed_data": {
+        "Admin": ["company_financials", "public_sops", "hr_policies"],
+        "Manager": ["public_sops", "hr_policies"],
+        "Standard_User": ["public_sops"]
+    },
+    "allowed_roles": ["Standard_User", "Manager", "Admin"],
+    "tools_allowed": ["supabase_vector_rpc"],
+    "human_approval_points": {
+        "on_ingestion": true,
+        "on_execution": false
+    },
+    "budget": {
+        "max_cost_per_invocation_usd": 0.01,
+        "max_latency_seconds": 4.0
+    },
+    "audit_logging": ["user_id", "user_role", "query_hash", "tokens_consumed"]
+}

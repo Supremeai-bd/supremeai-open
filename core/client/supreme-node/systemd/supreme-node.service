@@ -1,0 +1,49 @@
+# SupremeAI Mesh Node Daemon — systemd unit (Linux)
+# MESH-3 (issue #941)
+# ============================================================
+# Install (one-shot):
+#   sudo cp supreme-node.service /etc/systemd/system/
+#   sudo mkdir -p /opt/supreme-node /etc/supreme-node
+#   sudo cp -r client/supreme-node/* /opt/supreme-node/
+#   sudo cp client/supreme-node/config.yaml /etc/supreme-node/config.yaml
+#   sudo python3 -m pip install -r /opt/supreme-node/requirements.txt
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now supreme-node
+#   sudo systemctl status supreme-node
+#
+# PC-1 (Dev Rig): edit /etc/supreme-node/config.yaml — node_id=pc-1-dev-rig, role=coder
+# PC-2 (Headless Tester): node_id=pc-2-headless, role=tester
+# ============================================================
+
+[Unit]
+Description=SupremeAI Mesh Node Daemon — MESH-3 (#941)
+Documentation=https://github.com/SaifulHaqueNiloy/supremeai/issues/941
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# %i দিয়ে instantiate করা যায়: supreme-node@<username>.service
+User=%i
+Group=%i
+WorkingDirectory=/opt/supreme-node
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/supreme-node
+# Config path env override করা যায়
+EnvironmentFile=-/etc/supreme-node/env
+ExecStart=/usr/bin/python3 /opt/supreme-node/daemon.py --config /etc/supreme-node/config.yaml
+# Restart policy — daemon auto-restart 10s পরপর।
+Restart=always
+RestartSec=10
+# Graceful shutdown — SIGTERM দিলে 30s অপেক্ষা করে তারপর kill।
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# Resource limits — node যেন runaway task থেকে crash না করে।
+MemoryMax=1G
+LimitNOFILE=4096
+# Logs journald-এ যাবে — journalctl -u supreme-node -f দিয়ে দেখুন।
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

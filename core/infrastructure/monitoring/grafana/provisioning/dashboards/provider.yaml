@@ -1,0 +1,20 @@
+# INF-15 fix (issue #561): the dashboards/ directory is mounted into the
+# grafana container at /var/lib/grafana/dashboards (docker-compose.production.yml)
+# but was invisible — Grafana only loads dashboards through a provisioning
+# provider or manual UI import (which a fresh grafana_data volume loses on
+# `docker compose down -v`). This file-based provider scans the mounted
+# directory and loads every dashboard JSON (supremeai-overview.json) on
+# startup, refreshing every 30s.
+apiVersion: 1
+
+providers:
+  - name: supremeai
+    orgId: 1
+    folder: SupremeAI
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

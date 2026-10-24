@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SupremeAI Mesh Node Daemon — macOS launchd plist
+  MESH-3 (issue #941)
+  ============================================================
+  Install (one-shot):
+    sudo cp com.supremeai.node.plist /Library/LaunchDaemons/com.supremeai.node.plist
+    sudo chown root:wheel /Library/LaunchDaemons/com.supremeai.node.plist
+    sudo chmod 644 /Library/LaunchDaemons/com.supremeai.node.plist
+    sudo mkdir -p /opt/supreme-node /etc/supreme-node
+    sudo cp -r client/supreme-node/* /opt/supreme-node/
+    sudo cp client/supreme-node/config.yaml /etc/supreme-node/config.yaml
+    sudo python3 -m pip install -r /opt/supreme-node/requirements.txt
+    sudo launchctl load -w /Library/LaunchDaemons/com.supremeai.node.plist
+
+  Per-user (no sudo) — install to ~/Library/LaunchAgents:
+    cp com.supremeai.node.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.supremeai.node.plist
+
+  Logs:
+    tail -f /var/log/supreme-node/stdout.log
+    tail -f /var/log/supreme-node/stderr.log
+
+  Uninstall:
+    sudo launchctl unload /Library/LaunchDaemons/com.supremeai.node.plist
+    sudo rm /Library/LaunchDaemons/com.supremeai.node.plist
+
+  PC-1: edit /etc/supreme-node/config.yaml — node_id=pc-1-dev-rig, role=coder
+  PC-2: node_id=pc-2-headless, role=tester
+  ============================================================
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.supremeai.node</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/opt/supreme-node/daemon.py</string>
+        <string>--config</string>
+        <string>/etc/supreme-node/config.yaml</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/opt/supreme-node</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PYTHONPATH</key>
+        <string>/opt/supreme-node</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <!-- Restart throttle — 10s delay between crashes -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/supreme-node/stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/supreme-node/stderr.log</string>
+</dict>
+</plist>

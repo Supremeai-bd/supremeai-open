@@ -1,0 +1,104 @@
+{
+  "_doc": "Saved PROCESSES only. No selectors, no coordinates, no site names. Patterns are multilingual-friendly regex over accessible names/hints.",
+  "intents": {
+    "login_entry": {
+      "roles": ["button", "link"],
+      "names": ["^\\s*(log\\s*in|sign\\s*in)\\s*$", "log\\s*in|sign\\s*in|continue with email"],
+      "exclude": ["sign\\s*up|register|create account"],
+      "require_match": true
+    },
+    "identifier_field": {
+      "roles": ["textbox"],
+      "hints": ["e-?mail", "user(name)?", "login", "phone", "account"],
+      "exclude": ["search|message|password"],
+      "require_match": true
+    },
+    "password_field": {
+      "input_types": ["password"],
+      "min_score": 0
+    },
+    "submit": {
+      "roles": ["button"],
+      "names": ["log\\s*in|sign\\s*in|continue|next|submit|verify"],
+      "exclude": ["google|github|apple|microsoft|sign\\s*up"],
+      "form_submit": true,
+      "enter_fallback": true
+    },
+    "message_input": {
+      "roles": ["textbox"],
+      "hints": ["message|ask|prompt|type|chat|write|anything"],
+      "exclude": ["search|e-?mail|password|user"],
+      "min_score": 2
+    },
+    "send_message": {
+      "roles": ["button"],
+      "names": ["^send$|send message|submit"],
+      "hints": ["send|submit"],
+      "exclude": ["stop|cancel|upload|attach|more|settings|menu"],
+      "form_submit": true,
+      "require_match": true,
+      "enter_fallback": true
+    },
+    "stop_generation": {
+      "roles": ["button"],
+      "names": ["^\\s*(stop|cancel|interrupt)\\b", "stop (generating|response|streaming)"],
+      "hints": ["stop-?(button|generat)"],
+      "require_match": true,
+      "allow_disabled": false,
+      "min_score": 5
+    }
+  },
+  "recipes": {
+    "login": [
+      {"do": "click", "intent": "login_entry", "optional": true},
+      {"do": "wait", "value": 2},
+      {"do": "fill", "intent": "identifier_field", "value": "env:WEB_AGENT_USER"},
+      {"do": "click", "intent": "submit", "optional": true},
+      {"do": "wait", "value": 2},
+      {"do": "fill", "intent": "password_field", "value": "env:WEB_AGENT_PASS"},
+      {"do": "click", "intent": "submit", "near": "password_field"},
+      {"do": "wait", "value": 4}
+    ]
+  },
+  "roles": {
+    "devops":  {"keywords": ["vault", "env", "deploy", "secret", "infra"],
+                "prompts": ["Go ahead with the next step.", "Looks good, please continue with the deployment checks.",
+                            "Next, verify the remaining environment variables.", "Proceed. Flag anything that blocks the rollout."]},
+    "watcher": {"keywords": ["platform", "3rd party", "long run", "monitor", "watch", "health"],
+                "prompts": ["Please continue monitoring and summarize anything new.", "Any changes since your last check? Carry on.",
+                            "Keep going with the next service in the list.", "Continue, and note any anomalies you find."]},
+    "breaker": {"keywords": ["security", "vuln", "audit", "breaker"],
+                "prompts": ["Continue with the next attack surface.", "Good. What's the next weakest point? Go ahead.",
+                            "Proceed with the review and list findings so far."]},
+    "coder":   {"keywords": ["code", "pr", "merge", "git", "regress", "regration", "feature", "fix", "bug"],
+                "prompts": ["Go ahead with the next step.", "Looks good, continue and run the tests afterwards.",
+                            "Please proceed with the remaining items.", "Carry on. If something fails, fix it before moving on.",
+                            "OK, next one please."]}
+  },
+  "followup_templates": [
+    "Yes, go ahead with: {item}",
+    "Sounds good. Please proceed with {item}",
+    "Let's do {item} next.",
+    "OK — continue with {item}"
+  ],
+  "pacing": {
+    "min_gap_minutes": 6,
+    "max_gap_minutes": 18,
+    "max_nudges_per_tab_per_hour": 4,
+    "max_messages_global_per_hour": 15,
+    "quiet_hours": null,
+    "no_progress_backoff_max_minutes": 240,
+    "rate_limit_cooldown_minutes": 60,
+    "tab_start_stagger_seconds": [20, 120]
+  },
+  "guards": {
+    "human_verification_frames": ["captcha", "challenge", "turnstile", "arkose", "verify"],
+    "human_verification_text": ["verify you are human", "are you a robot", "i'm not a robot", "complete the security check",
+                                 "unusual activity", "confirm it's you", "one more step", "checking your browser"],
+    "rate_limit_text": ["too many requests", "rate limit", "usage limit", "try again later", "quota exceeded",
+                        "you've reached", "limit reached"],
+    "task_done_text": ["all tasks (are )?(complete|done)", "nothing (left|more) to do", "task (is )?complete",
+                       "no further (action|steps)"]
+  },
+  "session_skip_titles": "^(new chat|untitled|new conversation)?$"
+}

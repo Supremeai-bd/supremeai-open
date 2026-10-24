@@ -1,0 +1,23 @@
+{
+  "provenance": "#2893 cross-tier full-suite ratchet gate-এর known-red স্ন্যাপশট। বেসলাইন রান ২০২৬-১০-০২, HEAD 2fe47d42: pytest tests/ -m \"not requires_network and not e2e and not chaos\" --timeout=60 --no-cov -q → ১৭ failed + ২ collection-error, বাকি ~৮,৪০০ টেস্ট সবুজ। তাই 'যেকোনো ফেইল = BLOCK' হলে প্রতিটি backend PR চিরকাল লাল হতো (pipeline deadlock)। র্যাচেট চুক্তি: known_red ভুক্ত ফেইল = স্বীকৃত ঋণ (PASS); বাইরের ফেইল = নতুন (BLOCK)। ঋণ-নামানো: কোনো এন্ট্রি আর ফেইল না করলে known_red থেকে সরিয়ে দিন (গেট advisory WARNING দেখায়)। ফরম্যাট: bare node-id (tests/...::...) — গেট pytest short-summary-র node-id-এর সাথে সরাসরি তুলনা করে।",
+  "known_red": [
+    "tests/models/test_ai_memory_schema_contract.py",
+    "tests/services/test_sandbox_service.py",
+    "tests/api/routes/test_admin_routes_full.py::TestTotpVerify::test_verify_active_secret_after_pending_expiry",
+    "tests/api/routes/test_admin_routes_full.py::TestTotpVerify::test_verify_promotes_fresh_pending",
+    "tests/api/routes/test_admin_routes_full.py::TestTotpVerify::test_verify_remember_browser_sets_cookie",
+    "tests/core/queue/test_task_queue_enhanced_full.py::TestBackendAvailabilityProbes::test_pubsub_available",
+    "tests/core/queue/test_task_queue_enhanced_full.py::TestSubmitToPubsub::test_publishes_message_and_awaits_future",
+    "tests/core/test_admin_god.py::TestAdminGodLayer::test_verify_admin_incorrect_password",
+    "tests/core/test_admin_god.py::TestAdminGodLayer::test_verify_admin_success",
+    "tests/core/test_gcp_firestore.py::test_delete_removes_task",
+    "tests/core/test_gcp_firestore.py::test_enqueue_adds_document",
+    "tests/core/test_gcp_firestore.py::test_peek_does_not_remove",
+    "tests/core/test_lifespan.py::TestAppLifespan::test_handles_teardown_errors",
+    "tests/scripts/test_billing_quota_enforcer.py::TestQuotaEnforcerContextManager::test_aenter_with_firestore",
+    "tests/scripts/test_gateway_context_m03.py::TestAcompletionContextContract::test_context_carries_prompt_payload",
+    "tests/scripts/test_gateway_context_m03.py::TestAcompletionContextContract::test_invalid_attribution_fails_closed_before_inference",
+    "tests/scripts/test_gateway_context_m03.py::TestAcompletionContextContract::test_negative_budget_context_fails_closed",
+    "tests/security/test_database_readiness_regression.py::TestLazyEngineResolution::test_module_level_engine_resolves_after_factory_init"
+  ]
+}

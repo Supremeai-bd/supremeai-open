@@ -26,14 +26,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-if sys.platform == "win32":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
 ROOT_DIR = Path(__file__).resolve().parents[2]
-REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
+REPO = os.environ.get("GH_REPO", "SaifulHaqueNiloy/supremeai")
 
 # Role -> vault keys that role is allowed to access
 # ROOT FIX (#2923): task-wise scoping - watcher gets CLOUDFLARE/RENDER keys,

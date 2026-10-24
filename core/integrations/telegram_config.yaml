@@ -1,0 +1,15 @@
+# MESH-4 Telegram command-handler — configuration TEMPLATE (issue #942)
+#
+# ⚠️ এটি কেবল ডকুমেন্টেশন-টেমপ্লেট — রানটাইম কনফিগ সোর্স হলো environment
+# variables (backend/integrations/telegram_config.py দেখো)। কোনো secret
+# এখানে বসানো যাবে না (hardcode_config_scanner + secrets_registry নীতি)।
+#
+# Runtime env mapping:
+#   bot_token:       ${TELEGRAM_BOT_TOKEN}       # BotFather টোকেন (required)
+#   admin_chat_id:   ${ADMIN_TELEGRAM_CHAT_ID}   # অনুমোদিত admin chat (required)
+#   tower_base_url:  ${MESH_TOWER_BASE_URL}      # default http://127.0.0.1:8000
+#   tower_admin_token: ${TOWER_ADMIN_TOKEN}      # HITL approve/reject এর জন্য
+
+hitl_timeout: 300   # ৫ মিনিট উত্তর না এলে auto-defer → আবার জিজ্ঞেস (env: MESH_TG_HITL_ASK_TIMEOUT_SEC)
+defer_limit: 3      # সর্বোচ্চ defer; এরপর auto-reject (env: MESH_TG_HITL_DEFER_LIMIT)
+poll_interval: 20   # HITL pending queue পোলিং (env: MESH_TG_HITL_POLL_INTERVAL_SEC)

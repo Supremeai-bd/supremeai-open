@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/SaifulHaqueNiloy/supremeai/main/pyerrorfix/rules/schema.json",
+  "rules": {
+    "missing-type-hint": { "enabled": true, "severity": "info" },
+    "undefined-name":    { "enabled": true, "severity": "error" },
+    "hardcoded-secret":  { "enabled": true, "severity": "critical" },
+    "raw-sql-injection": { "enabled": true, "severity": "critical" },
+    "eval-exec":         { "enabled": true, "severity": "critical" },
+    "shell-injection":   { "enabled": true, "severity": "critical" },
+    "missing-await":     { "enabled": true, "severity": "error" },
+    "fstring-in-logging":{ "enabled": true, "severity": "warning" },
+    "broad-except":      { "enabled": true, "severity": "warning" },
+    "unused-import":     { "enabled": true, "severity": "warning" },
+    "assert-in-prod":    { "enabled": true, "severity": "warning" },
+    "print-in-production":{ "enabled": false }
+  }
+}

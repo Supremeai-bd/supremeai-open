@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    function isAISystem() {
+      return isAuthenticated() && request.auth.uid == "ai-system";
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ─── Admin: Full access to everything ────────────────────────
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // ─── Projects ────────────────────────────────────────────────
+    match /projects/{projectId} {
+      // Project owner can read their own project
+      allow read: if isAuthenticated() && resource.data.adminUserId == request.auth.uid;
+
+      // AI system can update project status and progress
+      allow update: if isAISystem();
+
+      // Chat sub-collection
+      match /chat/{messageId} {
+        allow read: if isAuthenticated();
+        allow write: if isAISystem() || isAdmin();
+      }
+
+      // OCR results sub-collection
+      match /ocr_results/{resultId} {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin() || isAISystem();
+      }
+
+      // Exports sub-collection
+      match /exports/{exportId} {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin();
+      }
+    }
+
+    // ─── Requirements ────────────────────────────────────────────
+    match /requirements/{reqId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() || isAISystem();
+    }
+
+    // ─── Scheduled Approvals ─────────────────────────────────────
+    match /scheduled_approvals/{approvalId} {
+      allow read, write: if isAdmin() || isAISystem();
+    }
+
+    // ─── AI Pool (agent rotation) ────────────────────────────────
+    match /ai_pool/{agentId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() || isAISystem();
+    }
+
+    // ─── System Config ───────────────────────────────────────────
+    match /config/{configId} {
+      allow read: if isAdmin() || isAISystem();
+      allow write: if isAdmin();
+    }
+
+    // ─── Notifications ───────────────────────────────────────────
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow write: if isAdmin() || isAISystem();
+    }
+
+    // ─── Scrape Engine Collections ───────────────────────────────
+    match /scrapePolicies/{policyId} {
+      allow read: if isAdmin() || isAISystem();
+      allow write: if isAdmin();
+    }
+    match /scrapePresets/{presetId} {
+      allow read: if isAdmin() || isAISystem();
+      allow write: if isAdmin();
+    }
+    match /scrapeAllowedDomains/{domainId} {
+      allow read: if isAdmin() || isAISystem();
+      allow write: if isAdmin();
+    }
+    match /scrapeHistory/{historyId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() || isAISystem();
+    }
+    match /scrapeEvent/{eventId} {
+      allow read: if isAdmin();
+      allow write: if isAISystem();
+    }
+
+    // ─── Default: Deny everything else ───────────────────────────
+    // Firebase default is deny, but this is explicit for clarity
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

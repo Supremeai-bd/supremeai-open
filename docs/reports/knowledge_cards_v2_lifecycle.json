@@ -1,0 +1,1155 @@
+{
+  "version": "1.0.0",
+  "cards": [
+    {
+      "tool_id": "radar.gap_finder",
+      "tool_name": "Universal Gap Finder",
+      "category": "RADAR",
+      "file_path": "tools/gap_finder.py",
+      "intent_triggers": [
+        "find gaps",
+        "detect missing",
+        "scan codebase",
+        "audit code quality",
+        "check test coverage",
+        "find dead code",
+        "unused imports",
+        "bare except",
+        "missing docstring",
+        "hardcoded secret",
+        "missing error handling"
+      ],
+      "cognitive_intents": [
+        "AUDIT_RADAR"
+      ],
+      "description": "Offline static analysis engine that scans the entire SupremeAI codebase for gaps, anti-patterns, security issues, missing tests, dead code, and quality regressions without network access or token cost.",
+      "when_to_use": "Run before any major refactoring, after merging new code, on CI schedule, or when system health degrades.",
+      "when_not_to_use": "Do not use for runtime dynamic errors or for finding solutions — use solution_synthesizer instead.",
+      "inputs": [
+        "project_root: str",
+        "output_path: str (optional)",
+        "severity_filter: str (optional)"
+      ],
+      "outputs": [
+        "gap-report.json with critical/high/medium/low findings",
+        "categories: test_coverage, security, quality, dead_code"
+      ],
+      "chain_before": [],
+      "chain_after": [
+        "discovery_fabric.source_scout",
+        "solution_synthesizer",
+        "gap_miner.safe_autofix_plan"
+      ],
+      "cli_example": "python tools/gap_finder.py . --output reports/gap-report.json",
+      "confidence_weight": 0.97,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "static-analysis",
+        "offline",
+        "zero-cost",
+        "security",
+        "quality"
+      ]
+    },
+    {
+      "tool_id": "radar.gap_miner.project_fingerprint",
+      "tool_name": "Gap Miner — Project Fingerprint",
+      "category": "RADAR",
+      "file_path": "tools/gap_miner/project_fingerprint.py",
+      "intent_triggers": [
+        "project DNA",
+        "codebase map",
+        "ecosystem snapshot",
+        "what stack do we use",
+        "count files",
+        "language breakdown",
+        "dependency inventory"
+      ],
+      "cognitive_intents": [
+        "AUDIT_RADAR",
+        "FEATURE_SYNTHESIS"
+      ],
+      "description": "Generates a complete DNA fingerprint of the SupremeAI project: language stats, file counts, service names, dependency graph, and technology ecosystem. Used as the first stage of the synthesis pipeline.",
+      "when_to_use": "Always run as first stage of Feature Synthesis pipeline. Also useful before onboarding new tools to understand impact.",
+      "when_not_to_use": "Not needed for runtime error repair.",
+      "inputs": [
+        "project_root: str"
+      ],
+      "outputs": [
+        "fingerprint.json: langs, services, file_count, dependencies, ecosystem"
+      ],
+      "chain_before": [],
+      "chain_after": [
+        "knowledge_squeezer.engine",
+        "gap_miner.context_packager"
+      ],
+      "cli_example": "python tools/gap_miner/project_fingerprint.py .",
+      "confidence_weight": 0.99,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "dna",
+        "fingerprint",
+        "offline",
+        "zero-cost"
+      ]
+    },
+    {
+      "tool_id": "radar.gap_miner.incident_replay",
+      "tool_name": "Gap Miner — Incident Replay",
+      "category": "RADAR",
+      "file_path": "tools/gap_miner/incident_replay.py",
+      "intent_triggers": [
+        "replay incident",
+        "analyze error log",
+        "debug crash",
+        "parse traceback",
+        "find root cause from log",
+        "what caused the failure",
+        "incident post-mortem"
+      ],
+      "cognitive_intents": [
+        "REPAIR"
+      ],
+      "description": "Parses error logs and tracebacks from CI/CD, Render, Sentry, or local runs to extract structured error fingerprints and root cause hypotheses. First step in the self-healing pipeline.",
+      "when_to_use": "Immediately when a runtime error, CI failure, or Sentry alert arrives. Always the first step in REPAIR pipeline.",
+      "when_not_to_use": "Not for proactive code quality audits — use gap_finder for that.",
+      "inputs": [
+        "log_path: str OR error_text: str"
+      ],
+      "outputs": [
+        "incident_fingerprint.json: error_type, traceback, affected_files, root_cause_hypothesis"
+      ],
+      "chain_before": [],
+      "chain_after": [
+        "discovery_fabric.source_scout",
+        "knowledge_os.knowledge_quarantine",
+        "solution_synthesizer"
+      ],
+      "cli_example": "python tools/gap_miner/incident_replay.py --log logs/sentry_error.txt",
+      "confidence_weight": 0.93,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "incident",
+        "repair",
+        "debugging",
+        "offline"
+      ]
+    },
+    {
+      "tool_id": "radar.gap_miner.drift_detector",
+      "tool_name": "Gap Miner — Drift Detector",
+      "category": "RADAR",
+      "file_path": "tools/gap_miner/drift_detector.py",
+      "intent_triggers": [
+        "documentation drift",
+        "api docs outdated",
+        "README stale",
+        "schema changed",
+        "swagger mismatch",
+        "docs not matching code"
+      ],
+      "cognitive_intents": [
+        "AUDIT_RADAR"
+      ],
+      "description": "Detects drift between actual codebase implementation and documentation/schemas. Finds stale READMEs, mismatched API specs, and outdated inline comments.",
+      "when_to_use": "On weekly schedule or before public API releases.",
+      "when_not_to_use": "Not for code quality issues — use gap_finder for that.",
+      "inputs": [
+        "project_root: str",
+        "docs_path: str (optional)"
+      ],
+      "outputs": [
+        "drift_report.json: stale_files, mismatches, severity"
+      ],
+      "chain_before": [
+        "radar.gap_finder"
+      ],
+      "chain_after": [
+        "solution_synthesizer"
+      ],
+      "cli_example": "python tools/gap_miner/drift_detector.py .",
+      "confidence_weight": 0.89,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "docs",
+        "drift",
+        "offline",
+        "audit"
+      ]
+    },
+    {
+      "tool_id": "shield.governance_policy",
+      "tool_name": "Governance Policy — Allowlist-First Security Kernel",
+      "category": "SHIELD",
+      "file_path": "backend/core/security/governance_policy.py",
+      "intent_triggers": [
+        "check if safe to modify",
+        "can I change this file",
+        "is this target allowed",
+        "governance check",
+        "allowlist validation",
+        "block sensitive file"
+      ],
+      "cognitive_intents": [
+        "REPAIR",
+        "EVOLUTION",
+        "FEATURE_SYNTHESIS"
+      ],
+      "description": "Centralized allowlist-first governance kernel. Validates every proposed code change against explicit allowlist namespaces (skills/, adapters/, brain/) and immutable protected denylist (core/security/, billing/, api/dependencies.py). MUST be called before any automated code modification.",
+      "when_to_use": "Always call BEFORE applying any automated patch, skill creation, or evolution proposal. It is the mandatory safety gate.",
+      "when_not_to_use": "Never skip this check — there are no exceptions.",
+      "inputs": [
+        "target_path: str"
+      ],
+      "outputs": [
+        "(is_allowed: bool, reason: str)"
+      ],
+      "chain_before": [
+        "solution_synthesizer",
+        "knowledge_squeezer"
+      ],
+      "chain_after": [
+        "evolution.canary_manager",
+        "evolution.benchmark_runner"
+      ],
+      "cli_example": "from core.security.governance_policy import get_governance_policy; get_governance_policy().validate_evolution_target('skills/my_tool.py')",
+      "confidence_weight": 1.0,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "security",
+        "governance",
+        "mandatory",
+        "zero-cost",
+        "offline"
+      ]
+    },
+    {
+      "tool_id": "shield.artifact_integrity",
+      "tool_name": "Artifact Integrity Gate — SHA-256 Verification",
+      "category": "SHIELD",
+      "file_path": "backend/evolution/artifact_integrity.py",
+      "intent_triggers": [
+        "verify integrity",
+        "sha256 check",
+        "tamper detection",
+        "pre-install check",
+        "hash verification",
+        "supply chain security"
+      ],
+      "cognitive_intents": [
+        "EVOLUTION"
+      ],
+      "description": "SHA-256 hash verification gate that prevents tampered or corrupted artifacts from being installed into the SupremeAI production environment. Runs as 4th defense-in-depth layer in the evolution pipeline.",
+      "when_to_use": "Always before promoting any canary artifact to production.",
+      "when_not_to_use": "Not for runtime error analysis.",
+      "inputs": [
+        "artifact_path: str",
+        "expected_hash: str (optional)"
+      ],
+      "outputs": [
+        "ArtifactIntegrityResult: passed, hash, tampered"
+      ],
+      "chain_before": [
+        "evolution.benchmark_runner"
+      ],
+      "chain_after": [
+        "evolution.canary_manager promotion"
+      ],
+      "cli_example": "from evolution.artifact_integrity import ArtifactIntegrityGate; ArtifactIntegrityGate().verify('artifacts/skill_v2.py')",
+      "confidence_weight": 0.99,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "security",
+        "integrity",
+        "sha256",
+        "supply-chain"
+      ]
+    },
+    {
+      "tool_id": "engine.discovery_fabric.source_scout",
+      "tool_name": "Discovery Fabric — Source Scout",
+      "category": "ENGINE",
+      "file_path": "tools/discovery_fabric/supremeai_discovery/source_scout.py",
+      "intent_triggers": [
+        "find open source solution",
+        "search github",
+        "find library",
+        "discover package",
+        "best python package for",
+        "search npm",
+        "huggingface model",
+        "pypi search",
+        "what tool exists for",
+        "open source alternative"
+      ],
+      "cognitive_intents": [
+        "REPAIR",
+        "FEATURE_SYNTHESIS"
+      ],
+      "description": "Searches GitHub, npm, PyPI, and HuggingFace for the best existing open-source solutions matching a query. Scores each candidate by trust (0.82 for GitHub), freshness, relevance, maturity, and license safety. Returns ranked candidates with MIT/Apache license filtering.",
+      "when_to_use": "After gap_finder or incident_replay identifies a problem, use source_scout to find if an existing open-source solution already exists before building from scratch.",
+      "when_not_to_use": "Do not use if ai_memory already contains a verified solution for this exact problem (query memory first).",
+      "inputs": [
+        "query: str",
+        "limit_per_source: int (default 8)"
+      ],
+      "outputs": [
+        "candidates: list[Candidate] with trust, score, license, stars, freshness"
+      ],
+      "chain_before": [
+        "radar.gap_miner.incident_replay",
+        "radar.gap_finder"
+      ],
+      "chain_after": [
+        "knowledge_os.knowledge_quarantine",
+        "engine.knowledge_squeezer"
+      ],
+      "cli_example": "python tools/discovery_fabric/supremeai_discovery/source_scout.py \"asyncio timeout retry python\" --limit 5",
+      "confidence_weight": 0.88,
+      "cost_tokens": "zero",
+      "requires_network": true,
+      "tags": [
+        "discovery",
+        "open-source",
+        "github",
+        "pypi",
+        "npm",
+        "huggingface"
+      ]
+    },
+    {
+      "tool_id": "engine.discovery_fabric.trust_engine",
+      "tool_name": "Discovery Fabric — Trust Engine",
+      "category": "ENGINE",
+      "file_path": "tools/discovery_fabric/supremeai_discovery/trust_engine.py",
+      "intent_triggers": [
+        "verify source trustworthiness",
+        "score evidence quality",
+        "how reliable is this",
+        "authority score",
+        "freshness check",
+        "reproducibility",
+        "conflict scoring"
+      ],
+      "cognitive_intents": [
+        "REPAIR",
+        "FEATURE_SYNTHESIS",
+        "AUDIT_RADAR"
+      ],
+      "description": "Scores discovered candidates on evidence quality, source authority, freshness, reproducibility, and conflict risk. Prevents low-quality or malicious sources from being adopted.",
+      "when_to_use": "Always run after source_scout and before knowledge_quarantine.",
+      "when_not_to_use": "Not a standalone tool — always part of the discovery pipeline.",
+      "inputs": [
+        "candidates: list[Candidate]",
+        "prefer_open_source: bool"
+      ],
+      "outputs": [
+        "ranked candidates with composite trust scores"
+      ],
+      "chain_before": [
+        "engine.discovery_fabric.source_scout"
+      ],
+      "chain_after": [
+        "knowledge_os.knowledge_quarantine"
+      ],
+      "cli_example": "from supremeai_discovery.trust_engine import TrustEngine; TrustEngine().score(candidates)",
+      "confidence_weight": 0.91,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "trust",
+        "scoring",
+        "security",
+        "offline"
+      ]
+    },
+    {
+      "tool_id": "engine.solution_synthesizer",
+      "tool_name": "Solution Synthesizer — Autonomous Patch Engine",
+      "category": "ENGINE",
+      "file_path": "tools/solution_synthesizer/tools/solution_synthesizer.py",
+      "intent_triggers": [
+        "apply fix",
+        "generate patch",
+        "synthesize solution",
+        "repair code",
+        "auto fix",
+        "create patch file",
+        "sandbox test fix",
+        "apply diff"
+      ],
+      "cognitive_intents": [
+        "REPAIR"
+      ],
+      "description": "Takes a structured issue/gap report, gathers code context, requests a minimal structured patch from the AI solver endpoint (OpenAI-compatible), validates the patch in an isolated sandbox copy, runs tests, and only then optionally applies the verified patch with timestamped backup. Dry-run by default — requires --apply flag for real changes.",
+      "when_to_use": "Final step in the REPAIR pipeline after discovery and governance validation. Only apply on allowlisted targets.",
+      "when_not_to_use": "Never use on protected files (core/security/, billing/, api/dependencies.py).",
+      "inputs": [
+        "project_root: str",
+        "issue: dict (gap-report entry or issue.json)",
+        "--apply flag"
+      ],
+      "outputs": [
+        "solution_synthesizer.json report",
+        "verified .patch file (optional)",
+        ".supremeai_backups/ backup"
+      ],
+      "chain_before": [
+        "shield.governance_policy",
+        "engine.discovery_fabric.source_scout",
+        "knowledge_os.knowledge_quarantine"
+      ],
+      "chain_after": [
+        "evolution.canary_manager",
+        "memory.ai_memory ingestion"
+      ],
+      "cli_example": "python tools/solution_synthesizer/tools/solution_synthesizer.py . --issue reports/gap-report.json\npython tools/solution_synthesizer/tools/solution_synthesizer.py . --issue reports/gap-report.json --apply",
+      "confidence_weight": 0.96,
+      "cost_tokens": "low",
+      "requires_network": true,
+      "tags": [
+        "repair",
+        "patch",
+        "sandbox",
+        "auto-fix",
+        "safety"
+      ]
+    },
+    {
+      "tool_id": "engine.knowledge_squeezer",
+      "tool_name": "Knowledge Squeezer — Multi-Model Adversarial Distillation",
+      "category": "ENGINE",
+      "file_path": "tools/knowledge_squeezer/knowledge_squeezer/engine.py",
+      "intent_triggers": [
+        "squeeze knowledge",
+        "multi model debate",
+        "adversarial audit",
+        "socratic questioning",
+        "best architecture for",
+        "deep synthesis",
+        "first principles",
+        "distill knowledge",
+        "what is the best way to",
+        "expert consensus"
+      ],
+      "cognitive_intents": [
+        "FEATURE_SYNTHESIS"
+      ],
+      "description": "7-stage multi-model knowledge distillation engine: (1) Independent generation, (2) Cross-model adversarial audit, (3) Socratic gap mining, (4) First-principles reconstruction, (5) Structured synthesis, (6) Confidence/scoring gate, (7) Optional promotion to ai_memory. Requires at least one of DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY.",
+      "when_to_use": "For deep architectural decisions, complex problem solving, or when multiple AI models' perspectives are needed. Central engine of FEATURE_SYNTHESIS pipeline.",
+      "when_not_to_use": "Do not call for simple bug fixes — use solution_synthesizer. Requires API keys and token budget.",
+      "inputs": [
+        "topic: str",
+        "providers: list (deepseek/claude/gemini)"
+      ],
+      "outputs": [
+        "distilled_knowledge_artifact.json with principles, confidence, multi-model_consensus"
+      ],
+      "chain_before": [
+        "radar.gap_miner.project_fingerprint"
+      ],
+      "chain_after": [
+        "knowledge_os.truth_hierarchy",
+        "intelligence_extensions.skill_distiller",
+        "memory.ai_memory ingestion"
+      ],
+      "cli_example": "python tools/knowledge_squeezer/scripts/knowledge_squeezer.py \"How to build a zero-cost distributed rate limiter?\"",
+      "confidence_weight": 0.94,
+      "cost_tokens": "medium",
+      "requires_network": true,
+      "tags": [
+        "knowledge",
+        "multi-model",
+        "adversarial",
+        "synthesis",
+        "distillation"
+      ]
+    },
+    {
+      "tool_id": "knowledge_os.knowledge_quarantine",
+      "tool_name": "Knowledge OS — Quarantine Gate",
+      "category": "MEMORY",
+      "file_path": "tools/knowledge_os/supremeai_knowledge_os/knowledge_quarantine.py",
+      "intent_triggers": [
+        "quarantine knowledge",
+        "isolate suspicious",
+        "sandbox knowledge",
+        "verify before admit",
+        "trust check",
+        "safety gate",
+        "hold for review"
+      ],
+      "cognitive_intents": [
+        "REPAIR",
+        "FEATURE_SYNTHESIS"
+      ],
+      "description": "Holds newly discovered knowledge in quarantine before admission to ai_memory. Applies trust scoring threshold checks, prevents unverified external knowledge from corrupting the memory store.",
+      "when_to_use": "Always run after discovery_fabric and before truth_hierarchy. Required gatekeeper.",
+      "when_not_to_use": "Not for runtime code analysis.",
+      "inputs": [
+        "knowledge_item: dict",
+        "trust_threshold: float (default 0.70)"
+      ],
+      "outputs": [
+        "QuarantineResult: PASSED | HELD | REJECTED with reason"
+      ],
+      "chain_before": [
+        "engine.discovery_fabric.trust_engine"
+      ],
+      "chain_after": [
+        "knowledge_os.truth_hierarchy"
+      ],
+      "cli_example": "from supremeai_knowledge_os.knowledge_quarantine import KnowledgeQuarantine; KnowledgeQuarantine().evaluate(item)",
+      "confidence_weight": 0.95,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "quarantine",
+        "safety",
+        "trust",
+        "offline"
+      ]
+    },
+    {
+      "tool_id": "knowledge_os.truth_hierarchy",
+      "tool_name": "Knowledge OS — Truth Hierarchy",
+      "category": "MEMORY",
+      "file_path": "tools/knowledge_os/supremeai_knowledge_os/truth_hierarchy.py",
+      "intent_triggers": [
+        "establish truth",
+        "rank knowledge",
+        "highest confidence",
+        "verified fact",
+        "conflicting information",
+        "canonical answer",
+        "authoritative source"
+      ],
+      "cognitive_intents": [
+        "FEATURE_SYNTHESIS",
+        "AUDIT_RADAR"
+      ],
+      "description": "Establishes a ranked truth hierarchy among multiple knowledge candidates. Resolves conflicts using authority, evidence quality, freshness, and reproducibility scoring to identify the single most reliable answer.",
+      "when_to_use": "After quarantine passes, before admitting to permanent ai_memory.",
+      "when_not_to_use": "Not for runtime code patching.",
+      "inputs": [
+        "candidates: list[dict]"
+      ],
+      "outputs": [
+        "TruthHierarchyResult: top_candidate, confidence, conflicts_resolved"
+      ],
+      "chain_before": [
+        "knowledge_os.knowledge_quarantine"
+      ],
+      "chain_after": [
+        "memory.ai_memory ingestion",
+        "intelligence_extensions.skill_distiller"
+      ],
+      "cli_example": "from supremeai_knowledge_os.truth_hierarchy import TruthHierarchy; TruthHierarchy().resolve(candidates)",
+      "confidence_weight": 0.93,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "truth",
+        "conflict-resolution",
+        "authority",
+        "offline"
+      ]
+    },
+    {
+      "tool_id": "knowledge_os.knowledge_firewall",
+      "tool_name": "Knowledge OS — Knowledge Firewall",
+      "category": "SHIELD",
+      "file_path": "tools/knowledge_os/supremeai_knowledge_os/knowledge_firewall.py",
+      "intent_triggers": [
+        "prevent memory poisoning",
+        "block prompt injection",
+        "knowledge security",
+        "filter malicious knowledge",
+        "memory integrity"
+      ],
+      "cognitive_intents": [
+        "REPAIR",
+        "FEATURE_SYNTHESIS",
+        "AUDIT_RADAR"
+      ],
+      "description": "Guards ai_memory from prompt injection attacks, memory poisoning, and adversarial knowledge insertion. Filters new knowledge before permanent storage.",
+      "when_to_use": "Always active — integrated into memory ingestion pipeline.",
+      "when_not_to_use": "Never bypass this in production.",
+      "inputs": [
+        "knowledge_item: dict"
+      ],
+      "outputs": [
+        "FirewallResult: CLEAR | BLOCKED with threat_type"
+      ],
+      "chain_before": [
+        "knowledge_os.truth_hierarchy"
+      ],
+      "chain_after": [
+        "memory.ai_memory ingestion"
+      ],
+      "cli_example": "from supremeai_knowledge_os.knowledge_firewall import KnowledgeFirewall; KnowledgeFirewall().inspect(item)",
+      "confidence_weight": 0.98,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "security",
+        "firewall",
+        "anti-injection",
+        "mandatory",
+        "offline"
+      ]
+    },
+    {
+      "tool_id": "intelligence.skill_distiller",
+      "tool_name": "Intelligence Extensions — Skill Distiller",
+      "category": "ENGINE",
+      "file_path": "tools/intelligence_extensions/supremeai_intelligence/skill_distiller.py",
+      "intent_triggers": [
+        "create new skill",
+        "distill workflow",
+        "automate repeated task",
+        "convert workflow to skill",
+        "build reusable tool"
+      ],
+      "cognitive_intents": [
+        "FEATURE_SYNTHESIS",
+        "EVOLUTION"
+      ],
+      "description": "Converts repeated successful workflows into reusable, versioned skills with tests. When the same pattern of tool calls succeeds 3+ times, distiller extracts it into a permanent skill.",
+      "when_to_use": "At the end of FEATURE_SYNTHESIS pipeline, after truth_hierarchy confirms the knowledge.",
+      "when_not_to_use": "Not for one-off repairs.",
+      "inputs": [
+        "workflow_trace: list[dict]",
+        "success_count: int"
+      ],
+      "outputs": [
+        "SkillDefinition: name, version, schema, test_cases"
+      ],
+      "chain_before": [
+        "knowledge_os.truth_hierarchy"
+      ],
+      "chain_after": [
+        "backend.core.evolution.auto_skill_creator",
+        "memory.ai_memory ingestion"
+      ],
+      "cli_example": "from supremeai_intelligence.skill_distiller import SkillDistiller; SkillDistiller().distill(workflow_trace)",
+      "confidence_weight": 0.91,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "skill",
+        "automation",
+        "distillation",
+        "offline"
+      ]
+    },
+    {
+      "tool_id": "intelligence.model_router_economist",
+      "tool_name": "Intelligence Extensions — Model Router Economist",
+      "category": "ENGINE",
+      "file_path": "tools/intelligence_extensions/supremeai_intelligence/model_router_economist.py",
+      "intent_triggers": [
+        "choose best model",
+        "cost-aware routing",
+        "which ai model",
+        "budget routing",
+        "model selection",
+        "cheapest model for task",
+        "zero cost ai"
+      ],
+      "cognitive_intents": [
+        "FEATURE_SYNTHESIS",
+        "REPAIR"
+      ],
+      "description": "Selects the optimal AI model for each subtask based on complexity, expected value, latency, historical accuracy per domain, and token budget. Prevents expensive models from being called for simple tasks.",
+      "when_to_use": "Always before any LLM API call in the knowledge_squeezer or solution_synthesizer.",
+      "when_not_to_use": "Not for offline/static analysis tasks.",
+      "inputs": [
+        "task: dict",
+        "budget_tokens: int",
+        "available_providers: list"
+      ],
+      "outputs": [
+        "ModelRoutingDecision: model, provider, estimated_cost, rationale"
+      ],
+      "chain_before": [],
+      "chain_after": [
+        "engine.knowledge_squeezer",
+        "engine.solution_synthesizer"
+      ],
+      "cli_example": "from supremeai_intelligence.model_router_economist import ModelRouterEconomist; ModelRouterEconomist().route(task)",
+      "confidence_weight": 0.89,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "routing",
+        "budget",
+        "optimization",
+        "zero-cost-overhead"
+      ]
+    },
+    {
+      "tool_id": "intelligence.failure_pattern_miner",
+      "tool_name": "Intelligence Extensions — Failure Pattern Miner",
+      "category": "RADAR",
+      "file_path": "tools/intelligence_extensions/supremeai_intelligence/failure_pattern_miner.py",
+      "intent_triggers": [
+        "learn from failure",
+        "mine error patterns",
+        "ci failure analysis",
+        "what goes wrong repeatedly",
+        "failure fingerprint",
+        "recurring bug"
+      ],
+      "cognitive_intents": [
+        "AUDIT_RADAR",
+        "REPAIR"
+      ],
+      "description": "Mines CI logs, rollback history, Sentry incidents, and rejected patches to build reusable failure fingerprints and prevention rules. Prevents the same failure from occurring twice.",
+      "when_to_use": "After every failed CI run, rollback event, or rejected patch. Runs as background AUDIT task.",
+      "when_not_to_use": "Not for real-time repair — use incident_replay for that.",
+      "inputs": [
+        "log_sources: list[str]",
+        "window_days: int (default 30)"
+      ],
+      "outputs": [
+        "FailurePatternReport: patterns, fingerprints, prevention_rules"
+      ],
+      "chain_before": [
+        "radar.gap_miner.incident_replay"
+      ],
+      "chain_after": [
+        "memory.ai_memory ingestion"
+      ],
+      "cli_example": "from supremeai_intelligence.failure_pattern_miner import FailurePatternMiner; FailurePatternMiner().mine(log_dir='logs/')",
+      "confidence_weight": 0.92,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "failure",
+        "patterns",
+        "learning",
+        "offline"
+      ]
+    },
+    {
+      "tool_id": "orchestrator.master_cognitive_orchestrator",
+      "tool_name": "Master Cognitive Orchestrator — Central Control Plane",
+      "category": "ORCHESTRATOR",
+      "file_path": "backend/core/orchestration/master_cognitive_orchestrator.py",
+      "intent_triggers": [
+        "orchestrate pipeline",
+        "dispatch intent",
+        "run full pipeline",
+        "self heal",
+        "deep synthesis",
+        "run audit",
+        "governed evolution",
+        "autonomous repair"
+      ],
+      "cognitive_intents": [
+        "REPAIR",
+        "FEATURE_SYNTHESIS",
+        "AUDIT_RADAR",
+        "EVOLUTION"
+      ],
+      "description": "The central metacognitive brain that routes to correct multi-tool pipeline chains based on CognitiveIntent. Dynamically merges tools: REPAIR=incident_replay+discovery+quarantine+synthesizer+governance, SYNTHESIS=dna+squeezer+truth+distiller+memory, AUDIT=gap_finder+drift+revaluation, EVOLUTION=proposal+governance+benchmark+canary.",
+      "when_to_use": "This is the primary entry point for all autonomous cognitive tasks. Prefer this over calling individual tools directly.",
+      "when_not_to_use": "For ultra-simple one-off CLI scripts that need no chaining.",
+      "inputs": [
+        "intent: CognitiveIntent",
+        "payload: dict"
+      ],
+      "outputs": [
+        "PipelineExecutionResult: status, stages_completed, artifacts, confidence, evidence_ids"
+      ],
+      "chain_before": [],
+      "chain_after": [],
+      "cli_example": "python tools/master_orchestrator.py --intent repair --error 'TimeoutError'\npython tools/master_orchestrator.py --intent synthesis --demand 'Build rate limiter'\npython tools/master_orchestrator.py --intent audit",
+      "confidence_weight": 0.97,
+      "cost_tokens": "varies",
+      "requires_network": true,
+      "tags": [
+        "orchestrator",
+        "control-plane",
+        "autonomous",
+        "central"
+      ]
+    },
+    {
+      "tool_id": "autonomy.self_heal_loop",
+      "tool_name": "Autonomy Pack — Self-Heal Loop",
+      "category": "ENGINE",
+      "file_path": "tools/autonomy/self_heal_loop.py",
+      "intent_triggers": [
+        "continuous healing",
+        "watch for errors",
+        "daemon repair",
+        "auto-monitor",
+        "always-on healing",
+        "background repair"
+      ],
+      "cognitive_intents": [
+        "REPAIR"
+      ],
+      "description": "Long-running background watchdog that monitors logs/health endpoints and triggers the self-healing pipeline whenever degradation is detected. Intended as a sidecar process.",
+      "when_to_use": "Deploy as background daemon alongside the SupremeAI backend in production.",
+      "when_not_to_use": "Not for one-shot repairs — use master_orchestrator --intent repair directly.",
+      "inputs": [
+        "watch_path: str",
+        "poll_interval: int (seconds)"
+      ],
+      "outputs": [
+        "Continuous monitoring with triggered repair pipelines"
+      ],
+      "chain_before": [],
+      "chain_after": [
+        "orchestrator.master_cognitive_orchestrator"
+      ],
+      "cli_example": "python tools/autonomy/self_heal_loop.py --watch logs/ --interval 60",
+      "confidence_weight": 0.9,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "autonomy",
+        "daemon",
+        "watchdog",
+        "self-healing"
+      ]
+    },
+    {
+      "tool_id": "autonomy.deploy_guard",
+      "tool_name": "Autonomy Pack — Deploy Guard",
+      "category": "SHIELD",
+      "file_path": "tools/autonomy/deploy_guard.py",
+      "intent_triggers": [
+        "pre-deploy check",
+        "safe to deploy",
+        "deployment gate",
+        "CI gate",
+        "validate before deploy",
+        "deploy safety"
+      ],
+      "cognitive_intents": [
+        "EVOLUTION"
+      ],
+      "description": "Validates readiness before any production deployment: checks test coverage, security scans, environment variable completeness, and governance policy clearance.",
+      "when_to_use": "Always as final gate in CI/CD before any git push to production or Render deploy.",
+      "when_not_to_use": "Not a development-time tool.",
+      "inputs": [
+        "project_root: str",
+        "env_vars: list[str]"
+      ],
+      "outputs": [
+        "DeployReadinessReport: gates_passed, gates_failed, blocking_issues"
+      ],
+      "chain_before": [
+        "shield.governance_policy",
+        "shield.artifact_integrity"
+      ],
+      "chain_after": [
+        "deployment"
+      ],
+      "cli_example": "python tools/autonomy/deploy_guard.py . --env-check",
+      "confidence_weight": 0.95,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "deployment",
+        "safety",
+        "ci-cd",
+        "gate"
+      ]
+    },
+    {
+      "tool_id": "lifecycle.script_execution_guide",
+      "tool_name": "Script Execution Lifecycle Guide — When to Run Which Script",
+      "category": "ORCHESTRATOR",
+      "file_path": "tools/tool_knowledge_injector.py",
+      "intent_triggers": [
+        "when to run script",
+        "which script to run",
+        "script execution order",
+        "what runs first",
+        "when to run gap finder",
+        "when to run knowledge injector",
+        "when to run solution synthesizer",
+        "script trigger conditions",
+        "development workflow order",
+        "ci cd script order",
+        "before deploy what to run",
+        "after merge what to run",
+        "kono script kokhon run korbo",
+        "script gulo kokhon chalate hobe",
+        "kono script age chalano dorkar",
+        "script execution lifecycle"
+      ],
+      "cognitive_intents": [
+        "AUDIT_RADAR",
+        "EVOLUTION",
+        "REPAIR",
+        "FEATURE_SYNTHESIS"
+      ],
+      "description": "Complete decision guide for WHEN to run each SupremeAI script across all phases.\n\nDEVELOPMENT PHASE (local coding):\n  gap_finder.py → Run BEFORE committing. Catches dead code, missing tests, secrets.\n  gap_miner/project_fingerprint.py → Run FIRST when starting a new feature synthesis.\n  tool_knowledge_injector.py (dry-run) → Run after adding new tools to preview cards.\n\nCI/CD PIPELINE (GitHub Actions):\n  gap_finder.py → Runs on every PR push. Blocks merge if CRITICAL findings exist.\n  autonomy/deploy_guard.py → Final CI gate before Render deploy. Mandatory.\n  gap_miner/drift_detector.py → Weekly cron. Detects stale docs/schema mismatches.\n  gap_miner/incident_replay.py → Runs immediately when CI fails.\n\nAFTER INCIDENT / RUNTIME ERROR (REPAIR pipeline order):\n  STEP 1: gap_miner/incident_replay.py → Parse error → get fingerprint.\n  STEP 2: discovery_fabric/source_scout.py → Find open-source solutions.\n  STEP 3: solution_synthesizer.py (dry-run) → Generate patch, no --apply yet.\n  STEP 4: governance_policy validation → Validate patch target is allowlisted.\n  STEP 5: solution_synthesizer.py --apply → Apply ONLY after all validation passes.\n\nKNOWLEDGE & MEMORY OPERATIONS:\n  tool_knowledge_injector.py --inject → When new Crown Jewel tools are added.\n  knowledge_squeezer engine → For deep architectural decisions ONLY (not bug fixes).\n  tool_knowledge_injector.py --verify → After injection to verify recall works.\n\nEVOLUTION / SELF-IMPROVEMENT CYCLE:\n  STEP 1: gap_finder.py → Baseline audit before evolution.\n  STEP 2: knowledge_squeezer → Deep synthesis of improvement ideas.\n  STEP 3: solution_synthesizer --apply → Apply approved changes.\n  STEP 4: autonomy/deploy_guard.py → Final gate before deploy.\n  STEP 5: tool_knowledge_injector.py --inject → Re-inject updated knowledge.",
+      "when_to_use": "Query this card whenever you need to decide WHICH script to run and IN WHAT ORDER for: development, CI failure, incident, or evolution cycle.",
+      "when_not_to_use": "Do not use to get implementation details of each tool — query individual tool cards for that.",
+      "inputs": [
+        "situation: str (development | ci_failure | incident | evolution | knowledge_update)"
+      ],
+      "outputs": [
+        "Ordered script execution sequence with trigger conditions and safety gates"
+      ],
+      "chain_before": [],
+      "chain_after": [
+        "radar.gap_finder",
+        "radar.gap_miner.incident_replay",
+        "engine.solution_synthesizer"
+      ],
+      "cli_example": "# DEVELOPMENT: Before committing\npython tools/gap_finder.py . --output reports/gap-report.json\n\n# CI FAILURE: Immediate incident analysis\npython tools/gap_miner/incident_replay.py --log logs/ci_error.txt\n\n# AFTER INCIDENT: Find open-source solution\npython tools/discovery_fabric/supremeai_discovery/source_scout.py \"asyncio timeout fix\"\n\n# KNOWLEDGE UPDATE: After adding new tools\npython tools/tool_knowledge_injector.py --inject --verify\n\n# PRE-DEPLOY GATE: Always last\npython tools/autonomy/deploy_guard.py . --env-check",
+      "confidence_weight": 0.99,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "lifecycle",
+        "script-order",
+        "when-to-run",
+        "execution-guide",
+        "workflow",
+        "phase-trigger"
+      ]
+    },
+    {
+      "tool_id": "lifecycle.pipeline_split_merge_strategy",
+      "tool_name": "Pipeline Split & Merge Strategy — When to Split, When to Merge",
+      "category": "ORCHESTRATOR",
+      "file_path": "tools/pipeline_recipe_compiler.py",
+      "intent_triggers": [
+        "when to split pipeline",
+        "when to merge pipeline",
+        "split merge strategy",
+        "pipeline convergence",
+        "parallel pipeline",
+        "merge branches",
+        "split pipeline stage",
+        "pipeline fork join",
+        "fan out fan in",
+        "pipeline split condition",
+        "when to converge",
+        "pipeline topology",
+        "kon porjone split korte hobe",
+        "kon stage e merge korte hobe",
+        "pipeline split merge",
+        "kobe split kobe merge",
+        "parallel execution when",
+        "convergence point pipeline"
+      ],
+      "cognitive_intents": [
+        "FEATURE_SYNTHESIS",
+        "REPAIR",
+        "AUDIT_RADAR",
+        "EVOLUTION"
+      ],
+      "description": "Complete decision guide for WHEN to SPLIT and WHEN to MERGE pipeline stages.\n\nSPLIT (Fork / Parallel Execution) — কখন Split করবে:\n  1. INDEPENDENT PARALLEL DISCOVERY:\n     source_scout fans out to GitHub+PyPI+npm+HuggingFace simultaneously.\n     Split AFTER incident_replay outputs fingerprint → 4 parallel searches.\n  2. MULTI-MODEL ADVERSARIAL SYNTHESIS (knowledge_squeezer Stage 1):\n     DeepSeek + Claude + Gemini generate INDEPENDENTLY (no anchoring bias).\n     Split: Each model gets same topic → generates without seeing others.\n  3. MULTI-FILE INDEPENDENT PATCHES:\n     solution_synthesizer splits when ≥2 INDEPENDENT issues in gap-report.\n     Split condition: Issues affect different files with zero shared imports.\n  4. AUDIT PARALLELISM:\n     gap_finder splits into: test_coverage + security + quality + dead_code.\n     All 4 run in parallel threads → merged into unified gap-report.json.\n\nMERGE (Convergence / Reduce) — কখন Merge করবে:\n  1. TRUST SCORING REDUCES CANDIDATES:\n     After source_scout parallel branches → MERGE into trust_engine.\n     Condition: All parallel searches done AND ≥1 result returned.\n  2. ADVERSARIAL AUDIT CONVERGENCE (knowledge_squeezer Stage 2):\n     After Stage 1 independent generation → MERGE all model outputs.\n     Condition: All providers responded OR timed out with fallback.\n  3. QUARANTINE GATE:\n     After trust_engine → MERGE into quarantine (trust_score ≥ 0.70 required).\n  4. SOLUTION PATCH MERGE:\n     After split branches generate patches → MERGE into unified diff.\n     Condition: ALL patches pass sandbox + governance. If ANY fails → BLOCK all.\n  5. FINAL SYNTHESIS MERGE (knowledge_squeezer Stage 5):\n     After Stages 1-4 → MERGE into final synthesis.\n     Condition: ≥2 models agree on core principles (consensus ≥60%).\n     If consensus <60% → DO NOT MERGE → escalate to human review.\n\nTOPOLOGY BY PIPELINE TYPE:\n  REPAIR: incident_replay → [SPLIT×4 source_scout] → [MERGE: trust] → quarantine → synthesizer → governance → apply\n  SYNTHESIS: fingerprint → [SPLIT×N models] → [MERGE: adversarial] → [SPLIT: socratic] → [MERGE: reconstruct] → truth → distill → memory\n  AUDIT: [SPLIT×4 gap scanners] → [MERGE: gap-report.json] → drift_detector\n  EVOLUTION: proposal → governance → [SPLIT×3 benchmarks] → [MERGE: score] → canary → integrity → promote",
+      "when_to_use": "Query when designing multi-stage pipelines to decide WHERE to insert parallel fan-out (SPLIT) and WHERE to insert convergence (MERGE) points.",
+      "when_not_to_use": "Not for single-tool invocations or simple sequential pipelines with no parallelism.",
+      "inputs": [
+        "pipeline_type: str (repair | synthesis | audit | evolution)",
+        "stage: str"
+      ],
+      "outputs": [
+        "Split/Merge topology map with trigger conditions and failure rollback rules"
+      ],
+      "chain_before": [
+        "orchestrator.master_cognitive_orchestrator"
+      ],
+      "chain_after": [
+        "engine.discovery_fabric.source_scout",
+        "engine.knowledge_squeezer",
+        "radar.gap_finder"
+      ],
+      "cli_example": "# Full split/merge pipeline via master orchestrator:\npython tools/master_orchestrator.py --intent repair --error 'TimeoutError in ws_handler'\npython tools/master_orchestrator.py --intent synthesis --demand 'Build zero-cost rate limiter'\npython tools/master_orchestrator.py --intent audit",
+      "confidence_weight": 0.97,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "split",
+        "merge",
+        "pipeline",
+        "parallel",
+        "convergence",
+        "fork-join",
+        "topology",
+        "fan-out",
+        "fan-in"
+      ]
+    },
+    {
+      "tool_id": "lifecycle.tool_knowledge_injector_self",
+      "tool_name": "Tool Knowledge Injector — Self-Documentation & Re-Injection Policy",
+      "category": "MEMORY",
+      "file_path": "tools/tool_knowledge_injector.py",
+      "intent_triggers": [
+        "when to re-inject knowledge",
+        "update knowledge cards",
+        "knowledge injector run",
+        "inject new tool knowledge",
+        "add tool to memory",
+        "update ai memory tool registry",
+        "knowledge card refresh",
+        "tool registry update",
+        "re-inject after adding tool",
+        "knowledge injector schedule",
+        "when to run injector",
+        "tool card update policy"
+      ],
+      "cognitive_intents": [
+        "EVOLUTION",
+        "AUDIT_RADAR"
+      ],
+      "description": "Re-injection policy for tool_knowledge_injector.py:\n\nDRY-RUN (no flags) — always safe:\n  When: Adding a new tool/module, previewing existing cards, verifying card content.\n  Command: python tools/tool_knowledge_injector.py\n\nLIVE INJECT (--inject):\n  When: New tool passes governance + tests + CI green.\n  When: Existing tool behavior significantly changed (new inputs/outputs/chain).\n  When: After Phase milestone completion (Phase 2→3, 3→4 etc.).\n  Command: python tools/tool_knowledge_injector.py --inject\n\nINJECT + VERIFY (--inject --verify):\n  When: First-time setup of ai_memory pgvector schema.\n  When: After Supabase migration or vector store reset.\n  When: Monthly scheduled re-injection to refresh embeddings.\n  Command: python tools/tool_knowledge_injector.py --inject --verify\n\nEXPORT (--export file.json):\n  When: Debugging card content without touching DB.\n  When: Pre-migration backup of knowledge registry.\n  Command: python tools/tool_knowledge_injector.py --export reports/knowledge_cards.json\n\nWARNING: Do NOT re-inject on every commit — duplicates create redundant pgvector rows.\nOnly inject when tool registry actually changes.",
+      "when_to_use": "Run after adding/modifying Crown Jewel tools, after phase milestones, or monthly. Always dry-run first to preview.",
+      "when_not_to_use": "Do not run if pgvector schema is not set up (Supabase ai_memory table must exist first).",
+      "inputs": [
+        "--inject (optional)",
+        "--verify (optional)",
+        "--export <path> (optional)",
+        "--json (optional)"
+      ],
+      "outputs": [
+        "Injection summary: INJECTED/SKIPPED/FAILED counts",
+        "Recall verification results (if --verify)"
+      ],
+      "chain_before": [],
+      "chain_after": [
+        "memory.ai_memory ingestion"
+      ],
+      "cli_example": "python tools/tool_knowledge_injector.py                     # dry-run preview\npython tools/tool_knowledge_injector.py --inject             # live inject\npython tools/tool_knowledge_injector.py --inject --verify    # inject + verify recall\npython tools/tool_knowledge_injector.py --export reports/knowledge_cards_backup.json",
+      "confidence_weight": 0.99,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "knowledge-injector",
+        "self-doc",
+        "re-injection-policy",
+        "memory-update",
+        "tool-registry"
+      ]
+    },
+    {
+      "tool_id": "lifecycle.gap_finder_schedule",
+      "tool_name": "Gap Finder Execution Schedule — When & How Often to Run",
+      "category": "RADAR",
+      "file_path": "tools/gap_finder.py",
+      "intent_triggers": [
+        "how often run gap finder",
+        "gap finder schedule",
+        "when gap finder",
+        "gap finder ci schedule",
+        "weekly gap scan",
+        "pre-commit gap check",
+        "gap finder trigger",
+        "code audit schedule",
+        "when to audit code",
+        "automatic gap scan",
+        "gap finder cron",
+        "quality check schedule"
+      ],
+      "cognitive_intents": [
+        "AUDIT_RADAR"
+      ],
+      "description": "Gap Finder execution schedule and trigger conditions:\n\nMANDATORY TRIGGERS (never skip):\n  1. PRE-COMMIT (local): Before every git commit on feature branches.\n     CRITICAL findings → fix before commit. Do NOT bypass with --no-verify.\n  2. CI/CD PR CHECK: Runs on every pull_request GitHub Action automatically.\n     Blocks merge if CRITICAL findings exist. Reports uploaded as CI artifacts.\n  3. POST-MERGE (main branch): After every merge to main.\n     Catches regressions. Triggers incident_replay automatically via CI.\n\nSCHEDULED TRIGGERS:\n  4. WEEKLY FULL AUDIT (Sunday midnight UTC): Full codebase scan.\n     Output: reports/weekly-gap-{date}.json\n  5. PRE-DEPLOY: Must complete with zero CRITICAL before deploy_guard.py runs.\n     deploy_guard checks gap-report.json freshness (<24h).\n\nON-DEMAND TRIGGERS:\n  6. AFTER MAJOR REFACTOR: Any time >50 files changed in one session.\n  7. AFTER DEPENDENCY UPGRADE: After pip/npm major version bumps.\n  8. BEFORE PHASE MILESTONE: Before closing any Phase (2→3, 3→4 etc.)\n\nSEVERITY GATES:\n  CRITICAL → Blocks CI merge. Fix immediately.\n  HIGH     → Blocks production deploy. Fix before next release.\n  MEDIUM   → Warning only. Fix within sprint.\n  LOW      → Informational. Add to backlog.",
+      "when_to_use": "Use to determine the correct gap_finder run frequency and trigger for any given situation.",
+      "when_not_to_use": "Do not run inside hot path of user-facing API requests — offline/background tool only.",
+      "inputs": [
+        "project_root: str",
+        "--output: str",
+        "--severity: str (optional)"
+      ],
+      "outputs": [
+        "gap-report.json categorized by severity: critical/high/medium/low"
+      ],
+      "chain_before": [],
+      "chain_after": [
+        "radar.gap_miner.incident_replay",
+        "engine.solution_synthesizer"
+      ],
+      "cli_example": "# Pre-commit scan:\npython tools/gap_finder.py . --output reports/gap-report.json\n\n# Only CRITICAL and HIGH:\npython tools/gap_finder.py . --severity high --output reports/gap-high.json\n\n# Weekly audit with date:\npython tools/gap_finder.py . --output reports/weekly-gap-$(date +%Y%m%d).json",
+      "confidence_weight": 0.98,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "gap-finder",
+        "schedule",
+        "cron",
+        "pre-commit",
+        "ci",
+        "audit-schedule"
+      ]
+    },
+    {
+      "tool_id": "lifecycle.pipeline_recipe_compiler",
+      "tool_name": "Pipeline Recipe Compiler — Dynamic Pipeline Assembly",
+      "category": "ORCHESTRATOR",
+      "file_path": "tools/pipeline_recipe_compiler.py",
+      "intent_triggers": [
+        "compile pipeline",
+        "build pipeline recipe",
+        "pipeline assembly",
+        "dynamic pipeline",
+        "create pipeline from scratch",
+        "pipeline template",
+        "chain tools dynamically",
+        "pipeline builder",
+        "recipe compiler",
+        "tool chain compiler",
+        "assemble tool chain",
+        "pipeline recipe",
+        "dynamic tool chain"
+      ],
+      "cognitive_intents": [
+        "FEATURE_SYNTHESIS",
+        "REPAIR",
+        "AUDIT_RADAR",
+        "EVOLUTION"
+      ],
+      "description": "Pipeline Recipe Compiler — assembles multi-tool execution pipelines dynamically.\n\nWHEN TO USE:\n  - master_orchestrator cannot find a pre-built recipe for a novel task.\n  - Composing a CUSTOM pipeline from individual tool cards.\n  - Task requires a HYBRID pipeline (e.g., repair + synthesis combined).\n  - Testing a new pipeline topology before promoting to orchestrator.\n\nWHEN NOT TO USE:\n  - Standard REPAIR/SYNTHESIS/AUDIT intents → use master_orchestrator directly.\n  - Single-tool invocations → invoke the tool directly.\n\nCOMPILATION PHASES:\n  1. Intent Classification → REPAIR | SYNTHESIS | AUDIT | EVOLUTION | HYBRID\n  2. Tool Card Query → Fetch relevant cards from ai_memory by intent\n  3. Dependency Graph Build → DAG from chain_before/chain_after metadata\n  4. Topology Optimization → Insert SPLIT points for parallel-capable stages\n  5. Safety Injection → Add governance_policy before any mutation step\n  6. Recipe Output → Ordered execution plan with fallback paths\n\nMERGE TRIGGERS IN COMPILED RECIPES:\n  - After ANY parallel fan-out group completes (all branches done or timeout)\n  - Before ANY mutation step (patch apply, memory write, skill creation)\n  - At confidence gates (trust_score ≥ threshold before proceeding)\n  - At phase boundaries (discovery → synthesis → validation → apply)",
+      "when_to_use": "Use when you need a custom tool chain for a novel task not covered by standard orchestrator intents.",
+      "when_not_to_use": "Do not use for standard intents — master_orchestrator handles those more efficiently.",
+      "inputs": [
+        "intent: str",
+        "context: dict",
+        "available_tools: list (auto-discovered from ai_memory)"
+      ],
+      "outputs": [
+        "ExecutionRecipe: ordered stages with split/merge topology, fallback paths, safety gates"
+      ],
+      "chain_before": [
+        "orchestrator.master_cognitive_orchestrator"
+      ],
+      "chain_after": [
+        "engine.discovery_fabric.source_scout",
+        "engine.solution_synthesizer",
+        "radar.gap_finder"
+      ],
+      "cli_example": "# Compile custom hybrid pipeline:\npython tools/pipeline_recipe_compiler.py --intent hybrid --demand 'Fix AND improve rate limiter'\n\n# Preview compiled recipe (dry-run):\npython tools/pipeline_recipe_compiler.py --intent repair --context '{\"error\": \"TimeoutError\"}' --dry-run\n\n# Export recipe as JSON:\npython tools/pipeline_recipe_compiler.py --intent audit --export reports/audit_recipe.json",
+      "confidence_weight": 0.93,
+      "cost_tokens": "zero",
+      "requires_network": false,
+      "tags": [
+        "pipeline",
+        "recipe",
+        "compiler",
+        "dynamic",
+        "assembly",
+        "dag",
+        "topology"
+      ]
+    }
+  ]
+}

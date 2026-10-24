@@ -1,0 +1,43 @@
+{
+  "problem": "Need semantic caching for repeated LLM requests",
+  "candidates": [
+    {
+      "name": "existing-open-source-semantic-cache",
+      "approach": "Reuse a mature cache library behind the existing Redis layer",
+      "sources": [{"url": "https://github.com/", "type": "repository"}],
+      "expected_benefit": 0.9,
+      "implementation_effort": 0.25,
+      "risk": 0.2,
+      "verification_plan": ["cache-hit ratio benchmark", "correctness equivalence test", "load test"]
+    },
+    {
+      "name": "custom-cache",
+      "approach": "Implement an in-house semantic cache from scratch",
+      "sources": [],
+      "expected_benefit": 0.8,
+      "implementation_effort": 0.8,
+      "risk": 0.45,
+      "verification_plan": ["correctness tests", "load test"]
+    }
+  ],
+  "evidence": [
+    {
+      "source_type": "github",
+      "url": "https://github.com/",
+      "claim": "Existing implementation is actively maintained",
+      "authority": 0.82,
+      "freshness": 0.90,
+      "reproducibility": 0.85,
+      "directness": 0.80
+    },
+    {
+      "source_type": "official-docs",
+      "url": "https://redis.io/docs/",
+      "claim": "Redis can support the required cache architecture",
+      "authority": 0.98,
+      "freshness": 0.95,
+      "reproducibility": 0.95,
+      "directness": 0.90
+    }
+  ]
+}

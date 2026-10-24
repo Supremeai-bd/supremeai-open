@@ -1,0 +1,7 @@
+rules:
+  require_non_root: true
+  require_healthcheck: true
+  require_labels:
+    - org.opencontainers.image.source
+    - org.opencontainers.image.description
+  require_dockerignore: true

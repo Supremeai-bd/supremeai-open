@@ -1,0 +1,137 @@
+version: 1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HONEST RATCHET (final-test hardening-2, 2026-09-14)
+#
+# The gate previously reported a vacuous 100% for every tier (globs never
+# matched coverage.json paths) and enforced nothing. Thresholds below are the
+# FIRST HONEST values, set just under the measured baseline so any coverage
+# REGRESSION now fails CI, while the ramp plan raises them over time.
+#
+# Measured baseline (CI combined coverage of all 4 test groups, 2026-09-14):
+#   overall: 27.20%   critical tier: 39.01%   important tier: 29.19%
+#
+# RAMP PLAN (owner verdict, critical tier): 40 → 50 → 60
+#   step 1 (DONE, hardening-2 round 1): critical 40 — achieved at 44.71% by
+#                        (a) writing tests for the worst critical files
+#                        (task_queue_enhanced 0%→72%, token_budget 26%→89%)
+#                        and (b) wiring the previously-orphaned tests/llm +
+#                        tests/services dirs into CI so their coverage counts
+#   step 2 (NOW, hardening-2 round 2): critical 45 — two-part integrity fix:
+#                        (a) PR CI's marker filter used to deselect ~96% of
+#                        the backend suite (57/1879 core tests ran) because
+#                        the conftest tier classification missed most paths —
+#                        tests/agents, tests/memory, tests/core/test_*.py all
+#                        landed in the never-run `overall` tier. The
+#                        classification now covers every collected path, and
+#                        15 previously-orphaned test dirs are wired into the
+#                        CI matrix (tests/memory, tests/missions,
+#                        tests/utils, tests/engine, ... ).
+#                        (b) new branch tests for the named offenders:
+#                        billing_api (18%→58%, plus a real bug fix: the
+#                        intended Stripe 503 was swallowed into a generic
+#                        500), auth_middleware_contract (SSE query-token
+#                        policy, refresh rejection, jti revocation
+#                        fail-closed/fail-open), cost-optimizer stale
+#                        expectations refreshed to the settings contract.
+#   step 2 MEASURED (run 34818775855, first honest run of the expanded
+#                        suite): critical 63.11% (5207/8251), important
+#                        40.73% — far above the 49% projection, because
+#                        ~96% of backend tests had been invisible to the
+#                        gate. Owner's ramp END TARGET (60) is already met.
+#   threshold LOCKED at 55 (measured 63.11 − ~13% headroom) so a coverage
+#                        regression fails CI while normal variance between
+#                        runs stays safe. Next round can push toward 60+.
+#   step 3 (NOW, hardening-2 round 4): critical LOCKED at 60 — measured
+#                        63.11% IDENTICAL across two consecutive honest runs
+#                        (34818775855, 34822497054), re-verified on the third
+#                        (job 103908108884). Owner's ramp END TARGET met and
+#                        held; remaining headroom (3.11 pts) is protected by
+#                        new tests for the worst critical file (api_keys.py).
+#                        important 27 → 35 (measured 40.73/40.74 — 5.7 pts
+#                        headroom); overall 40 → 43 (measured 45.28 on the
+#                        honest expanded suite; overall only enforced on main
+#                        runs, PR runs evaluate critical+important).
+#   step 4 (NOW, hardening-3 round 5): important 35 → 38 — measured 45.27%
+#                        (13844/30583) on PR #295's honest green run
+#                        (job of run 34835206439) after websocket_agent
+#                        0%→92% and multi_account_rotator 0%→66% (+2.17 pts
+#                        over the prior 43.10%); lowest honest measurement
+#                        remains 40.74% → 38 keeps ≥2.7 pts headroom.
+#                        continue ramp per-file (memory_service 47%,
+#                        compliance_bot 41%, secret_vault 49%, completion 49%).
+# ─────────────────────────────────────────────────────────────────────────────
+
+thresholds:
+  overall:
+    # measured 45.28% (31875/65437, 722 files) on the first honest expanded
+    # run (34818775855) — raised from the stale 25 that was set against the
+    # old 27.20% baseline measured while ~96% of tests were invisible.
+    pr: 43
+    # release: 43   # honest release bar once ramp advances
+  critical:
+    # measured 63.11% on THREE honest runs (34818775855, 34822497054,
+    # job 103908108884) — owner's ramp end target (60) locked.
+    pr: 60
+    # release: 55
+  important:
+    # measured 45.27% (13844/30583) on PR #295's honest green run — lowest
+    # honest measurement across runs remains 40.74% -> 38 keeps >=2.7 pts headroom.
+    # step 5 (M1 run-fabric promotion, 2026-09-15): runs/** added to the
+    #    important globs below — backend/runs/** (canonical Run fabric:
+    #    state machine, service, budget enforcement, bridges, HITL hook,
+    #    API) landed via #341/#342/#344 but was absent from every tier
+    #    glob, so the gate never measured it. Locally measured runs
+    #    package coverage 94.6% (525/555 stmts, tests/runs/ 116/116
+    #    after PR-CI promotion in conftest). Projection: important tier
+    #    (13844+525)/(30583+555) = 46.2% — IMPROVES the tier; threshold
+    #    38 unchanged, headroom widens. First CI run of this PR must
+    #    confirm before further threshold moves.
+    pr: 38
+    # release: 38
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tier globs — paths are relative to the backend root (coverage.json format).
+# The gate also accepts "backend/"-prefixed spellings; keep them bare here so
+# they read exactly like the coverage.json keys they must match.
+# ─────────────────────────────────────────────────────────────────────────────
+
+critical:
+  - core/llm/**
+  - core/orchestration/**
+  - core/security/**
+  - api/auth/**
+  - api/routes/agent*
+  - api/routes/api_keys*
+  - api/routes/billing*
+  - services/usage*
+  - services/memory*
+  - core/queue/**
+  - tools/checkpoint_manager*
+  - core/microvm_sandbox*
+
+important:
+  - services/**
+  - tools/**
+  - api/routes/**
+  # ── PR-CI measurement integrity (memory/**, 2026-09-15) ──────────────────
+  # backend/memory/ (16 files: stores, unified_db_manager, mcp_server,
+  # hierarchical_tree, ...) was INVISIBLE to the gate on two layers at once:
+  # (1) ci.yml's pytest invocation measured only --cov=core/api/services/tools
+  #     → no memory/*.py entries in coverage.json;
+  # (2) this policy had no memory/** glob → even measured files would not be
+  #     gated (services/memory* here refers to services/memory_service.py —
+  #     a DIFFERENT module from the memory/ package).
+  # tests for the package already run in CI (tests/core/test_long_term_memory,
+  # test_episodic_memory, test_sliding_window_memory + tests/memory/), so this
+  # is measurement+gating wiring, not test wiring.
+  # Measured projection (local, expanded suite): memory/ 597/1454 = 41.1%
+  # covered (before: 266/1490 = 17.8%). IMPORTANT tier impact on main's base
+  # (48.86%): ≈48.5% — still above the 38 threshold (headroom ≥10.5 pts).
+  # Requires first CI run confirmation, per the runs/** precedent.
+  # Documented ramp follow-up: memory/mcp_server.py (341 stmts, 0%) and the
+  # chromadb/supabase/cloud_postgres store adapters remain the largest
+  # uncovered blocks; memory/test_hierarchical_tree.py is omitted from
+  # measurement as an in-package test file (see .coveragerc).
+  - memory/**
+  - runs/**  # M1 canonical Run fabric (#341/#342/#344) — promotion 2026-09-15

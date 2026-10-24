@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "mode": "advisory",
+  "default_fail_on": "HIGH",
+  "severity_order": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"],
+  "checks": {
+    "cors": {"severity": "HIGH", "blocking": false, "owner": "platform"},
+    "secrets": {"severity": "CRITICAL", "blocking": false, "owner": "security"},
+    "pysyntax": {"severity": "CRITICAL", "blocking": false, "owner": "backend"},
+    "api-contract": {"severity": "HIGH", "blocking": false, "owner": "api"},
+    "config": {"severity": "HIGH", "blocking": false, "owner": "platform"},
+    "ts": {"severity": "HIGH", "blocking": false, "owner": "frontend"},
+    "eslint": {"severity": "MEDIUM", "blocking": false, "owner": "frontend"},
+    "ruff": {"severity": "MEDIUM", "blocking": false, "owner": "backend"},
+    "pytest": {"severity": "HIGH", "blocking": false, "owner": "backend"}
+  }
+}

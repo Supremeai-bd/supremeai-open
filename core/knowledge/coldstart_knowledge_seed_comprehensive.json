@@ -1,0 +1,250 @@
+{
+  "meta": {
+    "schema_version": "2.0",
+    "purpose": "SupremeAI pre-production local knowledge injection seed. Evergreen, slow-changing, vendor-neutral knowledge used as primary context during external-provider outages (cold-start / degraded-mode resilience).",
+    "usage": "Embed each entry's `question` + `answer` (optionally `embedding_text`) into pgvector/ChromaDB. Serve via RAG as fallback when Tier-1..Tier-4 LLM providers are unreachable. Never inject secrets, prices, or real-time data.",
+    "language": "bn-en-mixed",
+    "generated": "2026-08-22",
+    "principles": ["timeless", "slow-changing", "evergreen", "vendor-neutral", "defensive", "dense"],
+    "embedding_guidance": {
+      "target_dim": 768,
+      "chunk_strategy": "one entry per vector; keep question+answer under ~400 tokens",
+      "metadata_fields": ["category_id", "type", "tags", "confidence", "last_verified"],
+      "rerank": "hybrid BM25 + vector; boost `confidence:high`"
+    },
+    "volume_plan": {
+      "tier1_mvp_floor": 1500,
+      "tier2_production_target": 6000,
+      "tier3_mature_ceiling": 12000,
+      "rationale": "Quality and coverage of evergreen concepts matter more than raw count. 1.5k curated entries covers core developer/AI/security surface; 6k reaches production-grade breadth."
+    }
+  },
+  "categories": [
+    {
+      "category_id": "programming_fundamentals",
+      "priority": 1,
+      "domain": "software_engineering",
+      "description": "Timeless programming concepts: data structures, algorithms, complexity, design patterns, idioms.",
+      "entries": [
+        {"id":"pf_001","type":"concept","question":"Big-O notation কি?","answer":"Big-O বড় ইনপুটের জন্য algorithm-এর time/space complexity-র উপরের সীমা দেখায়। O(1) constant, O(log n) logarithmic, O(n) linear, O(n log n), O(n^2) quadratic, O(2^n) exponential। Complexity বুঝে সঠিক data structure বাছাই করতে হয়।","tags":["complexity","algorithms"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_002","type":"concept","question":"Array vs Linked List পার্থক্য?","answer":"Array contiguous memory; O(1) random access কিন্তু insert/delete O(n)। Linked List pointer-based; insert/delete head/tail O(1) কিন্তু access O(n)। Cache-friendly -> array; frequent insert/delete -> list/Deque।","tags":["data-structures"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_003","type":"concept","question":"Hash table কিভাবে কাজ করে?","answer":"Key -> hash function -> bucket index। Average O(1) lookup/insert/delete। Collision chaining বা open addressing দিয়ে সামলানো হয়। Load factor বাড়লে resize (rehash) করতে হয়।","tags":["data-structures","hashing"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_004","type":"concept","question":"Binary Search Tree (BST) কি?","answer":"Left child < node < right child property। Average O(log n) search/insert/delete; skewed tree-তে O(n)। Balanced variants: AVL, Red-Black, B-Tree (databases)।","tags":["data-structures","trees"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_005","type":"concept","question":"Stack vs Queue?","answer":"Stack LIFO (push/pop), function calls/undo-তে ব্যবহৃত। Queue FIFO (enqueue/dequeue), BFS/task scheduling-এ। Deque double-ended।","tags":["data-structures"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_006","type":"concept","question":"Recursion vs Iteration?","answer":"Recursion function নিজেকে call করে base case-এ থামে; elegant কিন্তু stack overflow ঝুঁকি। Iteration loop দিয়ে; memory-efficient। Tail recursion কম্পাইলার optimize করতে পারে।","tags":["algorithms"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_007","type":"concept","question":"Dynamic Programming (DP) কি?","answer":"Overlapping subproblems + optimal substructure থাকলে recursion-এর পুনরাবৃত্তি memoization (top-down) বা tabulation (bottom-up) দিয়ে কমাও। Example: Fibonacci, Knapsack, LCS, shortest path।","tags":["algorithms","dp"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_008","type":"concept","question":"SOLID principles কি?","answer":"S Single Responsibility, O Open/Closed (extend but not modify), L Liskov Substitution, I Interface Segregation, D Dependency Inversion। Maintainable OO design-এর ভিত্তি।","tags":["design-principles","oop"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_009","type":"pattern","question":"Singleton pattern কখন ব্যবহার করব?","answer":"App-জুড়ে exactly one instance দরকার (config, logger, connection pool)। Thread-safety নিশ্চিত করতে হয়। Dependency injection দিয়ে testability বাড়ান।","tags":["design-patterns"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_010","type":"pattern","question":"Factory pattern কি?","answer":"Object creation logic ক্লায়েন্ট থেকে আড়াল করে subtype রিটার্ন করে। Tight coupling কমায়, new operator সরাসরি ব্যবহার এড়ায়।","tags":["design-patterns"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_011","type":"pattern","question":"Observer pattern কি?","answer":"Subject state change-এ multiple observers-কে notify করে (pub/sub)। Event systems, reactive UIs। Memory leak এড়াতে unsubscribe জরুরি।","tags":["design-patterns"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_012","type":"concept","question":"Idempotency কি এবং কেন জরুরি?","answer":"একই request বারবার পাঠালেও একই effect (extra side-effect ছাড়া)। Retries/network failures-এ safe। API-তে idempotency key ব্যবহার কর।","tags":["api","reliability"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_013","type":"concept","question":"Pure function কি?","answer":"Same input -> same output, no side effects (no global mutation, no I/O)। Testing, caching (memoization), concurrency সহজ করে। Functional programming-এর ভিত্তি।","tags":["functional","concepts"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_014","type":"concept","question":"NULL vs undefined পার্থক্য?","answer":"NULL ইচ্ছাকৃত empty/unknown মান; undefined অনুপস্থিত বা uninitialized। Language-ভেদে আলাদা (JS: undefined != null; SQL: NULL != anything incl. NULL)।","tags":["languages"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_015","type":"concept","question":"Race condition কি?","answer":"Multiple threads/processes shared state একসাথে mutate করলে result execution order-এর ওপর নির্ভর করে। Locks, mutex, atomic ops, immutable data দিয়ে প্রতিরোধ।","tags":["concurrency"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_016","type":"concept","question":"Deadlock কি এবং এড়ানোর উপায়?","answer":"Coffman conditions: mutual exclusion, hold & wait, no preemption, circular wait। Prevention: lock ordering, timeout, resource hierarchy। Detection + abort ও ব্যবহার হয়।","tags":["concurrency"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_017","type":"concept","question":"Greedy vs Divide-and-Conquer vs Backtracking?","answer":"Greedy: local optimal সবসময় global optimal নাও হতে পারে (Huffman, Dijkstra)। Divide-Conquer: subproblem split (Merge Sort, Quick Sort)। Backtracking: constraint satisfaction (N-Queens, Sudoku)।","tags":["algorithms"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_018","type":"concept","question":"Graph traversal: BFS vs DFS?","answer":"BFS queue-ভিত্তিক, shortest path (unweighted) ও level-order। DFS stack/recursion-ভিত্তিক, cycle detection, topological sort। Both O(V+E)।","tags":["algorithms","graphs"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_019","type":"concept","question":"ACID vs BASE?","answer":"ACID (Atomicity, Consistency, Isolation, Durability) traditional SQL। BASE (Basically Available, Soft state, Eventual consistency) NoSQL/distributed। Trade-off: consistency vs availability (CAP)।","tags":["databases","distributed"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_020","type":"concept","question":"Dijkstra vs Bellman-Ford?","answer":"Dijkstra: non-negative weights, O((V+E) log V) priority queue। Bellman-Ford: negative weights সাপোর্ট, negative cycle detect করে, O(VE)।","tags":["algorithms","graphs"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_021","type":"concept","question":"Immutability কেন গুরুত্বপূর্ণ?","answer":"Data পরিবর্তন হয় না বলে concurrency bug, accidental mutation, caching কমে। Strings/collections immutable রাখো (final/const)। Copy-on-write যখন দরকার।","tags":["functional","concurrency"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_022","type":"concept","question":"What is a closure?","answer":"Function যা তার lexical scope-এর variables capture করে বাইরে থাকার পরেও। JS/Python callbacks, factories, private state-এ ব্যবহৃত। Memory leak ঝুঁকি থাকলে reference মুক্ত করো।","tags":["languages","functional"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_023","type":"concept","question":"Polymorphism কি?","answer":"একই interface বিভিন্ন behavior। Compile-time (overloading) এবং runtime (overriding, dynamic dispatch)। Liskov Substitution-এর সাথে SOLID-এর L।","tags":["oop"],"confidence":"high","last_verified":"static"},
+        {"id":"pf_024","type":"concept","question":"Normalization (1NF-3NF) কি?","answer":"1NF atomic values; 2NF no partial dependency; 3NF no transitive dependency। Redundancy/anomaly কমায়। Performance-এর জন্য মাঝে মাঝে deliberate denormalization করা হয়।","tags":["databases"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "system_design_principles",
+      "priority": 2,
+      "domain": "architecture",
+      "description": "Timeless reliability, scalability, and distributed-systems design axioms.",
+      "entries": [
+        {"id":"sd_001","type":"concept","question":"CAP theorem কি?","answer":"Distributed system-এ Consistency, Availability, Partition tolerance-এর মধ্যে একই সময়ে সব পাওয়া যায় না। Network partition অনিবার্য => C বা A-এর মধ্যে বেছে নিতে হয়।","tags":["distributed","cap"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_002","type":"concept","question":"Circuit Breaker pattern কি?","answer":"Failure threshold ছাড়ালে downstream call বন্ধ (open) করে, অল্প বিরতিতে half-open probe পাঠায়। Cascading failure ও resource exhaustion ঠেকায়।","tags":["resilience","patterns"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_003","type":"concept","question":"Cache strategies: Cache-Aside vs Write-Through?","answer":"Cache-Aside: app নিজে cache populate (lazy)। Write-Through: write cache+db একসাথে। TTL + stale-while-revalidate + cache stampede prevention (lock/singleflight) জরুরি।","tags":["caching"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_004","type":"concept","question":"Idempotency keys কেন দরকার?","answer":"Network retry-এ duplicate request আসতে পারে। Server idempotency key দিয়ে earlier result রি-রিটার্ন করে double-charge/duplicate-write ঠেকায়।","tags":["api","reliability"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_005","type":"concept","question":"Backpressure কি?","answer":"Consumer slow হলে producer-কে থামানো/স্লো করা যাতে queue overflow না হয়। Queue limits, rate limiting, reactive streams দিয়ে handle।","tags":["resilience","streaming"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_006","type":"concept","question":"Bulkhead pattern কি?","answer":"Resources পৃথক pool-এ ভাগ করো যাতে এক service-এর failure বাকিগুলোকে ডুবাতে না পারে (ship compartment)। Thread pools, connection pools per dependency।","tags":["resilience","patterns"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_007","type":"concept","question":"Eventual consistency vs Strong consistency?","answer":"Strong: read সবসময় latest write দেখে (CP systems)। Eventual: সময়ের সাথে converge (AP systems)। Use-case অনুযায়ী বাছাই (money=strong, feed=eventual)।","tags":["distributed","consistency"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_008","type":"concept","question":"Rate limiting algorithms?","answer":"Token Bucket (bursts allow), Leaky Bucket (smooth), Fixed/Sliding Window (simple)। User/IP/key dimension-এ apply; 429 + Retry-After return করো।","tags":["api","limiting"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_009","type":"concept","question":"Horizontal vs Vertical scaling?","answer":"Vertical = bigger machine (limited, downtime)। Horizontal = more nodes + load balancer (elastic, resilient)। Statelessness + shared store দিয়ে horizontal enable করো।","tags":["scaling"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_010","type":"concept","question":"Load balancer health checks কেন?","answer":"Unhealthy node থেকে traffic সরাতে periodic probe (HTTP/TCP)। Active/passive, sticky sessions, graceful drain জরুরি।","tags":["scaling","reliability"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_011","type":"concept","question":"CQRS pattern কি?","answer":"Command (write) ও Query (read) models আলাদা করো। Write-optimized + read-optimized store; scalability বাড়ায়। Eventual consistency-এর সাথে sync complexity বাড়ে।","tags":["patterns","architecture"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_012","type":"concept","question":"Saga pattern (distributed transactions)?","answer":"Long-running transaction-কে local txns + compensating actions-এ ভাগ করো। Failure-এ reverse steps চালাও। Choreography vs Orchestration।","tags":["distributed","transactions"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_013","type":"concept","question":"12-factor app principles?","answer":"Codebase, dependencies, config (env), backing services, build/release/run, processes (stateless), port binding, concurrency, disposability, dev/prod parity, logs (stream), admin processes।","tags":["cloud-native"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_014","type":"concept","question":"Graceful degradation কি?","answer":"Partial failure-এ full outage-এর বদলে reduced functionality দাও (cache/stale data, feature flags)। User experience টিকিয়ে রাখে।","tags":["resilience"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_015","type":"concept","question":"Retry with exponential backoff + jitter?","answer":"Retry interval = base * 2^attempt + random jitter। Thunderin/retry storm ঠেকায়। Max retries + timeout + idempotency থাকা বাঞ্ছনীয়।","tags":["resilience","patterns"],"confidence":"high","last_verified":"static"},
+        {"id":"sd_016","type":"concept","question":"Observability: logs, metrics, traces?","answer":"Logs (events), Metrics (counters/gauges/histograms), Traces (request path across services)। Three pillars মিলে root-cause analysis সম্ভব।","tags":["observability"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "ai_ml_fundamentals",
+      "priority": 3,
+      "domain": "machine_learning",
+      "description": "Evergreen AI/ML theory that does not go stale with model releases.",
+      "entries": [
+        {"id":"ai_001","type":"concept","question":"Supervised vs Unsupervised learning?","answer":"Supervised: labeled data (classification, regression)। Unsupervised: unlabeled (clustering, dimensionality reduction)। Semi-supervised/self-supervised মাঝামাঝি।","tags":["ml","fundamentals"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_002","type":"concept","question":"Overfitting vs Underfitting?","answer":"Overfit: train low / val high error (model memorized)। Underfit: both high (too simple)। Trade-off via bias-variance। Regularization, more data, cross-validation সাহায্য করে।","tags":["ml","evaluation"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_003","type":"concept","question":"Train/Validation/Test split কেন?","answer":"Train model শেখায়, Validation hyperparam + early stopping, Test unseen generalization মাপে। Test কখনও training-এ ব্যবহার করা যাবে না (data leakage)।","tags":["ml","evaluation"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_004","type":"concept","question":"Cross-validation কি?","answer":"Data-কে k folds-এ ভাগ করে প্রতিবার আলাদা fold-কে test বানিয়ে average performance মাপে। k=5/10 common। Small datasets-এ জরুরি।","tags":["ml","evaluation"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_005","type":"concept","question":"Precision, Recall, F1 কি?","answer":"Precision = TP/(TP+FP), Recall = TP/(TP+FN), F1 = harmonic mean। Imbalanced data-এ accuracy ভুল বার্তা দেয়; PR-AUC/ROC-AUC দেখো।","tags":["ml","metrics"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_006","type":"concept","question":"Confusion matrix কি?","answer":"TP, TN, FP, FN দেখায়। Derived: accuracy, precision, recall, specificity, FPR। Classification evaluation-এর ভিত্তি।","tags":["ml","metrics"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_007","type":"concept","question":"Regularization: L1 vs L2?","answer":"L2 (Ridge) weights shrink, smooth। L1 (Lasso) sparse, feature selection করে। Dropout, BatchNorm, Early Stopping ও overfitting কমায়।","tags":["ml","regularization"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_008","type":"concept","question":"Gradient Descent variants?","answer":"Batch (full), Stochastic (1 sample), Mini-batch (common)। Optimizers: SGD, Momentum, RMSProp, Adam (adaptive lr)। Learning rate সবচেয়ে সংবেদনশীল hyperparam।","tags":["ml","optimization"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_009","type":"concept","question":"RAG (Retrieval-Augmented Generation) কি?","answer":"LLM উত্তর দেওয়ার আগে external knowledge base থেকে relevant docs retrieve করে context-এ দেয়। Hallucination কমায়, source-grounded উত্তর দেয়।","tags":["llm","rag"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_010","type":"concept","question":"Embeddings কি?","answer":"Text/image-কে dense vector-এ map করে যাতে semantic similarity cosine distance দিয়ে মাপা যায়। Vector DB (pgvector, Chroma) retrieval-এর ভিত্তি।","tags":["llm","embeddings"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_011","type":"concept","question":"Hallucination কি এবং কমানোর উপায়?","answer":"Model confident ভুল তথ্য বানায়। RAG, citation/grounding, constrained decoding, temperature নামানো, human-in-the-loop দিয়ে কমাও।","tags":["llm","safety"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_012","type":"concept","question":"Tokenization কি?","answer":"Text-কে tokens (subwords/words/chars) ভাগ করে model feed করা হয়। BPE, WordPiece, SentencePiece common। Token count = cost + context limit metric।","tags":["llm","nlp"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_013","type":"concept","question":"Temperature, Top-p, Top-k কি?","answer":"Temperature output randomness নিয়ন্ত্রণ (নিচে=deterministic)। Top-k/top-p nucleus sampling candidate tokens সীমিত করে। Creativity vs consistency trade-off।","tags":["llm","sampling"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_014","type":"concept","question":"Transformer attention কিভাবে কাজ করে?","answer":"Query/Key/Value ম্যাট্রিক্স দিয়ে tokens-এর মধ্যে weighted relevance শেখে (scaled dot-product)। Parallelizable, long-range dependency catch করে। Encoder-Decoder/Decoder-only variants।","tags":["llm","architecture"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_015","type":"concept","question":"Fine-tuning vs Prompt engineering vs RAG?","answer":"Prompt: zero-cost, fast, context-limited। RAG: external knowledge, grounded। Fine-tune: task-specific behavior, costly, needs data + drift maintenance।","tags":["llm","strategy"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_016","type":"concept","question":"Bias in ML কেন হয়?","answer":"Biased training data, label noise, sampling skew, feedback loops। Mitigation: diverse data, fairness metrics, auditing, human review।","tags":["ml","ethics"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_017","type":"concept","question":"Evaluation: BLEU/ROUGE vs human eval?","answer":"BLEU/ROUGE n-gram overlap (cheap, noisy)। Human eval quality/helpfulness মাপে (gold)। LLM-as-judge semi-automated proxy।","tags":["evaluation","nlp"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_018","type":"concept","question":"Few-shot / Zero-shot learning?","answer":"Zero-shot: no example, prompt-এ task describe। Few-shot: prompt-এ কয়েকটি example (in-context learning)। Labeled training ছাড়াই generalize করে।","tags":["llm","prompting"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_019","type":"concept","question":"Chain-of-Thought (CoT) prompting?","answer":"Model-কে step-by-step ভাবতে বলো ('think step by step') -> complex reasoning উন্নত হয়। Intermediate steps verify করা সহজ।","tags":["llm","prompting"],"confidence":"high","last_verified":"static"},
+        {"id":"ai_020","type":"concept","question":"Vector similarity metrics?","answer":"Cosine (angle, normalized texts), Dot product (magnitude-aware), Euclidean (L2 distance)। Embeddings সাধারণত cosine। Normalization জরুরি।","tags":["embeddings","retrieval"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "security_principles",
+      "priority": 4,
+      "domain": "security",
+      "description": "Timeless security axioms, OWASP, cryptography fundamentals.",
+      "entries": [
+        {"id":"sec_001","type":"concept","question":"OWASP Top 10 (core classes)?","answer":"Injection, Broken Auth, Sensitive Data Exposure, XML External Entities, Broken Access Control, Security Misconfig, XSS, Insecure Deserialization, Components w/ known vulns, Insufficient logging।","tags":["owasp","web"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_002","type":"concept","question":"SQL Injection কি এবং প্রতিরোধ?","answer":"User input SQL query-তে concatenate করলে attacker query বদলায়। Parameterized queries / prepared statements, ORM, input validation, least-privilege DB user ব্যবহার করো।","tags":["injection","database"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_003","type":"concept","question":"Hashing vs Encryption?","answer":"Hash one-way (passwords, integrity)। Encryption two-way reversible (confidentiality)। Password-এর জন্য bcrypt/scrypt/Argon2 (slow, salted)।","tags":["crypto"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_004","type":"concept","question":"Symmetric vs Asymmetric encryption?","answer":"Symmetric: এক key (AES) fast, key exchange সমস্যা। Asymmetric: public/private pair (RSA/ECC), slow, key exchange/signatures-এ। Hybrid (TLS) ব্যবহার হয়।","tags":["crypto"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_005","type":"concept","question":"HTTPS / TLS কি?","answer":"Transport encryption + server identity verification। Certificates (CA-signed) দিয়ে MITM ঠেকায়। HSTS, certificate rotation, strong ciphers জরুরি।","tags":["crypto","network"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_006","type":"concept","question":"Authentication vs Authorization?","answer":"AuthN: who you are (login, MFA)। AuthZ: what you can do (RBAC/ABAC permissions)। সবসময় আলাদা রাখো এবং প্রতিটি request-এ AuthZ check করো।","tags":["auth"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_007","type":"concept","question":"Defense in depth কি?","answer":"একটি layer fail হলেও অন্য layer protect করে (firewall + WAF + auth + validation + monitoring)। Single control-এর ওপর নির্ভর করো না।","tags":["principle"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_008","type":"concept","question":"Principle of least privilege?","answer":"User/service শুধু ততটুকু permission পাবে যতটুকু কাজের জন্য দরকার। Over-permission breach blast-radius বাড়ায়।","tags":["principle","auth"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_009","type":"concept","question":"XSS (Cross-Site Scripting) কি?","answer":"Attacker injected script victim browser-এ চলে। Prevention: output encoding, CSP, HttpOnly cookies, sanitize input। Stored/Reflected/DOM variants।","tags":["web","xss"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_010","type":"concept","question":"CSRF কি এবং প্রতিরোধ?","answer":"Victim-এর authenticated session-এ attacker unwanted request পাঠায়। Prevention: CSRF tokens, SameSite cookies, origin checks।","tags":["web","csrf"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_011","type":"concept","question":"JWT (JSON Web Token) structure?","answer":"Header.payload.signature (base64url)। HS256 (shared secret) বা RS256 (asymmetric)। Secret leak বা `alg:none` attack এড়াতে algorithm pin করো।","tags":["auth","tokens"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_012","type":"concept","question":"Salt and Pepper in password hashing?","answer":"Salt per-user random value (stored) prevents rainbow tables। Pepper global secret (not stored with hash) adds defense if DB leaks।","tags":["crypto","passwords"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_013","type":"concept","question":"Secrets management best practice?","answer":"Hardcode নয়; env vars / secret manager (Vault, Infisical) ব্যবহার। Rotate regularly, scope minimally, audit access, never commit to git।","tags":["secrets"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_014","type":"concept","question":"Rate limiting as security control?","answer":"Brute-force, credential stuffing, DoS কমায়। Per-IP/per-account limits + lockout + CAPTCHA + anomaly detection মিলিয়ে ব্যবহার করো।","tags":["auth","defense"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_015","type":"concept","question":"Zero Trust model কি?","answer":"Never trust, always verify। Network location-এর ওপর ভরসা নয়; every request authenticated, authorized, encrypted, continuous monitoring।","tags":["principle"],"confidence":"high","last_verified":"static"},
+        {"id":"sec_016","type":"concept","question":"Input validation vs Output encoding?","answer":"Input: allowlist, type/length/range checks (server-side)। Output: context-aware encoding (HTML/JS/SQL)। Don't trust any external data।","tags":["web","validation"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "data_engineering",
+      "priority": 5,
+      "domain": "data",
+      "description": "SQL, modeling, ETL, and database timeless knowledge.",
+      "entries": [
+        {"id":"de_001","type":"concept","question":"Index কিভাবে কাজ করে?","answer":"B-Tree/B+Tree structure দিয়ে lookup O(log n)। SELECT fast কিন্তু INSERT/UPDATE slow (maintenance)। Over-indexing লাভ কমায়। Composite index-এ leftmost prefix rule মনে রাখো।","tags":["sql","indexing"],"confidence":"high","last_verified":"static"},
+        {"id":"de_002","type":"concept","question":"JOIN types?","answer":"INNER (match both), LEFT/RIGHT/FULL OUTER, CROSS (cartesian), SELF। Join order + indexes query plan-এর জন্য গুরুত্বপূর্ণ।","tags":["sql"],"confidence":"high","last_verified":"static"},
+        {"id":"de_003","type":"concept","question":"Transaction isolation levels?","answer":"Read Uncommitted, Read Committed, Repeatable Read, Serializable। Higher = fewer anomalies (dirty/non-repeatable/phantom reads) কিন্তু lower concurrency।","tags":["sql","transactions"],"confidence":"high","last_verified":"static"},
+        {"id":"de_004","type":"concept","question":"Normalization vs Denormalization?","answer":"Normalize: write-heavy, consistency। Denormalize: read-heavy, analytics (warehouse)। Hybrid common (OLTP normalized, OLAP star schema)।","tags":["modeling"],"confidence":"high","last_verified":"static"},
+        {"id":"de_005","type":"concept","question":"Star vs Snowflake schema?","answer":"Star: central fact + denormalized dimensions (simple, fast)। Snowflake: normalized dimensions (less redundancy, more joins)। Warehousing-এ star standard।","tags":["warehouse","modeling"],"confidence":"high","last_verified":"static"},
+        {"id":"de_006","type":"concept","question":"ETL vs ELT?","answer":"ETL: extract-transform-load (transform before warehouse)। ELT: load raw then transform (cloud warehouses-এর জন্য)। ELT modern standard (compute in warehouse)।","tags":["pipeline"],"confidence":"high","last_verified":"static"},
+        {"id":"de_007","type":"concept","question":"Primary vs Foreign key?","answer":"PK uniquely identifies row (NOT NULL, unique)। FK references another table's PK, enforces referential integrity। Index FK for join performance।","tags":["sql","modeling"],"confidence":"high","last_verified":"static"},
+        {"id":"de_008","type":"concept","question":"ACID properties explained?","answer":"Atomicity (all-or-nothing), Consistency (valid state), Isolation (concurrent safe), Durability (committed survives crash)। RDBMS guarantee।","tags":["sql","transactions"],"confidence":"high","last_verified":"static"},
+        {"id":"de_009","type":"concept","question":"Pagination: OFFSET vs Keyset?","answer":"OFFSET নিয়ে large pages slow + unstable (inserts shift)। Keyset (WHERE id > last_id ORDER LIMIT) fast, stable। Infinite scroll-এ keyset prefer।","tags":["sql","performance"],"confidence":"high","last_verified":"static"},
+        {"id":"de_010","type":"concept","question":"NoSQL categories?","answer":"Document (MongoDB), Key-Value (Redis), Column (Cassandra), Graph (Neo4j)। Use-case অনুযায়ী বাছাই; schema flexibility vs strong consistency trade-off।","tags":["nosql"],"confidence":"high","last_verified":"static"},
+        {"id":"de_011","type":"concept","question":"Partitioning vs Sharding?","answer":"Partition: one DB-এর ভেতর logical split (manageability)। Shard: data multiple servers-এ (horizontal scale)। Both query routing + hotspot avoidance চায়।","tags":["scaling","database"],"confidence":"high","last_verified":"static"},
+        {"id":"de_012","type":"concept","question":"Data types: VARCHAR vs TEXT, INT vs BIGINT?","answer":"VARCHAR(N) bounded, TEXT unbounded। INT 2^31, BIGINT 2^63। Correct sizing storage + correctness বাঁচায়; overflow বাচাও।","tags":["sql","types"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "devops_reliability",
+      "priority": 6,
+      "domain": "operations",
+      "description": "CI/CD, deployment, observability, incident response axioms.",
+      "entries": [
+        {"id":"ops_001","type":"concept","question":"CI/CD কি?","answer":"Continuous Integration (frequent merge + automated tests) + Continuous Delivery/Deployment (automated release)। Fast feedback, smaller batches, lower risk।","tags":["ci","cd"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_002","type":"concept","question":"Blue-Green vs Canary deployment?","answer":"Blue-Green: two identical env, instant switch, easy rollback। Canary: gradual traffic shift (1%->100%), real-user validation, safer।","tags":["deployment"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_003","type":"concept","question":"Infrastructure as Code (IaC)?","answer":"Terraform/Pulumi দিয়ে infra declarative define করো। Version-controlled, reproducible, drift detection। Manual clicks avoid করো।","tags":["iac"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_004","type":"concept","question":"Health checks vs Readiness vs Liveness?","answer":"Liveness: process alive? restart if not। Readiness: ready for traffic? (deps up)। Startup: boot complete? Kubernetes probes এই তিনটি আলাদা।","tags":["kubernetes","health"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_005","type":"concept","question":"Rollback vs Rollforward?","answer":"Rollback পূর্ববর্তী good version-এ ফেরত। Rollforward নতুন fix deploy করে এগিয়ে যায়। Automated rollback-এর জন্য health gates দরকার।","tags":["deployment"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_006","type":"concept","question":"SLI/SLO/SLA পার্থক্য?","answer":"SLI = measured indicator (latency, error rate)। SLO = target (99.9% uptime)। SLA = contractual penalty। Error budget ব্যবহার করে release pace নিয়ন্ত্রণ।","tags":["sre","reliability"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_007","type":"concept","question":"Immutable infrastructure?","answer":"Servers never mutate; instead rebuild + replace। Config drift, snowflake servers এড়ায়। Containers/AMIs দিয়ে implement।","tags":["iac","containers"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_008","type":"concept","question":"Structured logging best practice?","answer":"JSON logs with consistent fields (timestamp, level, trace_id, service)। Human-readable নয়, machine-parseable + correlated by trace_id। Sensitive data redact করো।","tags":["observability","logging"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_009","type":"concept","question":"Chaos engineering কি?","answer":"Production-সদৃশ পরিবেশে ইচ্ছাকৃত failure (kill node, inject latency) ঘটিয়ে resilience পরীক্ষা করো। Hypothesis-driven, blast-radius limited।","tags":["reliability","testing"],"confidence":"high","last_verified":"static"},
+        {"id":"ops_010","type":"concept","question":"Feature flags কি?","answer":"Code deploy আর feature enable আলাদা করে। Dark launches, instant rollback, A/B tests। Flags-এর lifecycle (cleanup) manage করো।","tags":["deployment","flags"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "mathematics_logic",
+      "priority": 7,
+      "domain": "foundations",
+      "description": "Timeless math and formal logic for reasoning and computation.",
+      "entries": [
+        {"id":"math_001","type":"concept","question":"Boolean algebra basic laws?","answer":"AND/OR/NOT। Commutative, Associative, Distributive, De Morgan (NOT(A AND B)=NOT A OR NOT B), Identity, Domination। Digital logic + query optimization-এ ব্যবহৃত।","tags":["logic","boolean"],"confidence":"high","last_verified":"static"},
+        {"id":"math_002","type":"concept","question":"P vs NP সমস্যা?","answer":"P = polynomial-time solvable। NP = polynomial-time verifiable। P=NP? অমীমাংসিত। NP-complete (SAT, TSP) problems-এর জন্য heuristic/approx ব্যবহার করি।","tags":["complexity","theory"],"confidence":"high","last_verified":"static"},
+        {"id":"math_003","type":"concept","question":"Modular arithmetic কি?","answer":"a mod n = remainder of a/n। Hashing, cryptography (RSA, Diffie-Hellman), checksums-এর ভিত্তি। Clock arithmetic analogy।","tags":["math","crypto"],"confidence":"high","last_verified":"static"},
+        {"id":"math_004","type":"concept","question":"Bayes' theorem কি?","answer":"P(A|B) = P(B|A)P(A)/P(B)। Prior কে evidence দিয়ে update করে posterior। Spam filter, medical tests, probabilistic reasoning-এর ভিত্তি।","tags":["probability","bayes"],"confidence":"high","last_verified":"static"},
+        {"id":"math_005","type":"concept","question":"Prime numbers এবং GCD?","answer":"Prime: >1 with no divisors except 1 and self। Euclid's algorithm O(log min) GCD। RSA-তে large primes ব্যবহৃত।","tags":["number-theory","crypto"],"confidence":"high","last_verified":"static"},
+        {"id":"math_006","type":"concept","question":"Logarithms কেন গুরুত্বপূর্ণ?","answer":"log_b(x) exponent such that b^that=x। Algorithmic complexity (binary search O(log n)), entropy, dB scales। Product->sum property (log(ab)=log a+log b)।","tags":["math","complexity"],"confidence":"high","last_verified":"static"},
+        {"id":"math_007","type":"concept","question":"Sets, unions, intersections?","answer":"Set theory foundation of databases/relational algebra। Union (OR), Intersection (AND), Difference, Cartesian product। SQL operators-এর সমতুল্য।","tags":["math","sets"],"confidence":"high","last_verified":"static"},
+        {"id":"math_008","type":"concept","question":"Probability: independent vs conditional?","answer":"Independent: P(A∩B)=P(A)P(B)। Conditional: P(A|B)=P(A∩B)/P(B)। Gambler's fallacy এড়াও; base rate neglect common bias।","tags":["probability"],"confidence":"high","last_verified":"static"},
+        {"id":"math_009","type":"concept","question":"Vector / dot product basics?","answer":"Vector magnitude + direction। Dot product = |a||b|cosθ = sum of element-wise products। Orthogonality (dot=0) ML embeddings-এর ভিত্তি।","tags":["linear-algebra"],"confidence":"high","last_verified":"static"},
+        {"id":"math_010","type":"concept","question":"Proof techniques?","answer":"Direct, Contrapositive, Contradiction, Induction (base + inductive step), Counterexample। Algorithm correctness ও math reasoning-এর ভিত্তি।","tags":["logic","proof"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "reasoning_frameworks",
+      "priority": 8,
+      "domain": "cognition",
+      "description": "General problem-solving, debugging, and decision methodologies.",
+      "entries": [
+        {"id":"rf_001","type":"method","question":"First-principles thinking কি?","answer":"Assumptions ভেঙে মৌলিক truths-এ নামো, তারপর নিচ থেকে logical rebuild করো। Analogy/status-quo-এর ওপর না ভরসা করে।","tags":["thinking"],"confidence":"high","last_verified":"static"},
+        {"id":"rf_002","type":"method","question":"Scientific method সমস্যা সমাধানে?","answer":"Observe -> hypothesize -> predict -> experiment -> analyze। Refutation দিয়ে theory শক্ত করো। A/B tests-এর ভিত্তি।","tags":["thinking","method"],"confidence":"high","last_verified":"static"},
+        {"id":"rf_003","type":"method","question":"Rubber-duck debugging?","answer":"সমস্যা আভাসে/লিখে বা duck-এর কাছে বুঝিয়ে বলো -> gap নিজেই ধরা পড়ে। Articulate করলে cognition sharpen হয়।","tags":["debugging"],"confidence":"high","last_verified":"static"},
+        {"id":"rf_004","type":"method","question":"Divide and conquer (problem decomposition)?","answer":"বড় সমস্যাকে ছোট independent subproblems-এ ভাগ করো; আলাদা সমাধান then compose। MECE (Mutually Exclusive, Collectively Exhaustive) চাও।","tags":["thinking"],"confidence":"high","last_verified":"static"},
+        {"id":"rf_005","type":"method","question":"Root Cause Analysis (5 Whys)?","answer":"Symptom থেকে 'why' 5 বার জিজ্ঞেস করে root cause পৌঁছাও। Surface symptom fix না করে systemic fix খোঁজে।","tags":["debugging","analysis"],"confidence":"high","last_verified":"static"},
+        {"id":"rf_006","type":"method","question":"Occam's Razor?","answer":"সমান ব্যাখ্যায় সবচেয়ে সরলটি prefer করো। Unnecessary complexity/assumptions এড়াও। Hypothesis pruning-এর নিয়ম।","tags":["thinking"],"confidence":"high","last_verified":"static"},
+        {"id":"rf_007","type":"method","question":"Cost-benefit / trade-off analysis?","answer":"Options-এর pros/cons, probability, impact মাপো। Opportunity cost মনে রাখো। Perfect-এর অপেক্ষায় না থেকে good-enough ship করো যখন reversible।","tags":["decision"],"confidence":"high","last_verified":"static"},
+        {"id":"rf_008","type":"method","question":"Bias toward reversible vs irreversible decisions?","answer":" reversible = act fast, learn, adjust (Bezos 'type 2')। Irreversible = slow, deliberate, consult ('type 1')। Speed vs caution balance।","tags":["decision"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "science_fundamentals",
+      "priority": 9,
+      "domain": "science",
+      "description": "Core physics/chemistry/biology laws that are evergreen.",
+      "entries": [
+        {"id":"sci_001","type":"fact","question":"Newton-এর গতির সূত্র?","answer":"1) Inertia (v=const unless force)। 2) F=ma। 3) Action=reaction। Classical mechanics-এর ভিত্তি।","tags":["physics"],"confidence":"high","last_verified":"static"},
+        {"id":"sci_002","type":"fact","question":"Thermodynamics-এর মূল সূত্র?","answer":"1st: energy conserved। 2nd: entropy বাড়ে (heat->work irreversible)। 3rd: absolute zero unreachable। Engines, refrigerators-এর ভিত্তি।","tags":["physics"],"confidence":"high","last_verified":"static"},
+        {"id":"sci_003","type":"fact","question":"Conservation laws?","answer":"Energy, momentum, charge সংরক্ষিত। Closed system-এ মোট পরিমাণ অপরিবর্তিত। Physics/chemistry সব কিছুতে প্রযোজ্য।","tags":["physics"],"confidence":"high","last_verified":"static"},
+        {"id":"sci_004","type":"fact","question":"DNA structure ও function?","answer":"Double helix; A-T, C-G base pairing। Replication + protein coding (central dogma: DNA->RNA->protein)। Heredity-এর ভিত্তি।","tags":["biology"],"confidence":"high","last_verified":"static"},
+        {"id":"sci_005","type":"fact","question":"Periodic table grouping?","answer":"Elements atomic number (protons) অনুযায়ী সাজানো। Groups (columns) similar valence/chemistry; periods (rows) shells। Noble gases inert।","tags":["chemistry"],"confidence":"high","last_verified":"static"},
+        {"id":"sci_006","type":"fact","question":"Electromagnetic spectrum?","answer":"Radio -> microwave -> infrared -> visible -> UV -> X-ray -> gamma। Wavelength কমলে energy বাড়ে (E=hf)। Communication + medical imaging-এ ব্যবহৃত।","tags":["physics"],"confidence":"high","last_verified":"static"},
+        {"id":"sci_007","type":"fact","question":"Cell theory?","answer":"All living things cells দিয়ে গঠিত; cell হলো basic unit; cells আগের cells থেকে তৈরি। Biology-এর ভিত্তি।","tags":["biology"],"confidence":"high","last_verified":"static"},
+        {"id":"sci_008","type":"fact","question":"Evolution by natural selection?","answer":"Variation + heredity + selection => advantageous traits accumulate। Species diversity-এর ব্যাখ্যা।","tags":["biology"],"confidence":"high","last_verified":"static"}
+      ]
+    },
+    {
+      "category_id": "language_helpers",
+      "priority": 10,
+      "domain": "linguistics",
+      "description": "Bangla-English technical glossary for bilingual grounding.",
+      "entries": [
+        {"id":"lang_001","type":"glossary","question":"'Model is hallucinating' কে বাংলায়?","answer":"মডেল ভুল/কাল্পনিক তথ্য বানাচ্ছে (Model bhul/kalponik tothyo banacche)।","tags":["translation","ai"],"confidence":"high","last_verified":"static"},
+        {"id":"lang_002","type":"glossary","question":"'Idempotent' কে বাংলায়?","answer":"অভেদ্য / পুনরাবৃত্তি-নিরপেক্ষ — বারবার চালালেও একই ফল (Idempotent = bar bar chalaleo eki fol)।","tags":["translation"],"confidence":"high","last_verified":"static"},
+        {"id":"lang_003","type":"glossary","question":"'Scalability' কে বাংলায়?","answer":"স্কেলযোগ্যতা / মাপযোগ্যতা — লোড বাড়লে সিস্টেম সুষ্ঠুভাবে বাড়ানো যায় (Scalability = load barle system barano jay)।","tags":["translation"],"confidence":"high","last_verified":"static"},
+        {"id":"lang_004","type":"glossary","question":"'Throughput' vs 'Latency'?","answer":"Throughput = কাজের হার (per second)। Latency = একটি কাজে সময় (delay)। অনেকসময় trade-off (buffer বাড়ালে latency↑ throughput↑)।","tags":["translation","perf"],"confidence":"high","last_verified":"static"},
+        {"id":"lang_005","type":"glossary","question":"'Concurrency' vs 'Parallelism'?","answer":"Concurrency = অনেক কাজ একসাথে manage (interleaved)। Parallelism = অনেক কাজ একসাথে execute (multicore)।","tags":["translation","concurrency"],"confidence":"high","last_verified":"static"},
+        {"id":"lang_006","type":"glossary","question":"'Refactor' কে বাংলায়?","answer":"পুনর্গঠন — behavior না বদলে কোডের গঠন উন্নত করা (Refactor = behavior na badle code structure improve)।","tags":["translation"],"confidence":"high","last_verified":"static"},
+        {"id":"lang_007","type":"glossary","question":"'Edge case' কে বাংলায়?","answer":"প্রান্তিক কেস / বিরল কিন্তু সম্ভাব্য পরিস্থিতি (Edge case = biral kintu possible situation)।","tags":["translation"],"confidence":"high","last_verified":"static"},
+        {"id":"lang_008","type":"glossary","question":"'Deterministic' vs 'Stochastic'?","answer":"Deterministic = নিশ্চিত ফল (same input same output)। Stochastic = এলোমেলো/সম্ভাব্যতা-নির্ভর (random)।","tags":["translation"],"confidence":"high","last_verified":"static"}
+      ]
+    }
+  ],
+  "excluded_categories_reason": {
+    "real_time_data": "স্টক প্রাইস, আবহাওয়া, লাইভ নিউজ, crypto দাম — সেকেন্ডে stale হয়; static KB-তে inject নয়, live API fallback রাখো।",
+    "user_personal_data": "ব্যক্তিগত/transactional/PII ডেটা কখনও static knowledge base-এ inject করা উচিত নয় (privacy + compliance)।",
+    "vendor_pricing": "API দাম, quota, model names বারবার বদলায়; config/feature-flag-এ রাখো, evergreen KB-তে নয়।",
+    "current_events": "নির্বাচন, sports scores, trending topics — ephemeral; RAG over live sources দিয়ে সাপোর্ট করো।",
+    "legal_regulatory": "আইন/রেগুলেশন দেশ-ও-সময়-ভেদে বদলায়; disclaimer + human review রাখো।"
+  },
+  "quality_gates": {
+    "min_confidence": "high",
+    "max_tokens_per_entry": 400,
+    "required_fields": ["id","type","question","answer","tags","confidence","last_verified"],
+    "verification": "Every entry last_verified='static' (no decay) or dated review; remove on factual drift.",
+    "dedup": "Hash(question) unique; cross-category overlap <5%."
+  }
+}

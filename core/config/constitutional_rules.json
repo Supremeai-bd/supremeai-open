@@ -1,0 +1,11 @@
+{
+  "consensus_threshold": 0.7,
+  "hallucination_patterns": [
+    "nadim9/supremeai"
+  ],
+  "scores": {
+    "factual_penalty": 0.2,
+    "reliability_penalty": 0.3,
+    "external_penalty": 0.1
+  }
+}

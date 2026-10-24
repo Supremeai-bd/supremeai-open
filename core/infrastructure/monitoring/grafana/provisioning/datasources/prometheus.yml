@@ -1,0 +1,23 @@
+# INF-15 fix (issue #561): Grafana shipped with zero datasources — without a
+# provisioned Prometheus datasource even a manually-imported dashboard shows
+# "datasource not found", and any UI-configured datasource is lost on every
+# `docker compose down -v` (fresh grafana_data volume). This file provisions
+# the datasource pointing at the compose `prometheus` service (observability
+# profile, docker-compose.production.yml) with uid `prometheus`, which matches
+# the default value of the datasource template variable in
+# dashboards/supremeai-overview.json (templating.datasources current: prometheus).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      # prometheus.yml scrape_interval is 15s; align the step floor so range
+      # queries don't over-sample.
+      timeInterval: 15s

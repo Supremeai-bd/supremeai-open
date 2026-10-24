@@ -1,0 +1,21 @@
+{
+  "//": "agent-2 heartbeat registration snippet (issue #1402). Merge this into ~/.claude/settings.json on the machine that runs Claude Code.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/heartbeat.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "HEARTBEAT_URL": "https://<dashboard-host>/api/agents/heartbeat",
+    "AGENT_SLOT": "agent-2",
+    "AGENT_ID": "Claude Code"
+  }
+}
