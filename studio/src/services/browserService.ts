@@ -22,6 +22,7 @@ export interface BrowserActionResult {
   url: string;
   content?: string;
   screenshot?: string;
+  title?: string;
 }
 
 export type BrowserAction =
@@ -29,7 +30,8 @@ export type BrowserAction =
   | { action: 'click'; selector: string }
   | { action: 'fill' | 'type'; selector: string; value: string }
   | { action: 'screenshot'; full_page?: boolean }
-  | { action: 'content' | 'extract' };
+  | { action: 'content' | 'extract' }
+  | { action: 'back' | 'forward' | 'reload' };
 
 export const browserService = {
   createSession: (payload?: { label?: string; saved_url?: string }) => apiClient.post<BrowserSession>('/api/browser/automation/sessions', payload ?? {}),
