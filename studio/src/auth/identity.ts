@@ -7,9 +7,15 @@
 
 import { normalizeRole, type Role } from '../config/permissions';
 import { getAdminToken } from '../services/tokenStorage';
+import { useAuthStore } from '../store/authStore';
 
 /** Get the resolved canonical application role (fallback to 'user'). */
 export function getCanonicalRole(): Role {
+  const storeRole = useAuthStore.getState?.()?.role;
+  if (storeRole) {
+    const normalized = normalizeRole(storeRole);
+    if (normalized) return normalized;
+  }
   return getAdminJwtRole() || 'user';
 }
 
@@ -67,7 +73,7 @@ export function getAdminJwtRole(): Role | null {
  * Is this identity authorized for the Admin context at all?
  */
 export function canAccessAdminContext(): boolean {
-  return getAdminJwtRole() === 'admin';
+  return getAdminJwtRole() === 'admin' || useAuthStore.getState?.()?.role === 'admin';
 }
 
 /**

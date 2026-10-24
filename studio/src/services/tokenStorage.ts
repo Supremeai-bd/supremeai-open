@@ -69,12 +69,19 @@ const readToken = (key: string): string | null => {
           // Non-JWT token preserved
         }
 
-        // Hydrate sessionStorage cache without destroying persistent localStorage
+        // Hydrate sessionStorage cache and sweep legacy user token from localStorage (FE-04 / Issue #521)
         if (hasStorage(session)) {
           try {
             session.setItem(key, persistent);
           } catch (err) {
             console.warn('[tokenStorage] session hydration failed:', err);
+          }
+        }
+        if (key === USER_TOKEN_KEY) {
+          try {
+            local.removeItem(key);
+          } catch (err) {
+            console.warn('[tokenStorage] legacy user token sweep failed:', err);
           }
         }
         return persistent;

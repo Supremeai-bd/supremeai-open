@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { getApiBaseUrl } from '../utils/api';
-import { getAuthHeaders } from '../services/apiClient';
+import { apiClient } from '../services/apiClient';
 
 export interface PluginManifest {
     id: string;
@@ -29,21 +28,14 @@ export const usePlugins = () => {
         try {
             setLoading(true);
             
-            const baseUrl = getApiBaseUrl();
-            const authHeaders = await getAuthHeaders();
-            const [marketRes, installedRes] = await Promise.all([
-                fetch(`${baseUrl}/api/v1/plugins/marketplace`, { headers: authHeaders }),
-                fetch(`${baseUrl}/api/v1/plugins/installed`, { headers: authHeaders })
+            // Issue #2522: raw fetch -> apiClient.get — auth/timeout/queue অটোমেটিক,
+            // non-ok হলে ApiError throw (optional-endpoint silent skip আর নেই — সচ্ছতা)।
+            const [marketData, installedData] = await Promise.all([
+                apiClient.get<{ plugins?: PluginManifest[] }>('/api/v1/plugins/marketplace'),
+                apiClient.get<{ installations?: UserPluginInstallation[] }>('/api/v1/plugins/installed'),
             ]);
-            
-            if (marketRes.ok) {
-                const data = await marketRes.json();
-                setMarketplacePlugins(data.plugins || []);
-            }
-            if (installedRes.ok) {
-                const data = await installedRes.json();
-                setInstalledPlugins(data.installations || []);
-            }
+            setMarketplacePlugins(marketData.plugins || []);
+            setInstalledPlugins(installedData.installations || []);
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -57,15 +49,8 @@ export const usePlugins = () => {
 
     const installPlugin = async (pluginId: string, capabilities: string[]) => {
         try {
-            const res = await fetch(`${getApiBaseUrl()}/api/v1/plugins/install`, {
-                method: 'POST',
-                headers: {
-                    ...(await getAuthHeaders()),
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ plugin_id: pluginId, granted_capabilities: capabilities })
-            });
-            if (!res.ok) throw new Error('Failed to install plugin');
+            // Issue #2522: raw fetch -> apiClient.post।
+            await apiClient.post('/api/v1/plugins/install', { plugin_id: pluginId, granted_capabilities: capabilities });
             await fetchPlugins();
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : String(err));
@@ -75,11 +60,8 @@ export const usePlugins = () => {
 
     const uninstallPlugin = async (pluginId: string) => {
         try {
-            const res = await fetch(`${getApiBaseUrl()}/api/v1/plugins/uninstall/${pluginId}`, {
-                method: 'DELETE',
-                headers: await getAuthHeaders(),
-            });
-            if (!res.ok) throw new Error('Failed to uninstall plugin');
+            // Issue #2522: raw fetch -> apiClient.delete।
+            await apiClient.delete(`/api/v1/plugins/uninstall/${pluginId}`);
             await fetchPlugins();
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : String(err));

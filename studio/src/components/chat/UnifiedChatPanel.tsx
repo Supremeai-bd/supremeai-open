@@ -364,8 +364,13 @@ export function UnifiedChatPanel({
     return initialId;
   });
   const listRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useEffect(() => { listRef.current?.scrollTo(0, listRef.current.scrollHeight); }, [messages]);
+  React.useEffect(() => {
+    if (typeof listRef.current?.scrollTo === 'function') {
+      listRef.current.scrollTo(0, listRef.current.scrollHeight);
+    } else if (listRef.current) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   // Persist the running conversation so the history rail can reopen it with
   // full context (best-effort, bounded to 30 conversations).

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 import { ThemeProvider } from './ThemeProvider';
 import { useTheme } from './useTheme';
+import { THEME_ORDER } from './ThemeConstants';
 
 // Test consumer component
 const TestThemeConsumer: React.FC = () => {
@@ -41,7 +42,7 @@ describe('ThemeProvider (Issue #494)', () => {
     expect(document.body.getAttribute('data-theme')).toBe('dark');
   });
 
-  it('cycles across all 4 themes in order: dark -> light -> sunset -> matrix -> dark', async () => {
+  it('cycles across all themes in order according to THEME_ORDER', async () => {
     render(
       <ThemeProvider>
         <TestThemeConsumer />
@@ -51,32 +52,17 @@ describe('ThemeProvider (Issue #494)', () => {
     const toggleBtn = screen.getByTestId('toggle-btn');
     const themeSpan = screen.getByTestId('current-theme');
 
-    // 1. Dark -> Light
-    await act(async () => {
-      fireEvent.click(toggleBtn);
-    });
-    expect(themeSpan).toHaveTextContent('light');
-    expect(document.documentElement.classList.contains('light')).toBe(true);
-    expect(document.documentElement.classList.contains('dark')).toBe(false);
-    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    for (let i = 1; i < THEME_ORDER.length; i++) {
+      const nextTheme = THEME_ORDER[i];
+      await act(async () => {
+        fireEvent.click(toggleBtn);
+      });
+      expect(themeSpan).toHaveTextContent(nextTheme);
+      expect(document.documentElement.classList.contains(nextTheme)).toBe(true);
+      expect(document.documentElement.getAttribute('data-theme')).toBe(nextTheme);
+    }
 
-    // 2. Light -> Sunset
-    await act(async () => {
-      fireEvent.click(toggleBtn);
-    });
-    expect(themeSpan).toHaveTextContent('sunset');
-    expect(document.documentElement.classList.contains('sunset')).toBe(true);
-    expect(document.documentElement.getAttribute('data-theme')).toBe('sunset');
-
-    // 3. Sunset -> Matrix
-    await act(async () => {
-      fireEvent.click(toggleBtn);
-    });
-    expect(themeSpan).toHaveTextContent('matrix');
-    expect(document.documentElement.classList.contains('matrix')).toBe(true);
-    expect(document.documentElement.getAttribute('data-theme')).toBe('matrix');
-
-    // 4. Matrix -> Dark
+    // Wrap back to the first theme ('dark')
     await act(async () => {
       fireEvent.click(toggleBtn);
     });

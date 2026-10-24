@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, ShieldAlert, GitMerge, ServerCog, DollarSign, BrainCircuit, CheckCircle, ArrowUpRight, Zap } from 'lucide-react';
+import { Activity, ShieldAlert, GitMerge, ServerCog, DollarSign, BrainCircuit, CheckCircle, ArrowUpRight, Zap, Database } from 'lucide-react';
 import { useMetrics, useThreatScan, useCIReports, useDashboardEvents } from '../../hooks/useDashboardData';
 
 export default function Dashboard() {
@@ -8,6 +8,7 @@ export default function Dashboard() {
   const { data: ciReports } = useCIReports();
   const { data: events } = useDashboardEvents(5);
 
+  const availability = metrics?.availability_percent;
   const dashRps = metrics?.requests_per_second ?? 0;
   const safeCpu = metrics?.cpu_percent ?? metrics?.cpu_usage_percent ?? Math.min(100, Math.round((dashRps / 50) * 100));
   const activeIncidents = threats?.findings?.filter(t => t.severity === 'high' || t.severity === 'critical') || [];
@@ -32,9 +33,15 @@ export default function Dashboard() {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-2">
                 <Activity size={14} className="text-accent-primary" /> Availability
               </span>
-              <span className="text-emerald-400 font-mono text-xs">'—'</span>
+              <span className={`font-mono text-xs ${availability != null ? 'text-emerald-400' : 'text-muted'}`}>
+                {availability != null ? `${availability >= 99 ? 'Healthy' : 'Degraded'}` : 'not reported'}
+              </span>
             </div>
-            <div className="text-3xl font-bold text-text font-mono">'—'</div>
+            <div className="flex items-baseline justify-between">
+              <div className="text-3xl font-bold text-text font-mono">
+                {availability != null ? `${availability}%` : 'N/R'}
+              </div>
+            </div>
           </div>
           
           <div data-testid="admin-kpi" className="surface-1 rounded-xl p-5 border border-border flex flex-col gap-4">
@@ -179,6 +186,37 @@ export default function Dashboard() {
                   </span>
                   <span className="text-xs font-mono text-secondary">Idle</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Redis Quota & Failover State (WO5) */}
+            <div className="surface-1 rounded-xl border border-border p-6" data-testid="redis-quota-card">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted flex items-center gap-2">
+                  <Database size={16} className="text-amber-400" /> Redis Quota
+                </h2>
+                <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  Chain Active
+                </span>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-secondary">Commands</span>
+                  <span className="text-text">
+                    {(metrics as unknown as { redis_commands?: number })?.redis_commands != null
+                      ? `${(metrics as unknown as { redis_commands?: number }).redis_commands} / 500k`
+                      : 'not reported'}
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full surface-2 overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500"
+                    style={{ width: `${Math.min(100, Math.round((((metrics as unknown as { redis_commands?: number })?.redis_commands ?? 0) / 500000) * 100))}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-secondary">
+                  Auto-rotation active across multi-account failover chain.
+                </p>
               </div>
             </div>
 
