@@ -11,6 +11,7 @@ import {
 } from '../../types/contracts/execution-mode';
 // বাংলা মন্তব্য: বাহিরের মডেল নামের বদলে SupremeAI ব্র্যান্ডেড নাম + ক্যানোনিক্যাল মডেল লিস্ট
 import { getSupremeModelLabel, SUPREME_AVAILABLE_MODELS } from '../../lib/modelBranding';
+import type { Theme } from '../../contexts/ThemeConstants';
 
 interface Preferences {
   theme: string;
@@ -31,10 +32,7 @@ const DEFAULT_PREFS: Preferences = {
 const MODELS = SUPREME_AVAILABLE_MODELS;
 
 interface SettingsPageProps {
-  /* RESTORE-AND-WIRE (2026-09-14): widened to the app's full Theme union
-     (contexts/ThemeConstants.ts) so the page can be routed from App.tsx; the
-     dark/light toggles below still key off 'dark' exactly as before. */
-  theme: 'dark' | 'light' | 'sunset' | 'matrix';
+  theme: Theme;
   toggleTheme: () => void;
 }
 
