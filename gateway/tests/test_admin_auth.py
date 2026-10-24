@@ -165,3 +165,100 @@ def test_admin_logout(client):
     assert res.json()["status"] == "ok"
 
 
+def test_trusted_browser_full_lifecycle(client, monkeypatch):
+    import base64
+    import hashlib
+    import hmac
+    import struct
+    import time
+
+    monkeypatch.setenv("ADMIN_ENFORCE_TOTP", "true")
+    monkeypatch.delenv("SUPREMEAI_ADMIN_TOTP_SECRET", raising=False)
+
+    # 1. Initiate setup
+    setup_res = client.post("/api/admin/totp-setup")
+    assert setup_res.status_code == 200
+    secret = setup_res.json()["secret"]
+
+    # Calculate valid OTP
+    clean_secret = secret.strip().upper()
+    missing_padding = len(clean_secret) % 8
+    if missing_padding:
+        clean_secret += "=" * (8 - missing_padding)
+    key = base64.b32decode(clean_secret)
+    current_time = int(time.time() // 30)
+    msg = struct.pack(">Q", current_time)
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    offset = h[19] & 15
+    code_num = struct.unpack(">I", h[offset : offset + 4])[0] & 0x7FFFFFFF
+    valid_otp = f"{code_num % 1000000:06d}"
+
+    # 2. Verify with remember_browser=True
+    verify_res = client.post(
+        "/api/admin/totp-verify",
+        json={"otp": valid_otp, "remember_browser": True},
+    )
+    assert verify_res.status_code == 200
+    data = verify_res.json()
+    assert data["status"] == "success"
+    assert "trusted_browser_token" in data
+    trusted_token = data["trusted_browser_token"]
+    admin_token = data["token"]
+
+    # Verify cookie was set
+    assert "supreme_admin_trusted_browser" in verify_res.cookies
+
+    # 3. Next login with trusted_browser_token in body bypasses TOTP!
+    login_res = client.post(
+        "/api/admin/login",
+        json={
+            "email": "admin@supremeai.com",
+            "password": "secret123",
+            "trusted_browser_token": trusted_token,
+        },
+    )
+    assert login_res.status_code == 200
+    login_data = login_res.json()
+    assert login_data["status"] == "trusted_browser"
+    assert "token" in login_data
+
+    # 4. Login with X-Trusted-Browser header bypasses TOTP!
+    header_res = client.post(
+        "/api/admin/login",
+        json={"email": "admin@supremeai.com", "password": "secret123"},
+        headers={"X-Trusted-Browser": trusted_token},
+    )
+    assert header_res.status_code == 200
+    assert header_res.json()["status"] == "trusted_browser"
+
+    # 5. List trusted browsers
+    list_res = client.get(
+        "/api/admin/trusted-browsers",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert list_res.status_code == 200
+    browsers = list_res.json().get("browsers", [])
+    assert len(browsers) >= 1
+    browser_id = browsers[0]["id"]
+
+    # 6. Revoke trusted browser
+    del_res = client.delete(
+        f"/api/admin/trusted-browsers/{browser_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert del_res.status_code == 200
+    assert del_res.json()["revoked"] is True
+
+    # 7. Login after revocation prompts for TOTP again!
+    revoked_login = client.post(
+        "/api/admin/login",
+        json={
+            "email": "admin@supremeai.com",
+            "password": "secret123",
+            "trusted_browser_token": trusted_token,
+        },
+    )
+    assert revoked_login.status_code == 200
+    assert revoked_login.json()["status"] in ("otp_required", "totp_setup_required")
+
+

@@ -28,7 +28,7 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("supremeai.admin_auth")
@@ -37,9 +37,21 @@ logger = logging.getLogger("supremeai.admin_auth")
 router = APIRouter(prefix="/api/admin", tags=["admin-auth"])
 
 DEFAULT_JWT_EXPIRY_HOURS = 24
+DEFAULT_TRUSTED_BROWSER_DAYS = 7
+TRUSTED_BROWSER_COOKIE = "supreme_admin_trusted_browser"
 DEFAULT_ADMIN_EMAIL = "admin@supremeai.com"
 PRIMARY_OWNER_EMAIL = "niloyjoy7@gmail.com"
 DEFAULT_ADMIN_UID = "admin-root-001"
+
+# In-memory registry for trusted browser sessions (multi-tier persistence)
+_trusted_browser_registry: dict[str, dict[str, Any]] = {}
+
+
+def _get_cookie_secure_settings() -> tuple[bool, str]:
+    """Return (secure, samesite) configuration based on environment."""
+    env_name = os.environ.get("ENV", "local").lower()
+    is_prod_staging = env_name in ("production", "prod", "staging")
+    return is_prod_staging, "none" if is_prod_staging else "lax"
 
 
 # --- Native HS256 JWT Implementation (Zero-Dependency Safe) ---
@@ -123,6 +135,69 @@ def verify_admin_jwt(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
 
     return payload
+
+
+def issue_trusted_browser_token(
+    uid: str,
+    email: str,
+    days: int = DEFAULT_TRUSTED_BROWSER_DAYS,
+) -> tuple[str, str]:
+    """Issue a signed trusted browser token and unique browser ID."""
+    now = int(time.time())
+    browser_id = uuid.uuid4().hex
+    payload = {
+        "sub": uid,
+        "uid": uid,
+        "email": email,
+        "type": "trusted_browser",
+        "browser_id": browser_id,
+        "iat": now,
+        "exp": now + days * 86400,
+        "jti": uuid.uuid4().hex,
+    }
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+
+    secret = get_jwt_secret().encode("utf-8")
+    sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
+    sig_b64 = _b64url_encode(sig)
+    token = f"{header_b64}.{payload_b64}.{sig_b64}"
+
+    token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
+    _trusted_browser_registry[token_hash] = {
+        "id": browser_id,
+        "uid": uid,
+        "email": email,
+        "created_at": now,
+        "expires_at": now + days * 86400,
+        "revoked": False,
+    }
+
+    return token, browser_id
+
+
+def verify_trusted_browser_token(token: str | None) -> dict[str, Any] | None:
+    """Validate a trusted browser token and return its payload if valid and unrevoked."""
+    if not token or not isinstance(token, str):
+        return None
+    token = token.strip()
+    if not token or token.count(".") != 2:
+        return None
+    try:
+        payload = verify_admin_jwt(token)
+        if payload.get("type") not in ("trusted_browser", "access"):
+            return None
+        token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
+        if token_hash in _trusted_browser_registry:
+            record = _trusted_browser_registry[token_hash]
+            if record.get("revoked", False):
+                return None
+        return payload
+    except Exception as exc:
+        logger.debug("Trusted browser verification failed: %s", exc)
+        return None
 
 
 # --- RFC 6238 TOTP Engine ---
@@ -209,6 +284,7 @@ _pending_totp_setups: dict[str, dict[str, Any]] = {}
 class AdminLoginRequest(BaseModel):
     email: str = Field(..., description="Admin email address")
     password: str = Field(..., description="Admin password")
+    trusted_browser_token: str | None = Field(default=None, description="Optional trusted browser token")
 
 
 class AdminTotpVerifyRequest(BaseModel):
@@ -219,8 +295,12 @@ class AdminTotpVerifyRequest(BaseModel):
 # --- Endpoint Handlers ---
 
 @router.post("/login")
-async def admin_login(payload: AdminLoginRequest):
-    """Native Admin Login endpoint. Validates credentials and initiates TOTP or issues JWT."""
+async def admin_login(
+    payload: AdminLoginRequest,
+    request: Request,
+    response: Response,
+):
+    """Native Admin Login endpoint. Validates credentials, checks trusted browser, and initiates TOTP or issues JWT."""
     clean_email = payload.email.strip().lower()
     if not clean_email or not payload.password:
         raise HTTPException(
@@ -243,6 +323,41 @@ async def admin_login(payload: AdminLoginRequest):
         )
 
     uid = DEFAULT_ADMIN_UID
+
+    # Check for trusted browser bypass (from payload, header, or cookie)
+    trusted_token = (
+        payload.trusted_browser_token
+        or request.headers.get("X-Trusted-Browser")
+        or request.cookies.get(TRUSTED_BROWSER_COOKIE)
+    )
+    is_trusted = False
+    if trusted_token:
+        claims = verify_trusted_browser_token(trusted_token)
+        if claims and claims.get("email", "").lower() == clean_email:
+            is_trusted = True
+            logger.info("Trusted browser verified for admin: %s", clean_email)
+
+    if is_trusted:
+        # Issue 7-day token for trusted browser login
+        token = issue_admin_jwt(uid=uid, email=clean_email, role="admin", expiry_hours=DEFAULT_TRUSTED_BROWSER_DAYS * 24)
+        secure, samesite = _get_cookie_secure_settings()
+        response.set_cookie(
+            TRUSTED_BROWSER_COOKIE,
+            trusted_token,
+            max_age=DEFAULT_TRUSTED_BROWSER_DAYS * 86400,
+            httponly=True,
+            secure=secure,
+            samesite=samesite,
+            path="/",
+        )
+        return {
+            "status": "trusted_browser",
+            "uid": uid,
+            "token": token,
+            "role": "admin",
+            "email": clean_email,
+        }
+
     # Check if TOTP is required or configured
     enforce_totp = (
         os.environ.get("ADMIN_ENFORCE_TOTP", "false").lower() in ("true", "1", "yes")
@@ -297,8 +412,11 @@ async def admin_totp_setup(request: Request):
 
 
 @router.post("/totp-verify")
-async def admin_totp_verify(payload: AdminTotpVerifyRequest):
-    """Verify a 6-digit TOTP code and issue an admin JWT token."""
+async def admin_totp_verify(
+    payload: AdminTotpVerifyRequest,
+    response: Response,
+):
+    """Verify a 6-digit TOTP code and issue an admin JWT token (with trusted browser persistence)."""
     otp = payload.otp.strip()
     if len(otp) != 6 or not otp.isdigit():
         raise HTTPException(
@@ -332,17 +450,88 @@ async def admin_totp_verify(payload: AdminTotpVerifyRequest):
     # Clean pending setup upon successful enrollment
     _pending_totp_setups.pop(email, None)
 
-    token = issue_admin_jwt(uid=DEFAULT_ADMIN_UID, email=email, role="admin")
-    return {
+    trusted_token = None
+    if payload.remember_browser:
+        expiry_hours = DEFAULT_TRUSTED_BROWSER_DAYS * 24
+        trusted_token, _ = issue_trusted_browser_token(
+            uid=DEFAULT_ADMIN_UID, email=email, days=DEFAULT_TRUSTED_BROWSER_DAYS
+        )
+        secure, samesite = _get_cookie_secure_settings()
+        response.set_cookie(
+            TRUSTED_BROWSER_COOKIE,
+            trusted_token,
+            max_age=DEFAULT_TRUSTED_BROWSER_DAYS * 86400,
+            httponly=True,
+            secure=secure,
+            samesite=samesite,
+            path="/",
+        )
+    else:
+        expiry_hours = DEFAULT_JWT_EXPIRY_HOURS
+
+    token = issue_admin_jwt(uid=DEFAULT_ADMIN_UID, email=email, role="admin", expiry_hours=expiry_hours)
+    res_data: dict[str, Any] = {
         "status": "success",
         "token": token,
         "role": "admin",
     }
+    if trusted_token:
+        res_data["trusted_browser_token"] = trusted_token
+    return res_data
+
+
+@router.get("/trusted-browsers")
+async def list_trusted_browsers(authorization: str | None = Header(None)):
+    """List active trusted browsers for the authenticated admin."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
+    payload = verify_admin_jwt(authorization.split(" ", 1)[1])
+    uid = payload.get("uid") or payload.get("sub")
+    now = int(time.time())
+    browsers = [
+        {"id": rec["id"], "created_at": rec["created_at"]}
+        for rec in _trusted_browser_registry.values()
+        if rec.get("uid") == uid and rec.get("expires_at", 0) > now and not rec.get("revoked", False)
+    ]
+    return {"status": "ok", "browsers": browsers}
+
+
+@router.delete("/trusted-browsers/{browser_id}")
+async def revoke_trusted_browser(browser_id: str, authorization: str | None = Header(None)):
+    """Revoke a specific trusted browser."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
+    payload = verify_admin_jwt(authorization.split(" ", 1)[1])
+    uid = payload.get("uid") or payload.get("sub")
+    revoked = False
+    for rec in _trusted_browser_registry.values():
+        if rec.get("uid") == uid and rec.get("id") == browser_id:
+            rec["revoked"] = True
+            revoked = True
+    return {"status": "ok", "message": f"Browser {browser_id} revoked.", "revoked": revoked}
+
+
+@router.delete("/trusted-browsers")
+async def revoke_all_trusted_browsers(authorization: str | None = Header(None), response: Response = None):
+    """Revoke all trusted browsers for the authenticated admin."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
+    payload = verify_admin_jwt(authorization.split(" ", 1)[1])
+    uid = payload.get("uid") or payload.get("sub")
+    count = 0
+    for rec in _trusted_browser_registry.values():
+        if rec.get("uid") == uid:
+            rec["revoked"] = True
+            count += 1
+    if response:
+        response.delete_cookie(TRUSTED_BROWSER_COOKIE, path="/")
+    return {"status": "ok", "message": f"Revoked {count} trusted browser(s)."}
 
 
 @router.post("/logout")
-async def admin_logout():
+async def admin_logout(response: Response):
     """Stateless Admin Logout endpoint."""
+    response.delete_cookie(TRUSTED_BROWSER_COOKIE, path="/")
     return {"status": "ok", "message": "Logged out successfully."}
 
 
