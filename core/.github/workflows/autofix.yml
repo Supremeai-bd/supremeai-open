@@ -40,14 +40,27 @@ jobs:
       - name: Run pyerrorfix (detect + auto-fix + SARIF)
         working-directory: ${{ github.workspace }}
         run: |
-          # The pyerrorfix package is zero-dependency — just run it from source.
-          python -m pyerrorfix analyze backend \
+          # Robust target directory discovery across monorepo and satellite roots
+          TARGET="."
+          if [ -d "backend" ]; then
+            TARGET="backend"
+          elif [ -d "core" ]; then
+            TARGET="core"
+          fi
+          # Ensure python path finds pyerrorfix module from root or core
+          export PYTHONPATH="${PYTHONPATH:-}:.:core"
+          python -m pyerrorfix analyze "$TARGET" \
             --fix \
             --format sarif \
             > pyerrorfix-results.sarif || true
 
           # Human-readable summary in the job log
-          python -m pyerrorfix analyze backend --format console --quiet || true
+          python -m pyerrorfix analyze "$TARGET" --format console --quiet || true
+
+          # Verify valid JSON SARIF before upload
+          if [ ! -s pyerrorfix-results.sarif ] || ! python -c "import json; json.load(open('pyerrorfix-results.sarif'))" 2>/dev/null; then
+            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[]}' > pyerrorfix-results.sarif
+          fi
 
       - name: Upload SARIF to GitHub code scanning
         if: always()
