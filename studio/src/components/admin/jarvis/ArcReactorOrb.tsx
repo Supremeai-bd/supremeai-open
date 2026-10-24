@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+export type { OrbState } from './jarvisPersona';
 import type { OrbState } from './jarvisPersona';
 
 const STATE_COLORS: Record<OrbState, string> = {
@@ -242,7 +243,10 @@ export function LiveWaveform({
   const rafRef = useRef<number>(0);
   const levelsRef = useRef<number[]>(new Array(barCount).fill(0.04));
   const stateRef = useRef<OrbState>(state);
-  stateRef.current = state;
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
