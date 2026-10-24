@@ -1,17 +1,24 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuthStore, AuthStatus } from '../../store/authStore';
+import { AuthShell } from '../../components/auth/AuthShell';
 
-// ROOT-CAUSE RESTYLE (Refs #890 funnel / Cosmic auth):
-// বাংলা মন্তব্য: রেজিস্ট্রেশন পেজ আগে legacy neon/--supremeai-color-* টোকেন
-// ব্যবহার করত। এখন LoginPage-এর মতোই Cosmic aurora glass ডিজাইন —
-// সম্পূর্ণ responsive। রেজিস্ট্রেশন লজিক ও success flow অপরিবর্তিত।
+// ROOT-CAUSE UNIFY FIX (Refs #890 funnel / owner request "2 rokom na ase"):
+// বাংলা মন্তব্য: রেজিস্ট্রেশন পেজ আগে মাঝখানে সিঙ্গেল সেন্টার্ড কার্ড ছিল, কিন্তু
+// লগইন ছিল split-screen — দুটো পেজ দেখতে সম্পূর্ণ আলাদা লাগত। এখন দুটোই একই
+// AuthShell শেয়ার করে (header + hero + health bar + card + footer) — পার্থক্য
+// শুধু কার্ডের ভেতরের লেখা আর ইনপুট বক্স (owner: "sudu likha and box change hobe")।
+// কার্ড স্টাইলও লগইনের সাথে হুবহু মিলানো: label-wrapped inputs, sentence-case
+// বাটন, একই error shake, একই Google বাটন। রেজিস্ট্রেশন লজিক ও success flow
+// সম্পূর্ণ অপরিবর্তিত।
 export const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [errorKey, setErrorKey] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const navigate = useNavigate();
@@ -30,16 +37,19 @@ export const RegisterPage: React.FC = () => {
     setError('');
     if (!email || !password || !name) {
       setError('দয়া করে সব ফিল্ড পূরণ করুন।');
+      setErrorKey((k) => k + 1);
       return;
     }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
+      setErrorKey((k) => k + 1);
       return;
     }
 
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
+      setErrorKey((k) => k + 1);
       return;
     }
 
@@ -54,6 +64,7 @@ export const RegisterPage: React.FC = () => {
       } else {
         const errorMsg = err.response?.data?.detail || err.message || 'রেজিস্ট্রেশন ব্যর্থ হয়েছে।';
         setError(`Error: ${errorMsg}`);
+        setErrorKey((k) => k + 1);
       }
     } finally {
       setIsLoading(false);
@@ -61,115 +72,60 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-slate-950 px-4 py-8 text-slate-100 sm:px-6">
-      {/* Cosmic aurora wash (same family as LoginPage) */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(168,85,247,0.16)_0%,transparent_60%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.10)_0%,transparent_50%)]" />
-
-      <div className="relative z-10 w-full max-w-md">
-        <Link to="/" className="mb-6 flex items-center justify-center gap-3" aria-label="SupremeAI home">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 text-sm font-bold text-white shadow-lg shadow-purple-500/20">S</span>
-          <span className="text-lg font-semibold tracking-tight">SupremeAI</span>
-        </Link>
-
-        <div className="w-full rounded-3xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.75))] p-6 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.25))] backdrop-blur-md sm:p-8">
-          <h1 className="mb-2 text-center text-3xl font-bold bg-gradient-to-r from-emerald-400 to-purple-500 bg-clip-text text-transparent sm:text-4xl">
-            SupremeAI
-          </h1>
-
-          {isSuccess ? (
-            <div className="mt-6 text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
-                <svg className="h-8 w-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <h2 className="mb-3 text-2xl font-bold text-white">
-                Check your Inbox!
-              </h2>
-              <p className="mb-6 text-sm leading-6 text-slate-400">
-                We've sent a verification link to <span className="font-semibold text-purple-300">{email}</span>. Please click the link to activate your account before signing in.
-              </p>
-              <button
-                onClick={() => navigate('/login')}
-                className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 py-3 font-bold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95"
-              >
-                Go to Login
-              </button>
-            </div>
-          ) : (
-            <>
-              <p className="mb-8 text-center font-semibold tracking-wide text-emerald-400">Create Your Core</p>
-
-              {error && <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-center text-sm font-medium text-red-300">{error}</div>}
-
-              <form onSubmit={handleRegister} className="space-y-4">
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Full Name"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30"
-                  />
-                </div>
-                <div>
-                  <input
-                    type="email"
-                    placeholder="Email address"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30"
-                  />
-                </div>
-                <div>
-                  <input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30"
-                  />
-                </div>
-                <div>
-                  <input
-                    type="password"
-                    placeholder="Confirm password"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    aria-label="Confirm password"
-                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 py-3 font-bold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95 disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {isLoading ? 'CREATING...' : 'CREATE ACCOUNT'}
-                </button>
-
-                <button
-                  type="button"
-                  disabled
-                  title="Google sign-up is coming soon"
-                  className="mt-4 w-full cursor-not-allowed rounded-xl border border-white/10 py-3 font-semibold text-slate-500/70 transition"
-                >
-                  Authenticate with Google (coming soon)
-                </button>
-              </form>
-
-              <p className="mt-6 text-center text-sm text-slate-400">
-                Already have an account?{' '}
-                <Link to="/login" className="font-medium text-emerald-400 hover:underline">
-                  Sign In
-                </Link>
-              </p>
-            </>
-          )}
-        </div>
+    <AuthShell>
+      <div className="mb-8">
+        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Create your core</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Create your account</h2>
+        <p className="mt-2 text-sm text-slate-400">Set up your identity and claim your workspace.</p>
       </div>
-    </div>
+
+      {isSuccess ? (
+        <div>
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/15">
+            <svg className="h-7 w-7 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h2 className="mb-3 text-2xl font-semibold tracking-tight text-white">
+            Check your Inbox!
+          </h2>
+          <p className="mb-6 text-sm leading-6 text-slate-400">
+            We&apos;ve sent a verification link to <span className="font-semibold text-purple-300">{email}</span>. Please click the link to activate your account before signing in.
+          </p>
+          <button
+            onClick={() => navigate('/login')}
+            className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-3 font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95"
+          >
+            Go to Login
+          </button>
+        </div>
+      ) : (
+        <>
+          {error && (
+            <motion.div
+              key={errorKey}
+              role="alert"
+              initial={{ x: 0 }}
+              animate={{ x: [0, -9, 9, -6, 6, -3, 3, 0] }}
+              transition={{ duration: 0.45, ease: 'easeInOut' }}
+              className="mb-5 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-sm text-red-300"
+            >
+              {error}
+            </motion.div>
+          )}
+
+          <form onSubmit={handleRegister} className="space-y-5">
+            <label className="block text-sm font-medium text-slate-300" htmlFor="register-name">Full name<input id="register-name" name="name" data-testid="name-input" autoComplete="name" type="text" placeholder="Your full name" value={name} onChange={e => setName(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30" /></label>
+            <label className="block text-sm font-medium text-slate-300" htmlFor="register-email">Email address<input id="register-email" name="email" data-testid="email-input" autoComplete="email" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30" /></label>
+            <label className="block text-sm font-medium text-slate-300" htmlFor="register-password">Password<input id="register-password" name="password" data-testid="password-input" autoComplete="new-password" type="password" placeholder="At least 8 characters" value={password} onChange={e => setPassword(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30" /></label>
+            <label className="block text-sm font-medium text-slate-300" htmlFor="register-confirm">Confirm password<input id="register-confirm" name="confirmPassword" data-testid="confirm-password-input" autoComplete="new-password" type="password" placeholder="Repeat your password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30" /></label>
+            <button type="submit" data-testid="register-submit" disabled={isLoading} className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-3 font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-purple-500/40 disabled:cursor-not-allowed disabled:opacity-60">{isLoading ? 'Creating account…' : 'Create account'}</button>
+            <button type="button" disabled title="Google sign-up is coming soon" className="w-full cursor-not-allowed rounded-xl border border-white/10 px-4 py-3 text-sm font-medium text-slate-500/70 transition">Continue with Google (coming soon)</button>
+          </form>
+
+          <p className="mt-7 text-center text-sm text-slate-400">Already have an account? <Link to="/login" className="font-semibold text-emerald-400 hover:underline">Sign in</Link></p>
+        </>
+      )}
+    </AuthShell>
   );
 };
