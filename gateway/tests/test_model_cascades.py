@@ -17,6 +17,8 @@ def test_provider_cascades_defined():
     assert "groq" in PROVIDER_MODEL_CASCADES
     assert "gemini" in PROVIDER_MODEL_CASCADES
     assert "openrouter" in PROVIDER_MODEL_CASCADES
+    assert "perplexity" in PROVIDER_MODEL_CASCADES
+    assert "sonar" in PROVIDER_MODEL_CASCADES["perplexity"]
 
     # Verify Groq contains live verified models
     assert "qwen/qwen3.8-27b" in PROVIDER_MODEL_CASCADES["groq"]

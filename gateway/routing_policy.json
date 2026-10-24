@@ -19,6 +19,10 @@
         "model": "gemini-2.5-flash"
       },
       {
+        "provider": "perplexity",
+        "model": "sonar"
+      },
+      {
         "provider": "openrouter",
         "model": "nvidia/nemotron-3.5-lightning:free"
       },

@@ -135,24 +135,26 @@ class ProviderKeyPool:
 class FederationSquad:
     """The master team orchestrator managing all provider pools."""
 
-    # Zero-cost free fallback priority
+    # Prioritized provider order: Groq, Gemini, and Perplexity lead for lowest response times
     DEFAULT_PROVIDER_ORDER = [
         "groq",
         "gemini",
+        "perplexity",
         "openrouter",
-        "v0",
-        "mistral",
         "openai",
+        "mistral",
+        "v0",
         "huggingface",
     ]
 
     PREFIX_MAP: Dict[str, List[str]] = {
         "groq": ["GROQ_API_KEY"],
         "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "JULES_API_KEY"],
+        "perplexity": ["PERPLEXITY_API_KEY", "PPLX_API_KEY"],
         "openrouter": ["OPENROUTER_API_KEY"],
-        "v0": ["V0_API_KEY"],
-        "mistral": ["MISTRAL_API_KEY"],
         "openai": ["OPENAI_API_KEY"],
+        "mistral": ["MISTRAL_API_KEY"],
+        "v0": ["V0_API_KEY"],
         "huggingface": ["HF_API_KEY", "HUGGINGFACE_API_KEY"],
     }
 

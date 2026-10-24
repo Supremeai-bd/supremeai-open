@@ -74,6 +74,10 @@ PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
         "base_url": os.getenv("V0_BASE_URL", "https://api.v0.dev/v1"),
         "default_model": os.getenv("V0_MODEL", "v0-web"),
     },
+    "perplexity": {
+        "base_url": os.getenv("PERPLEXITY_BASE_URL", "https://api.perplexity.ai"),
+        "default_model": os.getenv("PERPLEXITY_MODEL", "sonar"),
+    },
     "ghost_gemini": {
         "base_url": os.getenv("GHOST_TOWER_URL", "http://127.0.0.1:8788"),
         "default_model": "gemini-web",
@@ -103,6 +107,11 @@ PROVIDER_MODEL_CASCADES: Dict[str, list[str]] = {
         "gemini-1.5-flash-latest",
         "gemini-1.5-pro-latest",
         "gemini-2.0-flash",
+    ],
+    "perplexity": [
+        "sonar",
+        "sonar-pro",
+        "sonar-reasoning",
     ],
     "openrouter": [
         "nvidia/nemotron-3.5-lightning:free",
