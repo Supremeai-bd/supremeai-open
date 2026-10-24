@@ -36,7 +36,7 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest -v
+          pytest tests/ -v
 
       - name: Secret scan (fail-closed)
         run: |
