@@ -21,6 +21,7 @@ const routePaths = new Set<string>(
 const APP_INLINE_ROUTES = new Set<string>([
   '/',
   '/about',
+  '/academies',
   '/admin/*',
   '/chat',
   '/cockpit',
@@ -33,6 +34,7 @@ const APP_INLINE_ROUTES = new Set<string>([
   '/pricing',
   '/register',
   '/telemetry',
+  '/tools',
   '/workspace',
   '/workspace/live',
 ]);
