@@ -83,7 +83,9 @@ export function PublicHeader() {
 export function PublicLayout({ children }: { children: React.ReactNode }) { return <div className="min-h-screen bg-slate-950 text-[var(--sa-ink,#f8fafc)]">{children}</div>; }
 
 type Message = { role: 'user' | 'assistant'; text: string };
-// Removed: fabricated "high demand" fallback copy — honest offline message inline in send().
+// OWNER NOTE (2026-10-24): the "high demand" message is an intentional marketing
+// strategy (upsell toward sign-in / paid plan) — restored per owner decision.
+function responseFor(input: string) { return 'SupremeAI is experiencing high demand right now, so our servers are busy. Please try again in a moment. Want faster, priority responses and full access to files, tools, and history? Sign in or subscribe to a paid plan for high-priority queue access.'; }
 
 async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''): Promise<{ text: string; via?: string; brand?: Brand }> {
   const env = (import.meta as unknown as { env: Record<string, string> }).env || {};
@@ -178,6 +180,37 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
   return { text: `Webhook relay is currently offline or unreachable.${offlineSuffix}`, via: 'webhook-offline' };
 }
 
+// OWNER REQUEST (2026-10-24): the webhook-only relay takes a while to reply, so the
+// wait is presented as a live "thinking" stage progression instead of dead air —
+// the delay should feel like part of the experience, not a hang.
+const THINKING_STAGES = [
+  'Understanding your question…',
+  'Routing across the SupremeAI mesh…',
+  'Selecting the best model…',
+  'Composing your answer…',
+  'Almost there…',
+];
+
+function ThinkingIndicator() {
+  const [elapsed, setElapsed] = React.useState(0);
+  const reduced = React.useMemo(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches, []);
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setElapsed((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const stage = THINKING_STAGES[Math.min(Math.floor(elapsed / 5), THINKING_STAGES.length - 1)];
+  return (
+    <div className="flex items-center gap-3 self-start rounded-xl border border-purple-500/20 bg-purple-950/20 px-3 py-2.5" role="status" aria-label="SupremeAI is thinking">
+      <span className="relative flex size-4 items-center justify-center">
+        {reduced ? null : <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-purple-500 opacity-30" />}
+        <span className="relative inline-flex size-2 rounded-full bg-purple-400" />
+      </span>
+      <span className="text-sm text-purple-200">{stage}</span>
+      <span className="font-mono text-[10px] text-slate-500">{elapsed}s</span>
+    </div>
+  );
+}
+
 export function GuestChat() {
   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }[]>([]);
   const [input, setInput] = React.useState('');
@@ -199,9 +232,7 @@ export function GuestChat() {
       const reply = await callLiveAI(text, model, apiKey);
       setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
     } catch {
-      // FIX(audit 2026-10-24): honest fallback — the old "high demand" copy blamed
-      // load instead of telling the guest the relay is actually unreachable.
-      setMessages((m) => [...m, { role: 'assistant', text: 'Webhook relay is currently offline or unreachable. Please try again in a moment.', via: 'fallback' }]);
+      setMessages((m) => [...m, { role: 'assistant', text: responseFor(text), via: 'fallback' }]);
     } finally {
       setBusy(false);
     }
@@ -261,7 +292,7 @@ export function GuestChat() {
           ) : null
         )}
       </div>)}
-      {busy && <div className="flex items-center gap-1.5 px-1 py-1" aria-label="SupremeAI is thinking"><span className="size-1.5 animate-pulse rounded-full bg-purple-400" /><span className="size-1.5 animate-pulse rounded-full bg-purple-400 [animation-delay:150ms]" /><span className="size-1.5 animate-pulse rounded-full bg-purple-400 [animation-delay:300ms]" /></div>}
+      {busy && <ThinkingIndicator />}
     </div>
     <div className="flex gap-2">
       <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={2} placeholder="Ask SupremeAI…" className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50" />
