@@ -9,6 +9,12 @@ export const LandingHeader: React.FC = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const onLanding = pathname === '/';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = () => setMenuOpen(false);
+  const navTo = (path: string) => {
+    setMenuOpen(false);
+    navigate(path);
+  };
   return (
     <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 sm:px-6 backdrop-blur-xl">
       <Link to="/" className="flex items-center gap-3">
