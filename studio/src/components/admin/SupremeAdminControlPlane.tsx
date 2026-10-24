@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Command, Cpu, GitMerge, HeartPulse, LockKeyhole, MessageSquare, Network, Send, ShieldCheck, Sparkles } from 'lucide-react';
-import { useMetrics, useThreatScan, useCIReports } from '../../hooks/useDashboardData';
+import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Command, Cpu, Database, GitMerge, HeartPulse, LockKeyhole, MessageSquare, Network, Send, ShieldCheck, Sliders, Sparkles, Terminal } from 'lucide-react';
+import { useMetrics, useThreatScan, useCIReports, useEpistemicTelemetry } from '../../hooks/useDashboardData';
 import { ApprovalQueue } from '../../commandcenter/modules/secure/ApprovalQueue';
 import { AdminAlertsTab } from './AdminAlertsTab';
 
@@ -29,11 +29,12 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
   const { data: metrics } = useMetrics();
   const { data: threats } = useThreatScan();
   const { data: ciReports } = useCIReports();
+  const { data: telemetry } = useEpistemicTelemetry();
   const activeIncidents = threats?.findings?.filter((item) => item.severity === 'high' || item.severity === 'critical') || [];
   const runningDeployments = ciReports?.filter((item) => item.status === 'running') || [];
   const serviceEntries = Object.entries(healthMap);
   const [freshness, setFreshness] = useState<string>(new Date().toISOString());
-  useEffect(() => { setFreshness(new Date().toISOString()); }, [healthMap, metrics, threats, ciReports]);
+  useEffect(() => { setFreshness(new Date().toISOString()); }, [healthMap, metrics, threats, ciReports, telemetry]);
   const open = (tab: string) => setAdminSubTab?.(tab);
   const requestPermission = () => setAdminInput?.('Request permission for: ');
   const run = (cmd: string) => setAdminInput?.(cmd);
@@ -41,6 +42,98 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
   return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-6 sm:px-8 lg:px-10"><div className="mx-auto max-w-[1600px] space-y-5"><header className="flex flex-col justify-between gap-4 rounded-2xl border border-cyan-400/20 bg-[radial-gradient(circle_at_78%_0%,rgba(34,211,238,0.12),transparent_42%),var(--sa-surface)] p-5 sm:p-7 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300"><Sparkles size={14} /> Supreme system control plane</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Super Admin Dashboard</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--sa-ink-muted)]">Command the system, review requested work, approve or reject safely, and inspect the whole operational picture from one protected surface.</p></div><div className="flex flex-wrap gap-2"><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-300"><LockKeyhole size={14} /> MFA protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-400/20"><GitMerge size={14} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}
 
 <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Super admin live summary"><Summary icon={HeartPulse} label="Platform" value={metrics ? 'LIVE' : 'PENDING'} detail={metrics ? 'Telemetry connected' : 'Waiting for telemetry'} good={!!metrics} /><Summary icon={Activity} label="p95 latency" value={metrics?.latency_p95_ms != null ? `${metrics.latency_p95_ms} ms` : '—'} detail="Current metrics snapshot" /><Summary icon={AlertTriangle} label="Critical review" value={activeIncidents.length} detail={activeIncidents.length ? 'Action may be required' : 'No high-severity finding'} good={!activeIncidents.length} /><Summary icon={GitMerge} label="Deployments" value={runningDeployments.length} detail="Currently running" /></section>
+
+{/* ── Way 10 & 12: Epistemic Engine Cockpit (Infinity HUD × ChronoFact × SPINE) ── */}
+<section className="rounded-2xl border border-cyan-500/20 bg-[radial-gradient(ellipse_at_top_right,rgba(6,182,212,0.06),transparent_50%),var(--sa-surface)] p-5 sm:p-6" aria-label="Epistemic Engine Cockpit">
+  <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+    <div>
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+        <Cpu size={14} /> Cognitive Backbone Telemetry (ChronoFact × SPINE)
+      </div>
+      <h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">
+        Epistemic Engine & Invariant Controls
+      </h2>
+    </div>
+    <div className="flex items-center gap-2 text-xs text-[var(--sa-ink-muted)]">
+      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+      <span>Live Invariants Enforced</span>
+    </div>
+  </div>
+
+  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="rounded-xl border border-cyan-400/20 bg-black/20 p-4">
+      <div className="flex items-center justify-between text-xs text-cyan-300">
+        <span className="font-semibold uppercase tracking-wider">TF-IDF Tool Pruner</span>
+        <Sliders size={15} />
+      </div>
+      <p className="mt-2 text-2xl font-mono font-semibold text-[var(--sa-ink)]">
+        {telemetry?.counters?.tokens_saved ?? 0}
+      </p>
+      <p className="mt-1 text-[11px] text-[var(--sa-ink-muted)]">
+        Tokens Saved ({telemetry?.rates?.token_savings_pct ?? 0}% cut · Target ≥70%)
+      </p>
+      <div className="mt-2 flex items-center gap-2 text-[10px] text-emerald-300">
+        <span>Pruned: {telemetry?.counters?.tools_pruned ?? 0} schemas</span>
+      </div>
+    </div>
+
+    <div className="rounded-xl border border-emerald-400/20 bg-black/20 p-4">
+      <div className="flex items-center justify-between text-xs text-emerald-300">
+        <span className="font-semibold uppercase tracking-wider">Memory Relevance Gate</span>
+        <Database size={15} />
+      </div>
+      <p className="mt-2 text-2xl font-mono font-semibold text-[var(--sa-ink)]">
+        {telemetry?.invariants?.memory_cosine_threshold ?? 0.72}
+      </p>
+      <p className="mt-1 text-[11px] text-[var(--sa-ink-muted)]">
+        Cosine Gate Threshold (0 Cross-Domain Leaks)
+      </p>
+      <div className="mt-2 flex items-center gap-2 text-[10px] text-emerald-300">
+        <span>Evaluated: {telemetry?.counters?.memory_evaluated ?? 0} memories</span>
+      </div>
+    </div>
+
+    <div className="rounded-xl border border-purple-400/20 bg-black/20 p-4">
+      <div className="flex items-center justify-between text-xs text-purple-300">
+        <span className="font-semibold uppercase tracking-wider">SPINE Stream Sanitizer</span>
+        <ShieldCheck size={15} />
+      </div>
+      <p className="mt-2 text-2xl font-mono font-semibold text-[var(--sa-ink)]">
+        ACTIVE
+      </p>
+      <p className="mt-1 text-[11px] text-[var(--sa-ink-muted)]">
+        Thoracic T1 Invariant (Zero Unearned Apology)
+      </p>
+      <div className="mt-2 flex items-center gap-2 text-[10px] text-purple-300">
+        <span>Interventions: {telemetry?.counters?.cushions_stripped ?? 0}</span>
+      </div>
+    </div>
+
+    <div className="rounded-xl border border-amber-400/20 bg-black/20 p-4">
+      <div className="flex items-center justify-between text-xs text-amber-300">
+        <span className="font-semibold uppercase tracking-wider">Model Horizon Calibrated</span>
+        <Terminal size={15} />
+      </div>
+      <p className="mt-2 text-2xl font-mono font-semibold text-[var(--sa-ink)]">
+        FROZEN
+      </p>
+      <p className="mt-1 text-[11px] text-[var(--sa-ink-muted)]">
+        Temporal Cutoff & Drift Auto-Interceptor
+      </p>
+      <div className="mt-2 flex items-center gap-2 text-[10px] text-amber-300">
+        <span>Intercepts: {telemetry?.counters?.horizon_intercepts ?? 0}</span>
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--sa-border)] bg-black/30 px-4 py-2.5 text-xs font-mono text-[var(--sa-ink-muted)]">
+    <span className="text-cyan-300 font-sans font-semibold">Invariant Locks:</span>
+    <span>SAMPLING_LOGIC: <strong className="text-emerald-300">0.2</strong></span>
+    <span>SAMPLING_CHAT: <strong className="text-emerald-300">0.4</strong></span>
+    <span>MEMORY_COSINE_GATE: <strong className="text-emerald-300">0.72</strong></span>
+    <span>REDUCTION_GOAL: <strong className="text-emerald-300">≥70%</strong></span>
+  </div>
+</section>
 
 <section className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6">
   <div className="mb-3 flex items-center justify-between">
