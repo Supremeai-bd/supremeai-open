@@ -20,6 +20,10 @@ permissions:
   contents: write
   packages: write
 
+concurrency:
+  group: vscode-release-ext-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   package:
     name: "Package & Publish VSIX"
