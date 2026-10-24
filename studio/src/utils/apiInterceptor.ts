@@ -73,15 +73,36 @@ export function setupGlobalFetchInterceptor() {
           console.error('🚨 [INTERCEPTOR_ERROR]: Failed to parse error response', e);
         }
 
-        const isPublicHealthProbe = typeof url === 'string' && url.includes('/api/health-aggregation');
-        const isBackgroundRequest = typeof url === 'string' && (
+        const rawUrl = typeof url === 'string'
+          ? url
+          : url instanceof Request
+            ? url.url
+            : url instanceof URL
+              ? url.href
+              : String(url || '');
+
+        const isPublicHealthProbe = rawUrl.includes('/api/health-aggregation');
+        const isBackgroundRequest = (
           isPublicHealthProbe ||
-          url.includes('/api/config') ||
-          url.includes('/api/health')
+          rawUrl.includes('/api/config') ||
+          rawUrl.includes('/api/health') ||
+          rawUrl.includes('/connections') ||
+          rawUrl.includes('/conversations') ||
+          rawUrl.includes('/workspace') ||
+          rawUrl.includes('/preferences') ||
+          rawUrl.includes('/models') ||
+          rawUrl.includes('/skills')
         );
-        const isGuestOrChat = typeof url === 'string' && (url.includes('/chat/completions') || url.includes('/v1/'));
+        const isGuestOrChat = rawUrl.includes('/chat/completions') || rawUrl.includes('/v1/');
+
+        // বাংলা মন্তব্য (UX পলিসি): 404 (Not Found), 401/403 (Auth/Session), বা ব্যাকগ্রাউন্ড
+        // কুয়েরির ক্ষেত্রে কোনো গ্লোবাল লাল টোস্ট পপআপ দেখানো যাবে না। কলার কম্পোনেন্টগুলো (UserDashboard,
+        // WorkspaceSettings ইত্যাদি) নিজেরাই নিজস্ব গ্রেসফুল ফলব্যাক বা এম্পটি স্টেট দেখায়।
+        const isExpectedSilentStatus = response.status === 404 || response.status === 401 || response.status === 403;
+        const isNotFoundError = errorMsg.toLowerCase().includes('not found') || response.status === 404;
+
         const win = window as unknown as { showGlobalToast?: (type: string, msg: string) => void };
-        if (win.showGlobalToast && !isBackgroundRequest && !isGuestOrChat) {
+        if (win.showGlobalToast && !isBackgroundRequest && !isGuestOrChat && !isExpectedSilentStatus && !isNotFoundError) {
           win.showGlobalToast('error', errorMsg);
         }
       }
