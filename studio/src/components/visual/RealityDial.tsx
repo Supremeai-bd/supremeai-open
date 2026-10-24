@@ -9,7 +9,7 @@
  *   level: 1..4 | null   (null = unknown — renders muted, never fake-green)
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 
 export interface RealityDialProps {
   /** Current gateway reality-dial level, or null when unknown/unreachable. */
@@ -37,11 +37,18 @@ export default function RealityDial({ level, updatedAt, compact = false }: Reali
   const known = typeof level === 'number' && level >= 1 && level <= 4;
   const active = useMemo(() => LEVELS.find((l) => l.n === level), [level]);
 
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [updatedAt]);
+
   const freshness = useMemo(() => {
     if (!updatedAt) return null;
-    const ageS = Math.max(0, Math.round((Date.now() - updatedAt) / 1000));
+    const ageS = Math.max(0, Math.round((now - updatedAt) / 1000));
     return ageS < 5 ? 'live' : `${ageS}s ago`;
-  }, [updatedAt]);
+  }, [updatedAt, now]);
 
   return (
     <section
