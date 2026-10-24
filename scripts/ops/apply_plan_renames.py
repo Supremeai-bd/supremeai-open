@@ -1,6 +1,6 @@
 import os
 
-plans_base = r'f:\supremeai\docs\plans'
+plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
 
 renames = {
     # Architecture
