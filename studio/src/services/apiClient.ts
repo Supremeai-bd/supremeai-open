@@ -6,7 +6,7 @@
 import { getApiBaseUrl } from '../utils/api';
 import { buildUrl } from '@supremeai/shared-services';
 import { getDeviceFingerprint } from '../utils/deviceFingerprint';
-import { clearAdminToken, clearUserToken, getAdminToken, getUserToken, setUserToken } from './tokenStorage';
+import { clearAdminToken, clearUserToken, getAdminToken, getTrustedBrowserToken, getUserToken, setUserToken } from './tokenStorage';
 import PQueue from 'p-queue';
 
 // বাংলা মন্তব্য: কাস্টম এরর ক্লাস — status প্রপার্টি দিয়ে React Query retry ফাংশন সঠিকভাবে 401/403/429 চিহ্নিত করতে পারে
@@ -139,6 +139,12 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
 
   if (effectiveToken) {
     headers['Authorization'] = `Bearer ${effectiveToken}`;
+  }
+
+  // 🛡️ Trusted browser token for 7-day MFA bypass
+  const trustedBrowserToken = getTrustedBrowserToken();
+  if (trustedBrowserToken) {
+    headers['X-Trusted-Browser'] = trustedBrowserToken;
   }
 
   // 🔐 CSRF Protection
