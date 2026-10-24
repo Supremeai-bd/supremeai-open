@@ -74,6 +74,7 @@ flowchart TD
 
 যেকোনো কোড বা অ্যাকশনের পূর্বে প্রতিটি রোলের ৩-সেকেন্ড প্রি-ফ্লাইট চেক:
 - **All Agents (Dual-Rebase Mandate):** কাজ শুরুর আগে `origin/main` থেকে রিবেস করে ব্রাঞ্চ খোলা হয়েছে তো? এবং পুশ করার ঠিক আগে রিবেস ও ৩-টিয়ার ভেরিফিকেশন ছাড়া পুশ করা সম্পূর্ণ নিষিদ্ধ।
+- **All Agents (Path-Anchoring & Mirror Invariant):** ফাইল পাথ কি সঠিক ডোমেইন মিররে (`studio/*`, `gateway/*`, `core/*` ইত্যাদি) এঙ্কর করা? স্যাটেলাইট কোড ভুলেও রিপোজিটরির রুট-লেভেলে (`src/*`) প্যাচ করা হচ্ছে না তো? সাবমিট বা পুশের পূর্বে লোকাল চেক বাধ্যতামূলক: `python scripts/ci/boundary_sanitization_guard.py --files <paths>` (পাস করলেই কেবল সাবমিট বৈধ)।
 - **Planner:** বিদ্যমান কোডে ৮০% আছে কি? নতুন জটিলতা ছাড়া কি পুরনো কোড রিইউজ করা যায়? (রুল §6)
 - **Coder:** ইস্যু কি লাইভ `main`-এ সক্রিয়? ইস্যুতে সাজেস্ট করার চেয়ে সহজ ১-লাইনের সেরা কোনো বিকল্প আছে কি?
 - **Auditor:** নিয়মলঙ্ঘন কি বর্তমান `main`-এ প্রমাণযোগ্য? এটি চিরতরে বন্ধে স্বয়ংক্রিয় সিআই গেট কী দেওয়া হচ্ছে?
@@ -116,5 +117,6 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
 - **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
 - **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
 - **14 Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 14 persistent root hubs (#761 CI, #760 Bridge, 12 Domains); all tasks/failures are Sub-Issues.
+- **Boundary & Surface Path SSOT:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — prevents root-level shadowing and unapproved surface leaks (#107, #508).
 - **Frontend Performance SSOT:** `python scripts/ci/frontend_performance_guard.py --self-test` — code-splitting & zero-blocking landing doctrine (FCP < 1.0s).
 - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
