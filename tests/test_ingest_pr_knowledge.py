@@ -58,6 +58,29 @@ class TestIngestPrKnowledge(unittest.TestCase):
         self.assertFalse(valid)
         self.assertIn("Missing role fields", reason)
 
+    def test_markdown_reflection_parsing(self):
+        body = """## Summary
+Fix gateway routing drift.
+
+## Reflection Evidence (why + alternatives_rejected)
+- **why:** The routing config omitted anthropic model which caused fail-closed error.
+- **alternatives_rejected:**
+  - Hardcode model aliases in code: Rejected because violates fail-closed doctrine.
+  - Disable contract test: Rejected because test is core SSOT.
+"""
+        data, ver = ingest_mod.extract_envelope_json(body)
+        self.assertEqual(ver, "v2")
+        self.assertIsNotNone(data)
+        valid, role, reason, k = ingest_mod.validate_knowledge(data, ver)
+        self.assertTrue(valid, f"Validation failed: {reason}")
+        self.assertEqual(role, "coder")
+        self.assertIn("routing config omitted", k["why_this_way"])
+        self.assertEqual(len(k["alternatives_rejected"]), 2)
+        self.assertEqual(k["alternatives_rejected"][0]["method"], "Hardcode model aliases in code")
+        facts = ingest_mod.format_learned_facts(992, role, k, "Fix gateway routing drift")
+        self.assertEqual(len(facts), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
+
