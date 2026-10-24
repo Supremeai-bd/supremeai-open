@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { UnifiedChatPanel } from '../../components/chat/UnifiedChatPanel';
 import { Bot, Code, Smartphone } from 'lucide-react';
+import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
 
 // Honest preview contract: the preview tabs only make sense AFTER the AI has
 // generated real HTML and the user pressed Preview on a code block. Before that
@@ -30,28 +31,6 @@ const BrowserPreview: React.FC<{ html: string }> = ({ html }) => (
       sandbox="allow-scripts allow-modals"
       className="h-full w-full flex-1 border-0 bg-white"
     />
-  </div>
-);
-
-const MobileSimulator: React.FC<{ html: string }> = ({ html }) => (
-  <div className="flex h-full w-full items-center justify-center overflow-auto p-4">
-    <div className="relative flex h-[680px] w-[340px] flex-col overflow-hidden rounded-[40px] border-4 border-slate-700 bg-slate-950 shadow-2xl ring-1 ring-white/10">
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 h-4 w-28 rounded-full bg-slate-800" />
-      <div className="flex h-8 shrink-0 items-center justify-between px-6 pt-2 text-[10px] font-medium text-slate-400">
-        <span>9:41</span>
-        <div className="flex items-center gap-1.5">
-          <span className="size-1.5 rounded-full bg-emerald-400" />
-          <span>5G</span>
-        </div>
-      </div>
-      <iframe
-        title="SupremeAI Mobile Simulator"
-        srcDoc={html}
-        sandbox="allow-scripts allow-modals"
-        className="h-full w-full flex-1 border-0 bg-white"
-      />
-      <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 h-1 w-24 rounded-full bg-slate-600" />
-    </div>
   </div>
 );
 
@@ -179,7 +158,7 @@ export const AIStudio: React.FC = () => {
 
         {activeTab === 'mobile' && (
           <div className="absolute inset-0 p-4">
-            {hasPreview ? <MobileSimulator html={code} /> : <PreviewEmptyState device="mobile" onBack={() => setActiveTab('chat')} />}
+            {hasPreview ? <MobilePreviewPanel html={code} /> : <PreviewEmptyState device="mobile" onBack={() => setActiveTab('chat')} />}
           </div>
         )}
       </div>
