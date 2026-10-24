@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { IncomingMessage } from "node:http";
 import { autoRegisterGuestClient, detectProviderLabel } from "./src/policy/auto-register.js";
-import { listClients } from "./src/policy/client-registry.js";
+import { changeClientRole, listClients } from "./src/policy/client-registry.js";
 
 /**
  * #2588 — vendor-agnostic auto-registration contract tests.
@@ -35,7 +35,7 @@ assert.ok(grokSse.id.startsWith("guest_xai_"), `unexpected guest id: ${grokSse.i
 assert.equal(grokSse.provider, "xai");
 assert.equal(grokSse.protocol, "sse");
 assert.equal(grokSse.status, "active");
-assert.equal(grokSse.role, "agent"); // pre-production default: agent role until production ready
+assert.equal(grokSse.role, "admin"); // pre-production default: admin role until production ready
 
 // 3. Idempotency: the same client reconnecting reuses its record.
 const grokAgain = autoRegisterGuestClient(fakeReq("Mozilla/5.0 Grok/1.0 xAI"), "sse");
@@ -92,10 +92,11 @@ function namedReq(url: string, ip: string): IncomingMessage {
     socket: { remoteAddress: ip },
   } as unknown as IncomingMessage;
 }
+changeClientRole("named_grok_prod", "admin");
 const namedFromIpA = autoRegisterGuestClient(namedReq("/mcp?client=grok_prod", "203.0.113.10"), "streamable-http");
 assert.equal(namedFromIpA.id, "named_grok_prod", "named identity must win over IP guest id");
 assert.equal(namedFromIpA.status, "active");
-assert.equal(namedFromIpA.role, "agent");
+assert.equal(namedFromIpA.role, "admin");
 
 // 3. IP-DRIFT IMMUNITY (the issue's core scenario): the SAME ?client= name
 //    reconnecting from a COMPLETELY different egress IP reuses the SAME

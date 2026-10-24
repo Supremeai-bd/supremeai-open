@@ -874,7 +874,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
       res.once("close", dropSession);
       sseTransport.onclose = dropSession;
       try {
-        await RequestContextStore.run({ role: activeRole, accessMode, authenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin, tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
+        const effectiveGlobalAdmin = isGlobalAdmin || activeRole === "admin";
+        await RequestContextStore.run({ role: activeRole, accessMode, authenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin: effectiveGlobalAdmin, tenantId: effectiveGlobalAdmin ? "*" : tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
           await sseServer.connect(sseTransport);
         });
       } catch (err) {
@@ -925,12 +926,13 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
       // Re-read client from map to pick up live database role upgrades (#1767)
       const mappedClient = sid ? sseClientMap.get(sid) : undefined;
       const refreshedClient = mappedClient?.id ? (getClient(mappedClient.id) ?? mappedClient) : client;
-      // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট agent role পাবে
-      const activeRole = slotRole ?? refreshedClient?.role ?? role ?? "agent";
+      // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট admin role পাবে
+      const activeRole = slotRole ?? refreshedClient?.role ?? role ?? "admin";
       const authenticated = Boolean(slotBinding || refreshedClient || role !== null);
       const accessMode = accessModeFor(activeRole, authenticated);
       const scopes = slotScopes ?? refreshedClient?.scopes ?? defaultClientScopes(activeRole);
-      await RequestContextStore.run({ role: activeRole, accessMode, authenticated, tenantBound: Boolean(refreshedClient?.id || slotBinding), clientId: refreshedClient?.id ?? slotBinding?.slotId, scopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin, tenantId, slotId: slotBinding?.slotId, slotVerified: Boolean(slotBinding), credentialId: slotBinding?.credentialId }, async () => {
+      const effectiveGlobalAdmin = isGlobalAdmin || activeRole === "admin";
+      await RequestContextStore.run({ role: activeRole, accessMode, authenticated, tenantBound: Boolean(refreshedClient?.id || slotBinding), clientId: refreshedClient?.id ?? slotBinding?.slotId, scopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin: effectiveGlobalAdmin, tenantId: effectiveGlobalAdmin ? "*" : tenantId, slotId: slotBinding?.slotId, slotVerified: Boolean(slotBinding), credentialId: slotBinding?.credentialId }, async () => {
         await sseTransport.handlePostMessage(req, res);
       });
       return;
@@ -957,7 +959,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
         writeJson(res, 413, { error: "MCP request exceeds the maximum size" });
         return;
       }
-      const activeRole = role ?? "agent";
+      const activeRole = role ?? "admin";
       const authenticated = Boolean(role !== null || client);
       const accessMode = accessModeFor(activeRole, authenticated);
       const scopes = client?.scopes ?? defaultClientScopes(activeRole);
@@ -1040,12 +1042,13 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
             protocol: "streamable-http",
             tenantId,
           }).catch(() => undefined);
-          // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট agent role পাবে
-          const sessionRole = slotRole ?? refreshedClient?.role ?? role ?? "agent";
+          // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট admin role পাবে
+          const sessionRole = slotRole ?? refreshedClient?.role ?? role ?? "admin";
           const sessionAuthenticated = Boolean(entry.slot || refreshedClient || role !== null);
           const sessionAccessMode = accessModeFor(sessionRole, sessionAuthenticated);
           const sessionScopes = slotScopes ?? refreshedClient?.scopes ?? defaultClientScopes(sessionRole);
-          await RequestContextStore.run({ role: sessionRole, accessMode: sessionAccessMode, authenticated: sessionAuthenticated, tenantBound: Boolean(refreshedClient?.id || entry.slot), clientId: refreshedClient?.id ?? entry.slot?.slotId, scopes: sessionScopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin, tenantId, slotId: entry.slot?.slotId, slotVerified: Boolean(entry.slot), credentialId: entry.slot?.credentialId }, async () => {
+          const effectiveGlobalAdmin = isGlobalAdmin || sessionRole === "admin";
+          await RequestContextStore.run({ role: sessionRole, accessMode: sessionAccessMode, authenticated: sessionAuthenticated, tenantBound: Boolean(refreshedClient?.id || entry.slot), clientId: refreshedClient?.id ?? entry.slot?.slotId, scopes: sessionScopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin: effectiveGlobalAdmin, tenantId: effectiveGlobalAdmin ? "*" : tenantId, slotId: entry.slot?.slotId, slotVerified: Boolean(entry.slot), credentialId: entry.slot?.credentialId }, async () => {
             await entry.transport.handleRequest(req, res, parsedBody);
           });
           return;
@@ -1121,7 +1124,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
           try { writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "MCP session could not be established" }, id: null }); } catch {}
           return;
         }
-        await RequestContextStore.run({ role: initRole, accessMode: initAccessMode, authenticated: initAuthenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes: initScopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin, tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
+        const effectiveGlobalAdmin = isGlobalAdmin || initRole === "admin";
+        await RequestContextStore.run({ role: initRole, accessMode: initAccessMode, authenticated: initAuthenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes: initScopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin: effectiveGlobalAdmin, tenantId: effectiveGlobalAdmin ? "*" : tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
           await httpTransport.handleRequest(req, res, parsedBody);
         });
         // The SDK assigns the session id DURING the initialize handshake; only
@@ -1163,7 +1167,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
       const geminiAuthenticated = geminiSession.authenticated;
       const geminiAccessMode = accessModeFor(geminiRole, geminiAuthenticated);
       const geminiScopes = geminiSession.scopes.length > 0 ? geminiSession.scopes : defaultClientScopes(geminiRole);
-      const geminiRequestContext = { role: geminiRole, accessMode: geminiAccessMode, authenticated: geminiAuthenticated, tenantBound: Boolean(geminiClient?.id), clientId: geminiClient?.id, scopes: geminiScopes, toolProfile: geminiClient?.toolProfile, isGlobalAdmin, tenantId, slotId: geminiSession.slotId, slotVerified: geminiSession.slotVerified, credentialId: geminiSession.credentialId };
+      const geminiEffectiveGlobalAdmin = isGlobalAdmin || geminiRole === "admin";
+      const geminiRequestContext = { role: geminiRole, accessMode: geminiAccessMode, authenticated: geminiAuthenticated, tenantBound: Boolean(geminiClient?.id), clientId: geminiClient?.id, scopes: geminiScopes, toolProfile: geminiClient?.toolProfile, isGlobalAdmin: geminiEffectiveGlobalAdmin, tenantId: geminiEffectiveGlobalAdmin ? "*" : tenantId, slotId: geminiSession.slotId, slotVerified: geminiSession.slotVerified, credentialId: geminiSession.credentialId };
       const geminiAdapterContext = { serverName: SERVER_NAME, serverVersion: SERVER_VERSION, serverFactory };
 
       // ── GET /gemini — adapter info manifest ──

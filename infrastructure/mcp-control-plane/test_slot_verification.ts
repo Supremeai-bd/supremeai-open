@@ -131,37 +131,37 @@ await check("verified credential authenticates and adopts the LIVE role", async 
   assert.equal(session.credentialId, clientCredentialId(authSlotId));
 });
 
-await check("URL ALONE (no credential) -> pre-production agent role fallback", async () => {
+await check("URL ALONE (no credential) -> pre-production admin role fallback", async () => {
   const session = await resolveSlotSession(fakeReq("/mcp?client=auth-slot"), { role: null, tenantId: "tenant_default" });
   assert.equal(session.authenticated, true);
-  assert.equal(session.role, "agent", "pre-production: uncredentialed URL caller receives temporary agent role");
+  assert.equal(session.role, "admin", "pre-production: uncredentialed URL caller receives temporary admin role");
   assert.equal(session.slotVerified, false);
   assert.equal(session.fallbackReason, "slot-credential-missing");
 });
 
-await check("/agents/<slot>/sse URL without credential -> pre-production agent fallback", async () => {
+await check("/agents/<slot>/sse URL without credential -> pre-production admin fallback", async () => {
   const session = await resolveSlotSession(fakeReq("/agents/auth-slot/sse"), { role: null, tenantId: "tenant_default" });
-  assert.equal(session.role, "agent");
+  assert.equal(session.role, "admin");
   assert.equal(session.authenticated, true);
 });
 
-await check("wrong credential -> pre-production agent fallback", async () => {
+await check("wrong credential -> pre-production admin fallback", async () => {
   const session = await resolveSlotSession(fakeReq("/agents/auth-slot/sse", { slotToken: "slot_bogus" }), {
     role: null,
     tenantId: "tenant_default",
   });
-  assert.equal(session.role, "agent");
+  assert.equal(session.role, "admin");
   assert.equal(session.fallbackReason, "slot-credential-mismatch");
 });
 
-await check("pending slot: even the CORRECT credential cannot authenticate (falls back to pre-production agent role)", async () => {
+await check("pending slot: even the CORRECT credential cannot authenticate (falls back to pre-production admin role)", async () => {
   const pending = provisionSlot({ name: "pending-slot", role: "admin" });
   const session = await resolveSlotSession(fakeReq("/mcp?client=pending-slot", { slotToken: pending.credential }), {
     role: null,
     tenantId: "tenant_default",
   });
   assert.equal(session.authenticated, true);
-  assert.equal(session.role, "agent");
+  assert.equal(session.role, "admin");
   assert.equal(session.fallbackReason, "slot-not-approved");
 });
 
@@ -188,8 +188,8 @@ await check("suspension terminates access on the immediate-next check", async ()
   assert.equal(after.reason, "slot-suspended");
 
   const session = await resolveSlotSession(fakeReq("/mcp?client=auth-slot", { slotToken: authSlot.credential }), { role: null, tenantId: "tenant_default" });
-  assert.equal(session.authenticated, true, "a suspended slot falls back to pre-production agent role");
-  assert.equal(session.role, "agent");
+  assert.equal(session.authenticated, true, "a suspended slot falls back to pre-production admin role");
+  assert.equal(session.role, "admin");
 });
 
 await check("reinstate restores access", async () => {
