@@ -2,7 +2,7 @@ import os
 import re
 import sys
 
-repo_root = r'f:\supremeai'
+repo_root = os.environ.get("REPO_ROOT", ".")  # FIX(P6 tier-8): machine path -> env/repo-relative
 docs_dir = os.path.join(repo_root, 'docs', 'modules_audit')
 os.makedirs(docs_dir, exist_ok=True)
 
