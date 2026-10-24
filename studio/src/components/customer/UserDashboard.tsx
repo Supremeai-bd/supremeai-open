@@ -202,13 +202,13 @@ export const UserDashboard: React.FC = () => {
             </div>
           </aside>
           <div
-            className={`sa-surface-raised relative flex min-h-[32rem] flex-col overflow-hidden p-2 sm:p-3 ${
+            className={`sa-surface-raised relative flex min-h-[32rem] lg:h-[calc(100dvh-15rem)] flex-col overflow-hidden p-2 sm:p-3 ${
               isCosmic
                 ? 'before:absolute before:inset-0 before:bg-[radial-gradient(ellipse_at_top,rgba(168,85,247,0.10),transparent_70%)] before:pointer-events-none'
                 : ''
             }`}
           >
-            <UnifiedChatPanel className="relative min-h-0 flex-1" />
+            <UnifiedChatPanel fit="fill" className="relative" />
           </div>
         </section>
 
