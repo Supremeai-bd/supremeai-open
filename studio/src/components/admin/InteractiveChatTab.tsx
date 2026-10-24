@@ -1,9 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal, Globe, Send, RefreshCw, TerminalSquare, Compass } from 'lucide-react';
+import { Terminal, Globe, Send, RefreshCw, TerminalSquare, Compass, Smartphone, ExternalLink } from 'lucide-react';
 import { useDashboardStore } from '../../store/dashboardStore';
 import { useStore } from '../../store/useStore';
 import { UnifiedChatBubble, TypingIndicator } from '../chat';
+import { MobilePreviewPanel } from '../common/MobilePreviewPanel';
+import { useMobilePreview } from '../../hooks/useMobilePreview';
+import { classifyIntent, isDestructiveCommand } from '../../lib/jarvisIntent';
 
 // বাংলা মন্তব্য: চ্যাট মেসেজ ইন্টারফেস — Prompt-to-Action আর্কিটেকচার সাপোর্ট সহ
 interface Message {
@@ -52,6 +55,9 @@ export function InteractiveChatTab({
     toggleTerminal,
     toggleBrowser,
   } = useDashboardStore();
+
+  const mobilePreviewOpen = useMobilePreview((s) => s.isOpen);
+  const toggleMobilePreview = useMobilePreview((s) => s.toggle);
 
   const { isServerOnline } = useStore();
 
@@ -324,6 +330,11 @@ export function InteractiveChatTab({
       {!isSimple && (
         <div className="flex justify-between items-center px-4 py-2 bg-[#090b11] border-b border-slate-800">
           <span className="text-[10px] font-mono text-[#00f3ff] uppercase tracking-widest">// Unified Command Portal</span>
+          {activeInput.trim() && (
+            <span className={`ml-2 text-[9px] font-mono uppercase tracking-wider ${isDestructiveCommand(activeInput) ? 'text-rose-300' : 'text-cyan-300'}`}>
+              intent: {classifyIntent(activeInput)}
+            </span>
+          )}
           <div className="flex gap-2">
             <button
               onClick={toggleTerminal}
@@ -346,6 +357,17 @@ export function InteractiveChatTab({
             >
               <Globe size={12} />
               {chatTabBrowserOpen ? 'Hide Browser' : 'Show Browser'}
+            </button>
+            <button
+              onClick={toggleMobilePreview}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono rounded border transition-all ${
+                mobilePreviewOpen
+                  ? 'bg-[#a855f7]/10 text-[#a855f7] border-[#a855f7]/30'
+                  : 'bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+            >
+              <Smartphone size={12} />
+              {mobilePreviewOpen ? 'Hide Mobile' : 'Show Mobile'}
             </button>
           </div>
         </div>
@@ -481,6 +503,14 @@ export function InteractiveChatTab({
                 <button type="submit" className="text-slate-400 hover:text-white transition-colors">
                   <RefreshCw size={8} />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => window.open(browserUrl, '_blank', 'noopener,noreferrer')}
+                  className="text-slate-400 hover:text-white transition-colors"
+                  title="Open in real browser"
+                >
+                  <ExternalLink size={8} />
+                </button>
               </form>
             </div>
             <div className="flex-1 bg-white overflow-y-auto">
@@ -496,6 +526,8 @@ export function InteractiveChatTab({
         )}
 
       </div>
+
+      {mobilePreviewOpen && <MobilePreviewPanel url={browserUrl} />}
     </div>
   );
 }
