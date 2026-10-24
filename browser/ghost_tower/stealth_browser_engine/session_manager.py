@@ -29,7 +29,7 @@ class RuntimeCapabilityError(RuntimeError):
 def playwright_available() -> bool:
     """Capability probe (import-time side-effect free)."""
     try:
-        import playwright
+        import playwright  # noqa: F401  # capability probe: import success/failure IS the check
     except ImportError:
         return False
     return True
@@ -74,12 +74,7 @@ class BrowserSessionManager:
         if not endpoint or not isinstance(endpoint, str):
             raise ValueError("cdp endpoint must be a non-empty string")
         lowered = endpoint.lower()
-        if not (
-            lowered.startswith("ws://")
-            or lowered.startswith("wss://")
-            or lowered.startswith("http://")
-            or lowered.startswith("https://")
-        ):
+        if not lowered.startswith(("ws://", "wss://", "http://", "https://")):
             raise ValueError(
                 "cdp endpoint must use ws://, wss://, http:// or https:// scheme"
             )
