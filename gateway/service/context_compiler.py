@@ -1,4 +1,4 @@
-﻿"""gateway/service/context_compiler.py - Server-side context compiler (spec Phase 1)."""
+"""gateway/service/context_compiler.py - Server-side context compiler (spec Phase 1)."""
 from __future__ import annotations
 
 import logging

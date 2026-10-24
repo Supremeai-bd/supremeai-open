@@ -1,4 +1,4 @@
-﻿"""gateway/service/response_guard.py - Post-generation sanitizer (spec Phase 2)."""
+"""gateway/service/response_guard.py - Post-generation sanitizer (spec Phase 2)."""
 from __future__ import annotations
 
 import logging
