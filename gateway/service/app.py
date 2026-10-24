@@ -243,6 +243,10 @@ if _cors_env:
 else:
     allowed_origins = _default_cors
 
+# Way 28: bind one correlation id per request (echoed on responses; usable in logs).
+from gateway.middleware.correlation_id import CorrelationIdMiddleware  # noqa: E402
+app.add_middleware(CorrelationIdMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
