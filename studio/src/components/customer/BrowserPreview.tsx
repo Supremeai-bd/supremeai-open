@@ -9,17 +9,10 @@
  * iframe remains only for same-origin generated content (the `html` prop)
  * and as an explicit opt-in fallback, because the proxy path needs a
  * reachable backend session.
- *
- * OWNER UPGRADE (2026-10-25, Banglish request): the auto browser now behaves
- * like an actual browser plus extra perks — back/forward/reload session
- * history (backend automation actions), live page title + URL chrome,
- * full-page screenshot download, and one-click copy of extracted page text.
- * The manual-work controls (agent pause toggle + "Manual control active"
- * HITL banner) were REMOVED per the same owner decision.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Monitor, Tablet, Smartphone, RotateCcw, ExternalLink, RefreshCw, ArrowLeft, ArrowRight, Download, Copy, Check, ImageOff } from 'lucide-react';
+import { Monitor, Tablet, Smartphone, RotateCcw, ExternalLink, RefreshCw, Pause, Play, ImageOff } from 'lucide-react';
 import { browserService } from '../../services/browserService';
 
 type DevicePreset = 'desktop' | 'tablet' | 'mobile';
@@ -65,6 +58,13 @@ interface BrowserPreviewProps {
   html?: string;
   showDeviceToolbar?: boolean;
   onUrlChange?: (url: string) => void;
+  // MOBILE DUAL-PATH (owner request 2026-10-25): fires after the automation
+  // session actually navigates — AIStudio uses it to mirror the same page on
+  // the Mobile Simulator screen (render-ticket proxy), so agent/user browser
+  // work is visible on both surfaces at once.
+  onNavigated?: (url: string) => void;
+  agentPaused?: boolean;
+  onAgentPauseToggle?: () => void;
 }
 
 const isExternalHttpUrl = (value: string) => /^https?:\/\//i.test(value.trim());
@@ -74,6 +74,9 @@ export function BrowserPreview({
   html,
   showDeviceToolbar = true,
   onUrlChange,
+  onNavigated,
+  agentPaused = false,
+  onAgentPauseToggle,
 }: BrowserPreviewProps) {
   const [currentUrl, setCurrentUrl] = useState(url);
   const [reloadKey, setReloadKey] = useState(0);
@@ -90,12 +93,12 @@ export function BrowserPreview({
   const sessionRef = useRef<string | null>(null);
   // dedupe guard for the auto-proxy effect below
   const lastAutoNavRef = useRef<string | null>(null);
-  // OWNER UPGRADE (2026-10-25): real-browser chrome — live title + history
-  // depth tracking for honest back/forward enablement, download/copy perks.
-  const [pageTitle, setPageTitle] = useState<string | null>(null);
-  const [histDepth, setHistDepth] = useState(0);
-  const [backDepth, setBackDepth] = useState(0);
-  const [copied, setCopied] = useState(false);
+  // MOBILE DUAL-PATH: keep the latest onNavigated callback in a ref so
+  // navigateAndRender's dependency list (and identity) stays stable.
+  const onNavigatedRef = useRef(onNavigated);
+  useEffect(() => {
+    onNavigatedRef.current = onNavigated;
+  }, [onNavigated]);
 
   // react-compiler lint: refs must not be written during render.
   useEffect(() => {
@@ -123,12 +126,10 @@ export function BrowserPreview({
       });
       if (action === 'content') {
         setPageContent(result.content ?? 'No readable page content was returned.');
-        if (result.title) setPageTitle(result.title);
       } else if (result.screenshot) {
         // ERR-A03: the captured image is actually shown now (it used to be
         // discarded with a success toast).
         setLiveScreenshot(result.screenshot);
-        if (result.title) setPageTitle(result.title);
         setAutomationStatus('Full-page screenshot captured and displayed.');
       } else {
         setAutomationError('The backend did not return a screenshot image.');
@@ -140,43 +141,6 @@ export function BrowserPreview({
     }
   };
 
-  // OWNER UPGRADE (2026-10-25): real-browser history navigation + reload.
-  // The backend drives the live Playwright page (page.go_back/go_forward/
-  // reload), then we refresh the screenshot and chrome from its response.
-  const runNavAction = async (nav: 'back' | 'forward' | 'reload') => {
-    if (!sessionId || isLoading) return;
-    setIsLoading(true);
-    setAutomationError(null);
-    try {
-      const result = await browserService.execute(sessionId, { action: nav });
-      if (result.title) setPageTitle(result.title);
-      if (nav === 'back') setBackDepth(depth => depth + 1);
-      if (nav === 'forward') setBackDepth(depth => Math.max(0, depth - 1));
-      const shot = await captureLiveScreenshot(sessionId);
-      if (shot) {
-        setLiveScreenshot(shot);
-        setAutomationStatus(nav === 'reload' ? 'Page reloaded.' : nav === 'back' ? 'Went back.' : 'Went forward.');
-      } else {
-        setAutomationError(`Session ${nav} succeeded but returned no screenshot.`);
-      }
-    } catch (error) {
-      setAutomationError(error instanceof Error ? error.message : `Browser ${nav} failed`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const copyPageText = async () => {
-    if (!pageContent) return;
-    try {
-      await navigator.clipboard.writeText(pageContent);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setAutomationError('Clipboard access was blocked by the browser.');
-    }
-  };
-
   const closeBrowserSession = async () => {
     if (!sessionId) return;
     setIsLoading(true);
@@ -185,9 +149,6 @@ export function BrowserPreview({
       setSessionId(null);
       setPageContent(null);
       setLiveScreenshot(null);
-      setPageTitle(null);
-      setHistDepth(0);
-      setBackDepth(0);
       setAutomationStatus('Browser session closed.');
     } catch (error) {
       setAutomationError(error instanceof Error ? error.message : 'Could not close browser session');
@@ -224,10 +185,9 @@ export function BrowserPreview({
       try {
         const session = sessionId ? { session_id: sessionId } : await browserService.createSession();
         setSessionId(session.session_id);
-        const navResult = await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
-        setHistDepth(depth => depth + 1);
-        setBackDepth(0);
-        if (navResult.title) setPageTitle(navResult.title);
+        await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
+        // Notify the parent (mobile mirror) as soon as navigation really happened.
+        onNavigatedRef.current?.(targetUrl);
         const shot = await captureLiveScreenshot(session.session_id);
         if (shot) {
           setLiveScreenshot(shot);
@@ -393,40 +353,7 @@ export function BrowserPreview({
             <RefreshCw size={12} />
           </button>
         </form>
-        {(pageTitle || liveScreenshot) && (
-          <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
-            {pageTitle && <span className="max-w-[60%] truncate font-medium text-slate-300" title={pageTitle}>{pageTitle}</span>}
-            {pageTitle && currentUrl && <span className="truncate font-mono">{currentUrl}</span>}
-          </div>
-        )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void runNavAction('back')}
-            disabled={!sessionId || isLoading || histDepth - backDepth <= 0}
-            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Back"
-          >
-            <span className="inline-flex items-center gap-1"><ArrowLeft size={11} /> Back</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => void runNavAction('forward')}
-            disabled={!sessionId || isLoading || backDepth <= 0}
-            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Forward"
-          >
-            <span className="inline-flex items-center gap-1">Forward <ArrowRight size={11} /></span>
-          </button>
-          <button
-            type="button"
-            onClick={() => void runNavAction('reload')}
-            disabled={!sessionId || isLoading}
-            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Reload page"
-          >
-            Reload
-          </button>
           <button
             type="button"
             onClick={() => void runBrowserAction('content')}
@@ -451,26 +378,8 @@ export function BrowserPreview({
           >
             Close session
           </button>
-          {liveScreenshot && (
-            <a
-              href={`data:image/png;base64,${liveScreenshot}`}
-              download={`supremeai-screenshot-${Date.now()}.png`}
-              className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
-              title="Download the captured screenshot as a PNG file"
-            >
-              <span className="inline-flex items-center gap-1"><Download size={11} /> Download PNG</span>
-            </a>
-          )}
-          {pageContent && (
-            <button
-              type="button"
-              onClick={() => void copyPageText()}
-              className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
-              title="Copy the extracted page text to the clipboard"
-            >
-              <span className="inline-flex items-center gap-1">{copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy text'}</span>
-            </button>
-          )}
+          {onAgentPauseToggle && <button type="button" onClick={onAgentPauseToggle} className="flex items-center gap-1 rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-200 transition-colors hover:bg-amber-500/10" aria-pressed={agentPaused}>{agentPaused ? <Play size={11} /> : <Pause size={11} />} {agentPaused ? 'Resume automation' : 'Pause for manual input'}</button>}
+          {agentPaused && <span role="status" className="text-[11px] text-amber-200">Manual control active. You can type secrets directly in the browser.</span>}
           {automationStatus && <span role="status" className="text-[11px] text-emerald-300">{automationStatus}</span>}
         </div>
         {pageContent && (
