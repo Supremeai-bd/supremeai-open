@@ -55,11 +55,7 @@
     "test:intelligence": "tsx scripts/test-runner.ts test_intelligence_tools.ts",
     "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts"
   },
-  "keywords": [
-    "mcp",
-    "supremeai",
-    "control-tower"
-  ],
+  "keywords": ["mcp", "supremeai", "control-tower"],
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
