@@ -3,6 +3,7 @@
  */
 
 import * as vscode from "vscode";
+import { ensureCommandAvailable } from "./commandAvailability";
 import { McpBridge } from "./mcp_bridge";
 import { FederationStatusBar } from "./status_bar";
 import { SupremeAIChatViewProvider } from "./chat_view";
@@ -81,8 +82,11 @@ export function activate(context: vscode.ExtensionContext): void {
     inlineChatCommand();
   });
 
-  const openChatDisposable = vscode.commands.registerCommand("supremeai.openChat", () => {
-    vscode.commands.executeCommand("supremeai.chat.focus");
+  const openChatDisposable = vscode.commands.registerCommand("supremeai.openChat", async () => {
+    // Way 25: runtime availability check — graceful fallback instead of a dead command.
+    if (await ensureCommandAvailable("supremeai.chat.focus", { source: "SupremeAI" })) {
+      await vscode.commands.executeCommand("supremeai.chat.focus");
+    }
   });
 
   registerCodeActions(context);
