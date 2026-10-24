@@ -11,7 +11,7 @@ import { eventBus, Events } from '../../lib/componentEventBus';
 import { getApiBaseUrl } from '../../utils/api';
 import { getAdminToken, getUserToken } from '../../services/tokenStorage';
 import { AudioPlaybackService } from '../../services/audio/AudioPlaybackService';
-import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2 } from 'lucide-react';
+import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2, Languages, Sparkles } from 'lucide-react';
 
 import { ShareDialog } from '../share/ShareDialog';
 import { ImageUploadButton } from './ImageUploadButton';
@@ -93,9 +93,28 @@ export const ChatInterface: React.FC = () => {
   // conversation identity। ক্লায়েন্ট UUID তৈরি করে প্রতিটি orchestration
   // payload-এ conversation_id হিসেবে পাঠায় — backend ConversationCommand
   // ক্লায়েন্ট-সরবরাহকৃত conversation_id গ্রহণ করে (gateway_center.py:79)।
-  // কথোপকথন শুরুর আগে share/export/branch সৎভাবে disabled থাকে — কোনো ভুয়া
-  // id কখনো পাঠানো হয় না।
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [uiLang, setUiLang] = useState<'en' | 'bn'>(() => {
+    try {
+      return (localStorage.getItem('sa_ui_lang') as 'en' | 'bn') || 'en';
+    } catch {
+      return 'en';
+    }
+  });
+
+  const toggleUiLang = () => {
+    const next = uiLang === 'en' ? 'bn' : 'en';
+    setUiLang(next);
+    try {
+      localStorage.setItem('sa_ui_lang', next);
+    } catch {}
+  };
+
+  const chatChips = [
+    { en: 'Audit my project', bn: 'প্রজেক্ট অডিট করুন' },
+    { en: 'Design a landing page', bn: 'ল্যান্ডিং পেজ ডিজাইন' },
+    { en: 'Explain this error', bn: 'এই এরর ব্যাখ্যা করুন' },
+  ];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -328,7 +347,26 @@ export const ChatInterface: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar area */}
-      <div className="flex justify-end p-2 border-b border-slate-800 gap-2 items-center">
+      <div className="flex justify-between p-2 border-b border-slate-800 gap-2 items-center">
+        {/* Status pill */}
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono border border-slate-700 text-slate-400">
+            <span className={`size-2 rounded-full ${isOffline ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+            {isOffline ? (uiLang === 'bn' ? 'অফলাইন' : 'Offline') : (uiLang === 'bn' ? 'অনলাইন' : 'Online')}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Language Toggle */}
+          <button
+            onClick={toggleUiLang}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            title="Toggle Bangla / English UI"
+            data-testid="lang-toggle"
+          >
+            <Languages size={14} />
+            <span>{uiLang === 'en' ? 'EN' : 'বাং'}</span>
+          </button>
         {/* S1: Share Button — conversation শুরুর আগে সৎভাবে disabled (M10) */}
         <button
           onClick={() => {
@@ -395,6 +433,7 @@ export const ChatInterface: React.FC = () => {
         >
           {voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
         </button>
+        </div>
       </div>
 
       {/* Issue #1457: prominent offline banner — the user must know WHY the
@@ -488,6 +527,24 @@ export const ChatInterface: React.FC = () => {
             </button>
           </div>
         )}
+        {/* Quick action chips */}
+        <div className="mb-2.5 flex flex-wrap gap-1.5" data-testid="chat-chips">
+          {chatChips.map((chip) => {
+            const label = uiLang === 'bn' ? chip.bn : chip.en;
+            return (
+              <button
+                key={chip.en}
+                type="button"
+                onClick={() => setInput(label)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border border-slate-700 text-slate-400 hover:text-white hover:border-blue-500 hover:bg-slate-800 transition duration-200"
+              >
+                <Sparkles size={11} className="text-blue-400" />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Issue #1526 (LOW): on narrow viewports the fixed 18px-icon button,
             textarea, and Send button fought for one row and the composer
             overflowed horizontally. flex-wrap + min-w-0 lets the composer
@@ -502,7 +559,7 @@ export const ChatInterface: React.FC = () => {
             value={input}
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}
-            placeholder="Type your message to the AI agent..."
+            placeholder={uiLang === 'bn' ? 'এআই এজেন্টকে আপনার মেসেজ লিখুন...' : 'Type your message to the AI agent...'}
             className="min-w-0 flex-[1_1_12rem] bg-slate-800 text-white rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
             rows={2}
             disabled={isOrchestrating}

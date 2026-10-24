@@ -46,8 +46,8 @@ export const UserDashboard: React.FC = () => {
   const { enabledModules, toggleModule } = useWorkspaceSettings();
   const name = user?.name?.split(' ')[0] || 'there';
 
-  const submitAsk = () => {
-    const intent = ask.trim();
+  const submitAsk = (explicitIntent?: string) => {
+    const intent = (explicitIntent ?? ask).trim();
     if (!intent) return;
     navigate(`/workspace/live?intent=${encodeURIComponent(intent)}`);
   };
@@ -60,6 +60,16 @@ export const UserDashboard: React.FC = () => {
   // Recent work panel state: null = still loading, [] = honestly empty
   const [recentConversations, setRecentConversations] = useState<RecentConversation[] | null>(null);
   const [recentLoading, setRecentLoading] = useState(false);
+
+  const dynamicChips = (recentConversations && recentConversations.length > 0)
+    ? recentConversations.slice(0, 3).map((c) => ({
+        label: c.title?.trim() || 'Continue discussion',
+        intent: c.title?.trim() || 'Continue discussion',
+      }))
+    : quickStarts.slice(0, 3).map((q) => ({
+        label: q.label,
+        intent: q.label,
+      }));
 
   const fetchWorkspaceState = async () => {
     setLoadingWorkspace(true);
@@ -170,13 +180,27 @@ export const UserDashboard: React.FC = () => {
             <button
               type="button"
               aria-label="Open SupremeAI Studio"
-              onClick={submitAsk}
+              onClick={() => submitAsk()}
               className="flex size-11 shrink-0 items-center justify-center rounded-[var(--sa-radius-sm)] bg-[var(--sa-primary)] text-white transition hover:opacity-90"
             >
               <ArrowRight size={17} />
             </button>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+          {/* Dynamic quick-action chips */}
+          <div className="mt-4 flex flex-wrap gap-2" data-testid="intent-chips">
+            {dynamicChips.map(({ label, intent }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => submitAsk(intent)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--sa-border)] px-3 py-1.5 text-xs text-[var(--sa-ink-muted)] transition duration-200 hover:border-[var(--sa-primary)] hover:bg-[var(--sa-primary-soft)] hover:text-[var(--sa-ink)] focus-visible:ring-2 focus-visible:ring-[var(--sa-primary)]"
+              >
+                <Sparkles size={12} className="text-[var(--sa-primary)]" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
             {quickStarts.map(({ label, icon: Icon, href }) => (
               <Link
                 key={label}
