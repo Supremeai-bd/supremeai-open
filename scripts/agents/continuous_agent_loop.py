@@ -224,6 +224,101 @@ VALID_GROUPS: tuple[str, ...] = (
     "schemas-contracts",
     "infra-ops",
 )
+DEFAULT_GROUP = "agent-orchestration"
+
+VALID_TASK_TYPES: set[str] = {
+    "AUDIT",
+    "PLAN",
+    "IMPLEMENT",
+    "FIX_CI",
+    "REVIEW",
+    "SECURITY_AUDIT",
+    "DISCOVERY",
+    "MERGE",
+    "ADMIN_DECISION",
+}
+VALID_PRIORITIES: set[str] = {"P0", "P1", "P2", "P3"}
+VALID_ADMIN_GATE_STATUSES: set[str] = {"NOT_REQUIRED", "WAITING", "APPROVED", "REJECTED"}
+
+
+def build_task_contract(
+    task_id: str,
+    issue: str | int | None = None,
+    task_type: str = "IMPLEMENT",
+    group: str = DEFAULT_GROUP,
+    priority: str = "P2",
+    objective: str = "",
+    touching_files: list[str] | None = None,
+    forbidden_paths: list[str] | None = None,
+    dependencies: list[str] | None = None,
+    predecessor: str | int | None = None,
+    admin_gate_required: bool = False,
+    admin_gate_status: str = "NOT_REQUIRED",
+    role_policy: str = "contributor",
+    required_evidence: list[str] | None = None,
+    verification: list[str] | None = None,
+    acceptance: list[str] | None = None,
+    stop_conditions: list[str] | None = None,
+    output_format: str = "structured",
+) -> dict[str, Any]:
+    """Standard Task Contract builder adhering to AGENT_RULES.md §7."""
+    task_type_upper = task_type.upper()
+    if task_type_upper not in VALID_TASK_TYPES:
+        raise ValueError(
+            f"Invalid task_type: '{task_type}'. Must be one of: {sorted(VALID_TASK_TYPES)}"
+        )
+
+    priority_upper = priority.upper()
+    if priority_upper not in VALID_PRIORITIES:
+        raise ValueError(
+            f"Invalid priority: '{priority}'. Must be one of: {sorted(VALID_PRIORITIES)}"
+        )
+
+    gate_status_upper = admin_gate_status.upper()
+    if gate_status_upper not in VALID_ADMIN_GATE_STATUSES:
+        raise ValueError(
+            f"Invalid admin_gate_status: '{admin_gate_status}'. Must be one of: {sorted(VALID_ADMIN_GATE_STATUSES)}"
+        )
+
+    if group not in VALID_GROUPS:
+        raise ValueError(
+            f"Invalid group: '{group}'. Must be one of the canonical registry: {sorted(VALID_GROUPS)}"
+        )
+
+    return {
+        "task_contract": {
+            "version": 1,
+            "task_id": str(task_id),
+            "issue": str(issue) if issue is not None else None,
+            "task_type": task_type_upper,
+            "group": group,
+            "priority": priority_upper,
+            "sequence": None,
+            "objective": objective or f"Task #{task_id}",
+            "scope": {
+                "touching_files": touching_files or [],
+                "forbidden_paths": forbidden_paths
+                or [".env*", "secrets/**", "credentials/**", "vault/**"],
+            },
+            "dependencies": dependencies or [],
+            "predecessor": str(predecessor) if predecessor is not None else None,
+            "admin_gate": {
+                "required": admin_gate_required,
+                "status": gate_status_upper,
+            },
+            "role_policy": role_policy,
+            "required_evidence": required_evidence
+            or ["verification tier output", "diff check", "board freshness re-poll"],
+            "verification": verification
+            or ["py_compile", "json schema parse", "smoke validation"],
+            "acceptance": acceptance
+            or ["Passes local validation tests", "Zero unhandled crashes"],
+            "stop_conditions": stop_conditions
+            or ["Security boundary hit", "Out of declared scope"],
+            "output_format": output_format,
+        }
+    }
+
 
 LANES: dict[str, list[str]] = {
     "coder": ["feat", "implement", "bug", "fix", "refactor", "add", "update", "create", "patch"],
@@ -598,42 +693,85 @@ def handle_violation(issue: dict, violations: list[dict], dry_run: bool) -> int:
 # --------------------------------------------------------------------------
 # Ingress & Atomic Claim & Submission Gate
 # --------------------------------------------------------------------------
-def pick_next_issue(exclude: set[str] | None = None) -> dict | None:
-    exclude = exclude or set()
-    code, out, _ = run_cmd([
+def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
+    """Fetch the highest priority claimable open issue from GitHub (#88, #122)."""
+    code, out, err = run_cmd([
         "gh", "issue", "list", "--repo", UPSTREAM_REPO,
-        "--state", "open", "--limit", "30",
+        "--state", "open", "--limit", "200",
+        "--json", "number,title,labels",
+    ])
+    issues = []
+    if code == 0 and out.strip():
+        try:
+            issues = json.loads(out)
+        except (json.JSONDecodeError, ValueError) as parse_err:
+            log("⚠️", f"[Board Fetch] gh output unparseable ({parse_err}) — attempting public API fallback.")
+
+    if not issues:
+        try:
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{UPSTREAM_REPO}/issues?state=open&per_page=100",
+                headers={
+                    "User-Agent": "SupremeAI-Loop-Runner",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    raw_data = json.loads(resp.read().decode("utf-8"))
+                    issues = [
+                        i for i in raw_data if isinstance(i, dict) and "pull_request" not in i
+                    ]
+        except Exception as http_err:
+            log("⚠️", f"[Board Fetch] gh unavailable and HTTP fallback error: {http_err}")
+            return None
+
+    try:
+        def label_names(item: dict[str, Any]) -> list[str]:
+            labels = item.get("labels")
+            if not isinstance(labels, list):
+                return []
+            return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+
+        def is_claimable(item: dict[str, Any]) -> bool:
+            names = label_names(item)
+            return not (EXCLUDED_LABELS & set(names))
+
+        PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
+
+        def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+            names = label_names(item)
+            tier = 4  # unlabeled sorts last
+            for marker, rank in PRIORITY_MAP:
+                if any(name == marker or name.startswith((marker + "-", marker + " ")) for name in names):
+                    tier = rank
+                    break
+            return (tier, int(item.get("number", 0)))  # number ASC = oldest first
+
+        candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
+        if exclude:
+            excluded_set = {str(e) for e in exclude}
+            candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
+        sorted_issues = sorted(candidates, key=priority_key)
+        if sorted_issues:
+            return str(sorted_issues[0].get("number"))
+    except Exception as exc:
+        log("⚠️", f"[Board Fetch] selection failed: {exc}")
+    return None
+
+
+def fetch_issue_context(issue_num: str | int) -> dict[str, Any]:
+    code, out, _ = run_cmd([
+        "gh", "issue", "view", str(issue_num),
+        "--repo", UPSTREAM_REPO,
         "--json", "number,title,labels,body",
     ])
-    if code != 0 or not out.strip():
-        return None
-    try:
-        issues = json.loads(out)
-    except Exception:
-        return None
-
-    candidates: list[dict] = []
-    for it in issues:
-        num = str(it.get("number"))
-        if num in exclude:
-            continue
-        labels = [l.get("name", "") if isinstance(l, dict) else str(l) for l in it.get("labels", [])]
-        if any(l in EXCLUDED_LABELS for l in labels):
-            continue
-        candidates.append(it)
-
-    if not candidates:
-        return None
-
-    def priority_score(it: dict) -> int:
-        labels = [l.get("name", "") if isinstance(l, dict) else str(l) for l in it.get("labels", [])]
-        for idx, p in enumerate(PRIORITY_ORDER):
-            if any(l.startswith(p) for l in labels):
-                return idx
-        return len(PRIORITY_ORDER)
-
-    candidates.sort(key=priority_score)
-    return candidates[0]
+    if code == 0 and out.strip():
+        try:
+            return json.loads(out)
+        except Exception:
+            pass
+    return {"number": int(issue_num), "title": f"Issue #{issue_num}", "labels": []}
 
 
 def claim_issue(issue_num: int, lane: str, dry_run: bool) -> bool:
@@ -746,13 +884,12 @@ def run_cycle(issue: dict | None, args: argparse.Namespace, exclude: set[str]) -
         print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
         return 0 if passed else 1
 
-    issue = issue or (
-        {"number": args.issue, "title": f"direct dispatch #{args.issue}", "labels": []}
-        if args.issue else pick_next_issue(exclude)
-    )
     if not issue:
-        log("IDLE", "board empty or unreachable -- road is clear, officer waits.")
-        return 1
+        target_num = args.issue or pick_next_issue(exclude)
+        if not target_num:
+            log("IDLE", "board empty or unreachable -- road is clear, officer waits.")
+            return 1
+        issue = fetch_issue_context(target_num)
 
     issue_num = str(issue.get("number"))
     exclude.add(issue_num)
