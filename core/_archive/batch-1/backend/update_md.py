@@ -10,7 +10,7 @@ with open("pytest_full_run_results.txt", encoding="utf-16-le", errors="ignore") 
             file_name = file_path.split("/")[-1]
             failed_files.add(file_name)
 
-md_path = r"c:\Users\n\supremeai\supremeai_2.0\docs\quality\test_coverage_plan.md"
+md_path = "docs/quality/test_coverage_plan.md"  # FIX(P6 tier-8): personal machine path -> repo-relative
 with open(md_path, encoding="utf-8") as f:
     lines = f.readlines()
 
