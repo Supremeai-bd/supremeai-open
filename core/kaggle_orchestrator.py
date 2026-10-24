@@ -37,6 +37,8 @@ class KaggleTaskType(Enum):
     IMAGE_GENERATION = "image_generation"  # AI image creation
     TRAINING_RUN = "training_run"  # Model training
     EVALUATION = "evaluation"  # Model evaluation
+    SELF_HEALING_CODE = "self_healing_code"  # Brain 1: Self-Healing & Coding Engineer
+    CUSTOMER_REASONING = "customer_reasoning"  # Brain 2: High-EQ Customer Intelligence Advisor
 
 
 class KaggleAccountStatus(Enum):
@@ -258,11 +260,215 @@ def run_batch_inference():
     callback("success", result={"task": "batch_inference", "outputs": outputs})
 
 
+def run_self_healing_code():
+    """Real LoRA fine-tune/eval for Brain 1: Self-Healing Engineer (Qwen-2.5-Coder)."""
+    import subprocess
+
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "transformers", "peft", "datasets"],
+        check=False,
+    )
+    from datasets import load_dataset
+    from peft import LoraConfig, get_peft_model
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        DataCollatorForLanguageModeling,
+        Trainer,
+        TrainingArguments,
+    )
+
+    base_model = JOB_PAYLOAD.get("base_model", "Qwen/Qwen2.5-Coder-7B-Instruct")
+    hp = JOB_PAYLOAD.get("hyperparameters", {}) or {}
+    epochs = int(hp.get("epochs", 1))
+    lr = float(hp.get("learning_rate", 1.5e-4))
+    batch_size = int(hp.get("batch_size", 2))
+    r_dim = int(hp.get("lora_r", 16))
+    lora_alpha = int(hp.get("lora_alpha", 32))
+
+    ds_url = JOB_PAYLOAD.get("dataset_url")
+    ds_name = JOB_PAYLOAD.get("dataset_name")
+    if ds_url:
+        _download_dataset(ds_url, "/kaggle/working/code_dataset.jsonl")
+        ds = load_dataset("json", data_files="/kaggle/working/code_dataset.jsonl", split="train")
+    elif ds_name:
+        ds = load_dataset(ds_name, split="train")
+    else:
+        samples = JOB_PAYLOAD.get("samples") or [
+            {
+                "instruction": "Fix module import failure and boundary sanitization violation in CI",
+                "input": "Error: boundary_sanitization_guard failed with violation on src/core/main.py",
+                "output": "Move file to core/main.py and update relative imports to maintain federation boundaries.",
+            }
+        ]
+        tmp = "/kaggle/working/code_samples.jsonl"
+        with open(tmp, "w", encoding="utf-8") as f:
+            for s in samples:
+                f.write(json.dumps(s) + "\n")
+        ds = load_dataset("json", data_files=tmp, split="train")
+
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(base_model)
+    model = get_peft_model(
+        model,
+        LoraConfig(
+            r=r_dim,
+            lora_alpha=lora_alpha,
+            lora_dropout=0.05,
+            target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+            task_type="CAUSAL_LM",
+        ),
+    )
+
+    def _tok(example):
+        text = f"<|im_start|>system\nYou are SupremeAI Coding Brain (Self-Healing Engineer).<|im_end|>\n<|im_start|>user\n{example.get('instruction', '')}\nContext: {example.get('input', '')}<|im_end|>\n<|im_start|>assistant\n{example.get('output', '')}<|im_end|>"
+        return tokenizer(text, truncation=True, max_length=1024)
+
+    ds = ds.map(_tok, batched=False, remove_columns=ds.column_names)
+    trainer = Trainer(
+        model=model,
+        args=TrainingArguments(
+            output_dir="/kaggle/working/adapter_coding_brain",
+            num_train_epochs=epochs,
+            learning_rate=lr,
+            per_device_train_batch_size=batch_size,
+            logging_steps=10,
+            report_to=[],
+        ),
+        train_dataset=ds,
+        data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+    )
+    train_result = trainer.train()
+    trainer.save_model("/kaggle/working/adapter_coding_brain")
+
+    callback(
+        "success",
+        result={
+            "task": "self_healing_code",
+            "brain": "Brain 1 (Self-Healing Engineer)",
+            "base_model": base_model,
+            "train_loss": train_result.metrics.get("train_loss"),
+            "epochs_trained": epochs,
+            "train_runtime_s": train_result.metrics.get("train_runtime"),
+            "checkpoint_path": "/kaggle/working/adapter_coding_brain",
+            "heuristics": [
+                "Boundary enforcement: always map to satellite mirror folders",
+                "Non-regression: verify with local boundary and contract guards before push",
+            ],
+        },
+    )
+
+
+def run_customer_reasoning():
+    """Real LoRA fine-tune/eval for Brain 2: Customer Intelligence (DeepSeek-R1-Distill-Qwen)."""
+    import subprocess
+
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "transformers", "peft", "datasets"],
+        check=False,
+    )
+    from datasets import load_dataset
+    from peft import LoraConfig, get_peft_model
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        DataCollatorForLanguageModeling,
+        Trainer,
+        TrainingArguments,
+    )
+
+    base_model = JOB_PAYLOAD.get("base_model", "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B")
+    hp = JOB_PAYLOAD.get("hyperparameters", {}) or {}
+    epochs = int(hp.get("epochs", 1))
+    lr = float(hp.get("learning_rate", 1.5e-4))
+    batch_size = int(hp.get("batch_size", 2))
+    r_dim = int(hp.get("lora_r", 16))
+    lora_alpha = int(hp.get("lora_alpha", 32))
+
+    ds_url = JOB_PAYLOAD.get("dataset_url")
+    ds_name = JOB_PAYLOAD.get("dataset_name")
+    if ds_url:
+        _download_dataset(ds_url, "/kaggle/working/reasoning_dataset.jsonl")
+        ds = load_dataset("json", data_files="/kaggle/working/reasoning_dataset.jsonl", split="train")
+    elif ds_name:
+        ds = load_dataset(ds_name, split="train")
+    else:
+        samples = JOB_PAYLOAD.get("samples") or [
+            {
+                "query": "How do I ensure my custom agent adheres to federation policies?",
+                "thought": "The user is concerned about policy compliance and automated PR landing. I should guide them empathetically with actionable 3-step advice.",
+                "response": "To ensure your agent runs smoothly within the federation, follow these three steps: (1) Check issue claim; (2) Anchor domain paths to satellite mirrors; (3) Verify with local guards prior to push.",
+            }
+        ]
+        tmp = "/kaggle/working/reasoning_samples.jsonl"
+        with open(tmp, "w", encoding="utf-8") as f:
+            for s in samples:
+                f.write(json.dumps(s) + "\n")
+        ds = load_dataset("json", data_files=tmp, split="train")
+
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(base_model)
+    model = get_peft_model(
+        model,
+        LoraConfig(
+            r=r_dim,
+            lora_alpha=lora_alpha,
+            lora_dropout=0.05,
+            target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+            task_type="CAUSAL_LM",
+        ),
+    )
+
+    def _tok(example):
+        text = f"<｜User｜>{example.get('query', '')}<｜Assistant｜><thought>\n{example.get('thought', '')}\n</thought>\n{example.get('response', '')}"
+        return tokenizer(text, truncation=True, max_length=1024)
+
+    ds = ds.map(_tok, batched=False, remove_columns=ds.column_names)
+    trainer = Trainer(
+        model=model,
+        args=TrainingArguments(
+            output_dir="/kaggle/working/adapter_customer_intelligence",
+            num_train_epochs=epochs,
+            learning_rate=lr,
+            per_device_train_batch_size=batch_size,
+            logging_steps=10,
+            report_to=[],
+        ),
+        train_dataset=ds,
+        data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+    )
+    train_result = trainer.train()
+    trainer.save_model("/kaggle/working/adapter_customer_intelligence")
+
+    callback(
+        "success",
+        result={
+            "task": "customer_reasoning",
+            "brain": "Brain 2 (Customer Intelligence Advisor)",
+            "base_model": base_model,
+            "train_loss": train_result.metrics.get("train_loss"),
+            "epochs_trained": epochs,
+            "train_runtime_s": train_result.metrics.get("train_runtime"),
+            "checkpoint_path": "/kaggle/working/adapter_customer_intelligence",
+            "heuristics": [
+                "Customer clarity: precede final recommendation with structured chain-of-thought",
+                "High-EQ tone: validate user problem and provide concrete code or action steps",
+            ],
+        },
+    )
+
+
 TASK_HANDLERS = {
     "model_fine_tuning": run_model_training,
     "training_run": run_model_training,
     "data_processing": run_data_processing,
     "batch_inference": run_batch_inference,
+    "self_healing_code": run_self_healing_code,
+    "customer_reasoning": run_customer_reasoning,
 }
 
 
@@ -427,7 +633,13 @@ class KaggleOrchestrator:
             )
             return None
 
-        available_accounts.sort(key=lambda x: x.remaining_hours, reverse=True)
+        # Least-Recently-Used + Highest Remaining Hours rotation across the 6-node pool
+        available_accounts.sort(
+            key=lambda x: (
+                x.last_used or datetime.min,
+                -x.remaining_hours,
+            )
+        )
         return available_accounts[0]
 
     async def dispatch_job_to_kaggle(self, job: KaggleJob, account: KaggleAccount) -> bool:
@@ -445,10 +657,15 @@ class KaggleOrchestrator:
                 "kernel_sources": [],
                 "kernel_type": "script",
                 "is_private": True,
-                # GPU only for training tasks — ETL/inference run fine on CPU
-                # and GPU quota is the scarce resource across the 6 accounts.
+                # GPU for model fine-tuning and Dual-Brain continuous learning tasks
+                # across the 6 accounts (180 hrs/week total).
                 "enable_gpu": job.task_type
-                in (KaggleTaskType.MODEL_FINE_TUNING, KaggleTaskType.TRAINING_RUN),
+                in (
+                    KaggleTaskType.MODEL_FINE_TUNING,
+                    KaggleTaskType.TRAINING_RUN,
+                    KaggleTaskType.SELF_HEALING_CODE,
+                    KaggleTaskType.CUSTOMER_REASONING,
+                ),
                 "enable_internet": True,
                 "category_ids": [],
                 "language": "python",
