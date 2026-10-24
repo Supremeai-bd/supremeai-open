@@ -151,3 +151,72 @@ async def intercept_horizon(req: HorizonInterceptRequest) -> dict[str, Any]:
             raise HTTPException(status_code=400, detail="invalid as_of date (expected YYYY-MM-DD)")
     ev = intercept_drift(req.model_id, as_of=as_of)
     return {"model_id": ev.model_id, "kind": ev.kind, "detail": ev.detail, "successor": ev.successor}
+
+
+@router.get("/epistemic/health")
+async def epistemic_health() -> dict[str, Any]:
+    """Swiss-Watch Duo Pairing (Way 9): Joint health check for SPINE Stream Sanitizer + ChronoFact Epistemic Backbone."""
+    results: dict[str, Any] = {}
+
+    # 1. ChronoFact Pillar 1 (Model Horizon)
+    try:
+        ModelHorizonRegistry, _, _ = _import_horizon()
+        reg = ModelHorizonRegistry()
+        models = reg.all()
+        results["chronofact_model_horizon"] = {
+            "status": "healthy" if len(models) > 0 else "degraded",
+            "active_models_calibrated": len(models),
+        }
+    except Exception as exc:
+        results["chronofact_model_horizon"] = {"status": "degraded", "error": str(exc)}
+
+    # 2. ChronoFact Pillar 2 (Tool Pruner)
+    try:
+        ToolSchema, route_tools = _import_pruner()
+        test_tools = [ToolSchema(name="ping", description="Ping health check")]
+        prune_res = route_tools("ping server", test_tools, threshold=0.1)
+        results["chronofact_tool_pruner"] = {
+            "status": "healthy" if len(prune_res.retained) > 0 else "degraded",
+            "target_reduction": 0.70,
+        }
+    except Exception as exc:
+        results["chronofact_tool_pruner"] = {"status": "degraded", "error": str(exc)}
+
+    # 3. ChronoFact Pillar 3 (Memory Gate)
+    try:
+        MemoryEntry, MemoryGate = _import_memory_gate()
+        gate = MemoryGate(threshold=0.72)
+        results["chronofact_memory_gate"] = {
+            "status": "healthy",
+            "threshold": gate.threshold,
+        }
+    except Exception as exc:
+        results["chronofact_memory_gate"] = {"status": "degraded", "error": str(exc)}
+
+    # 4. SPINE (Stream Sanitizer)
+    try:
+        try:
+            from gateway.service.stream_sanitizer import sanitize_stream
+        except ImportError:
+            from service.stream_sanitizer import sanitize_stream  # type: ignore[no-redef]
+        res = sanitize_stream("Certainly! Here is the answer.")
+        results["spine_stream_sanitizer"] = {
+            "status": "healthy" if not res.text.lower().startswith("certainly") else "degraded",
+            "stripped_cushion": res.stripped_cushion,
+        }
+    except Exception as exc:
+        results["spine_stream_sanitizer"] = {"status": "degraded", "error": str(exc)}
+
+    all_healthy = all(v.get("status") == "healthy" for v in results.values())
+
+    return {
+        "status": "healthy" if all_healthy else "degraded",
+        "duo_pairing": results,
+        "invariants": {
+            "memory_cosine_threshold": 0.72,
+            "tool_pruning_reduction_target": 0.70,
+            "sampling_lock_logic": 0.2,
+            "sampling_lock_chat": 0.4,
+        },
+    }
+

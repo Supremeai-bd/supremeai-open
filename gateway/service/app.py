@@ -489,6 +489,9 @@ async def _stealth_dns_snapshot(force: bool = False) -> dict:
 @app.get("/")
 @app.get("/health")
 @app.get("/healthz")
+@app.get("/api/health")
+@app.get("/api/v1/health")
+@app.get("/v1/health")
 async def health_check():
     """Unauthenticated liveness probe. Always 200 OK when service is running."""
     telemetry = squad.stats() if squad else {"total_keys": 0, "total_healthy_keys": 0, "providers": {}}
