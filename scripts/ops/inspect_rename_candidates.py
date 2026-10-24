@@ -4,9 +4,9 @@ import re
 def clean(s):
     return s.encode('ascii', 'ignore').decode('ascii').strip()
 
-log_file = r'f:\supremeai\scripts\rename_preview.txt'
+log_file = os.environ.get("RENAME_PREVIEW_LOG", "rename_preview.txt")  # FIX(P6 tier-8): machine path -> env
 
-plans_base = r'f:\supremeai\docs\plans'
+plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
 
 mapping = {}
 
