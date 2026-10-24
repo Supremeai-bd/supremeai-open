@@ -32,7 +32,7 @@ const Sparkline = ({ points, color = '#a855f7' }: { points: number[]; color?: st
   );
 };
 
-export default function Dashboard() {
+export default function Dashboard({ costReport }: { costReport?: string }) {
   const { data: metrics } = useMetrics();
   const { data: threats } = useThreatScan();
   const { data: ciReports } = useCIReports();
@@ -214,18 +214,27 @@ export default function Dashboard() {
               <div className="space-y-4">
                 {/* FIX(audit 2026-10-24): the previous $42.50 / $128.00 / $170.50 figures were
                     hardcoded fabrications. Honest "not reported" until the cost report binds. */}
-                <div className="flex justify-between items-center pb-4 border-b border-border">
-                  <span className="text-secondary text-sm">LLM API Usage</span>
-                  <span className="text-muted font-mono text-xs">not reported</span>
-                </div>
-                <div className="flex justify-between items-center pb-4 border-b border-border">
-                  <span className="text-secondary text-sm">Compute Instances</span>
-                  <span className="text-muted font-mono text-xs">not reported</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-text font-semibold">Total MTD</span>
-                  <span className="text-muted font-mono text-xs">not reported</span>
-                </div>
+                {/* FIX(cost-bind 2026-10-24): the /admin-api/costs report string now
+                    binds here via SubTabContent {...props}; until it exists the
+                    rows stay honest "not reported". */}
+                {costReport ? (
+                  <pre className="whitespace-pre-wrap break-words rounded-lg border border-border bg-[var(--bg-main)] p-3 font-mono text-xs text-secondary max-h-40 overflow-y-auto">{costReport}</pre>
+                ) : (
+                  <>
+                    <div className="flex justify-between items-center pb-4 border-b border-border">
+                      <span className="text-secondary text-sm">LLM API Usage</span>
+                      <span className="text-muted font-mono text-xs">not reported</span>
+                    </div>
+                    <div className="flex justify-between items-center pb-4 border-b border-border">
+                      <span className="text-secondary text-sm">Compute Instances</span>
+                      <span className="text-muted font-mono text-xs">not reported</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-text font-semibold">Total MTD</span>
+                      <span className="text-muted font-mono text-xs">not reported</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
