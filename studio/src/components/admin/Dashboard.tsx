@@ -39,7 +39,8 @@ export default function Dashboard() {
   const { data: events } = useDashboardEvents(5);
 
   const dashRps = metrics?.requests_per_second ?? 0;
-  const safeCpu = metrics?.cpu_percent ?? metrics?.cpu_usage_percent ?? Math.min(100, Math.round((dashRps / 50) * 100));
+  // FIX(audit 2026-10-24): no fabricated CPU derived from RPS — honest N/R when unreported
+  const safeCpu: number | null = metrics?.cpu_percent ?? metrics?.cpu_usage_percent ?? null;
   const activeIncidents = threats?.findings?.filter(t => t.severity === 'high' || t.severity === 'critical') || [];
   const activeDeployments = ciReports?.filter(c => c.status === 'running') || [];
 
@@ -48,8 +49,9 @@ export default function Dashboard() {
     (metrics as unknown as { availability_percent?: number; uptime_percent?: number })?.uptime_percent ?? null;
 
   // Latency & requests sparkline points from metrics history (fallback to active reading)
-  const latencyPoints = (metrics as unknown as { latency_history?: number[] })?.latency_history ?? [12, 14, 11, 15, metrics?.latency_p95_ms ?? 14];
-  const rpsPoints = (metrics as unknown as { rps_history?: number[] })?.rps_history ?? [2, 5, 4, 7, dashRps];
+  // FIX(audit 2026-10-24): no fake sparkline trend fallbacks — render only with real history
+  const latencyPoints = (metrics as unknown as { latency_history?: number[] })?.latency_history ?? null;
+  const rpsPoints = (metrics as unknown as { rps_history?: number[] })?.rps_history ?? null;
 
   return (
     <div className="flex-1 flex flex-col min-h-screen bg-surface-0 overflow-y-auto">
@@ -86,7 +88,7 @@ export default function Dashboard() {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-2">
                 <Zap size={14} className="text-amber-400" /> Latency (p95)
               </span>
-              <Sparkline points={latencyPoints} color="#f59e0b" />
+              {latencyPoints ? <Sparkline points={latencyPoints} color="#f59e0b" /> : null}
             </div>
             <div className="text-3xl font-bold text-text font-mono">
               {metrics?.latency_p95_ms != null ? metrics.latency_p95_ms : '—'}
@@ -121,7 +123,7 @@ export default function Dashboard() {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-2">
                 <GitMerge size={14} className="text-indigo-400" /> Deployments
               </span>
-              <Sparkline points={rpsPoints} color="#818cf8" />
+              {rpsPoints ? <Sparkline points={rpsPoints} color="#818cf8" /> : null}
             </div>
             <div className="text-3xl font-bold text-text font-mono">{activeDeployments.length}</div>
           </div>
@@ -157,10 +159,10 @@ export default function Dashboard() {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-secondary">Global CPU Load</span>
-                    <span className="font-mono text-text">{safeCpu}%</span>
+                    <span className="font-mono text-text">{safeCpu != null ? `${safeCpu}%` : 'N/R'}</span>
                   </div>
                   <div className="w-full h-2 rounded-full surface-2 overflow-hidden">
-                    <div className={`h-full ${safeCpu > 80 ? 'bg-rose-500' : 'bg-accent-primary'}`} style={{ width: `${safeCpu}%` }}></div>
+                    {safeCpu != null ? <div className={`h-full ${safeCpu > 80 ? 'bg-rose-500' : 'bg-accent-primary'}`} style={{ width: `${safeCpu}%` }}></div> : null}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -210,17 +212,19 @@ export default function Dashboard() {
                 <ArrowUpRight size={14} className="text-accent-primary" />
               </div>
               <div className="space-y-4">
+                {/* FIX(audit 2026-10-24): the previous $42.50 / $128.00 / $170.50 figures were
+                    hardcoded fabrications. Honest "not reported" until the cost report binds. */}
                 <div className="flex justify-between items-center pb-4 border-b border-border">
                   <span className="text-secondary text-sm">LLM API Usage</span>
-                  <span className="text-text font-mono font-medium">$42.50</span>
+                  <span className="text-muted font-mono text-xs">not reported</span>
                 </div>
                 <div className="flex justify-between items-center pb-4 border-b border-border">
                   <span className="text-secondary text-sm">Compute Instances</span>
-                  <span className="text-text font-mono font-medium">$128.00</span>
+                  <span className="text-muted font-mono text-xs">not reported</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-text font-semibold">Total MTD</span>
-                  <span className="text-accent-primary font-mono font-bold">$170.50</span>
+                  <span className="text-muted font-mono text-xs">not reported</span>
                 </div>
               </div>
             </div>
@@ -230,28 +234,23 @@ export default function Dashboard() {
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-6 flex items-center gap-2">
                 <BrainCircuit size={16} /> Active Agents
               </h2>
+              {/* FIX(audit 2026-10-24): the previous list (CI/CD Watcher / Infra Autoscaler /
+                  Security Scanner) was fully hardcoded — fabricated status. Now binds the real
+                  active_agents metric when present, honest empty state otherwise. */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-text flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    CI/CD Watcher
-                  </span>
-                  <span className="text-xs font-mono text-emerald-400">Running</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-text flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    Infra Autoscaler
-                  </span>
-                  <span className="text-xs font-mono text-emerald-400">Running</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-secondary flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-secondary"></div>
-                    Security Scanner
-                  </span>
-                  <span className="text-xs font-mono text-secondary">Idle</span>
-                </div>
+                {metrics?.active_agents != null ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-text flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                      Active agent processes
+                    </span>
+                    <span className="text-xs font-mono text-emerald-400">{metrics.active_agents}</span>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-xs text-secondary font-mono border border-dashed border-border rounded-lg">
+                    No live agent telemetry reported.
+                  </div>
+                )}
               </div>
             </div>
 

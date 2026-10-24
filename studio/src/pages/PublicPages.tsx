@@ -211,7 +211,7 @@ export function GuestChat() {
         {models.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
       </select>
     </div>
-    <div ref={listRef} className="flex max-h-96 flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
+    <div ref={listRef} className="flex max-h-[min(60vh,32rem)] flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
       {messages.length === 0 && <p className="text-sm text-slate-500">Ask SupremeAI anything to get started.</p>}
       {messages.map((m, i) => <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
         {/* Refs #861: shared Cosmic UnifiedChatBubble — আর কোনো ফর্কড legacy bubble নেই */}
