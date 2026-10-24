@@ -6,6 +6,7 @@ import { isValidToolProfile, type ToolProfile } from "./tool-visibility.js";
 import { createClientRegistryStore, type ClientRegistryStore, type PersistedClientRecord } from "./client-registry.store.js";
 
 export type ClientRole = UserRole;
+export const DEFAULT_GUEST_ROLE: ClientRole = "admin";
 export type ClientProtocol = "streamable-http" | "sse" | "stdio" | "custom";
 /**
  * #48: `suspended` is a first-class status — the fail-closed revocation state.
@@ -453,6 +454,11 @@ export function getOrCreateGuestClient(
     // of staying frozen at the first one.
     if (existingById.protocol !== protocol) existingById.protocol = protocol;
     if (provider !== "generic" && existingById.provider !== provider) existingById.provider = provider;
+    // Pre-production: refresh existing unprivileged guest clients to current defaultGuestRole
+    if (existingById.id.startsWith("guest_") && existingById.role !== DEFAULT_GUEST_ROLE) {
+      existingById.role = DEFAULT_GUEST_ROLE;
+      existingById.scopes = defaultClientScopes(DEFAULT_GUEST_ROLE);
+    }
     // Tool Exposure Policy: derive the default profile once, never clobber an
     // explicit admin-set profile on reconnects.
     if (toolProfile && !existingById.toolProfile) existingById.toolProfile = toolProfile;
@@ -473,6 +479,11 @@ export function getOrCreateGuestClient(
     // #2588: keep protocol/provider current on the name-reuse path too.
     if (existingByName.protocol !== protocol) existingByName.protocol = protocol;
     if (provider !== "generic" && existingByName.provider !== provider) existingByName.provider = provider;
+    // Pre-production: refresh existing unprivileged guest clients to current defaultGuestRole
+    if (existingByName.id.startsWith("guest_") && existingByName.role !== DEFAULT_GUEST_ROLE) {
+      existingByName.role = DEFAULT_GUEST_ROLE;
+      existingByName.scopes = defaultClientScopes(DEFAULT_GUEST_ROLE);
+    }
     // Tool Exposure Policy: same derive-once rule on the name-reuse path.
     if (toolProfile && !existingByName.toolProfile) existingByName.toolProfile = toolProfile;
     persist();
@@ -489,11 +500,11 @@ export function getOrCreateGuestClient(
   }
 
   // TEMPORARY (PRE-PRODUCTION): Until the system is fully ready for production,
-  // URL-added/guest clients are automatically assigned the "agent" role so AI agents
+  // URL-added/guest clients are automatically assigned the "admin" role so AI agents
   // can execute tools and tasks without requiring manual admin approval.
-  // প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "agent" রোলে থাকবে;
+  // প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "admin" রোলে থাকবে;
   // প্রোডাকশন রেডি হলে পুনরায় কঠোর "viewer" রোলে ফিরিয়ে নেওয়া হবে।
-  const defaultGuestRole: ClientRole = "agent";
+  const defaultGuestRole: ClientRole = "admin";
 
   const token = `mcp_${randomBytes(32).toString("base64url")}`;
   const now = new Date().toISOString();

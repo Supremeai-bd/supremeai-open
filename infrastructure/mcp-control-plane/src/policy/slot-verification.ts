@@ -385,9 +385,9 @@ function clientIpOf(req: IncomingMessage): string {
 /**
  * URL connection fallback.
  * TEMPORARY (PRE-PRODUCTION): Until the system is fully ready for production,
- * URL connections default to "agent" role so AI agents connecting via URL
+ * URL connections default to "admin" role so AI agents connecting via URL
  * (Claude, Cursor, Antigravity, etc.) can execute tasks immediately.
- * প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "agent" রোলে থাকবে;
+ * প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "admin" রোলে থাকবে;
  * প্রোডাকশন রেডি হলে পুনরায় কঠোর "viewer" রোলে রোলব্যাক করা হবে।
  */
 function viewerFallback(
@@ -400,8 +400,8 @@ function viewerFallback(
 ): SlotSession {
   const guest = autoRegisterGuestClient(req, protocol, tenantId);
   recordSlotAudit({ slotId, operation: "connect", outcome: "denied", reason, clientIp, tenantId });
-  // Pre-production: URL connect gets "agent" role
-  const fallbackRole: UserRole = "agent";
+  // Pre-production: URL connect gets "admin" role
+  const fallbackRole: UserRole = "admin";
   return {
     client: guest,
     role: fallbackRole,
