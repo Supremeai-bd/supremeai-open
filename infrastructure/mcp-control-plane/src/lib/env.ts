@@ -145,7 +145,7 @@ export const env = {
     },
     api: {
       get apiKey(): string { return optional("RENDER_API_KEY_5", optional("RENDER_API_KEY_API")); },
-      get serviceId(): string { return optional("RENDER_API_SVC_ID", "srv-dbappass728c7396p580"); },
+      get serviceId(): string { return optional("RENDER_API_SVC_ID", "srv-dbappass728c7396p580"); }, // gitleaks:allow
       get url(): string { return optional("RENDER_API_URL", "https://supremeai-api-ulw0.onrender.com"); },
     },
   },
