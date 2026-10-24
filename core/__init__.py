@@ -2,10 +2,24 @@
 SupremeAI Core Decision Moat package.
 """
 
-from .context_synthesizer import ContextStage, ContextSynthesizer
-from .dag_planner import CycleDetectedError, DAGPlanner, TaskNode
-from .decision_engine import AgentRole, DecisionEngine, TaskClassification
-from .state_machine import AgentState, AgentStateMachine, InvalidStateTransitionError
+try:
+    from .context_synthesizer import ContextStage, ContextSynthesizer
+    from .dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+    from .decision_engine import AgentRole, DecisionEngine, TaskClassification
+    from .state_machine import (
+        AgentState,
+        AgentStateMachine,
+        InvalidStateTransitionError,
+    )
+except (ImportError, ValueError):
+    from context_synthesizer import ContextStage, ContextSynthesizer
+    from dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+    from decision_engine import AgentRole, DecisionEngine, TaskClassification
+    from state_machine import (
+        AgentState,
+        AgentStateMachine,
+        InvalidStateTransitionError,
+    )
 
 __all__ = [
     "AgentRole",
