@@ -1,0 +1,166 @@
+"""
+gateway/tests/test_storage_and_endpoints.py — Offline tests for:
+1. Conversation-ID carry-over and history persistence.
+2. Server-side LiveLogs ring buffer and admin endpoints.
+3. User preferences and Tool-card removal persistence.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import sys
+import time
+import unittest
+from unittest.mock import AsyncMock, patch
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+SAT = os.path.abspath(os.path.join(BASE, ".."))
+if SAT not in sys.path:
+    sys.path.insert(0, SAT)
+
+try:
+    from service import storage
+    from service.app import app, log_ring_buffer
+except ImportError:
+    from gateway.service import storage
+    from gateway.service.app import app, log_ring_buffer
+
+from starlette.testclient import TestClient
+
+
+class TestStorageAndEndpoints(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        storage.init_db()
+        cls.client = TestClient(app)
+
+    def test_01_conversation_persistence(self):
+        conv_id = "test-conv-001"
+        user_id = "usr-test-123"
+
+        # Save conversation
+        c = storage.save_conversation(conv_id, user_id=user_id, title="Test Session")
+        self.assertEqual(c["id"], conv_id)
+        self.assertEqual(c["title"], "Test Session")
+
+        # Add user message
+        m1 = storage.add_message(conv_id, "user", "Hello AI", user_id=user_id)
+        self.assertEqual(m1["role"], "user")
+        self.assertEqual(m1["content"], "Hello AI")
+
+        # Add assistant message
+        m2 = storage.add_message(conv_id, "assistant", "Hello human!", extra={"model": "w.ge"}, user_id=user_id)
+        self.assertEqual(m2["role"], "assistant")
+
+        # Retrieve conversation
+        conv = storage.get_conversation(conv_id, user_id=user_id)
+        self.assertIsNotNone(conv)
+        self.assertEqual(conv["message_count"], 2)
+        self.assertEqual(len(conv["messages"]), 2)
+        self.assertEqual(conv["messages"][0]["content"], "Hello AI")
+        self.assertEqual(conv["messages"][1]["content"], "Hello human!")
+
+        # List conversations
+        convs = storage.list_conversations(user_id=user_id)
+        self.assertGreaterEqual(len(convs), 1)
+        found = [x for x in convs if x["id"] == conv_id]
+        self.assertTrue(bool(found))
+        self.assertEqual(found[0]["message_count"], 2)
+
+        # Delete conversation
+        ok = storage.delete_conversation(conv_id, user_id=user_id)
+        self.assertTrue(ok)
+        self.assertIsNone(storage.get_conversation(conv_id, user_id=user_id))
+
+    def test_02_user_preferences_and_tool_cards(self):
+        user_id = f"usr-pref-test-{time.time()}"
+
+        # Initial preferences should have default structure
+        p0 = storage.get_user_preferences(user_id)
+        self.assertEqual(p0["preferences"]["hidden_tool_cards"], [])
+
+        # Hide a tool card via action
+        storage.save_user_preferences(user_id, {"action": "hide_tool", "tool_id": "card-browser"})
+        p1 = storage.get_user_preferences(user_id)
+        self.assertIn("card-browser", p1["preferences"]["hidden_tool_cards"])
+
+        # Hide another tool card directly in list
+        storage.save_user_preferences(user_id, {"hidden_tool_cards": ["card-browser", "card-deployer"], "theme": "cosmic-dark"})
+        p2 = storage.get_user_preferences(user_id)
+        self.assertEqual(p2["preferences"]["hidden_tool_cards"], ["card-browser", "card-deployer"])
+        self.assertEqual(p2["preferences"]["theme"], "cosmic-dark")
+
+        # Unhide a tool card
+        storage.save_user_preferences(user_id, {"action": "unhide_tool", "tool_id": "card-browser"})
+        p3 = storage.get_user_preferences(user_id)
+        self.assertNotIn("card-browser", p3["preferences"]["hidden_tool_cards"])
+        self.assertIn("card-deployer", p3["preferences"]["hidden_tool_cards"])
+
+    def test_03_livelogs_ring_buffer(self):
+        logger = logging.getLogger("supremeai.gateway")
+        test_msg = "LiveLogs Verification Log Entry #42"
+        logger.info(test_msg)
+
+        logs = log_ring_buffer.get_logs(limit=20, search="LiveLogs Verification")
+        self.assertGreaterEqual(len(logs), 1)
+        self.assertEqual(logs[-1]["level"], "INFO")
+        self.assertIn(test_msg, logs[-1]["message"])
+
+    def test_04_conversation_endpoints(self):
+        headers = {"X-Guest-Mode": "true", "X-User-Id": "usr-endpoint-test"}
+
+        # Create conversation
+        r_create = self.client.post("/api/v1/chat/conversations", json={"title": "Dashboard Session"}, headers=headers)
+        self.assertEqual(r_create.status_code, 200)
+        c_id = r_create.json()["conversation"]["id"]
+
+        # List conversations
+        r_list = self.client.get("/api/v1/chat/conversations", headers=headers)
+        self.assertEqual(r_list.status_code, 200)
+        self.assertIn("conversations", r_list.json())
+
+        # Get conversation details
+        r_get = self.client.get(f"/api/v1/chat/conversations/{c_id}", headers=headers)
+        self.assertEqual(r_get.status_code, 200)
+        self.assertEqual(r_get.json()["id"], c_id)
+
+        # Delete conversation
+        r_del = self.client.delete(f"/api/v1/chat/conversations/{c_id}", headers=headers)
+        self.assertEqual(r_del.status_code, 200)
+        self.assertEqual(r_del.json()["status"], "deleted")
+
+    def test_05_admin_livelogs_endpoint(self):
+        headers = {"X-Guest-Mode": "true"}
+        r = self.client.get("/admin-api/logs?limit=10", headers=headers)
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertIsInstance(data["logs"], list)
+
+    def test_06_preferences_and_tool_card_endpoints(self):
+        headers = {"X-Guest-Mode": "true", "X-User-Id": "usr-endpoint-pref"}
+
+        # Get preferences
+        r_get = self.client.get("/api/v1/user/preferences", headers=headers)
+        self.assertEqual(r_get.status_code, 200)
+        self.assertIn("preferences", r_get.json())
+
+        # Hide tool card
+        r_hide = self.client.delete("/api/v1/user/preferences/tool-card/card-voice", headers=headers)
+        self.assertEqual(r_hide.status_code, 200)
+        self.assertEqual(r_hide.json()["status"], "ok")
+
+        # Verify hidden in GET
+        r_check = self.client.get("/api/v1/user/preferences", headers=headers)
+        self.assertIn("card-voice", r_check.json()["preferences"]["hidden_tool_cards"])
+
+        # Restore tool card
+        r_restore = self.client.post("/api/v1/user/preferences/tool-card/card-voice/restore", headers=headers)
+        self.assertEqual(r_restore.status_code, 200)
+        self.assertEqual(r_restore.json()["action"], "restored")
+
+
+if __name__ == "__main__":
+    unittest.main()
