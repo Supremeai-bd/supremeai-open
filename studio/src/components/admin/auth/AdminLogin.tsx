@@ -223,17 +223,6 @@ export function LoginView({
           onSubmit={handleSubmit}
           aria-label="Admin authentication form"
         >
-          {/* Subtle Bypass/Authorize Trigger for quick testing */}
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={onAuthorize}
-              className="text-[10px] text-cyan-400/60 hover:text-cyan-300 transition-colors uppercase tracking-wider"
-              title="Quick Authorization Mode"
-            >
-              [ Fast-Pass Bypass ]
-            </button>
-          </div>
 
           {!otpRequired && (
             <>

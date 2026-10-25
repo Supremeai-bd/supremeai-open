@@ -700,56 +700,6 @@ async def admin_firebase_totp_verify(payload: AdminFirebaseTotpVerifyRequest, re
     return {"status": "success", "token": token}
 
 
-@router.get("/admin/trusted-browsers")
-async def list_trusted_browsers(admin: dict = Depends(get_current_admin)):
-    redis = await _get_redis_client()
-    if not redis:
-        raise HTTPException(status_code=503, detail="Trusted browser service unavailable")
-    uid = str(admin.get("sub"))
-    browser_ids = await redis.smembers(f"admin:trusted-browsers:{uid}")
-    browsers = []
-    for raw_id in browser_ids:
-        browser_id = raw_id.decode() if isinstance(raw_id, bytes) else raw_id
-        record = await redis.get(f"admin:trusted-browser-record:{uid}:{browser_id}")
-        if record:
-            parsed = json.loads(record.decode() if isinstance(record, bytes) else record)
-            parsed.pop("token_key", None)
-            browsers.append(parsed)
-    return {"browsers": browsers}
-
-
-@router.delete("/admin/trusted-browsers/{browser_id}")
-async def revoke_trusted_browser(browser_id: str, admin: dict = Depends(get_current_admin)):
-    redis = await _get_redis_client()
-    if not redis:
-        raise HTTPException(status_code=503, detail="Trusted browser service unavailable")
-    uid = str(admin.get("sub"))
-    record_key = f"admin:trusted-browser-record:{uid}:{browser_id}"
-    record = await redis.get(record_key)
-    if not record:
-        raise HTTPException(status_code=404, detail="Trusted browser not found")
-    parsed = json.loads(record.decode() if isinstance(record, bytes) else record)
-    await redis.delete(parsed["token_key"], record_key)
-    await redis.srem(f"admin:trusted-browsers:{uid}", browser_id)
-    return {"ok": True}
-
-
-@router.delete("/admin/trusted-browsers")
-async def revoke_all_trusted_browsers(admin: dict = Depends(get_current_admin)):
-    redis = await _get_redis_client()
-    if not redis:
-        raise HTTPException(status_code=503, detail="Trusted browser service unavailable")
-    uid = str(admin.get("sub"))
-    browser_ids = await redis.smembers(f"admin:trusted-browsers:{uid}")
-    for raw_id in browser_ids:
-        browser_id = raw_id.decode() if isinstance(raw_id, bytes) else raw_id
-        record_key = f"admin:trusted-browser-record:{uid}:{browser_id}"
-        record = await redis.get(record_key)
-        if record:
-            parsed = json.loads(record.decode() if isinstance(record, bytes) else record)
-            await redis.delete(parsed["token_key"], record_key)
-        await redis.srem(f"admin:trusted-browsers:{uid}", browser_id)
-    return {"ok": True}
 
 
 @router.get("/admin/cloud-distribution")
@@ -890,31 +840,32 @@ def get_skills(_admin: dict = Depends(get_current_admin)):
     }
 
 
-def check_totp(user_otp: str, base32_secret: str) -> bool:
+try:
+    from service.admin_auth import check_totp
+except ImportError:
     try:
-        # বাংলা মন্তব্য: বেস-৩২ সিক্রেট কি প্যাডিং ঠিক করা হলো
-        missing_padding = len(base32_secret) % 8
-        if missing_padding:
-            base32_secret += "=" * (8 - missing_padding)
-        key = base64.b32decode(base32_secret.upper())
-        current_time = int(time.time() // 30)
-        for drift in [-1, 0, 1]:
-            msg = struct.pack(">Q", current_time + drift)
-            h = hmac.new(key, msg, hashlib.sha1).digest()
-            o = h[19] & 15
-            h_num = struct.unpack(">I", h[o : o + 4])[0] & 0x7FFFFFFF
-            # বাংলা মন্তব্য: ৬ ডিজিটের ওটিপি জেনারেট করা হলো
-            code = f"{h_num % 1000000:06d}"
-            # বাংলা মন্তব্য: টাইমিং অ্যাটাক প্রতিরোধে constant-time তুলনা ব্যবহার করা হলো
-            if hmac.compare_digest(code, user_otp):
-                return True
-        return False
-    except Exception:
-        return False
+        from gateway.service.admin_auth import check_totp
+    except ImportError:
+        def check_totp(user_otp: str, base32_secret: str) -> bool:
+            try:
+                missing_padding = len(base32_secret) % 8
+                if missing_padding:
+                    base32_secret += "=" * (8 - missing_padding)
+                key = base64.b32decode(base32_secret.upper())
+                current_time = int(time.time() // 30)
+                for drift in [-1, 0, 1]:
+                    msg = struct.pack(">Q", current_time + drift)
+                    h = hmac.new(key, msg, hashlib.sha1).digest()
+                    o = h[19] & 15
+                    h_num = struct.unpack(">I", h[o : o + 4])[0] & 0x7FFFFFFF
+                    code = f"{h_num % 1000000:06d}"
+                    if hmac.compare_digest(code, user_otp):
+                        return True
+                return False
+            except Exception:
+                return False
 
-
-# বাংলা মন্তব্য: verify_totp_code এখন check_totp-এর backward-compatible alias (Patch 5 fix)
-# duplicate function সরানো হয়েছে, কিন্তু tests ও external callers-এর জন্য alias রাখা হয়েছে
+# Backward-compatible alias for check_totp
 verify_totp_code = check_totp
 
 

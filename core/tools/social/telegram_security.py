@@ -37,22 +37,28 @@ def check_totp_code(user_otp: str, base32_secret: str | None = None) -> bool:
         logger.error("TOTP validation unavailable: SUPREMEAI_ADMIN_TOTP_SECRET is not configured")
         return False
     try:
-        missing_padding = len(secret) % 8
-        if missing_padding:
-            secret += "=" * (8 - missing_padding)
-        key = base64.b32decode(secret)
-        current_time = int(time.time() // 30)
-
-        # Tolerance window: [-1 (prev 30s), 0 (current), +1 (next 30s)]
-        for drift in [-1, 0, 1]:
-            msg = struct.pack(">Q", current_time + drift)
-            h = hmac.new(key, msg, hashlib.sha1).digest()
-            o = h[19] & 15
-            h_num = struct.unpack(">I", h[o : o + 4])[0] & 0x7FFFFFFF
-            code = f"{h_num % 1000000:06d}"
-            if hmac.compare_digest(code, user_otp.strip()):
-                return True
-        return False
+        try:
+            from gateway.service.admin_auth import check_totp
+            return check_totp(user_otp, secret)
+        except ImportError:
+            try:
+                from service.admin_auth import check_totp
+                return check_totp(user_otp, secret)
+            except ImportError:
+                missing_padding = len(secret) % 8
+                if missing_padding:
+                    secret += "=" * (8 - missing_padding)
+                key = base64.b32decode(secret)
+                current_time = int(time.time() // 30)
+                for drift in [-1, 0, 1]:
+                    msg = struct.pack(">Q", current_time + drift)
+                    h = hmac.new(key, msg, hashlib.sha1).digest()
+                    o = h[19] & 15
+                    h_num = struct.unpack(">I", h[o : o + 4])[0] & 0x7FFFFFFF
+                    code = f"{h_num % 1000000:06d}"
+                    if hmac.compare_digest(code, user_otp.strip()):
+                        return True
+                return False
     except Exception as exc:
         logger.error(f"TOTP validation exception: {exc}")
         return False
