@@ -149,7 +149,7 @@ export function SettingsPage({ theme, toggleTheme }: SettingsPageProps) {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8">
+    <div className="max-w-form mx-auto px-6 py-8">
       <h1 className="text-lg font-semibold text-text mb-1">Settings</h1>
       <p className="text-xs text-secondary mb-6">Manage your workspace preferences.</p>
 

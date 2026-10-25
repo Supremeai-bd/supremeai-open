@@ -172,7 +172,7 @@ export function SiteActionsPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className="max-w-dash mx-auto px-6 py-8">
       <h1 className="text-2xl font-semibold text-white flex items-center gap-3 mb-2">
         <Table2 size={24} className="text-blue-500" />
         Site Actions Registry

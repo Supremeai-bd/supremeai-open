@@ -86,7 +86,7 @@ export function SecretsPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8">
+    <div className="max-w-form mx-auto px-6 py-8">
       <h1 className="text-lg font-semibold text-white mb-1">Secrets & API Keys</h1>
       <p className="text-xs text-slate-400 mb-6">
         Create and manage API keys for programmatic access. Keys are shown only once at creation.

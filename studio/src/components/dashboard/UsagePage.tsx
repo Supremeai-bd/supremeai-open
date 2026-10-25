@@ -48,7 +48,7 @@ export function UsagePage() {
   }));
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-8">
+    <div className="max-w-feed mx-auto px-6 py-8">
       <h1 className="text-lg font-semibold text-white mb-1">Usage</h1>
       <p className="text-xs text-slate-400 mb-6">
         Platform usage over the last 30 days. SupremeAI is free — no billing, ever.
