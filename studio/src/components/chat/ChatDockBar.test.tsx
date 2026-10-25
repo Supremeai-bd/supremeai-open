@@ -3,7 +3,7 @@
  *
  * Contract under test:
  *  - in-flow docked bar (no fixed positioning in the class string — the RC-3
- *    defect class was a fixed z-40 floating dock),
+ *    defect class was a fixed floating dock on the old overlay tier (40),
  *  - 44px touch targets on every interactive element (§7.2),
  *  - Apps menu is user-published only (closed by default; opens on trigger;
  *    closes on outside click and Escape),
@@ -38,7 +38,11 @@ describe('ChatDockBar (RC-3, report §6.4)', () => {
     const { getByTestId } = renderDock({ actions, apps });
     const bar = getByTestId('chat-dock-bar');
     expect(bar.className).not.toMatch(/\bfixed\b/);
-    expect(bar.className).not.toMatch(/\bz-40\b/);
+    // RC-3 defect guard: the bar must never float on the old overlay tier.
+    // RegExp is assembled from fragments so Tailwind v4's source scanner (which
+    // reads test files too) never sees the bare tier token, and therefore never
+    // emits a dead utility into the prod CSS bundle.
+    expect(bar.className).not.toMatch(new RegExp("\\bz-" + "40\\b"));
     expect(bar.className).toContain('max-w-[46rem]');
   });
 
