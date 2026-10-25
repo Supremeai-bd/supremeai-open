@@ -164,7 +164,7 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-[#04070f] px-6 text-slate-100 select-none">
+    <div className="fixed inset-0 z-modal flex flex-col items-center justify-center gap-6 bg-[#04070f] px-6 text-slate-100 select-none">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(14,165,183,0.12),transparent_70%)]" />
 
       {/* Brand Header */}
@@ -246,7 +246,7 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
+          className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
         >
           <div className="relative w-full max-w-md rounded-2xl border border-cyan-500/40 bg-[#060c18] p-6 shadow-2xl shadow-cyan-950/50 text-left">
             <button
@@ -356,7 +356,7 @@ export function JarvisBootSequence({ onDone }: { onDone: () => void }) {
   }, [shown, onDone]);
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-[#04070f] px-6 text-slate-100 select-none">
+    <div className="fixed inset-0 z-overlay flex flex-col items-center justify-center bg-[#04070f] px-6 text-slate-100 select-none">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(14,165,183,0.1),transparent_70%)]" />
       <div className="relative w-full max-w-lg space-y-1.5 font-mono text-[13px] text-cyan-400">
         {BOOT_LINES.slice(0, shown).map((l, i) => (
