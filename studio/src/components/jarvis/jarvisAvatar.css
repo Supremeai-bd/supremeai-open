@@ -1,0 +1,141 @@
+/* JarvisAvatar — hologram chip styles. Pure CSS effects, GPU-cheap.
+   All movement is disabled under prefers-reduced-motion (a11y). */
+
+.jarvis-av {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+  background: #0b0f1e;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.12),
+    0 0 18px rgba(18, 184, 255, 0.22),
+    0 0 42px rgba(180, 41, 255, 0.14);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.jarvis-av:hover { border-color: rgba(34, 211, 238, 0.65); }
+
+.jarvis-av-thinking {
+  box-shadow:
+    0 0 0 1px rgba(250, 204, 21, 0.4),
+    0 0 20px rgba(250, 204, 21, 0.3),
+    0 0 46px rgba(180, 41, 255, 0.2);
+}
+.jarvis-av-speaking {
+  box-shadow:
+    0 0 0 1px rgba(236, 72, 153, 0.4),
+    0 0 20px rgba(236, 72, 153, 0.3),
+    0 0 46px rgba(34, 211, 238, 0.2);
+}
+
+/* photoreal layer with breathing float */
+.jarvis-av-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  animation: jarvis-breathe 4.6s ease-in-out infinite;
+  will-change: transform;
+}
+.jarvis-av-img img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 20%; /* keep the face in the small chip */
+  user-select: none;
+}
+.jarvis-av-img .jarvis-av-img-blink {
+  opacity: 0;
+  transition: opacity 0.09s ease;
+}
+.jarvis-av-blinking .jarvis-av-img-blink { opacity: 1; }
+@keyframes jarvis-breathe {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.035) translateY(-2px); }
+}
+
+/* hologram scanlines + travelling sweep (screen blend keeps them light) */
+.jarvis-av-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: repeating-linear-gradient(
+    0deg, transparent 0 3px, rgba(34, 211, 238, 0.07) 3px 4px);
+}
+.jarvis-av-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 30%;
+  top: -32%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: linear-gradient(180deg, transparent,
+    rgba(52, 225, 255, 0.15) 45%, rgba(127, 231, 255, 0.35) 50%,
+    rgba(52, 225, 255, 0.15) 55%, transparent);
+  animation: jarvis-sweep 4.2s linear infinite;
+}
+@keyframes jarvis-sweep { from { top: -32%; } to { top: 112%; } }
+
+/* soft glow ring behind the subject */
+.jarvis-av-glow {
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, transparent 52%,
+    rgba(34, 211, 238, 0.16) 66%, transparent 72%);
+  animation: jarvis-ringpulse 3.4s ease-in-out infinite;
+}
+@keyframes jarvis-ringpulse {
+  0%, 100% { transform: scale(0.96); opacity: 0.55; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+/* live status dot */
+.jarvis-av-dot {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 8px #34d399;
+  animation: jarvis-dot 1.6s ease-in-out infinite;
+  border: 1px solid rgba(2, 6, 23, 0.7);
+}
+.jarvis-av-dot-thinking { background: #facc15; box-shadow: 0 0 8px #facc15; }
+.jarvis-av-dot-speaking { background: #ec4899; box-shadow: 0 0 8px #ec4899; }
+@keyframes jarvis-dot { 50% { opacity: 0.35; } }
+
+/* CSS-monogram fallback when assets are missing */
+.jarvis-av-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 22px;
+  color: #7fe7ff;
+  text-shadow: 0 0 12px rgba(25, 200, 255, 0.8);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(34, 211, 238, 0.25), transparent 55%),
+    radial-gradient(circle at 70% 75%, rgba(180, 41, 255, 0.25), transparent 55%);
+}
+
+/* ===== accessibility: prefers-reduced-motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  .jarvis-av-img { animation: none !important; }
+  .jarvis-av-sweep { animation: none !important; top: 35%; opacity: 0.35; }
+  .jarvis-av-glow { animation: none !important; opacity: 0.6; }
+  .jarvis-av-dot { animation: none !important; }
+}
