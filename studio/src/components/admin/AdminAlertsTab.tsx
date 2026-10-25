@@ -59,7 +59,7 @@ export function AdminAlertsTab() {
   };
 
   return (
-    <div className="flex-1 flex flex-col p-6 overflow-hidden max-w-6xl mx-auto w-full">
+    <div className="flex-1 flex flex-col p-6 overflow-hidden max-w-dash mx-auto w-full">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-3">
