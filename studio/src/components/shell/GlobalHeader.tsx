@@ -210,7 +210,7 @@ export function GlobalHeader({ context, onLogout, notifications = [], actions }:
           )}
         </button>
         {notifOpen && (
-          <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-surface-2 shadow-xl z-50 overflow-hidden">
+          <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-surface-2 shadow-xl z-modal overflow-hidden">
             <div className="px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-muted border-b border-border">
               Notifications
             </div>
@@ -256,7 +256,7 @@ export function GlobalHeader({ context, onLogout, notifications = [], actions }:
           <ChevronDown size={14} className="text-secondary hidden sm:block" />
         </button>
         {profileOpen && (
-          <div className="absolute right-0 mt-2 w-64 rounded-xl border border-border bg-surface-2 shadow-xl z-50 overflow-hidden">
+          <div className="absolute right-0 mt-2 w-64 rounded-xl border border-border bg-surface-2 shadow-xl z-modal overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
               <div className="flex items-center gap-3">
                 <HeaderAvatar label={initials} />

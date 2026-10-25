@@ -78,7 +78,7 @@ export function UserManager({
   return (
     <div className="flex-grow bg-[#030611] p-6 overflow-y-auto font-sans relative">
       {userToDelete && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-modal p-4">
           <div className="bg-[#0c0d12] border border-red-900/60 rounded-xl p-6 max-w-md w-full shadow-2xl">
             <h4 className="text-sm font-bold text-red-400 font-mono mb-2 uppercase tracking-wider">⚠️ Confirm Revoke Role</h4>
             <p className="text-xs text-slate-300 mb-6 font-mono">

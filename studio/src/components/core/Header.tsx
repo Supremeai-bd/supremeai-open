@@ -32,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   const isAdmin = pathname.startsWith('/admin');
 
   return (
-    <header className="bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl border-b border-gray-200/60 dark:border-white/10 px-6 py-3.5 sticky top-0 z-30 shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
+    <header className="bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl border-b border-gray-200/60 dark:border-white/10 px-6 py-3.5 sticky top-0 z-shell shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button
@@ -178,7 +178,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
             </button>
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-72 bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-2xl border border-white/10 p-4 z-50 animate-in fade-in zoom-in-95 duration-200">
+              <div className="absolute right-0 mt-2 w-72 bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-2xl border border-white/10 p-4 z-modal animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-bold uppercase tracking-wider text-slate-300">Live Telemetry Alerts</p>
                   <span className="text-[10px] font-mono text-cyan-400">All Clear</span>

@@ -90,7 +90,7 @@ export function MobilePreviewPanel({ url }: { url: string }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm">
+    <div className="fixed inset-0 z-modal flex flex-col bg-black/90 backdrop-blur-sm">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900 p-4">
         <div className="flex items-center gap-2">

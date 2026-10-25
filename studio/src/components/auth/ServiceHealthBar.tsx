@@ -277,7 +277,7 @@ export const ServiceHealthBar: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.96 }}
             transition={{ duration: 0.16 }}
-            className="absolute top-10 z-50 w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
+            className="absolute top-10 z-modal w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
           >
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
               <div className="flex items-center gap-1.5">

@@ -184,7 +184,7 @@ export function RenderPreflightWidget() {
 
       {/* Override Modal */}
       {overrideModalRole && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-[#0a0f1d] p-5 shadow-2xl">
             <h3 className="text-sm font-bold font-mono text-white mb-2">
               Manual Override: <span className="text-[#00f3ff] uppercase">{overrideModalRole}</span>

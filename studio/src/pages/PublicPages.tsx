@@ -40,7 +40,7 @@ export function CapabilityStrip({ onProtected }: { onProtected: (feature: string
 
 export function AuthPromptModal({ feature, onClose }: { feature: string; onClose: () => void }) {
   // Issue #1460: "Sign in to access [Feature]" without navigating away.
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Sign in to access ${feature}`} onClick={onClose}>
+  return <div className="fixed inset-0 z-modal flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Sign in to access ${feature}`} onClick={onClose}>
     <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.9))] p-7 shadow-2xl" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-start justify-between gap-3">
         <h2 className="text-lg font-medium text-slate-100">Sign in to access {feature.toLowerCase()}</h2>
