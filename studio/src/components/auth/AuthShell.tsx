@@ -17,7 +17,7 @@ export const AuthShell: React.FC<{ children: React.ReactNode }> = ({ children })
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(168,85,247,0.16)_0%,transparent_60%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.10)_0%,transparent_50%)]" />
 
-      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] max-w-6xl flex-col">
+      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] max-w-dash flex-col">
         <header className="flex items-center justify-between gap-4 py-2">
           <Link to="/" className="flex items-center gap-3" aria-label="SupremeAI home">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 text-sm font-bold text-white shadow-lg shadow-purple-500/20">S</span>
