@@ -20,7 +20,54 @@ import sys
 import uuid
 from datetime import datetime
 
-from loguru import logger
+try:
+    from loguru import logger
+    _HAS_LOGURU = True
+except ImportError:
+    _HAS_LOGURU = False
+
+    class _FallbackLogger:
+        """Lightweight fallback logger compatible with loguru's interface."""
+
+        def __init__(self, name: str = "supremeai"):
+            self._logger = logging.getLogger(name)
+
+        def debug(self, msg, *args, **kwargs):
+            self._logger.debug(msg, *args, **kwargs)
+
+        def info(self, msg, *args, **kwargs):
+            self._logger.info(msg, *args, **kwargs)
+
+        def warning(self, msg, *args, **kwargs):
+            self._logger.warning(msg, *args, **kwargs)
+
+        def error(self, msg, *args, **kwargs):
+            self._logger.error(msg, *args, **kwargs)
+
+        def exception(self, msg, *args, **kwargs):
+            self._logger.exception(msg, *args, **kwargs)
+
+        def critical(self, msg, *args, **kwargs):
+            self._logger.critical(msg, *args, **kwargs)
+
+        def bind(self, **kwargs):
+            return self
+
+        def opt(self, *args, **kwargs):
+            return self
+
+        def remove(self, *args, **kwargs):
+            pass
+
+        def add(self, *args, **kwargs):
+            pass
+
+        def level(self, name, *args, **kwargs):
+            class _Level:
+                name = str(name)
+            return _Level()
+
+    logger = _FallbackLogger()
 
 try:
     from starlette_context import context
@@ -61,59 +108,65 @@ class LoggingConfig:
             debug = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
             env_name = os.getenv("ENV", "development")
 
-        # Remove default handlers to avoid duplication
-        logger.remove()
-
         # Determine log level based on environment
         log_level = "DEBUG" if debug else "INFO"
 
-        # AUD-2.9 (P1): loguru's ``diagnose=True`` renders variable values
-        # inside tracebacks. In production/staging that leaks secrets, tokens
-        # and cross-tenant data into logs, so variable disclosure is enabled
-        # only outside production.
-        # Add InterceptHandler to catch standard logging
-        class InterceptHandler(logging.Handler):
-            def emit(self, record):
+        if _HAS_LOGURU:
+            # Remove default handlers to avoid duplication
+            logger.remove()
+
+            # AUD-2.9 (P1): loguru's ``diagnose=True`` renders variable values
+            # inside tracebacks. In production/staging that leaks secrets, tokens
+            # and cross-tenant data into logs, so variable disclosure is enabled
+            # only outside production.
+            # Add InterceptHandler to catch standard logging
+            class InterceptHandler(logging.Handler):
+                def emit(self, record):
+                    try:
+                        level = logger.level(record.levelname).name
+                    except ValueError:
+                        level = record.levelno
+
+                    frame, depth = logging.currentframe(), 2
+                    while frame and frame.f_code.co_filename == logging.__file__:
+                        frame = frame.f_back
+                        depth += 1
+
+                    logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+            logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+
+            is_prod_like = env_name in ("production", "staging")
+            logger.add(
+                sys.stdout,
+                format=self._json_format,
+                level=log_level,
+                backtrace=not is_prod_like,
+                diagnose=not is_prod_like,
+            )
+
+            # Add file handler if needed (with rotation)
+            if env_name in ["production", "staging"]:
                 try:
-                    level = logger.level(record.levelname).name
-                except ValueError:
-                    level = record.levelno
-
-                frame, depth = logging.currentframe(), 2
-                while frame and frame.f_code.co_filename == logging.__file__:
-                    frame = frame.f_back
-                    depth += 1
-
-                logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
-
-        logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-
-        is_prod_like = env_name in ("production", "staging")
-        logger.add(
-            sys.stdout,
-            format=self._json_format,
-            level=log_level,
-            backtrace=not is_prod_like,
-            diagnose=not is_prod_like,
-        )
-
-        # Add file handler if needed (with rotation)
-        if env_name in ["production", "staging"]:
-            try:
-                # Use /tmp/logs for ephemeral environments like Render
-                log_dir = os.environ.get("LOG_DIR", "/tmp/logs")
-                os.makedirs(log_dir, exist_ok=True)
-                logger.add(
-                    f"{log_dir}/app_{{time}}.log",
-                    rotation="100 MB",
-                    retention="10 days",
-                    compression="zip",
-                    serialize=True,
-                    level="INFO",
-                )
-            except Exception as e:
-                # Fallback to stdout only if file logging fails (e.g., permission denied)
-                logger.warning(f"Could not initialize file logging: {e}")
+                    # Use /tmp/logs for ephemeral environments like Render
+                    log_dir = os.environ.get("LOG_DIR", "/tmp/logs")
+                    os.makedirs(log_dir, exist_ok=True)
+                    logger.add(
+                        f"{log_dir}/app_{{time}}.log",
+                        rotation="100 MB",
+                        retention="10 days",
+                        compression="zip",
+                        serialize=True,
+                        level="INFO",
+                    )
+                except Exception as e:
+                    # Fallback to stdout only if file logging fails (e.g., permission denied)
+                    logger.warning(f"Could not initialize file logging: {e}")
+        else:
+            logging.basicConfig(
+                level=logging.DEBUG if debug else logging.INFO,
+                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            )
 
     def _json_format(self, record: dict) -> str:
         """Custom JSON formatter with correlation ID."""

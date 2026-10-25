@@ -8,6 +8,13 @@ _DEPRECATED_TARGET = "monitoring.logging_config"
 _warned = False
 
 
+def _get_target_module():
+    try:
+        return importlib.import_module(_DEPRECATED_TARGET)
+    except ModuleNotFoundError:
+        return importlib.import_module("core.monitoring.logging_config")
+
+
 def __getattr__(name):
     global _warned
     if not _warned:
@@ -17,9 +24,9 @@ def __getattr__(name):
             stacklevel=2,
         )
         _warned = True
-    mod = importlib.import_module(_DEPRECATED_TARGET)
+    mod = _get_target_module()
     return getattr(mod, name)
 
 
 def __dir__():
-    return list(importlib.import_module(_DEPRECATED_TARGET).__dict__.keys())
+    return list(_get_target_module().__dict__.keys())
