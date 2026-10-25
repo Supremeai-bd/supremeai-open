@@ -71,7 +71,7 @@ export function KnowledgePage() {
   const displayStatus = loadError ? `Search failed: ${loadError}` : status;
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8">
+    <div className="max-w-form mx-auto px-6 py-8">
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-lg font-semibold text-white">Knowledge</h1>
         <button
