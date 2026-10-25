@@ -104,7 +104,7 @@ function SkeletonMessage({ align }: { align: 'left' | 'right' }) {
 function SkeletonPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="max-w-feed mx-auto px-4 py-8">
         {/* Header skeleton */}
         <div className="text-center mb-8 space-y-3">
           <div className="h-7 w-64 rounded-lg bg-slate-200 dark:bg-slate-700 animate-pulse mx-auto" />
@@ -190,7 +190,7 @@ export default function SharedConversationPage() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
       {/* Header */}
       <header className="flex-shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-3xl mx-auto px-4 py-6 text-center">
+        <div className="max-w-feed mx-auto px-4 py-6 text-center">
           <motion.div
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -221,7 +221,7 @@ export default function SharedConversationPage() {
 
       {/* Messages */}
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-4 py-8">
+        <div className="max-w-feed mx-auto px-4 py-8">
           <div className="space-y-6">
             {data.messages.map((message, index) => {
               const isUser = message.role === 'user';
@@ -271,7 +271,7 @@ export default function SharedConversationPage() {
 
       {/* CTA Footer */}
       <footer className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-3xl mx-auto px-4 py-6 text-center">
+        <div className="max-w-feed mx-auto px-4 py-6 text-center">
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
             Powered by SupremeAI — have your own AI conversations
           </p>
