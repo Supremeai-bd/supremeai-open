@@ -117,7 +117,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({ isOpen: controlledOpen, 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-slate-950/80 backdrop-blur-xl">
+        <div className="fixed inset-0 z-modal flex items-start justify-center pt-16 px-4 bg-slate-950/80 backdrop-blur-xl">
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: -12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
