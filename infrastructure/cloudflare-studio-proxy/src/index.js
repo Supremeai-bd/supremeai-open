@@ -74,6 +74,31 @@ async function keepWarmAllServices() {
   );
 }
 
+/**
+ * Triggers hourly empirical learning sync on SupremeAI Core API (24x daily cadence).
+ */
+async function triggerHourlyLearningSync() {
+  const syncUrl = `${API_ORIGIN}/api/v1/kaggle/cron-learn`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(syncUrl, {
+      method: "POST",
+      headers: {
+        "User-Agent": "SupremeAI-EdgeCron/1.0 (Cloudflare-Worker)",
+        "X-Cron-Source": "cloudflare-edge-hourly",
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return { ok: res.ok, status: res.status };
+  } catch (err) {
+    clearTimeout(timeout);
+    return { ok: false, error: err.message };
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -102,6 +127,18 @@ export default {
         status: "success",
         timestamp: new Date().toISOString(),
         services: results,
+      }, null, 2), {
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+      });
+    }
+
+    // 1c. On-demand hourly learning sync probe endpoint
+    if (url.pathname === "/cf-sync-learning") {
+      const result = await triggerHourlyLearningSync();
+      return new Response(JSON.stringify({
+        status: result.ok ? "success" : "failed",
+        timestamp: new Date().toISOString(),
+        result,
       }, null, 2), {
         headers: { "Content-Type": "application/json", ...CORS_HEADERS }
       });
@@ -298,8 +335,16 @@ export default {
     return finalResponse;
   },
 
-  // Cloudflare Cron Trigger (fires every 10 mins per [triggers] in wrangler.toml)
+  // Cloudflare Cron Trigger (fires per [triggers] in wrangler.toml)
   async scheduled(event, env, ctx) {
+    // 1. Keep-warm ping across all 5 Render nodes (every 10m to defeat 15m idle timeout)
     ctx.waitUntil(keepWarmAllServices());
+
+    // 2. Hourly Empirical Learning Sync (24x daily cadence)
+    // Runs at the top of each hour (minute 0-9)
+    const minutes = new Date().getUTCMinutes();
+    if (minutes < 10) {
+      ctx.waitUntil(triggerHourlyLearningSync());
+    }
   }
 };
