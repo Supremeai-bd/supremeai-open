@@ -81,7 +81,7 @@ export function ThemePicker() {
         <div
           role="menu"
           aria-label="Color themes"
-          className="absolute right-0 mt-2 w-52 rounded-xl border border-border bg-surface-2 shadow-xl z-50 overflow-hidden py-1"
+          className="absolute right-0 mt-2 w-52 rounded-xl border border-border bg-surface-2 shadow-xl z-modal overflow-hidden py-1"
         >
           {THEME_ORDER.map((t) => {
             const meta = THEME_META[t];
