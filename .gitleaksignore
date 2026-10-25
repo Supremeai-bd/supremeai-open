@@ -7,3 +7,6 @@ c7f61dfaf1007c9fbcd573a758a55d69c89ccb70:docs/PROJECT_STATUS_AND_FIXES_BN_2026-1
 # Standard RFC 6238 Appendix B test vector mock seed in totp.test.ts
 4b443bb448ec8fae1ccb677cc0bc4ec6ee9a3734:studio/src/utils/totp.test.ts:generic-api-key:13
 16ef58a43a29ed8efa781211f542923d5f4fd358:studio/src/utils/totp.test.ts:generic-api-key:13
+# Base64 WebP image data URLs in avatarAssets.ts matching supremeai-aws-secret-key in bridge commit df32c1b0 (issue #1235)
+df32c1b027918e4cbe5deeb0d26e55daeff39b2f:studio/src/components/jarvis/avatarAssets.ts:supremeai-aws-secret-key:9
+df32c1b027918e4cbe5deeb0d26e55daeff39b2f:studio/src/components/jarvis/avatarAssets.ts:supremeai-aws-secret-key:15
