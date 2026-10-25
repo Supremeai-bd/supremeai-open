@@ -64,7 +64,7 @@ const AethelNode = ({ data, isConnectable }: AethelNodeProps) => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.9 }}
             transition={{ duration: 0.2 }}
-            className="absolute -top-10 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+            className="absolute -top-10 left-1/2 -translate-x-1/2 z-modal pointer-events-none"
           >
             <div className="bg-[var(--bg-main)] border border-[var(--border-accent)] text-[var(--accent-primary)] text-[8px] px-2 py-1 rounded backdrop-blur-md whitespace-nowrap shadow-lg font-mono transition-colors duration-500">
                SYS TELEMETRY: {data.status || 'Nominal'}
