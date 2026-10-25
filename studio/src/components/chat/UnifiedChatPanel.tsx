@@ -389,7 +389,7 @@ export function HighDemandScreen({ attempt, maxAttempts, nextIn, windowSeconds, 
       role="alertdialog"
       aria-label="SupremeAI is experiencing high demand"
       data-testid="high-demand-screen"
-      className="absolute inset-0 z-40 flex items-center justify-center bg-[#080B11]/75 p-6 backdrop-blur-md"
+      className="absolute inset-0 z-overlay flex items-center justify-center bg-[#080B11]/75 p-6 backdrop-blur-md"
     >
       <div className="sa-surface-raised relative w-full max-w-md overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#0d121f]/90 p-8 text-center shadow-[0_15px_40px_rgba(0,0,0,0.5),0_0_25px_rgba(6,182,212,0.15)] backdrop-blur-xl">
         {/* Glowing top line */}
