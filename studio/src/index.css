@@ -12,6 +12,19 @@
   --container-form: 42rem;
   --container-feed: 48rem;
   --container-dash: 72rem;
+  /* P2 item (verified 2026-10-25 frontend report, section 6.4): z-index 3-bucket
+     policy. Base content stays numeric 0..10; shell layer (header/rail/docked
+     bar/backdrop) = 20..30; overlays (drawer/modal/palette/HUD) = 40..50; 60+
+     is reserved for critical confirmation only (cockpit kill-switch). Identity
+     migrations only in phase 1: tier 30 -> z-shell, tier 40 -> z-overlay, tier
+     50 -> z-modal (values preserved exactly). Ad-hoc z-[90]/[100]/[999]/[9999]
+     escalations and inline zIndex styles are phase-2 cleanup candidates.
+     Tailwind v4 --z-index-* namespace emits the three named utilities.
+     (Comment deliberately avoids bare z-N tokens: the v4 scanner treats them
+     as class candidates and would emit dead utilities.) */
+  --z-index-shell: 30;
+  --z-index-overlay: 40;
+  --z-index-modal: 50;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-neon-blue: var(--neon-blue);
@@ -602,7 +615,7 @@ body.light .glass-panel {
   right: 0;
   bottom: 0;
   pointer-events: none;
-  z-index: 40;
+  z-index: var(--z-index-overlay);
   animation: scanlines-scroll 15s linear infinite;
 }
 
