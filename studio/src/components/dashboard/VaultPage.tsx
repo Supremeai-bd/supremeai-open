@@ -132,7 +132,7 @@ export function VaultPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className="max-w-dash mx-auto px-6 py-8">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-white flex items-center gap-3">
