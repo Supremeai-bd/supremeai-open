@@ -5,6 +5,7 @@ import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../../lib/brand
 // JARVIS INTENT ROUTER (owner request 2026-10-25, Phase A): shared local command layer.
 import { tryHandleIntent } from '../../lib/jarvis';
 import { JarvisAvatar } from '../jarvis/JarvisAvatar';
+import { ChatDockBar, type DockAction, type DockApp } from './ChatDockBar';
 
 // UNIFIED CHAT (Phase 1, 2026-10-24): the chat core (engine + panel UI) was
 // extracted from src/pages/PublicPages.tsx so guest, user and admin
@@ -281,7 +282,22 @@ export interface UnifiedChatPanelProps {
    * chat continues with full context (history rail links use this).
    */
   initialConversationId?: string;
+  /**
+   * RC-3 root fix (report §6.4/Table 8 P1): render the docked action bar as
+   * the shell's permanent bottom row — same grid as the reading column, in
+   * flow (never fixed/floating), 44px touch targets. When true, the Jarvis
+   * avatar chip moves OUT of the model row into the dock's left slot
+   * (mini-orb with state-dot). Defaults to false so dashboard embeds that
+   * pass extraHeader/extraActions keep their exact current layout.
+   */
+  showDock?: boolean;
+  /** Middle contextual dock actions (e.g. preview/mobile toggle in AIStudio). */
+  dockActions?: DockAction[];
+  /** Right Apps menu entries (user-published overlay; hidden when empty). */
+  dockApps?: DockApp[];
 }
+
+export type { DockAction, DockApp } from './ChatDockBar';
 
 // CONVERSATION HISTORY (owner request 2026-10-24, parity with mainstream AI
 // web apps): every conversation's messages are persisted locally keyed by the
@@ -474,6 +490,9 @@ export function UnifiedChatPanel({
   className = '',
   fit = 'page',
   initialConversationId,
+  showDock = false,
+  dockActions,
+  dockApps,
 }: UnifiedChatPanelProps) {
   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }[]>(() =>
     initialConversationId ? loadStoredConversation(initialConversationId) : [],
@@ -703,8 +722,10 @@ export function UnifiedChatPanel({
       </select>
       {/* OWNER REQUEST (2026-10-25): Jarvis gets a face — living hologram avatar
           chip. Breathing/blinking/parallax inside; state follows chat `busy`;
-          male/female variant persisted per customer preference. Zero runtime AI cost. */}
-      <JarvisAvatar busy={busy} />
+          male/female variant persisted per customer preference. Zero runtime AI cost.
+          RC-3 (report §6.4): when the dock is shown, the orb lives in the dock's
+          left slot instead of the model row (one Jarvis, in the docked bar). */}
+      {!showDock && <JarvisAvatar busy={busy} />}
       {messages.length > 0 && (
         <button
           type="button"
@@ -803,6 +824,17 @@ export function UnifiedChatPanel({
       )}
       {extraActions}
     </div>
+    {/* RC-3 docked action bar (report §6.4): permanent bottom row of the chat
+        shell — same 46rem grid, in-flow, 44px targets; overlays stay
+        user-published. Rendered after the composer so the composer never
+        moves and the dock can never cover it. */}
+    {showDock && (
+      <ChatDockBar
+        left={<JarvisAvatar busy={busy} compact />}
+        actions={dockActions}
+        apps={dockApps}
+      />
+    )}
     {demandRetry && (
       <HighDemandScreen
         attempt={demandRetry.attempt}
