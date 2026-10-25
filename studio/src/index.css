@@ -13,18 +13,25 @@
   --container-feed: 48rem;
   --container-dash: 72rem;
   /* P2 item (verified 2026-10-25 frontend report, section 6.4): z-index 3-bucket
-     policy. Base content stays numeric 0..10; shell layer (header/rail/docked
-     bar/backdrop) = 20..30; overlays (drawer/modal/palette/HUD) = 40..50; 60+
-     is reserved for critical confirmation only (cockpit kill-switch). Identity
-     migrations only in phase 1: tier 30 -> z-shell, tier 40 -> z-overlay, tier
-     50 -> z-modal (values preserved exactly). Ad-hoc z-[90]/[100]/[999]/[9999]
-     escalations and inline zIndex styles are phase-2 cleanup candidates.
-     Tailwind v4 --z-index-* namespace emits the three named utilities.
-     (Comment deliberately avoids bare z-N tokens: the v4 scanner treats them
-     as class candidates and would emit dead utilities.) */
+     policy. Base content stays numeric 0..10 (decorative background layers may
+     use negative numeric values to sit under content); shell layer
+     (header/rail/docked bar/backdrop) = 20..30; overlays (drawer/modal/
+     palette/HUD) = 40..50; 60+ is reserved for critical confirmation only.
+     Phase 1 migrated the identity tiers to the named tokens (values preserved
+     exactly). Phase 2 retired every numeric escalation - the 90 / 100 / 999 /
+     9999 class forms and both inline zIndex styles are gone: modal-class
+     overlays joined the modal tier, the floating command menu joined the
+     overlay tier, and the OTP security gate, the toast layer and the cockpit
+     kill-switch now consume the critical token. Escalations above the critical
+     tier are forbidden: a new always-on-top surface justifies a critical-tier
+     review, never a bigger number.
+     Tailwind v4 --z-index-* namespace emits the named utilities.
+     (Comment deliberately avoids bare tier utility spellings: the v4 scanner
+     treats them as class candidates and would emit dead utilities.) */
   --z-index-shell: 30;
   --z-index-overlay: 40;
   --z-index-modal: 50;
+  --z-index-critical: 60;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-neon-blue: var(--neon-blue);
