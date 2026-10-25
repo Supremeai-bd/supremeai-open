@@ -20,6 +20,14 @@
 }
 .jarvis-av:hover { border-color: rgba(34, 211, 238, 0.65); }
 
+/* Dock variant (report §6.4): 40px chip that fits the 44px docked action bar.
+   All inner layers are inset/percentage-based, so a size override is enough. */
+.jarvis-av-dock {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+}
+
 .jarvis-av-thinking {
   box-shadow:
     0 0 0 1px rgba(250, 204, 21, 0.4),
