@@ -947,8 +947,8 @@ jobs:
           set -euo pipefail
           BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 200 --json number,title,labels)
           # Mirror the pick_next_issue() EXCLUDED_LABELS set exactly (case-insensitive,
-          # like the loop's .lower()): claimed, in-progress, seq-hold, blocked, private mirror.
-          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
+          # like the loop's .lower()): claimed, in-progress, seq-hold, blocked, private mirror, anchor-hub.
+          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private","anchor-hub"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
           echo "claimable-board snapshot: $CLAIMABLE"
           if [ "$CLAIMABLE" = "[]" ]; then
             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
