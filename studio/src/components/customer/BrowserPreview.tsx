@@ -240,6 +240,9 @@ export function BrowserPreview({
     setAutomationError(null);
     try {
       const result = await browserService.execute(sessionId, { action: 'screenshot', full_page: true });
+      if (result.screenshot) {
+        setLiveScreenshot(result.screenshot);
+      }
       const b64 = result.screenshot || liveScreenshot;
       if (!b64) {
         setAutomationError('Could not capture screenshot for download.');
@@ -518,6 +521,15 @@ export function BrowserPreview({
             className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Read page
+          </button>
+          <button
+            type="button"
+            onClick={() => void runBrowserAction('screenshot')}
+            disabled={!sessionId || isLoading}
+            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Capture full-page screenshot"
+          >
+            Capture full-page screenshot
           </button>
           <button
             type="button"
