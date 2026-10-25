@@ -375,7 +375,7 @@ export function SiteActionsPage() {
 
       {/* Selector Test Modal */}
       {testModal.show && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
            <div className="bg-[#1e1e1e] border border-gray-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-800 flex justify-between items-center bg-[#252526]">
                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">

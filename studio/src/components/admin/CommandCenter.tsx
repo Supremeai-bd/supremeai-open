@@ -364,7 +364,7 @@ export function CommandCenter() {
 
         {/* ═══ CENTRAL ORC WORKSPACE — চ্যাট, ব্রাউজার, টার্মিনাল ═══ */}
         {isCentralPanelOpen && (
-          <div className="absolute inset-0 z-50 flex flex-col bg-[var(--bg-main)]/95 backdrop-blur-xl" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+          <div className="absolute inset-0 z-modal flex flex-col bg-[var(--bg-main)]/95 backdrop-blur-xl" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
             {/* Header Bar */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-accent)] bg-[var(--bg-cell)] transition-colors duration-500">
               <div className="flex items-center gap-2">
