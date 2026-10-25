@@ -225,11 +225,20 @@ export const App: React.FC = () => {
                 }
               />
 
-              {/* Supreme OS — JARVIS Admin Console */}
-              <Route path="/admin" element={<JarvisAdminConsolePage />} />
+              {/* Supreme OS — JARVIS Dedicated Voice HUD Cockpit */}
               <Route path="/jarvis" element={<JarvisAdminConsolePage />} />
 
-              {/* Admin — AdminShell for nested sub-routes */}
+              {/* Admin Console & Shell — Full 32-Module Enterprise Cockpit */}
+              <Route
+                path="/admin"
+                element={
+                  <RoleGuard requiredRole="admin">
+                    <ErrorBoundary>
+                      <AdminShell />
+                    </ErrorBoundary>
+                  </RoleGuard>
+                }
+              />
               <Route
                 path="/admin/*"
                 element={

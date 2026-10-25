@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { ADMIN_HOSTS, isAdminHost } from "./portalHosts";
 
 describe("portalHosts (#1468)", () => {
-  it("recognizes the built-in admin hosting target", () => {
-    expect(ADMIN_HOSTS).toContain("supremeai-admin.web.app");
-    expect(isAdminHost("supremeai-admin.web.app")).toBe(true);
+  it("has no hardcoded legacy web.app admin hosts (Zero-Firebase)", () => {
+    expect(ADMIN_HOSTS).not.toContain("supremeai-admin.web.app");
+    expect(isAdminHost("supremeai-admin.web.app")).toBe(false);
   });
 
-  it("treats the user portal and localhost as non-admin", () => {
-    expect(isAdminHost("supremeai-a.web.app")).toBe(false);
+  it("treats the public portal and localhost as non-admin", () => {
+    expect(isAdminHost("supremeai-studio.pages.dev")).toBe(false);
     expect(isAdminHost("localhost")).toBe(false);
     expect(isAdminHost("supremeai-studio.vercel.app")).toBe(false);
   });

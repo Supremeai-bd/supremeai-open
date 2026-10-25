@@ -4,6 +4,7 @@ import { ArcReactorOrb, orbLabel, type OrbState } from '../../components/admin/j
 import { JarvisAdminGate, JarvisBootSequence } from '../../components/admin/jarvis/JarvisAdminGate';
 import { TwoFASentinelModal } from '../../components/admin/jarvis/TwoFASentinelModal';
 import { useAdminVoice } from '../../components/admin/jarvis/useAdminVoice';
+import { controlPlane } from '../../services/controlPlane';
 import { detectDestructiveReason } from '../../components/admin/jarvis/jarvisPersona';
 
 interface Message {
@@ -91,17 +92,33 @@ export function JarvisAdminConsolePage() {
 
       // Generate response
       voiceControlsRef.current.setOrbState('thinking');
-      setTimeout(() => {
+      const generate = async () => {
         let reply = '';
         const lower = text.toLowerCase();
-        if (lower.includes('status') || lower.includes('health') || lower.includes('obostha')) {
-          reply = 'All satellites and control tower services are reporting green. Latency is sub-50 milliseconds. Systems ready.';
-        } else if (lower.includes('deploy') || lower.includes('release')) {
-          reply = 'Deploy pipeline acknowledged. Preflight invariants verified. Ready to dispatch on confirmation.';
-        } else if (lower.includes('kemon') || lower.includes('how are you') || lower.includes('hello')) {
-          reply = 'Ami shob somoy prostut, Sir. JARVIS neural matrix running at 100% efficiency.';
-        } else {
-          reply = `Acknowledged: "${text}". Command registered in the operations journal, Sir.`;
+        try {
+          if (lower.includes('status') || lower.includes('health') || lower.includes('obostha')) {
+            const h = await controlPlane.health();
+            const unhealthy = h.services.filter((s) => s.status !== 'healthy');
+            reply = `Control plane ${h.overall_status}. ${h.services.length} services probed; ${unhealthy.length} unhealthy. ${unhealthy.length ? 'Unhealthy: ' + unhealthy.map((s) => s.display_name).join(', ') + '.' : 'All services nominal.'} Standing by, Sir.`;
+          } else if (lower.includes('alert') || lower.includes('incident') || lower.includes('warning')) {
+            const h = await controlPlane.health();
+            const bad = h.services.filter((s) => s.status !== 'healthy');
+            reply = bad.length
+              ? `${bad.length} service(s) need attention: ${bad.map((s) => `${s.display_name} (${s.status})`).join(', ')}.`
+              : 'No active incidents. All systems green, Sir.';
+          } else if (lower.includes('deploy') || lower.includes('release')) {
+            reply = 'Deploy pipeline acknowledged. Preflight invariants verified. Ready to dispatch on confirmation.';
+          } else if (lower.includes('help') || lower.includes('what can') || lower.includes('sahajyo')) {
+            reply = 'I can report system status and health, list alerts, open logs, deploy on confirmation, and answer questions. Destructive commands require 2FA. Say "status", "alerts", "deploy", or "help".';
+          } else if (lower.includes('search') || lower.includes('find') || lower.includes('lookup')) {
+            reply = 'Search is routed through the tower. Open the search panel or say a specific query, Sir.';
+          } else if (lower.includes('kemon') || lower.includes('how are you') || lower.includes('hello')) {
+            reply = 'Ami shob somoy prostut, Sir. JARVIS neural matrix running at 100% efficiency.';
+          } else {
+            reply = `Acknowledged: "${text}". Command registered in the operations journal, Sir.`;
+          }
+        } catch {
+          reply = reply || `Acknowledged: "${text}". (Control plane unreachable; showing cached acknowledgement.)`;
         }
 
         const assistantMsg: Message = {
@@ -112,7 +129,8 @@ export function JarvisAdminConsolePage() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
         voiceControlsRef.current.speak(reply);
-      }, 500);
+      };
+      setTimeout(() => { void generate(); }, 500);
     },
     [graceUntil]
   );
@@ -211,6 +229,13 @@ export function JarvisAdminConsolePage() {
             <Lock size={12} />
             <span>LOCK</span>
           </button>
+
+          <a
+            href="/admin"
+            className="rounded-lg border border-cyan-500/30 bg-cyan-950/30 px-3 py-1 text-[11px] text-cyan-300 transition hover:bg-cyan-900/50 hover:text-white"
+          >
+            ← ADMIN CONSOLE
+          </a>
 
           <a
             href="/workspace"

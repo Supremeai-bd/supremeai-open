@@ -85,7 +85,7 @@ export function setupGlobalFetchInterceptor() {
         const isBackgroundRequest = (
           isPublicHealthProbe ||
           rawUrl.includes('/api/config') ||
-          rawUrl.includes('/api/health') ||
+          rawUrl.includes('/health') ||
           rawUrl.includes('/connections') ||
           rawUrl.includes('/conversations') ||
           rawUrl.includes('/workspace') ||

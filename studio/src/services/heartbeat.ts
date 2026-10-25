@@ -24,13 +24,14 @@ export const pingServers = () => {
   const targets = [getApiBaseUrl()];
   targets.forEach(async (url) => {
     try {
-      // বাংলা: /api/v1/live প্রোব — raw fetch → apiClient (timeout + queue + cold-start retry)।
-      // non-ok হলে ApiError — status সহ warn, আগের ok/non-ok বিভাজন অটুট।
-      await apiClient.get('/api/v1/live', { headers: { 'Cache-Control': 'no-cache' } });
-      console.warn(`[Heartbeat] ✅ Live: ${url}/api/v1/live`);
+      // বাংলা: /health প্রোব — public endpoint (auth লাগে না), তাই unauthenticated
+      // ভিজিটরদের জন্যও 401 কনসোল এরর আসে না। Render free-tier cold start সামলাতে
+      // health check DB/Redis-ও টাচ করে — anti-sleep উদ্দেশ্যে এটাই উপযুক্ত।
+      await apiClient.get('/health', { headers: { 'Cache-Control': 'no-cache' } });
+      console.warn(`[Heartbeat] ✅ Live: ${url}/health`);
     } catch (e) {
       const status = e && typeof e === 'object' && 'status' in e ? ` (HTTP ${(e as { status?: number }).status})` : '';
-      console.warn(`[Heartbeat] ❌ Could not reach: ${url}/api/v1/live${status}`);
+      console.warn(`[Heartbeat] ❌ Could not reach: ${url}/health${status}`);
     }
   });
 };

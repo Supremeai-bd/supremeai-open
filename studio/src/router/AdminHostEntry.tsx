@@ -2,10 +2,9 @@ import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { isAdminHost } from "../utils/portalHosts";
 
-// Issue #1468 (CRITICAL): on the admin portal host (supremeai-admin.web.app)
+// On any designated admin portal host (configured via VITE_ADMIN_HOSTS)
 // every non-admin route — including "/" — must land in the admin console
-// instead of the user-facing app (GuestChatPage was rendering at the admin
-// root, so "there was no admin-specific UI accessible at the admin URL").
+// instead of the user-facing app.
 //
 // /login stays reachable because the /admin guard chain (ProtectedRoute →
 // RoleGuard) redirects unauthenticated visitors there, and the admin login
@@ -14,8 +13,7 @@ import { isAdminHost } from "../utils/portalHosts";
 // to /admin by the same check.
 //
 // On any other host this component is a transparent pass-through, so the user
-// portal behavior is byte-for-byte unchanged (vitest route-smoke suite keeps
-// proving that — jsdom hostname is localhost ⇒ non-admin path).
+// portal behavior is byte-for-byte unchanged.
 export function AdminHostEntry({ children }: { children: ReactNode }) {
   if (!isAdminHost()) {
     return <>{children}</>;
