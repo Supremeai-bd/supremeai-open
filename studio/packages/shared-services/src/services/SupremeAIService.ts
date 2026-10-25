@@ -36,6 +36,27 @@ export interface TokenProvider {
   getToken(): string | null;
 }
 
+/** Streaming chat handlers — প্রতিটি token/delta এখানে পৌঁছায় (F-07)। */
+export interface StreamChatHandlers {
+  /** প্রতিটি নতুন token/delta — UI এখানে progressive render করবে। */
+  onToken?: (token: string, fullText: string) => void;
+  /** স্ট্রিম শেষ — সম্পূর্ণ টেক্সট সহ। */
+  onDone?: (fullText: string) => void;
+  /** স্ট্রিম/নেটওয়ার্ক ত্রুটি — fallback হলে ডাকা হয় না (নীরবে fallback হয়)। */
+  onError?: (message: string) => void;
+}
+
+export interface StreamChatOptions {
+  /** বাইরের cancel (UI-র Stop বাটন) — server-side generation-ও থামে। */
+  signal?: AbortSignal;
+  /** ডিফল্ট '/api/chat/stream' — backend SSE route। */
+  endpoint?: string;
+  /** সম্পূর্ণ স্ট্রিমের সর্বোচ্চ সময় (ms) — ডিফল্ট 120000। */
+  timeoutMs?: number;
+  /** এই সময় কোনো token না এলে abort (ms) — ডিফল্ট 30000। */
+  idleTimeoutMs?: number;
+}
+
 export class SupremeAIService {
   private client: AxiosInstance;
   private config: SupremeAIConfig;
@@ -98,6 +119,8 @@ export class SupremeAIService {
       const res = await this.client.post<LearningResponse>('/api/knowledge/learn', payload);
       return res.data;
     } catch (error: any) {
+      // eslint-disable-next-line no-console
+      console.warn(`[SupremeAI] sendCodeEdit failed: ${error.message}`);
       return { success: false, message: error.message || 'Failed to send code edit' };
     }
   }
@@ -127,17 +150,22 @@ export class SupremeAIService {
       const res = await this.client.post<LearningResponse>('/api/knowledge/feedback', payload);
       return res.data;
     } catch (error: any) {
+      // eslint-disable-next-line no-console
+      console.warn(`[SupremeAI] sendSuggestionFeedback failed: ${error.message}`);
       return { success: false, message: error.message || 'Failed to send feedback' };
     }
   }
 
-  async getLearningStats(): Promise<{ recentActivity: Array<{ type: string, message: string, timestamp: string }> }> {
+  async getLearningStats(): Promise<{ recentActivity: Array<{ type: string, message: string, timestamp: string }>, error?: string }> {
     try {
       const res = await this.client.get('/api/knowledge/stats');
       return res.data;
     } catch (error: any) {
-      // Mocked fallback if endpoint not available
-      return { recentActivity: [] };
+      // F-09: নীরব পরাজয় নয় — warn লগ + typed error field; UI খালি-তালিকা থেকে
+      // আলাদা করে error state দেখাতে পারে।
+      // eslint-disable-next-line no-console
+      console.warn(`[SupremeAI] getLearningStats failed: ${error?.message}`);
+      return { recentActivity: [], error: error?.message || 'learning stats unavailable' };
     }
   }
 
@@ -158,7 +186,7 @@ export class SupremeAIService {
     }
   }
 
-  async getInlineCompletions(prefix: string, suffix: string, fileName: string, languageId: string): Promise<{ suggestions: string[] }> {
+  async getInlineCompletions(prefix: string, suffix: string, fileName: string, languageId: string): Promise<{ suggestions: string[]; error?: string }> {
     try {
       // Stub for completion
       const request: ChatRequest = {
@@ -168,12 +196,131 @@ export class SupremeAIService {
       };
       const res = await this.client.post<ChatResponse>('/api/completion', request);
       return { suggestions: [res.data.response] };
-    } catch (error) {
-      return { suggestions: [] };
+    } catch (error: any) {
+      // F-09: silent swallow → warn + typed error field (API-compatible)।
+      // eslint-disable-next-line no-console
+      console.warn(`[SupremeAI] getInlineCompletions failed: ${error?.message}`);
+      return { suggestions: [], error: error?.message || 'inline completion unavailable' };
     }
   }
 
   // ========== Chat API ==========
+
+  /**
+   * Streaming chat (F-07) — studio-র প্রমাণিত চুক্তির প্রতিলিপি:
+   * POST /api/chat/stream → SSE `data:` লাইনে {token|delta|content|response}
+   * chunk বা `[DONE]`। fetch + ReadableStream ব্যবহার হয় (browser/axios-stream
+   * সীমাবদ্ধতা বাইপাস), AbortController-এ cancel, 120s overall + 30s idle
+   * timeout। res.ok না হলে বা body না থাকলে নীরবে sendChatMessage fallback —
+   * কলার কখনো ভাঙবে না।
+   */
+  async streamChatMessage(
+    request: ChatRequest,
+    handlers: StreamChatHandlers = {},
+    options: StreamChatOptions = {},
+  ): Promise<ChatResponse> {
+    const endpoint = options.endpoint ?? '/api/chat/stream';
+    const timeoutMs = options.timeoutMs ?? 120_000;
+    const idleTimeoutMs = options.idleTimeoutMs ?? 30_000;
+    const controller = new AbortController();
+    let overallTimer: ReturnType<typeof setTimeout> | undefined;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const stopTimers = () => {
+      if (overallTimer) clearTimeout(overallTimer);
+      if (idleTimer) clearTimeout(idleTimer);
+    };
+    const abortAll = (reason: string) => {
+      try { controller.abort(reason); } catch { controller.abort(); }
+    };
+    const onExternalAbort = () => abortAll('external abort');
+    options.signal?.addEventListener('abort', onExternalAbort, { once: true });
+
+    try {
+      const token = this.resolveToken();
+      const res = await fetch(`${this.config.backendUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          ...request,
+          context: {
+            ...(request.context ?? {}),
+            source: request.context?.source ?? 'desktop',
+            timestamp: request.context?.timestamp || new Date().toISOString(),
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        // Fallback: streaming endpoint unavailable → proven non-streaming path।
+        return await this.sendChatMessage(request);
+      }
+
+      overallTimer = setTimeout(() => abortAll('stream overall timeout'), timeoutMs);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = '';
+      let fullText = '';
+      const applyPayload = (payload: string) => {
+        if (!payload || payload === '[DONE]') return;
+        let chunk = payload;
+        try {
+          const parsed = JSON.parse(payload) as { token?: string; delta?: string; content?: string; response?: string };
+          chunk = parsed.token ?? parsed.delta ?? parsed.content ?? parsed.response ?? '';
+        } catch {
+          // Plain-text SSE payload — বৈধ fallback (studio useChat চুক্তি)।
+        }
+        if (!chunk) return;
+        fullText += chunk;
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => abortAll('stream idle timeout'), idleTimeoutMs);
+        handlers.onToken?.(chunk, fullText);
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+        const lines = pending.split(/\r?\n/);
+        pending = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.startsWith('data:')) applyPayload(line.slice(5).trim());
+        }
+        if (done) break;
+      }
+      stopTimers();
+      handlers.onDone?.(fullText);
+      return {
+        success: true,
+        message: 'ok',
+        response: fullText,
+        sessionId: this.sessionId,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error: any) {
+      stopTimers();
+      const aborted = options.signal?.aborted || String(error?.name) === 'AbortError';
+      if (aborted) {
+        handlers.onError?.('stream cancelled');
+        return {
+          success: false,
+          message: 'Chat stream cancelled',
+          response: '',
+          sessionId: this.sessionId,
+          timestamp: new Date().toISOString(),
+        };
+      }
+      // যেকোনো স্ট্রিম-সেটআপ/নেটওয়ার্ক ত্রুটিতে non-streaming path — ব্যবহারকারী
+      // উত্তর পাবেই (ধীর হলেও), আর onError দিয়ে কলার জানবে।
+      handlers.onError?.(error?.message || 'stream failed');
+      return await this.sendChatMessage(request);
+    } finally {
+      options.signal?.removeEventListener('abort', onExternalAbort);
+    }
+  }
 
   async sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
     try {
