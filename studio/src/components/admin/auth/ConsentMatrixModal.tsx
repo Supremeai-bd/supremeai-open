@@ -46,7 +46,7 @@ export const ConsentMatrixModal: React.FC<ConsentMatrixModalProps> = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <motion.div
             data-testid="consent-matrix-modal"
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
