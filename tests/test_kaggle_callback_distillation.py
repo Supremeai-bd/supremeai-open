@@ -73,6 +73,18 @@ class TestKaggleCallbackDistillation(unittest.TestCase):
         res = asyncio.run(ingest_distilled_knowledge(distilled))
         self.assertTrue(res)
 
+    def test_trigger_hourly_learning_cron_response(self):
+        from fastapi import BackgroundTasks
+        from gateway.routes.kaggle import trigger_hourly_learning_cron
+
+        bg = BackgroundTasks()
+        res = asyncio.run(trigger_hourly_learning_cron(background_tasks=bg, x_cron_source="cloudflare-edge"))
+        self.assertEqual(res["status"], "ok")
+        self.assertEqual(res["action"], "hourly_learning_sync_dispatched")
+        self.assertEqual(res["cron_source"], "cloudflare-edge")
+        self.assertIn("timestamp", res)
+
 
 if __name__ == "__main__":
     unittest.main()
+
