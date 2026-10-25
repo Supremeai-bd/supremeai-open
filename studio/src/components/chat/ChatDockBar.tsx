@@ -12,7 +12,7 @@
  *
  * z-policy (report §6.4 three buckets): this bar is shell-layer and stays
  * IN FLOW (no fixed positioning, no z of its own); the Apps popover is
- * user-published and sits at z-30 — strictly below the z-40+ overlay bucket.
+ * user-published and sits at z-shell — strictly below the z-overlay/z-modal buckets.
  *
  * Touch targets: every interactive element is 44×44px minimum (WCAG 2.2
  * target-size / report §7.2).
@@ -120,7 +120,7 @@ export const ChatDockBar: React.FC<ChatDockBarProps> = ({ left, actions = [], ap
               role="menu"
               aria-label="Apps"
               data-testid="dock-apps-menu"
-              className="absolute bottom-full right-0 z-30 mb-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-[#0d121f]/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
+              className="absolute bottom-full right-0 z-shell mb-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-[#0d121f]/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
             >
               {apps.map((app) => (
                 <Link

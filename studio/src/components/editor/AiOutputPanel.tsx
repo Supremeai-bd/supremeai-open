@@ -27,7 +27,7 @@ export const AiOutputPanel: React.FC<Props> = ({ output, loading, onClose }) => 
   if (!output && !loading) return null;
 
   return (
-    <div className="absolute inset-0 z-40 bg-black/60 flex items-center justify-center p-6">
+    <div className="absolute inset-0 z-overlay bg-black/60 flex items-center justify-center p-6">
       <div className="bg-[#1e1e1e] border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-700 bg-[#252526] rounded-t-lg">

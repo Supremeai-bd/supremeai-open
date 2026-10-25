@@ -30,7 +30,7 @@ const TOAST_STYLES: Record<ToastType, { icon: React.ReactNode; border: string; t
 
 export function ToastStack({ toasts, onDismiss }: ToastStackProps) {
   return (
-    <div className="fixed bottom-20 right-4 z-50 space-y-2 w-80">
+    <div className="fixed bottom-20 right-4 z-modal space-y-2 w-80">
       {toasts.map((toast) => {
         const style = TOAST_STYLES[toast.type];
         return (

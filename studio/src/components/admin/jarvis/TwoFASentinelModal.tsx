@@ -108,7 +108,7 @@ export function TwoFASentinelModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
     >
       <div className="relative w-full max-w-md rounded-2xl border border-red-500/40 bg-[#090d16] p-6 shadow-2xl shadow-red-950/40 text-left">
         {/* Close Button */}

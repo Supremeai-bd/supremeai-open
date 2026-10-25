@@ -53,7 +53,7 @@ export function MobileTabBar() {
     <nav
       aria-label="Mobile navigation"
       data-testid="mobile-tab-bar"
-      className="surface-1 border-t border-border fixed inset-x-0 bottom-0 z-30 flex md:hidden pb-[env(safe-area-inset-bottom)]"
+      className="surface-1 border-t border-border fixed inset-x-0 bottom-0 z-shell flex md:hidden pb-[env(safe-area-inset-bottom)]"
     >
       {routeTabs.map((item) => {
         if (item.kind !== 'route') return null;

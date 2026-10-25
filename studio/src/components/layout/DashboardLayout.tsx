@@ -42,14 +42,14 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed 
       <div className="dashboard-live-orb dashboard-live-orb-one" aria-hidden="true" />
       <div className="dashboard-live-orb dashboard-live-orb-two" aria-hidden="true" />
       {header && (
-        <header className="surface-1 z-30 shrink-0">
+        <header className="surface-1 z-shell shrink-0">
           {header}
         </header>
       )}
 
       {/* P1 item 4: fixed bottom chrome on phones. Rendered BEFORE the content row
-          in DOM so the drawer backdrop (same z-30, later in DOM) dims it while the
-          drawer is open; the drawer itself (z-40) and CommandBar/modals (z-50) stay
+          in DOM so the drawer backdrop (same z-shell, later in DOM) dims it while the
+          drawer is open; the drawer itself (z-overlay) and CommandBar/modals (z-modal) stay
           above. Bottom padding on <main> keeps page footers/composers unobscured. */}
       {mobileTabBar}
 
@@ -76,7 +76,7 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed 
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.18 }}
                 onClick={() => setMobileNavOpen(false)}
-                className="fixed inset-0 z-30 bg-black/60 md:hidden"
+                className="fixed inset-0 z-shell bg-black/60 md:hidden"
                 aria-hidden="true"
               />
               <motion.aside
@@ -85,7 +85,7 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed 
                 animate={{ x: 0 }}
                 exit={{ x: '-100%' }}
                 transition={SIDEBAR_SPRING}
-                className="surface-1 border-r border-border fixed inset-y-0 left-0 z-40 flex flex-col w-64 max-w-[85vw] overflow-hidden md:hidden"
+                className="surface-1 border-r border-border fixed inset-y-0 left-0 z-overlay flex flex-col w-64 max-w-[85vw] overflow-hidden md:hidden"
                 aria-label="Navigation drawer"
               >
                 {sidebar}

@@ -75,7 +75,7 @@ export function CommandPalette({ open, items, onClose, onSelect }: CommandPalett
   }, {});
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-modal flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-lg rounded-xl border border-[var(--sa-line)] bg-[var(--sa-bg-1)] shadow-2xl overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--sa-line)]">
           <Search size={16} className="text-[#00f3ff]" />

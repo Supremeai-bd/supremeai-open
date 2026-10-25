@@ -115,7 +115,7 @@ export default function BranchButton({ conversationId, messageId, onBranchCreate
               'absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-72 ' +
               'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 ' +
               'rounded-xl shadow-xl shadow-slate-900/10 dark:shadow-slate-950/40 ' +
-              'overflow-hidden z-50'
+              'overflow-hidden z-modal'
             }
           >
             {/* Arrow */}

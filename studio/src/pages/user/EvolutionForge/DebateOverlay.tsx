@@ -15,7 +15,7 @@ export const DebateOverlay: React.FC<DebateOverlayProps> = ({ isOpen, logs }) =>
   if (!isOpen) return null;
 
   return (
-    <div className="absolute bottom-4 left-4 w-96 max-h-[60vh] overflow-hidden bg-background/90 backdrop-blur-xl border border-border-subtle rounded-xl shadow-2xl z-50 flex flex-col animate-fade-in transition-all">
+    <div className="absolute bottom-4 left-4 w-96 max-h-[60vh] overflow-hidden bg-background/90 backdrop-blur-xl border border-border-subtle rounded-xl shadow-2xl z-modal flex flex-col animate-fade-in transition-all">
       <div className="p-4 border-b border-border-subtle font-brand font-bold text-text-primary flex justify-between items-center bg-card-bg">
         <span className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-neon-purple animate-pulse" />

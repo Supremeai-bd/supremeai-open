@@ -170,7 +170,7 @@ export default function ExportMenu({ conversationId, conversationTitle }: Export
               'absolute right-0 top-full mt-2 w-56 ' +
               'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 ' +
               'rounded-xl shadow-xl shadow-slate-900/10 dark:shadow-slate-950/40 ' +
-              'overflow-hidden z-50'
+              'overflow-hidden z-modal'
             }
             role="menu"
           >
