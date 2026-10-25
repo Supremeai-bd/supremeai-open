@@ -7,4 +7,5 @@ compatibility_flags = ["nodejs_compat"]
 ORIGIN_HOST = "supremeai-studio.vercel.app"
 
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["*/10 * * * *", "0 * * * *"]
+
