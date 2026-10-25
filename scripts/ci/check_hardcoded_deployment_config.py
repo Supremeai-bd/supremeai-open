@@ -177,11 +177,6 @@ EXCEPTION_SPECS: list[tuple[str, str, tuple[str, ...] | None]] = [
         r"supremeai-a\.web\.app|supremeai-lac\.vercel\.app|supremeai-studio\.vercel\.app",
         None,
     ),
-    (
-        "core/core/config_fields.py",
-        r"supremeai-a\.web\.app|supremeai-lac\.vercel\.app|supremeai-studio\.vercel\.app",
-        None,
-    ),
 ]
 
 

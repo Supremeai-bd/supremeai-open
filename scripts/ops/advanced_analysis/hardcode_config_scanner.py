@@ -57,7 +57,6 @@ DOMAIN_RULE_EXEMPT_FILES = {
     "core/middleware/cors_policy.py",
     "gateway/middleware/cors_policy.py",
     "core/config_fields.py",
-    "core/core/config_fields.py",
 }
 
 # 2. No scattered os.getenv for canonical endpoints
