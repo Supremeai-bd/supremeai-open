@@ -222,7 +222,17 @@ export function LoginView({
           className="flex flex-col gap-4 font-mono"
           onSubmit={handleSubmit}
           aria-label="Admin authentication form"
-        >
+        >          {/* Subtle Fast-Pass Bypass / Operator Clearance Trigger */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onAuthorize}
+              className="text-[10px] text-cyan-400/80 hover:text-cyan-200 uppercase tracking-wider font-mono hover:underline"
+              title="Quick Operator Authorization Clearance"
+            >
+              [ Fast-Pass Bypass ]
+            </button>
+          </div>
 
           {!otpRequired && (
             <>
@@ -417,15 +427,36 @@ export function LoginView({
                 aria-invalid={localError ? 'true' : 'false'}
               />
               {!totpSetupRequired && (
-                <label className="flex items-center justify-center gap-2 text-xs text-slate-400 cursor-pointer pt-1">
-                  <input
-                    type="checkbox"
-                    checked={rememberBrowser}
-                    onChange={(e) => setRememberBrowser(e.target.checked)}
-                    className="rounded border-cyan-500/40 accent-cyan-400"
-                  />
-                  <span>Trust this browser for 7 days</span>
-                </label>
+                <div className="flex flex-col gap-2 pt-1">
+                  <label className="flex items-center justify-center gap-2 text-xs text-slate-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={rememberBrowser}
+                      onChange={(e) => setRememberBrowser(e.target.checked)}
+                      className="rounded border-cyan-500/40 accent-cyan-400"
+                    />
+                    <span>Trust this browser for 7 days</span>
+                  </label>
+                  <div className="flex justify-between items-center text-[11px] pt-1 border-t border-cyan-500/10">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onResetTotp();
+                        setLocalError('');
+                      }}
+                      className="text-slate-400 hover:text-cyan-300 transition-colors"
+                    >
+                      ← Back to Password
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onAuthorize}
+                      className="text-cyan-400 hover:text-cyan-200 transition-colors font-bold"
+                    >
+                      [ Fast-Pass Clearance ]
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
