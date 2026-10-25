@@ -798,17 +798,20 @@ def main() -> int:
     )
 
     success = True
+    raw_msg = args.commit_msg or os.environ.get("COMMIT_MSG") or "synchronize federation transit surface"
+    safe_commit_msg = raw_msg.splitlines()[0].strip() if raw_msg else "synchronize federation transit surface"
+
     for target in targets_to_sync:
         if target == ARCHIVE_REPO:
-            ok = sync_archive(repo_root, token, args.commit_msg)
+            ok = sync_archive(repo_root, token, safe_commit_msg)
         else:
             src_dir = DOMAIN_MAP[target]
-            ok = sync_satellite(target, src_dir, repo_root, token, args.commit_msg)
+            ok = sync_satellite(target, src_dir, repo_root, token, safe_commit_msg)
         if not ok:
             success = False
 
     if sync_umbrella:
-        ok = sync_monorepo(repo_root, token, args.commit_msg)
+        ok = sync_monorepo(repo_root, token, safe_commit_msg)
         if not ok:
             success = False
 
