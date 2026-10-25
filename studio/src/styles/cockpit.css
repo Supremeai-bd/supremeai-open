@@ -215,7 +215,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 60;
+  /* Reserved critical tier (report 6.4): single-sourced from the theme token
+     in index.css - value 60 preserved exactly. */
+  z-index: var(--z-index-critical);
   animation: cockpit-fade 160ms ease both;
 }
 
