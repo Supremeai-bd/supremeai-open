@@ -472,7 +472,7 @@ export function BrowserPreview({
           {liveScreenshot && (
             <a
               href={`data:image/png;base64,${liveScreenshot}`}
-              download={`supremeai-screenshot-${Date.now()}.png`}
+              download="supremeai-screenshot.png"
               className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
               title="Download the captured screenshot as a PNG file"
             >
