@@ -55,8 +55,10 @@ export const fetchSkillCatalog = async (): Promise<CatalogResponse> => {
 export const checkLiveness = async (): Promise<boolean> => {
   // Issue #2522: raw fetch → apiClient.get — timeout, retry, queue সব ক্লায়েন্ট থেকে আসে।
   // non-ok হলে ApiError throw হয় → catch এ false, আগের ok-check সেমান্টিকস অটুট।
+  // Use the public /health endpoint (no auth) so unauthenticated visitors
+  // never trigger a 401 "Failed to load resource" console error.
   try {
-    await apiClient.get('/api/v1/live', { headers: { 'Cache-Control': 'no-cache' } });
+    await apiClient.get('/health', { headers: { 'Cache-Control': 'no-cache' } });
     return true;
   } catch {
     return false;

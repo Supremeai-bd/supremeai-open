@@ -9,6 +9,7 @@ export type IntentType =
   | 'config'
   | 'search'
   | 'help'
+  | 'notify'
   | 'unknown';
 
 const INTENT_PATTERNS: Record<IntentType, RegExp[]> = {
@@ -20,7 +21,8 @@ const INTENT_PATTERNS: Record<IntentType, RegExp[]> = {
   alerts: [/(alert|incident|warning|error|সতর্ক)/i],
   config: [/(config|setting|rules|configuration)/i],
   search: [/(search|find|lookup|খুঁজ)/i],
-  help: [/(help|sahajyo|what can|কি করতে পারি)/i],
+  help: [/(help|sahajyo|what can|কি করতে পারি|commands?)/i],
+  notify: [/(notify|send|message|telegram|discord|পাঠাও)/i],
   unknown: [],
 };
 

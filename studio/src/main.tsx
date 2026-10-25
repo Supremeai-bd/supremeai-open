@@ -81,7 +81,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then((reg) => {
       // বাংলা মন্তব্য: no-console রুল শুধু warn/error অনুমোদন করে, তাই log-এর বদলে warn ব্যবহার করা হলো।
-      console.warn('[PWA] Service Worker registered:', reg.scope);
+      console.warn('[PWA] Service Worker registered:', reg?.scope ?? 'unknown');
     }).catch((err) => {
       console.warn('[PWA] Service Worker registration failed:', err);
     });

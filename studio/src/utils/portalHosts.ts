@@ -1,14 +1,9 @@
-// Issue #1468 (CRITICAL): the admin Firebase Hosting target
-// (supremeai-admin.web.app) serves the SAME SPA build as the user portal —
-// visiting the admin URL used to render the user-facing chat app (Chat /
-// Models / Features / Pricing nav) instead of the admin console.
-//
 // Portal identity is derived from the hostname so the single build stays
 // deploy-agnostic: no separate admin bundle to drift, no hosting-config-only
 // rewrite that bypasses SPA client routing. VITE_ADMIN_HOSTS (comma-separated)
 // lets operators add custom admin domains without a code change.
 
-const BUILT_IN_ADMIN_HOSTS: readonly string[] = ["supremeai-admin.web.app"];
+const BUILT_IN_ADMIN_HOSTS: readonly string[] = [];
 
 function extraAdminHosts(): string[] {
   try {

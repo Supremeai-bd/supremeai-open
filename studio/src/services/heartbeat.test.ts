@@ -31,7 +31,7 @@ describe('heartbeat', () => {
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(mockGet).toHaveBeenCalledWith(
-      '/api/v1/live',
+      '/health',
       expect.objectContaining({ headers: expect.any(Object) })
     );
   });
