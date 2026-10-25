@@ -7,9 +7,35 @@ from __future__ import annotations
 
 from typing import Any
 
-from core import _monitoring_legacy as _ml
-from core._monitoring_legacy import *  # noqa: F401, F403
+_ml: Any = None
+
+
+def _load_ml() -> Any:
+    global _ml
+    if _ml is None:
+        try:
+            import _monitoring_legacy as _ml
+        except ImportError:
+            try:
+                from core import _monitoring_legacy as _ml
+            except ImportError:
+                try:
+                    import importlib
+
+                    _ml = importlib.import_module("core._monitoring_legacy")
+                except ImportError:
+                    _ml = None
+    return _ml
 
 
 def __getattr__(name: str) -> Any:
-    return getattr(_ml, name)
+    mod = _load_ml()
+    if mod is not None and hasattr(mod, name):
+        return getattr(mod, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    mod = _load_ml()
+    return list(mod.__dict__.keys()) if mod is not None else []
+
