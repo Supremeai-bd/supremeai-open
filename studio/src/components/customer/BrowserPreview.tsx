@@ -12,7 +12,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Monitor, Tablet, Smartphone, RotateCcw, ExternalLink, RefreshCw, Pause, Play, ImageOff } from 'lucide-react';
+import { Monitor, Tablet, Smartphone, RotateCcw, RotateCw, ArrowLeft, ArrowRight, ExternalLink, RefreshCw, ImageOff, Download, Copy, Check } from 'lucide-react';
 import { browserService } from '../../services/browserService';
 
 type DevicePreset = 'desktop' | 'tablet' | 'mobile';
@@ -63,8 +63,6 @@ interface BrowserPreviewProps {
   // the Mobile Simulator screen (render-ticket proxy), so agent/user browser
   // work is visible on both surfaces at once.
   onNavigated?: (url: string) => void;
-  agentPaused?: boolean;
-  onAgentPauseToggle?: () => void;
 }
 
 const isExternalHttpUrl = (value: string) => /^https?:\/\//i.test(value.trim());
@@ -75,8 +73,6 @@ export function BrowserPreview({
   showDeviceToolbar = true,
   onUrlChange,
   onNavigated,
-  agentPaused = false,
-  onAgentPauseToggle,
 }: BrowserPreviewProps) {
   const [currentUrl, setCurrentUrl] = useState(url);
   const [reloadKey, setReloadKey] = useState(0);
@@ -87,6 +83,12 @@ export function BrowserPreview({
   const [automationError, setAutomationError] = useState<string | null>(null);
   const [automationStatus, setAutomationStatus] = useState<string | null>(null);
   const [pageContent, setPageContent] = useState<string | null>(null);
+  // REAL-BROWSER TOOLBAR (owner request 2026-10-25, restores PR #1185 frontend
+  // half lost in the peer merge): live page title from action responses,
+  // copy-text feedback, and history-depth driven Back/Forward enablement.
+  const [pageTitle, setPageTitle] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [histPos, setHistPos] = useState({ canBack: false, canForward: false });
   // ERR-A03: server-side screenshot proxy state.
   const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
   const [allowDirectEmbed, setAllowDirectEmbed] = useState(false);
@@ -99,6 +101,26 @@ export function BrowserPreview({
   useEffect(() => {
     onNavigatedRef.current = onNavigated;
   }, [onNavigated]);
+
+  // In-component navigation history for Back/Forward. Kept in a ref so rapid
+  // navigations cannot race between renders; only the derived button flags
+  // live in state.
+  const navHistoryRef = useRef<{ urls: string[]; index: number }>({ urls: [], index: -1 });
+  const syncHistoryButtons = useCallback(() => {
+    const h = navHistoryRef.current;
+    setHistPos({ canBack: h.index > 0, canForward: h.index >= 0 && h.index < h.urls.length - 1 });
+  }, []);
+  const pushNavHistory = useCallback((u: string) => {
+    const h = navHistoryRef.current;
+    if (h.index >= 0 && h.urls[h.index] === u) {
+      syncHistoryButtons();
+      return;
+    }
+    h.urls = h.urls.slice(0, h.index + 1);
+    h.urls.push(u);
+    h.index = h.urls.length - 1;
+    syncHistoryButtons();
+  }, [syncHistoryButtons]);
 
   // react-compiler lint: refs must not be written during render.
   useEffect(() => {
@@ -185,7 +207,11 @@ export function BrowserPreview({
       try {
         const session = sessionId ? { session_id: sessionId } : await browserService.createSession();
         setSessionId(session.session_id);
-        await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
+        const navResult = await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
+        // REAL-BROWSER TOOLBAR: backend returns the live page title on every
+        // action response — show it next to the Back/Forward/Reload controls.
+        if (navResult.title) setPageTitle(navResult.title);
+        pushNavHistory(navResult.url || targetUrl);
         // Notify the parent (mobile mirror) as soon as navigation really happened.
         onNavigatedRef.current?.(targetUrl);
         const shot = await captureLiveScreenshot(session.session_id);
@@ -204,8 +230,114 @@ export function BrowserPreview({
         setIsLoading(false);
       }
     },
-    [captureLiveScreenshot, sessionId],
+    [captureLiveScreenshot, sessionId, pushNavHistory],
   );
+
+  // REAL-BROWSER TOOLBAR: Back/Forward/Reload through the same automation
+  // session the agent uses, with history-depth enablement and live title.
+  const runNavAction = async (action: 'back' | 'forward' | 'reload') => {
+    if (!sessionId) {
+      setAutomationError('Start a browser session by navigating to a URL first.');
+      return;
+    }
+    const h = navHistoryRef.current;
+    let target = currentUrl;
+    if (action !== 'reload') {
+      const next = action === 'back' ? h.index - 1 : h.index + 1;
+      if (next < 0 || next >= h.urls.length) return;
+      h.index = next;
+      target = h.urls[next] || target;
+    }
+    setIsLoading(true);
+    setAutomationError(null);
+    setAutomationStatus(null);
+    try {
+      const result = await browserService.execute(sessionId, { action });
+      const landed = result.url || target;
+      setCurrentUrl(landed);
+      onUrlChange?.(landed);
+      if (result.title) setPageTitle(result.title);
+      if (action === 'reload') syncHistoryButtons();
+      else pushNavHistory(landed);
+      // Keep the mobile mirror in sync with agent/user history moves too.
+      onNavigatedRef.current?.(landed);
+      const shot = await captureLiveScreenshot(sessionId);
+      if (shot) {
+        setLiveScreenshot(shot);
+        setAutomationStatus(
+          action === 'reload'
+            ? 'Page reloaded via server-side browser session.'
+            : `Went ${action} via server-side browser session.`,
+        );
+      } else {
+        setAutomationError('The automation session moved but returned no screenshot.');
+      }
+    } catch (error) {
+      setAutomationError(error instanceof Error ? error.message : `Browser ${action} failed`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // REAL-BROWSER TOOLBAR: one-click full-page PNG download (fresh capture).
+  const downloadPagePng = async () => {
+    if (!sessionId) {
+      setAutomationError('Start a browser session by navigating to a URL first.');
+      return;
+    }
+    setIsLoading(true);
+    setAutomationError(null);
+    setAutomationStatus(null);
+    try {
+      const result = await browserService.execute(sessionId, { action: 'screenshot', full_page: true });
+      const b64 = result.screenshot;
+      if (!b64) {
+        setAutomationError('The backend did not return a screenshot image.');
+        return;
+      }
+      setLiveScreenshot(b64);
+      const link = document.createElement('a');
+      link.href = `data:image/png;base64,${b64}`;
+      link.download = `supremeai-page-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setAutomationStatus('Full-page screenshot downloaded as PNG.');
+    } catch (error) {
+      setAutomationError(error instanceof Error ? error.message : 'Screenshot download failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // REAL-BROWSER TOOLBAR: one-click copy of the extracted page text.
+  const copyPageText = async () => {
+    let text = pageContent;
+    if (!text && sessionId) {
+      setIsLoading(true);
+      try {
+        const result = await browserService.execute(sessionId, { action: 'content' });
+        text = result.content ?? null;
+        setPageContent(text);
+      } catch (error) {
+        setAutomationError(error instanceof Error ? error.message : 'Could not read page content');
+        return;
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    if (!text) {
+      setAutomationError('Nothing to copy yet — open a page first.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setAutomationError('Clipboard permission denied by the browser.');
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -333,6 +465,64 @@ export function BrowserPreview({
       </div>
 
       <div className="p-3 border-b border-slate-800">
+        {/* REAL-BROWSER TOOLBAR: Back / Forward / Reload + live title + PNG/text perks */}
+        <div className="mb-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void runNavAction('back')}
+            disabled={!histPos.canBack || isLoading || !sessionId}
+            aria-label="Go back"
+            title="Back"
+            className="rounded border border-slate-800 p-1.5 text-slate-400 transition-colors hover:border-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <ArrowLeft size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void runNavAction('forward')}
+            disabled={!histPos.canForward || isLoading || !sessionId}
+            aria-label="Go forward"
+            title="Forward"
+            className="rounded border border-slate-800 p-1.5 text-slate-400 transition-colors hover:border-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <ArrowRight size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void runNavAction('reload')}
+            disabled={!sessionId || isLoading}
+            aria-label="Reload page"
+            title="Reload"
+            className="rounded border border-slate-800 p-1.5 text-slate-400 transition-colors hover:border-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <RotateCw size={12} />
+          </button>
+          <span
+            className="ml-1 min-w-0 flex-1 truncate text-[11px] text-slate-400"
+            title={pageTitle ?? undefined}
+            data-testid="browser-page-title"
+          >
+            {pageTitle ?? (currentUrl || 'No page open')}
+          </span>
+          <button
+            type="button"
+            onClick={() => void downloadPagePng()}
+            disabled={!sessionId || isLoading}
+            title="Download full-page PNG"
+            className="flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Download size={11} /> PNG
+          </button>
+          <button
+            type="button"
+            onClick={() => void copyPageText()}
+            disabled={!sessionId || isLoading}
+            title="Copy extracted page text"
+            className="flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy text'}
+          </button>
+        </div>
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-2 bg-[#06080b] border border-slate-800 rounded-lg px-3 py-1.5">
             <ExternalLink size={12} className="text-slate-400" />
@@ -378,8 +568,6 @@ export function BrowserPreview({
           >
             Close session
           </button>
-          {onAgentPauseToggle && <button type="button" onClick={onAgentPauseToggle} className="flex items-center gap-1 rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-200 transition-colors hover:bg-amber-500/10" aria-pressed={agentPaused}>{agentPaused ? <Play size={11} /> : <Pause size={11} />} {agentPaused ? 'Resume automation' : 'Pause for manual input'}</button>}
-          {agentPaused && <span role="status" className="text-[11px] text-amber-200">Manual control active. You can type secrets directly in the browser.</span>}
           {automationStatus && <span role="status" className="text-[11px] text-emerald-300">{automationStatus}</span>}
         </div>
         {pageContent && (
