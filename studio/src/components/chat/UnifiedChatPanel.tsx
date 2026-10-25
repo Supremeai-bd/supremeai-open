@@ -1,5 +1,6 @@
 import React from 'react';
 import { Activity, RefreshCcw, RotateCcw, Search, Sparkles, WandSparkles, X, Zap } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { UnifiedChatBubble } from './UnifiedChatBubble';
 import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../../lib/brandLabel';
 // JARVIS INTENT ROUTER (owner request 2026-10-25, Phase A): shared local command layer.
@@ -14,6 +15,11 @@ import { ChatDockBar, type DockAction, type DockApp } from './ChatDockBar';
 // for their additional options. Marketing model names, webhook-only relay
 // mandate, streaming behavior and the staged thinking indicator are
 // unchanged — this is a pure move, not a behavior change.
+
+// P2 (verified 2026-10-25 report, Table 8): at or below this many messages
+// the list renders exactly as before; past it the windowed path keeps long
+// sessions smooth. Gate mirrors the DataTable.tsx virtualization opt-in.
+const VIRTUAL_MESSAGE_THRESHOLD = 50;
 
 export const chatIntents = [
   { label: 'Research', prompt: 'Help me research a topic and organize the key findings.', icon: Search },
@@ -535,6 +541,20 @@ export function UnifiedChatPanel({
     }
   }, [messages]);
 
+  // P2 (report Table 8): TanStack windowing for LONG conversations only —
+  // past the threshold offscreen bubbles cost nothing (60fps goal); at or
+  // below it the plain map path is byte-identical to pre-change behavior.
+  // Unconditional hook + conditional render, mirroring DataTable.tsx (whose
+  // eslint exemption pattern is reused for the React-compiler lint rule).
+  /* eslint-disable-next-line react-hooks/incompatible-library */
+  const rowVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 108,
+    overscan: 8,
+  });
+  const useVirtualMessages = messages.length > VIRTUAL_MESSAGE_THRESHOLD;
+
   // Persist the running conversation so the history rail can reopen it with
   // full context (best-effort, bounded to 30 conversations).
   React.useEffect(() => {
@@ -715,6 +735,33 @@ export function UnifiedChatPanel({
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
   }, [input]);
+  // Shared row renderer: one source of truth for the plain path and the
+  // windowed path (report Table 8) — alignment, bubble and brand/via rows
+  // stay identical regardless of which path a session takes.
+  const renderMessageRow = (m: { role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }, i: number) => (
+    <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+      {/* Refs #861: shared Cosmic UnifiedChatBubble — আর কোনো ফর্কড legacy bubble নেই */}
+      <UnifiedChatBubble text={m.text} sender={m.role === 'user' ? 'user' : 'system'} onPreview={onPreview} />
+      {m.role === 'assistant' && (
+        m.brand ? (
+          <div
+            className="mt-1 flex items-center gap-1 px-1 text-[11px]"
+            title={brandTooltip(m.brand)}
+          >
+            <span className="font-semibold tracking-tight bg-gradient-to-r from-emerald-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
+              SupremeAI{m.brand.tier}
+            </span>
+            <span className="font-mono text-[8px] text-slate-500/80 hover:text-slate-300 transition-colors select-all">
+              ({m.brand.channel}.{m.brand.engine})
+            </span>
+          </div>
+        ) : m.via ? (
+          <span className="mt-1 px-1 text-[10px] font-mono text-slate-500">[{m.via}]</span>
+        ) : null
+      )}
+    </div>
+  );
+
   return <section className={`relative mx-auto flex w-full ${fit === 'fill' ? 'h-full min-h-0' : 'flex-1 min-h-0'} flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md overflow-hidden ${className}`}>
     <div className="mx-auto flex w-full max-w-[46rem] items-center gap-2">
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
@@ -766,27 +813,24 @@ export function UnifiedChatPanel({
           </div>
         </div>
       )}
-      {messages.map((m, i) => <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-        {/* Refs #861: shared Cosmic UnifiedChatBubble — আর কোনো ফর্কড legacy bubble নেই */}
-        <UnifiedChatBubble text={m.text} sender={m.role === 'user' ? 'user' : 'system'} onPreview={onPreview} />
-        {m.role === 'assistant' && (
-          m.brand ? (
+      {useVirtualMessages ? (
+        // Windowed path (report Table 8): absolutely-positioned measured rows;
+        // paddingBottom preserves the container's gap-3 (12px) rhythm.
+        <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+          {rowVirtualizer.getVirtualItems().map((vi) => (
             <div
-              className="mt-1 flex items-center gap-1 px-1 text-[11px]"
-              title={brandTooltip(m.brand)}
+              key={vi.key}
+              data-index={vi.index}
+              ref={rowVirtualizer.measureElement}
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start}px)`, paddingBottom: 12 }}
             >
-              <span className="font-semibold tracking-tight bg-gradient-to-r from-emerald-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                SupremeAI{m.brand.tier}
-              </span>
-              <span className="font-mono text-[8px] text-slate-500/80 hover:text-slate-300 transition-colors select-all">
-                ({m.brand.channel}.{m.brand.engine})
-              </span>
+              {renderMessageRow(messages[vi.index], vi.index)}
             </div>
-          ) : m.via ? (
-            <span className="mt-1 px-1 text-[10px] font-mono text-slate-500">[{m.via}]</span>
-          ) : null
-        )}
-      </div>)}
+          ))}
+        </div>
+      ) : (
+        messages.map((m, i) => renderMessageRow(m, i))
+      )}
       {busy && awaitingFirst && <ThinkingIndicator />}
     </div>
     <div className="mx-auto flex w-full max-w-[46rem] gap-2">
