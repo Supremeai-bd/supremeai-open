@@ -265,11 +265,15 @@ export interface UnifiedChatPanelProps {
   /** Optional custom styling classes. */
   className?: string;
   /**
-   * Layout fit. 'page' (default) = standalone page surface with a
-   * viewport-based min-height (guest chat page). 'fill' = fill the parent
-   * flex container exactly — no viewport-height guessing; used by AI Studio
-   * and the chat-first dashboard so the panel auto-adjusts to any screen
-   * size instead of a hardcoded dvh offset (owner-reported sizing issues).
+   * Layout fit. 'page' (default) = standalone page surface for the guest
+   * chat page — the HOST must provide a bounded h-dvh flex-column chain
+   * (header flex-shrink-0, chat area flex-1 min-h-0); the panel itself is
+   * fluid (w-full) and no longer guesses height via a dvh offset
+   * (RC-1/RC-2 root-cause fix, 2026-10-25 research report). 'fill' = fill
+   * the parent flex container exactly — no viewport-height guessing; used
+   * by AI Studio and the chat-first dashboard so the panel auto-adjusts to
+   * any screen size. Both modes center the reading column at max-w-[46rem]
+   * (≈66 CPL) per §5.2/§6.2 of the report.
    */
   fit?: 'page' | 'fill';
   /**
@@ -502,6 +506,8 @@ export function UnifiedChatPanel({
     return initialId;
   });
   const listRef = React.useRef<HTMLDivElement | null>(null);
+  // RC-2 fix: composer auto-grows 2-6 rows, synced with controlled state
+  const composerRef = React.useRef<HTMLTextAreaElement | null>(null);
   React.useEffect(() => {
     if (typeof listRef.current?.scrollTo === 'function') {
       listRef.current.scrollTo(0, listRef.current.scrollHeight);
@@ -681,8 +687,17 @@ export function UnifiedChatPanel({
     return () => window.clearTimeout(timer);
   }, [demandRetry]);
 
-  return <section className={`relative mx-auto flex w-full ${fit === 'fill' ? 'h-full min-h-0' : 'min-h-[calc(100dvh-13rem)] max-w-3xl flex-1'} flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md overflow-hidden ${className}`}>
-    <div className="flex items-center gap-2">
+
+  // Composer auto-grow (report §6.2 Table 5): height follows content, 2-6 rows,
+  // synced with the controlled value so programmatic clears reset it too.
+  React.useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+  }, [input]);
+  return <section className={`relative mx-auto flex w-full ${fit === 'fill' ? 'h-full min-h-0' : 'flex-1 min-h-0'} flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md overflow-hidden ${className}`}>
+    <div className="mx-auto flex w-full max-w-[46rem] items-center gap-2">
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {chatModels.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
       </select>
@@ -703,7 +718,7 @@ export function UnifiedChatPanel({
       )}
       {extraHeader}
     </div>
-    <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
+    <div ref={listRef} className="mx-auto flex min-h-0 w-full max-w-[46rem] flex-1 flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
 {messages.length === 0 && showStarter && (
         <div className="flex flex-1 flex-col items-center justify-center gap-6 py-8 text-center">
           {/* OWNER REQUEST (2026-10-24): fill the empty middle of the guest chat
@@ -753,9 +768,10 @@ export function UnifiedChatPanel({
       </div>)}
       {busy && awaitingFirst && <ThinkingIndicator />}
     </div>
-    <div className="flex gap-2">
+    <div className="mx-auto flex w-full max-w-[46rem] gap-2">
       <textarea
         value={input}
+        ref={composerRef}
         onChange={(e) => handleInputChange(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
         rows={2}
