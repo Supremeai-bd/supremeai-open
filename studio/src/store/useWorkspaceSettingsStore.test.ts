@@ -1,31 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useWorkspaceSettingsStore } from './useWorkspaceSettingsStore';
+// RETIRED (bridge-20261025-rc3-floating-orphan-r1): the dock-only
+// useWorkspaceSettingsStore was neutralized together with the orphaned
+// floating-widget layer (LivingActionDock / LivingDashboardShell /
+// ActionDock / DynamicActionDock / LiveSimulator). The bridge lane cannot
+// express file deletions, so this tombstone keeps vitest green until an
+// operator deletes both husks together on merge:
+//   git rm studio/src/store/useWorkspaceSettingsStore{,.test.ts}
+import { describe, it, expect } from 'vitest';
 
-describe('useWorkspaceSettingsStore', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    useWorkspaceSettingsStore.setState({
-      integrations: [
-        { id: 'github', icon: 'Github', label: 'GitHub', enabled: true },
-        { id: 'slack', icon: 'MessagesSquare', label: 'Slack', enabled: true },
-        { id: 'linear', icon: 'NotebookText', label: 'Linear', enabled: false },
-      ],
-    });
-  });
-
-  it('toggles an integration enabled flag by id', () => {
-    useWorkspaceSettingsStore.getState().toggleIntegration('linear');
-    const linear = useWorkspaceSettingsStore.getState().integrations.find((i) => i.id === 'linear');
-    expect(linear?.enabled).toBe(true);
-
-    useWorkspaceSettingsStore.getState().toggleIntegration('github');
-    const github = useWorkspaceSettingsStore.getState().integrations.find((i) => i.id === 'github');
-    expect(github?.enabled).toBe(false);
-  });
-
-  it('reorders integrations according to the provided id list', () => {
-    useWorkspaceSettingsStore.getState().reorderIntegrations(['linear', 'slack', 'github']);
-    const ids = useWorkspaceSettingsStore.getState().integrations.map((i) => i.id);
-    expect(ids).toEqual(['linear', 'slack', 'github']);
+describe('useWorkspaceSettingsStore (retired)', () => {
+  it('was removed with the orphan floating-widget layer (RC-3)', () => {
+    expect(true).toBe(true);
   });
 });
