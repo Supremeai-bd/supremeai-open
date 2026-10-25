@@ -4,6 +4,7 @@ import { UnifiedChatBubble } from './UnifiedChatBubble';
 import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../../lib/brandLabel';
 // JARVIS INTENT ROUTER (owner request 2026-10-25, Phase A): shared local command layer.
 import { tryHandleIntent } from '../../lib/jarvis';
+import { JarvisAvatar } from '../jarvis/JarvisAvatar';
 
 // UNIFIED CHAT (Phase 1, 2026-10-24): the chat core (engine + panel UI) was
 // extracted from src/pages/PublicPages.tsx so guest, user and admin
@@ -685,6 +686,10 @@ export function UnifiedChatPanel({
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {chatModels.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
       </select>
+      {/* OWNER REQUEST (2026-10-25): Jarvis gets a face — living hologram avatar
+          chip. Breathing/blinking/parallax inside; state follows chat `busy`;
+          male/female variant persisted per customer preference. Zero runtime AI cost. */}
+      <JarvisAvatar busy={busy} />
       {messages.length > 0 && (
         <button
           type="button"
