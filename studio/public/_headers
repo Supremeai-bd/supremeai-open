@@ -16,6 +16,9 @@
 /admin
   Cache-Control: no-cache, no-store, must-revalidate
 
+/admin/*
+  Cache-Control: no-cache, no-store, must-revalidate
+
 /jarvis
   Cache-Control: no-cache, no-store, must-revalidate
 

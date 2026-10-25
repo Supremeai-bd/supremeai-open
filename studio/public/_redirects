@@ -4,5 +4,8 @@
 /healthz    https://supremeai-api-ulw0.onrender.com/healthz        200
 
 # Cloudflare Pages SPA rewrite: fallback all non-file routes to index.html
+# Use 200! force rewrite so /admin never serves stale cached redirect files
+/admin      /index.html                                            200!
+/admin/*    /index.html                                            200!
 /*          /index.html                                            200
 
