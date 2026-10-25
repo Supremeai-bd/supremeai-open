@@ -235,7 +235,7 @@ export const SkillCatalog: React.FC = () => {
             position: 'fixed', inset: 0,
             background: 'rgba(0,0,0,0.7)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 9999, padding: '1rem',
+            zIndex: 'var(--z-index-modal)', padding: '1rem',
           }}
         >
           <div

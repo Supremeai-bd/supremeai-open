@@ -248,7 +248,7 @@ export function SlashCommandMenu({
       ref={menuRef}
       role="listbox"
       aria-label="Slash commands"
-      className="fixed z-[90] w-80 max-h-80 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-slate-900 shadow-xl shadow-black/10 dark:shadow-black/30 flex flex-col"
+      className="fixed z-overlay w-80 max-h-80 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-slate-900 shadow-xl shadow-black/10 dark:shadow-black/30 flex flex-col"
       style={{ top: position.top, left: position.left }}
     >
  {/* Search header */}

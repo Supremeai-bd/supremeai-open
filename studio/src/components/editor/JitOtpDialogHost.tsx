@@ -49,7 +49,7 @@ export const JitOtpDialogHost: React.FC = () => {
   const data = pending.kind === "input" ? pending.data.options : null;
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center">
+    <div className="fixed inset-0 z-critical bg-black/70 flex items-center justify-center">
       <div className="bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl w-[420px] p-5">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">

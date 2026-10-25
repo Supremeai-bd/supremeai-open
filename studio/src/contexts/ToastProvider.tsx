@@ -47,7 +47,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'fixed',
     top: '20px',
     right: '20px',
-    zIndex: 9999,
+    zIndex: 'var(--z-index-critical)',
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',

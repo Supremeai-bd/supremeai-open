@@ -176,7 +176,7 @@ const DeploymentModal: React.FC<DeploymentModalProps> = ({
           animate={{ opacity: 1, backdropFilter: 'blur(8px)' }}
           exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
           transition={{ duration: 0.3 }}
-          className="fixed inset-0 bg-slate-950/80 z-[999] flex items-center justify-center"
+          className="fixed inset-0 bg-slate-950/80 z-modal flex items-center justify-center"
         >
           <motion.div
             initial={{ scale: 0.95, y: 20 }}
