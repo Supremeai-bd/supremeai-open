@@ -145,10 +145,17 @@ export function JarvisAvatar({ busy = false, variant: controlledVariant }: {
       if (e.beta === null || e.gamma === null) return;
       setTarget(clamp((e.beta - 45) * 0.12, MAXX), clamp(e.gamma * 0.12, MAXY));
     };
-    const enableGyro = () => window.addEventListener('deviceorientation', onGyro);
-    /* iOS 13+ requires a one-time user-gesture permission grant. */
-    const dioe = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
-    if (typeof dioe.requestPermission === 'function') {
+    const enableGyro = () => {
+      if (typeof window !== 'undefined') {
+        window.addEventListener('deviceorientation', onGyro);
+      }
+    };
+    /* iOS 13+ requires a one-time user-gesture permission grant. Safely check window.DeviceOrientationEvent */
+    const hasGyro = typeof window !== 'undefined' && 'DeviceOrientationEvent' in window;
+    const dioe = hasGyro
+      ? (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent
+      : undefined;
+    if (dioe && typeof dioe.requestPermission === 'function') {
       const once = () => {
         dioe.requestPermission?.().then((r) => {
           if (r === 'granted') enableGyro();
@@ -156,7 +163,7 @@ export function JarvisAvatar({ busy = false, variant: controlledVariant }: {
         document.removeEventListener('click', once);
       };
       document.addEventListener('click', once);
-    } else {
+    } else if (hasGyro) {
       enableGyro();
     }
     window.addEventListener('mousemove', onMouse, { passive: true });
