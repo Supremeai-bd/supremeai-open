@@ -38,6 +38,12 @@ class BrowserSession:
         "click",
         "fill",
         "type",
+        # 2026-10-25 (owner request, real-browser preview): history navigation
+        # and reload exposed end-to-end — frontend Browser Preview toolbar
+        # calls these through /automation/actions like any other action.
+        "back",
+        "forward",
+        "reload",
     )
 
 
