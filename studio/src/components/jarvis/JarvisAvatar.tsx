@@ -37,11 +37,13 @@ function readStoredVariant(): JarvisAvatarVariant {
   }
 }
 
-export function JarvisAvatar({ busy = false, variant: controlledVariant }: {
+export function JarvisAvatar({ busy = false, variant: controlledVariant, compact = false }: {
   /** Chat is waiting for the assistant — drives the 'thinking' state. */
   busy?: boolean;
   /** Optional controlled variant (dashboards). Defaults to localStorage pref. */
   variant?: JarvisAvatarVariant;
+  /** Dock variant (report §6.4): 40px chip that fits the 44px docked action bar. */
+  compact?: boolean;
 }) {
   const [variant, setVariant] = React.useState<JarvisAvatarVariant>(
     controlledVariant ?? readStoredVariant(),
@@ -196,7 +198,7 @@ export function JarvisAvatar({ busy = false, variant: controlledVariant }: {
       aria-label={`Jarvis assistant avatar, currently ${variant} style, ${state}. Tap to switch.`}
       data-testid="jarvis-avatar"
       data-state={state}
-      className={`jarvis-av jarvis-av-${state}${blinking ? ' jarvis-av-blinking' : ''}`}
+      className={`jarvis-av jarvis-av-${state}${blinking ? ' jarvis-av-blinking' : ''}${compact ? ' jarvis-av-dock' : ''}`}
       id="jarvis-av-stage"
     >
       <span className="jarvis-av-glow" aria-hidden="true" />

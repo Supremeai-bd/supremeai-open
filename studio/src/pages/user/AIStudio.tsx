@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { UnifiedChatPanel, listStoredConversations, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
+import { UnifiedChatPanel, listStoredConversations, type DockAction, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
 import { Bot, Code, Globe, MessageSquarePlus, Smartphone } from 'lucide-react';
 import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
 import { MobileSimulator } from '../../components/customer/MobileSimulator';
@@ -285,6 +285,9 @@ export const AIStudio: React.FC = () => {
               </div>
             </aside>
             <div className="relative min-w-0 flex-1">
+            {/* RC-3 docked bar (report §6.4): contextual middle actions = the two
+                REAL preview surfaces; Apps menu omitted (the tab strip above is
+                this shell's IA — no duplicate). */}
             <UnifiedChatPanel
               key={resumeConvId ?? 'new'}
               fit="fill"
@@ -292,6 +295,11 @@ export const AIStudio: React.FC = () => {
               showStarter={true}
               initialInput={input}
               onInputChange={setInput}
+              showDock
+              dockActions={[
+                { id: 'preview', label: 'Preview', icon: Globe, onClick: () => gotoSurface('preview') },
+                { id: 'mobile', label: 'Mobile', icon: Smartphone, onClick: () => gotoSurface('mobile') },
+              ] satisfies DockAction[]}
               onPreview={(html) => {
                 setCode(html);
                 // MOBILE DUAL-PATH: agent-built preview opens on the surface the
