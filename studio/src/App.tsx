@@ -161,10 +161,20 @@ const PublicPageShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   </PublicLayout>
 );
 
+// RC-2 root-cause fix (frontend research report §6.2/Table 8, 2026-10-25):
+// the guest chat needs a bounded h-dvh flex-column host so UnifiedChatPanel
+// can flex-fill the real viewport instead of guessing height via
+// calc(100dvh-13rem). PublicPageShell stays a scrolling shell for the info
+// pages; only /chat gets this dedicated workspace-style host.
 export const LiveChatPage: React.FC = () => (
-  <PublicPageShell>
-    <GuestChat />
-  </PublicPageShell>
+  <PublicLayout>
+    <PublicHeader />
+    <main className="h-dvh w-full overflow-hidden px-3 pb-3 pt-16 sm:px-4 sm:pt-20">
+      <div className="mx-auto flex h-full w-full flex-col">
+        <GuestChat />
+      </div>
+    </main>
+  </PublicLayout>
 );
 
 const RouteFallback: React.FC = () => (
