@@ -97,7 +97,7 @@ export function LlmGatewayPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-8">
+    <div className="max-w-feed mx-auto px-6 py-8">
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-lg font-semibold text-white flex items-center gap-2">
           <Cpu size={17} className="text-blue-400" />
