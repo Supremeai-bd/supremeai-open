@@ -10,6 +10,7 @@ import React from 'react';
 import { DashboardLayout } from '../layout/DashboardLayout';
 import { GlobalHeader, type HeaderNotification } from './GlobalHeader';
 import { RoleAwareNavRail } from './RoleAwareNavRail';
+import { MobileTabBar } from './MobileTabBar';
 import { useWorkspaceSettings } from '../../hooks/useWorkspaceSettings';
 
 export interface UnifiedAppShellProps {
@@ -59,6 +60,10 @@ export function UnifiedAppShell({
         />
       }
       isSidebarCollapsed={isSidebarCollapsed}
+      // P1 wave item 4 (verified 2026-10-25 report): mobile bottom tab bar for the
+      // user context only. Admin keeps the drawer (§6.1 — separate role shell;
+      // 25+ action subtabs are context switches, not route tabs).
+      mobileTabBar={context === 'user' ? <MobileTabBar /> : undefined}
     >
       {children}
     </DashboardLayout>

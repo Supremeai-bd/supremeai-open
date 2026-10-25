@@ -8,11 +8,14 @@ export interface DashboardLayoutProps {
   sidebar?: React.ReactNode;
   children: React.ReactNode;
   isSidebarCollapsed?: boolean;
+  /** P1 wave item 4 (2026-10-25 report): mobile-only bottom tab bar (md:hidden).
+   *  Rendered by the shell for user context; admin keeps the drawer-only surface. */
+  mobileTabBar?: React.ReactNode;
 }
 
 const SIDEBAR_SPRING = { type: 'spring', stiffness: 320, damping: 32 } as const;
 
-export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed = false }: DashboardLayoutProps) {
+export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed = false, mobileTabBar }: DashboardLayoutProps) {
   // Issue #1526 (LOW): the sidebar used to render at a fixed 256px on every
   // viewport — on phones it swallowed most of the screen and the content
   // overlapped. Below md it now becomes an overlay drawer: closed by default,
@@ -43,6 +46,12 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed 
           {header}
         </header>
       )}
+
+      {/* P1 item 4: fixed bottom chrome on phones. Rendered BEFORE the content row
+          in DOM so the drawer backdrop (same z-30, later in DOM) dims it while the
+          drawer is open; the drawer itself (z-40) and CommandBar/modals (z-50) stay
+          above. Bottom padding on <main> keeps page footers/composers unobscured. */}
+      {mobileTabBar}
 
       <div className="flex-1 flex overflow-hidden relative">
         {sidebar && (
@@ -85,7 +94,11 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed 
           )}
         </AnimatePresence>
 
-        <main className="flex-1 min-w-0 overflow-hidden relative z-10 flex flex-col">
+        <main
+          className={`flex-1 min-w-0 overflow-hidden relative z-10 flex flex-col ${
+            mobileTabBar ? 'pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0' : ''
+          }`}
+        >
           {children}
         </main>
       </div>
