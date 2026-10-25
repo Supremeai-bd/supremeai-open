@@ -77,8 +77,19 @@ export { callLiveAI, responseFor, ThinkingIndicator } from '../components/chat/U
 
 // UNIFIED CHAT (Phase 1): the shared panel lives in
 // components/chat/UnifiedChatPanel; GuestChat is now a thin wrapper.
+// RC-3 docked bar (report §6.4/Table 8 P1): guest dock = Jarvis mini-orb
+// (moved from the model row into the dock) + honest in-app Apps menu — every
+// entry is a real route, nothing fabricated.
+const GUEST_DOCK_APPS = [
+  { id: 'tools', label: 'Dev Tools', to: '/tools', description: 'Free browser-native developer tools — no sign-up.' },
+  { id: 'academies', label: 'Academies', to: '/academies', description: 'Interactive lessons with saved progress.' },
+  { id: 'knowledge', label: 'Knowledge', to: '/knowledge', description: 'Browse the public knowledge base.' },
+  { id: 'models', label: 'Models', to: '/models', description: 'Meet the relay models and pick a tone.' },
+  { id: 'jarvis', label: 'Jarvis HUD', to: '/jarvis', description: 'Full-screen voice cockpit experience.' },
+];
+
 export function GuestChat() {
-  return <UnifiedChatPanel />;
+  return <UnifiedChatPanel showDock dockApps={GUEST_DOCK_APPS} />;
 }
 
 
