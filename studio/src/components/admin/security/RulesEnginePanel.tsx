@@ -58,7 +58,7 @@ const RulesEnginePanel: React.FC = () => {
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 20, stiffness: 100 }}
-          className="fixed right-0 top-0 h-full w-[28rem] sci-fi-glass-panel p-6 z-50 shadow-2xl flex flex-col"
+          className="fixed right-0 top-0 h-full w-[28rem] sci-fi-glass-panel p-6 z-modal shadow-2xl flex flex-col"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[rgba(0,243,255,0.2)] pb-4 mb-4">
