@@ -32,37 +32,99 @@ Bengali:
 
 from typing import Any
 
-from core.logging_config import logger
+try:
+    from core.logging_config import logger
+except ImportError:
+    try:
+        from logging_config import logger
+    except ImportError:
+        logger = None
 
-from .accessibility.wcag_compliance import (
-    AccessibilityComplianceEngine,
-    AccessibilityIssue,
-    ColorContrastChecker,
-    HTMLAccessibilityChecker,
-    WCAGGuideline,
-    WCAGLevel,
-    WCAGPrinciple,
-)
-from .deployment.production_deploy import (
-    ConfigManager,
-    DeploymentConfig,
-    DeploymentEnvironment,
-    DeploymentManager,
-    DeploymentStatus,
-    HealthChecker,
-    ImageBuilder,
-    ProductionDeploymentSystem,
-)
-
-# Import all core components
-from .optimization.performance_optimizer import (
-    AsyncLRUCache,
-    LRUCache,
-    OptimizationLevel,
-    PerformanceOptimizer,
-    get_performance_optimizer,
-    performance_monitor,
-)
+try:
+    from .accessibility.wcag_compliance import (
+        AccessibilityComplianceEngine,
+        AccessibilityIssue,
+        ColorContrastChecker,
+        HTMLAccessibilityChecker,
+        WCAGGuideline,
+        WCAGLevel,
+        WCAGPrinciple,
+    )
+    from .deployment.production_deploy import (
+        ConfigManager,
+        DeploymentConfig,
+        DeploymentEnvironment,
+        DeploymentManager,
+        DeploymentStatus,
+        HealthChecker,
+        ImageBuilder,
+        ProductionDeploymentSystem,
+    )
+    from .optimization.performance_optimizer import (
+        AsyncLRUCache,
+        LRUCache,
+        OptimizationLevel,
+        PerformanceOptimizer,
+        get_performance_optimizer,
+        performance_monitor,
+    )
+except (ImportError, ValueError):
+    try:
+        from accessibility.wcag_compliance import (
+            AccessibilityComplianceEngine,
+            AccessibilityIssue,
+            ColorContrastChecker,
+            HTMLAccessibilityChecker,
+            WCAGGuideline,
+            WCAGLevel,
+            WCAGPrinciple,
+        )
+        from deployment.production_deploy import (
+            ConfigManager,
+            DeploymentConfig,
+            DeploymentEnvironment,
+            DeploymentManager,
+            DeploymentStatus,
+            HealthChecker,
+            ImageBuilder,
+            ProductionDeploymentSystem,
+        )
+        from optimization.performance_optimizer import (
+            AsyncLRUCache,
+            LRUCache,
+            OptimizationLevel,
+            PerformanceOptimizer,
+            get_performance_optimizer,
+            performance_monitor,
+        )
+    except (ImportError, ValueError):
+        from core.accessibility.wcag_compliance import (
+            AccessibilityComplianceEngine,
+            AccessibilityIssue,
+            ColorContrastChecker,
+            HTMLAccessibilityChecker,
+            WCAGGuideline,
+            WCAGLevel,
+            WCAGPrinciple,
+        )
+        from core.deployment.production_deploy import (
+            ConfigManager,
+            DeploymentConfig,
+            DeploymentEnvironment,
+            DeploymentManager,
+            DeploymentStatus,
+            HealthChecker,
+            ImageBuilder,
+            ProductionDeploymentSystem,
+        )
+        from core.optimization.performance_optimizer import (
+            AsyncLRUCache,
+            LRUCache,
+            OptimizationLevel,
+            PerformanceOptimizer,
+            get_performance_optimizer,
+            performance_monitor,
+        )
 
 # বাংলা মন্তব্য: core.testing.qa_suite নিজে aiohttp আমদানি করে (একটা optional/dev-only
 # dependency — production API path কখনো এটা ব্যবহার করে না)। কিন্তু এই ব্লকটা আগে
@@ -88,22 +150,56 @@ try:
     )
 
     QA_SUITE_AVAILABLE = True
-except ImportError:
-    QA_SUITE_AVAILABLE = False
-    import sys
+except (ImportError, ValueError):
+    try:
+        from testing.qa_suite import (
+            ChaosEngineer,
+            IntegrationTestRunner,
+            PerformanceTester,
+            QASuite,
+            SecurityTester,
+            TestCase,
+            TestCategory,
+            TestPriority,
+            TestResult,
+            TestSuite,
+            UnitTestGenerator,
+        )
 
-    _mod = sys.modules[__name__]
-    _mod.ChaosEngineer = None
-    _mod.IntegrationTestRunner = None
-    _mod.PerformanceTester = None
-    _mod.QASuite = None
-    _mod.SecurityTester = None
-    _mod.TestCase = None
-    _mod.TestCategory = None
-    _mod.TestPriority = None
-    _mod.TestResult = None
-    _mod.TestSuite = None
-    _mod.UnitTestGenerator = None
+        QA_SUITE_AVAILABLE = True
+    except (ImportError, ValueError):
+        try:
+            from core.testing.qa_suite import (
+                ChaosEngineer,
+                IntegrationTestRunner,
+                PerformanceTester,
+                QASuite,
+                SecurityTester,
+                TestCase,
+                TestCategory,
+                TestPriority,
+                TestResult,
+                TestSuite,
+                UnitTestGenerator,
+            )
+
+            QA_SUITE_AVAILABLE = True
+        except (ImportError, ValueError):
+            QA_SUITE_AVAILABLE = False
+            import sys
+
+            _mod = sys.modules[__name__]
+            _mod.ChaosEngineer = None
+            _mod.IntegrationTestRunner = None
+            _mod.PerformanceTester = None
+            _mod.QASuite = None
+            _mod.SecurityTester = None
+            _mod.TestCase = None
+            _mod.TestCategory = None
+            _mod.TestPriority = None
+            _mod.TestResult = None
+            _mod.TestSuite = None
+            _mod.UnitTestGenerator = None
 
 # Import evolution components — LAZY (PEP 562)
 # বাংলা মন্তব্য: evolution প্যাকেজের কিছু সাব-মডিউল (EWC, adversarial defense,
@@ -273,7 +369,13 @@ def get_complete_ai_system():
     Returns:
         A comprehensive system with all major components
     """
-    from ..evolution import get_evolution_pipeline
+    try:
+        from ..evolution import get_evolution_pipeline
+    except (ImportError, ValueError):
+        try:
+            from evolution import get_evolution_pipeline
+        except (ImportError, ValueError):
+            from core.evolution import get_evolution_pipeline
 
     # Get all evolution components
     evolution_components = get_evolution_pipeline()
