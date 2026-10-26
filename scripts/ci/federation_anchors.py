@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""scripts/ci/federation_anchors.py — SSOT Registry for the 14 Anchor Hub Issues.
+"""scripts/ci/federation_anchors.py — SSOT Registry for Federation Anchor Hubs.
 
-Defines the permanent 14 Anchor Hub parent issues hosted on Supremeai-bd/supremeai-open.
+Defines the permanent Anchor Hub parent issues hosted on Supremeai-bd/supremeai-open.
 All automated CI failure reports, bridge sync work orders, rejections, and agent tasks
 attach strictly as Sub-Issues under their respective repository's Anchor Hub.
 
-Board Invariant:
-  - Exactly 14 persistent parent issues exist on Supremeai-bd/supremeai-open.
-  - 12 Satellites + 1 Monorepo + 1 Open Embassy.
-  - Root board query `gh issue list --search "no:parent"` returns strictly these 14 anchors.
+Topology Architecture (Golden 8-Satellite Architecture):
+  - Strictly 8 Active Primary Anchor Hubs (#749 Studio, #750 API, #751 Core, #754 VSCode,
+    #756 Browser, #760 Bridge/Archive, #761 Monorepo CI, #762 Open Embassy).
+  - 6 Transit Hubs (#752 Command, #753 Skills, #755 Agents, #757 SDK, #758 Infra, #759 MCP)
+    have been permanently consolidated into Supremeai-bd/supremeai-api and Supremeai-bd/supremeai-vscode.
+  - Root board query `gh issue list --search "no:parent is:open"` returns strictly the active anchor hubs.
   - All granular tasks, CI failures, and bridge sync orders are child sub-issues.
 """
 
@@ -404,17 +406,25 @@ def create_sub_issue(
 
 
 def self_test() -> int:
-    """Hermetic contract test verifying the 14 Anchor Hub architecture (zero network)."""
-    print("[self-test] Validating 14 Anchor Hub SSOT contract...")
+    """Hermetic contract test verifying the Federation Anchor Hub architecture (zero network)."""
+    print("[self-test] Validating Federation Anchor Hub SSOT contract...")
 
     # 1. Exact count check
     assert len(ANCHOR_HUBS) == 14, (
-        f"Must have exactly 14 anchor hubs, found {len(ANCHOR_HUBS)}"
+        f"Must have 14 total historical anchor hubs in lookup, found {len(ANCHOR_HUBS)}"
+    )
+    assert len(ACTIVE_ANCHOR_HUBS) == 8, (
+        f"Must have strictly 8 active anchor hubs, found {len(ACTIVE_ANCHOR_HUBS)}"
+    )
+    assert len(RETIRED_ANCHOR_HUBS) == 6, (
+        f"Must have strictly 6 consolidated anchor hubs, found {len(RETIRED_ANCHOR_HUBS)}"
     )
 
     # 2. Unique issue numbers
     numbers = list(ANCHOR_HUBS.values())
     assert len(set(numbers)) == 14, "Anchor issue numbers must all be distinct"
+    assert len(set(ACTIVE_ANCHOR_HUBS.values())) == 8, "Active anchor issue numbers must all be distinct"
+    assert len(set(RETIRED_ANCHOR_HUBS.values())) == 6, "Retired anchor issue numbers must all be distinct"
 
     # 3. Sequential 749-762 range
     expected_range = set(range(749, 763))
