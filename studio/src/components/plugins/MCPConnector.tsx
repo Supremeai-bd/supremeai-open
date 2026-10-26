@@ -80,7 +80,7 @@ export const MCPConnector: React.FC = () => {
   };
 
   return (
-    <section className="font-bengali mx-auto mt-8 flex max-w-4xl flex-col gap-5">
+    <section className="font-bengali mx-auto mt-8 flex max-w-feed flex-col gap-5">
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2 text-[var(--supremeai-color-brand-primary)]"><Link2 size={16} /><span className="text-xs font-semibold uppercase tracking-[0.18em]">MCP Viewer</span></div>
         <h2 className="text-2xl font-semibold tracking-tight text-balance">সার্ভারের data দেখুন</h2>

@@ -9,7 +9,7 @@ export const OurStoryPage: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-purple-500/30">
       <LandingHeader />
 
-      <main className="mx-auto max-w-4xl px-6 py-20">
+      <main className="mx-auto max-w-feed px-6 py-20">
         <div className="text-center mb-16">
           <span className="text-xs font-mono uppercase tracking-widest text-emerald-400">Origins & Evolution</span>
           <h1 className="mt-3 text-4xl font-extrabold sm:text-5xl text-white">Our Story</h1>

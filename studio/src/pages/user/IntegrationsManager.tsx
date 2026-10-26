@@ -16,7 +16,7 @@ export const IntegrationsManager: React.FC = () => {
 
   return (
     <div className="w-full">
-      <div className="flex border-b border-gray-200 mb-6 px-8 pt-8 max-w-7xl mx-auto">
+      <div className="flex border-b border-gray-200 mb-6 px-8 pt-8 max-w-dash mx-auto">
         <button
           className={`py-3 px-6 font-medium text-sm focus:outline-none ${activeTab === 'plugins' ? 'border-b-2 border-primary text-primary' : 'text-gray-500 hover:text-gray-700'}`}
           onClick={() => setActiveTab('plugins')}
@@ -44,7 +44,7 @@ export const IntegrationsManager: React.FC = () => {
           <MCPConnector />
         </div>
       ) : (
-        <div className="p-8 max-w-7xl mx-auto space-y-8">
+        <div className="p-8 max-w-dash mx-auto space-y-8">
           <div>
             <h1 className="text-3xl font-bold mb-2">🔗 System Integrations</h1>
             <p className="text-[var(--supremeai-color-neutral-500)]">
