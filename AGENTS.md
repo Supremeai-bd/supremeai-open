@@ -157,5 +157,6 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
 - **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
 - **Federation Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 8 active persistent root hubs (#749 Studio, #750 API, #751 Core, #754 VSCode, #756 Browser, #760 Bridge/Archive, #761 Monorepo CI, #762 Open Embassy; 6 transit hubs consolidated into API/VSCode); all tasks/failures are Sub-Issues.
 - **Boundary & Surface Path SSOT:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — prevents root-level shadowing and unapproved surface leaks (#107, #508).
+- **Master Health & Preflight SSOT:** `python scripts/ops/master_health_check.py` — one-sweep dynamic health verification across all federation satellites, MCP Tower, and core cloud nodes (Zero-Maintenance doctrine).
 - **Frontend Performance SSOT:** `python scripts/ci/frontend_performance_guard.py --self-test` — code-splitting & zero-blocking landing doctrine (FCP < 1.0s).
 - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
