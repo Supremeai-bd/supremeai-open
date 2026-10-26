@@ -34,9 +34,22 @@ describe('canonical navigation registry', () => {
   it('exposes full administrative capabilities in admin context while keeping user context simplified', () => {
     const adminGroups = getNavigationForContext('admin');
     const adminGroupIds = adminGroups.map((g) => g.id);
+    // P2 rebalance (2026-10-25 frontend research report §6.4): 6 tight groups
+    // replace the lopsided operations/security/governance/core split.
     expect(adminGroupIds).toEqual(
-      expect.arrayContaining(['admin-operations', 'admin-security', 'admin-governance', 'admin-core'])
+      expect.arrayContaining([
+        'admin-monitoring',
+        'admin-agents',
+        'admin-deploy',
+        'admin-security',
+        'admin-finance',
+        'admin-config',
+      ])
     );
+    // Group policy lock: exactly 6 admin groups, none overloaded (max 6 items),
+    // so admin rail scan depth can never silently regrow past the report target.
+    expect(adminGroups).toHaveLength(6);
+    expect(adminGroups.every((g) => g.items.length > 0 && g.items.length <= 6)).toBe(true);
 
     const adminActionIds = adminGroups
       .flatMap((g) => g.items)
