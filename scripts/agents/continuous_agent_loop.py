@@ -874,8 +874,12 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
                     break
             return (tier, int(item.get("number", 0)))  # number ASC = oldest first
 
-        # Exclude permanent 14 Anchor Hub issue numbers (749..762) from picking
-        ANCHOR_HUB_NUMBERS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
+        # Exclude permanent Federation Anchor Hub issue numbers from picking
+        try:
+            from scripts.ci.federation_anchors import ANCHOR_HUBS as _AH
+            ANCHOR_HUB_NUMBERS = set(_AH.values())
+        except Exception:
+            ANCHOR_HUB_NUMBERS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
 
         candidates = [
             i for i in issues

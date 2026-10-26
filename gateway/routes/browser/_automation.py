@@ -32,7 +32,10 @@ class SavedSessionRequest(BaseModel):
 
 class BrowserActionRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=128)
-    action: Literal["navigate", "click", "fill", "type", "screenshot", "content", "extract"]
+    action: Literal[
+        "navigate", "click", "fill", "type", "screenshot", "content", "extract",
+        "back", "forward", "reload",
+    ]
     url: str | None = Field(default=None, max_length=2048)
     selector: str | None = Field(default=None, min_length=1, max_length=512)
     value: str | None = Field(default=None, max_length=20_000)
@@ -145,6 +148,13 @@ async def execute_automation_action(
         raise HTTPException(status_code=423, detail=str(exc)) from exc
     page = session.page
     action = req.action.lower()
+
+    async def _page_title() -> str:
+        """Best-effort page title for real-browser UI chrome (never fatal)."""
+        try:
+            return await page.title()
+        except Exception:  # noqa: BLE001 — title is metadata, never fail the action
+            return ""
     if action not in session.allowed_actions:
         raise HTTPException(status_code=403, detail="Action is not allowed for this session")
     if action == "navigate":
@@ -163,6 +173,14 @@ async def execute_automation_action(
         locator = page.locator(req.selector)
         await _await_actionable(locator, action)
         await locator.fill(req.value, timeout=15_000)
+    elif action == "back":
+        if not await page.go_back(timeout=30_000):
+            raise HTTPException(status_code=409, detail="No previous page in this session's history")
+    elif action == "forward":
+        if not await page.go_forward(timeout=30_000):
+            raise HTTPException(status_code=409, detail="No next page in this session's history")
+    elif action == "reload":
+        await page.reload(wait_until="domcontentloaded", timeout=30_000)
     elif action == "screenshot":
         image = await page.screenshot(type="png", full_page=req.full_page)
         import base64
@@ -172,6 +190,7 @@ async def execute_automation_action(
             "action": action,
             "url": page.url,
             "screenshot": base64.b64encode(image).decode("ascii"),
+            "title": await _page_title(),
         }
     elif action in {"content", "extract"}:
         return {
@@ -179,10 +198,16 @@ async def execute_automation_action(
             "action": action,
             "url": page.url,
             "content": await page.locator("body").inner_text(timeout=15_000),
+            "title": await _page_title(),
         }
     else:
         raise HTTPException(status_code=422, detail="Unsupported browser action")
-    return {"success": True, "action": action, "url": page.url}
+    return {
+        "success": True,
+        "action": action,
+        "url": page.url,
+        "title": await _page_title(),
+    }
 
 
 @router.post("/automation/pause")
