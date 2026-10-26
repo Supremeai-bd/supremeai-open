@@ -429,19 +429,25 @@ def check_satellite_ci(token: str = "") -> list[SatelliteCIResult]:
             continue
 
         runs = data.get("workflow_runs", [])
-        failing = [
-            {
-                "id": r["id"],
-                "name": r.get("name", ""),
-                "conclusion": r.get("conclusion", ""),
-                "url": r.get("html_url", ""),
-                "branch": r.get("head_branch", ""),
-                "sha": str(r.get("head_sha", ""))[:8],
-            }
-            for r in runs
-            if r.get("conclusion") in ("failure", "timed_out", "cancelled")
-            and r.get("status") == "completed"
-        ]
+        # Group runs by workflow to inspect the latest run of each workflow
+        workflows: dict[str, list[dict[str, Any]]] = {}
+        for r in runs:
+            wf_name = r.get("name") or str(r.get("workflow_id", ""))
+            workflows.setdefault(wf_name, []).append(r)
+
+        failing = []
+        for wf_name, wf_runs in workflows.items():
+            latest = wf_runs[0]
+            if latest.get("conclusion") in ("failure", "timed_out", "cancelled") and latest.get("status") == "completed":
+                failing.append({
+                    "id": latest["id"],
+                    "name": latest.get("name", ""),
+                    "conclusion": latest.get("conclusion", ""),
+                    "url": latest.get("html_url", ""),
+                    "branch": latest.get("head_branch", ""),
+                    "sha": str(latest.get("head_sha", ""))[:8],
+                })
+
         if failing:
             # Inspect top failure for live root-cause excerpt
             top_run = failing[0]
