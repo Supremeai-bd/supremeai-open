@@ -139,7 +139,7 @@ export const LandingPage: React.FC = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(168,85,247,0.18)_0%,transparent_60%)] pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.12)_0%,transparent_50%)] pointer-events-none" />
 
-        <div className="mx-auto max-w-5xl text-center relative z-10">
+        <div className="mx-auto max-w-dash text-center relative z-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 text-xs font-mono text-emerald-300 mb-6 backdrop-blur-md">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Cosmic Architecture 2.0 Live
@@ -197,7 +197,7 @@ export const LandingPage: React.FC = () => {
 
       {/* Feature Cards */}
       <section id="features" className="border-t border-white/10 px-6 py-24 bg-slate-950/50">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-dash">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-white">Engineered for Sovereign Resilience</h2>
             <p className="mt-3 text-slate-400">Three pillars of the federated architecture</p>

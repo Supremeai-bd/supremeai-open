@@ -115,7 +115,7 @@ export function RunsPage() {
 
   return (
     <WorkspaceLayout>
-      <div className="mx-auto w-full max-w-5xl px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
+      <div className="mx-auto w-full max-w-dash px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
         <header className="flex flex-col gap-4 border-b border-[var(--sa-border)] pb-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="sa-eyebrow">Observe / Runs</p>
