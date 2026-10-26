@@ -1,8 +1,8 @@
 {
-  "name": "supremeai-vscode",
-  "displayName": "SupremeAI - AI-Powered Development Assistant",
+  "name": "supremeai-core-legacy-vscode",
+  "displayName": "SupremeAI - Core Legacy Development Assistant",
   "icon": "media/icon.png",
-  "description": "Real-time code analysis, learning, and AI assistance with SupremeAI Core Engine",
+  "description": "Legacy code analysis and tools for SupremeAI Core Engine",
   "version": "6.0.0",
   "license": "MIT",
   "publisher": "supremeai",
