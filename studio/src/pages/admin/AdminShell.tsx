@@ -323,6 +323,7 @@ export function AdminShell() {
       adminAuthenticated={adminAuthenticated}
       adminError={adminError}
       handleAdminLogin={handleAdminLogin}
+      handleAdminLogout={handleAdminLogout}
       adminOtp={adminOtp}
       setAdminOtp={setAdminOtp}
       rememberBrowser={rememberBrowser}
@@ -356,10 +357,6 @@ export function AdminShell() {
       setNewUserRole={setNewUserRole}
       newUserPerms={newUserPerms}
       setNewUserPerms={setNewUserPerms}
-      adminOtp={adminOtp}
-      setAdminOtp={setAdminOtp}
-      rememberBrowser={rememberBrowser}
-      setRememberBrowser={setRememberBrowser}
       theme={consoleTheme}
       toggleTheme={toggleTheme}
     />
