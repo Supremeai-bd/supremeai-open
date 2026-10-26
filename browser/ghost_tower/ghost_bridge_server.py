@@ -310,10 +310,21 @@ async def web_chat_page():
     const messages = document.getElementById('messagesArea');
     const statusText = document.getElementById('statusIndicator');
 
-    function appendMessage(text, isUser = false) {
+    // XSS guard (WO #1361): escape all dynamic content before innerHTML.
+    // Static developer-authored markup must opt in explicitly via allowHtml.
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function appendMessage(text, isUser = false, allowHtml = false) {
       const msg = document.createElement('div');
       msg.className = 'msg ' + (isUser ? 'msg-user' : 'msg-bot');
-      msg.innerHTML = text.replace(/\\n/g, '<br>');
+      msg.innerHTML = allowHtml ? text : escapeHtml(text).replace(/\\n/g, '<br>');
       messages.appendChild(msg);
       messages.scrollTop = messages.scrollHeight;
       return msg;
@@ -330,7 +341,7 @@ async def web_chat_page():
       btn.disabled = true;
       statusText.innerText = "⏳ Gemini ব্রাউজারে টাইপ হচ্ছে ও উত্তর জেনারেট হচ্ছে...";
 
-      const botBubble = appendMessage("<i>Gemini ভাবছে...</i>", false);
+      const botBubble = appendMessage("<i>Gemini ভাবছে...</i>", false, true);
 
       try {
         const res = await fetch('/api/chat', {
@@ -339,10 +350,10 @@ async def web_chat_page():
           body: JSON.stringify({ message: text })
         });
         const data = await res.json();
-        botBubble.innerHTML = (data.reply || "No reply").replace(/\\n/g, '<br>');
+        botBubble.innerHTML = escapeHtml(data.reply || "No reply").replace(/\\n/g, '<br>');
         statusText.innerText = "✅ সম্পন্ন (Source: " + (data.source || 'gemini.google.com') + " | " + data.cost + ")";
       } catch (err) {
-        botBubble.innerHTML = "⚠️ ত্রুটি: " + err.message;
+        botBubble.innerHTML = "⚠️ ত্রুটি: " + escapeHtml(err.message);
         statusText.innerText = "❌ কানেকশন এরর";
       } finally {
         input.disabled = false;
