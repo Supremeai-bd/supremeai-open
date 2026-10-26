@@ -10,6 +10,9 @@ interface AdminConsoleProps {
   adminAuthenticated: boolean;
   adminError: string;
   handleAdminLogin: () => void;
+  // bridge-20261027-fix-studio-ci: AuthenticatedView requires this (logout with
+  // DB-backed trusted-device revocation) — AdminShell supplies it from useAdminStore.
+  handleAdminLogout: () => void;
   adminOtp: string;
   setAdminOtp: (val: string) => void;
   rememberBrowser: boolean;
