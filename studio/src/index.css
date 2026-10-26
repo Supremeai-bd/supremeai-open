@@ -3,15 +3,21 @@
 
 @theme {
   /* XS-1 container-width tokens (verified 2026-10-25 frontend report, section 6.3):
-     4-bucket page-container scale - form (form/read pages), feed (feed/chat pages),
-     dash (dashboard pages), full-bleed (= w-full, no token needed). Identity aliases
-     of the migrated families (2xl/3xl/6xl); 4xl/5xl/7xl/[1500px]/[1600px] stay
-     un-migrated pending their Table-6 resize sign-offs - do NOT add new free-form
-     container widths, pick one of these buckets. Tailwind v4 --container-* namespace
-     emits max-w-form / max-w-feed / max-w-dash utilities. */
+     4-bucket page-container scale - form (form/read pages), feed (feed/chat pages,
+     the 3xl/4xl family), dash (dashboard pages, the 5xl/6xl/7xl family), full-bleed
+     (= w-full, no token needed). Phase 2 completed the Table-6 sign-off: the 4xl
+     family joined feed, the 5xl/7xl families joined dash, and the two admin-shell
+     arbitrary widths ([1500px]/[1600px]) unify into the named admin token below.
+     Do NOT add new free-form container widths, pick one of these buckets.
+     Tailwind v4 --container-* namespace emits max-w-form / max-w-feed /
+     max-w-dash / max-w-admin utilities. */
   --container-form: 42rem;
   --container-feed: 48rem;
   --container-dash: 72rem;
+  /* Admin-shell exception (report 6.1: separate role shell; Table 6 admin row):
+     the admin console keeps its report-prescribed 1600px width as a NAMED token,
+     not a free-form value - deliberately outside the 4-bucket user scale. */
+  --container-admin: 100rem;
   /* P2 item (verified 2026-10-25 frontend report, section 6.4): z-index 3-bucket
      policy. Base content stays numeric 0..10 (decorative background layers may
      use negative numeric values to sit under content); shell layer
