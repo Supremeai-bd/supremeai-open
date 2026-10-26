@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: no-secret-logs
         name: scan for secret values interpolated in log/print calls
-        entry: python3 scripts/scan_secret_logs.py
+        entry: python3 scripts/ci/scan_secret_logs.py
         language: system
         pass_filenames: false
         files: '\.py$'
