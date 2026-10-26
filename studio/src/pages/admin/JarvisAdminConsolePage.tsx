@@ -247,7 +247,7 @@ export function JarvisAdminConsolePage() {
       </header>
 
       {/* Main Center Stage */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-between p-6 max-w-4xl mx-auto w-full gap-6">
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-between p-6 max-w-feed mx-auto w-full gap-6">
         {/* Arc-Reactor Section */}
         <div className="flex flex-col items-center gap-3 mt-4">
           <ArcReactorOrb state={orbState} size={150} onClick={toggleListening} />
