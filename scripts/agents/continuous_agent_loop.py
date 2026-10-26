@@ -86,6 +86,40 @@ def run(cmd: list[str], timeout: int = 120) -> tuple[int, str, str]:
         return 127, "", str(exc)
 
 
+# ---------------------------------------------------------------------------
+# CI Contract Aliases & Backwards Compatibility
+# ---------------------------------------------------------------------------
+
+run_cmd = run  # CI contract alias (#118)
+
+_VALID_TASK_TYPES = {
+    "AUDIT", "PLAN", "IMPLEMENT", "FIX_CI", "REVIEW",
+    "SECURITY_AUDIT", "DISCOVERY", "MERGE", "ADMIN_DECISION",
+}
+
+
+def build_task_contract(task_id: str, task_type: str = "IMPLEMENT", **_kwargs: Any) -> dict[str, Any]:
+    """Build a canonical task-contract envelope (bridge to task_contract_schema)."""
+    tt = (task_type or "IMPLEMENT").upper()
+    if tt not in _VALID_TASK_TYPES:
+        raise ValueError(f"invalid task_type: {task_type!r}")
+    return {
+        "task_contract": {
+            "version": 1,
+            "task_id": str(task_id),
+            "task_type": tt,
+        }
+    }
+
+
+def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
+    """Fetch the highest priority claimable open issue from GitHub (CI contract parity)."""
+    exclude_set = {str(e) for e in exclude} if exclude else set()
+    all_issues = fetch_open_issues()
+    candidate = pick_issue(all_issues, exclude=exclude_set)
+    return str(candidate.get("number")) if candidate else None
+
+
 def _get_gh_token() -> str:
     for var in ("GH_TOKEN", "GITHUB_TOKEN", "OPEN_SYNC_PAT"):
         val = os.environ.get(var, "").strip()
@@ -237,11 +271,10 @@ def _priority_key(issue: dict[str, Any]) -> tuple[int, int]:
 
 def fetch_open_issues(token: str = "") -> list[dict[str, Any]]:
     """Fetch all open issues (gh CLI first, API fallback)."""
-    rc, out, _ = run(
+    rc, out, _ = run_cmd(
         ["gh", "issue", "list", "--repo", UPSTREAM_REPO,
          "--state", "open", "--limit", "200",
          "--json", "number,title,labels,body"],
-        timeout=30,
     )
     if rc == 0 and out.strip():
         try:
