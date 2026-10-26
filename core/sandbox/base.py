@@ -104,6 +104,10 @@ class ExecutionResult:
         return not self.success or self.exit_code != 0 or self.timed_out or self.resource_exceeded
 
 
+# Domain-scoped alias for canonical disambiguation (#751)
+SandboxExecutionResult = ExecutionResult
+
+
 class SandboxProvider(abc.ABC):
     """Abstract base class representing an isolated code execution environment."""
 
