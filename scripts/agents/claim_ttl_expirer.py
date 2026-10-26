@@ -24,7 +24,11 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
-ANCHOR_HUBS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
+try:
+    from scripts.ci.federation_anchors import ANCHOR_HUBS as _AH
+    ANCHOR_HUBS = set(_AH.values())
+except Exception:
+    ANCHOR_HUBS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
 DEFAULT_TTL_HOURS = 3
 
 

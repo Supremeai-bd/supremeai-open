@@ -60,9 +60,9 @@ flowchart TD
 
 #### Core Set Equations:
 - **Public Boundary Partition:** $\mathbf{Open} = T_{\text{transit}} \cup U_{\text{open}} \quad \text{where } T_{\text{transit}} \cap U_{\text{open}} = \emptyset$
-  - **$U_{\text{open}}$ (261 files):** Public front door, CI guards, 14 Anchor Hub configs, and constitution. **Never dispatched to satellites.**
-  - **$T_{\text{transit}}$ (374 files):** Scoped mirror surfaces (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`).
-- **Active Federation Surface:** $\mathbf{S_{\text{active}}} = S_{\text{studio}} \cup S_{\text{api}} \cup S_{\text{vscode}} \cup S_{\text{browser}} \cup S_{\text{core}} = \mathbf{1384 \text{ executable files}}$
+  - **$U_{\text{open}}$:** Public front door, CI guards, Federation Anchor Hub configs, and constitution. **Never dispatched to satellites.**
+  - **$T_{\text{transit}}$:** Scoped mirror surfaces (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`).
+- **Active Federation Surface:** $\mathbf{S_{\text{active}}} = S_{\text{studio}} \cup S_{\text{api}} \cup S_{\text{vscode}} \cup S_{\text{browser}} \cup S_{\text{core}}$
 - **The Blocked State Law:** Any file in `supremeai-open` not in $U_{\text{open}}$ represents an in-flight or blocked transit payload.
 
 ---
@@ -85,12 +85,12 @@ flowchart TD
     
     VERIFY2 -- "Verified Completed" --> PRUNE["🧹 Zero-Residue Auto-Prune (#416):<br>1. Delete ephemeral transit patch files<br>2. Delete bridge/* transit sync branches"]
     
-    PRUNE --> CLEAN["✨ Clean Steady State<br>Open repo preserved at exactly U_open (261 files)"]
+    PRUNE --> CLEAN["✨ Clean Steady State<br>Open repo preserved at clean U_open boundary"]
 ```
 
 ---
 
-### 3. Federation CI Watchdog & 14 Anchor Hubs Architecture
+### 3. Federation CI Watchdog & Federation Anchor Hubs Architecture
 
 ```mermaid
 flowchart TD
