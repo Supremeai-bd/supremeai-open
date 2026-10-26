@@ -108,7 +108,7 @@ const HumanInTheLoopProtocol: React.FC<HumanInTheLoopProtocolProps> = ({ onAppro
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-modal p-4">
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-feed max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold text-cyan-400">Human-in-the-Loop Protocol</h2>

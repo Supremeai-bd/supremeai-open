@@ -102,7 +102,7 @@ export function AutomationQueuePage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-feed mx-auto px-6 py-8">
       <h1 className="text-2xl font-semibold text-white flex items-center gap-3 mb-2">
         <ListChecks size={24} className="text-blue-500" />
         Automation Workflow Queue

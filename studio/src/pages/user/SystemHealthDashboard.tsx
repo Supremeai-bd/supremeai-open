@@ -33,7 +33,7 @@ export const SystemHealthDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-300 p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+      <div className="max-w-dash mx-auto space-y-8">
 
         {/* Header Section */}
         <div className="flex items-center gap-4 border-b border-slate-800 pb-6">
