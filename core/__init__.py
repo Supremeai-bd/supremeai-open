@@ -40,91 +40,38 @@ except ImportError:
     except ImportError:
         logger = None
 
-try:
-    from .accessibility.wcag_compliance import (
-        AccessibilityComplianceEngine,
-        AccessibilityIssue,
-        ColorContrastChecker,
-        HTMLAccessibilityChecker,
-        WCAGGuideline,
-        WCAGLevel,
-        WCAGPrinciple,
-    )
-    from .deployment.production_deploy import (
-        ConfigManager,
-        DeploymentConfig,
-        DeploymentEnvironment,
-        DeploymentManager,
-        DeploymentStatus,
-        HealthChecker,
-        ImageBuilder,
-        ProductionDeploymentSystem,
-    )
-    from .optimization.performance_optimizer import (
-        AsyncLRUCache,
-        LRUCache,
-        OptimizationLevel,
-        PerformanceOptimizer,
-        get_performance_optimizer,
-        performance_monitor,
-    )
-except (ImportError, ValueError):
-    try:
-        from accessibility.wcag_compliance import (
-            AccessibilityComplianceEngine,
-            AccessibilityIssue,
-            ColorContrastChecker,
-            HTMLAccessibilityChecker,
-            WCAGGuideline,
-            WCAGLevel,
-            WCAGPrinciple,
-        )
-        from deployment.production_deploy import (
-            ConfigManager,
-            DeploymentConfig,
-            DeploymentEnvironment,
-            DeploymentManager,
-            DeploymentStatus,
-            HealthChecker,
-            ImageBuilder,
-            ProductionDeploymentSystem,
-        )
-        from optimization.performance_optimizer import (
-            AsyncLRUCache,
-            LRUCache,
-            OptimizationLevel,
-            PerformanceOptimizer,
-            get_performance_optimizer,
-            performance_monitor,
-        )
-    except (ImportError, ValueError):
-        from core.accessibility.wcag_compliance import (
-            AccessibilityComplianceEngine,
-            AccessibilityIssue,
-            ColorContrastChecker,
-            HTMLAccessibilityChecker,
-            WCAGGuideline,
-            WCAGLevel,
-            WCAGPrinciple,
-        )
-        from core.deployment.production_deploy import (
-            ConfigManager,
-            DeploymentConfig,
-            DeploymentEnvironment,
-            DeploymentManager,
-            DeploymentStatus,
-            HealthChecker,
-            ImageBuilder,
-            ProductionDeploymentSystem,
-        )
-        from core.optimization.performance_optimizer import (
-            AsyncLRUCache,
-            LRUCache,
-            OptimizationLevel,
-            PerformanceOptimizer,
-            get_performance_optimizer,
-            performance_monitor,
-        )
+# bridge-20261027-core-hygiene (#1347): the former triple try/except chain
+# (relative -> bare -> absolute) imported the SAME symbols three different
+# ways. `core` is only ever imported as a package, so one canonical
+# package-relative path per symbol is enough — the fallback ladder just
+# tripled maintenance surface and hid real breakage behind silent orderings.
+from .accessibility.wcag_compliance import (
+    AccessibilityComplianceEngine,
+    AccessibilityIssue,
+    ColorContrastChecker,
+    HTMLAccessibilityChecker,
+    WCAGGuideline,
+    WCAGLevel,
+    WCAGPrinciple,
+)
+from .deployment.production_deploy import (
+    ConfigManager,
+    DeploymentConfig,
+    DeploymentEnvironment,
+    DeploymentManager,
+    DeploymentStatus,
+    HealthChecker,
+    ImageBuilder,
+    ProductionDeploymentSystem,
+)
+from .optimization.performance_optimizer import (
+    AsyncLRUCache,
+    LRUCache,
+    OptimizationLevel,
+    PerformanceOptimizer,
+    get_performance_optimizer,
+    performance_monitor,
+)
 
 # বাংলা মন্তব্য: core.testing.qa_suite নিজে aiohttp আমদানি করে (একটা optional/dev-only
 # dependency — production API path কখনো এটা ব্যবহার করে না)। কিন্তু এই ব্লকটা আগে
@@ -134,6 +81,9 @@ except (ImportError, ValueError):
 # ঠিক সেই একই ক্লাসের বাগ যেটা torch-এর জন্য নিচে evolution ব্লকে আগে থেকেই গার্ড করা
 # আছে। এখানে একই প্যাটার্ন প্রয়োগ করা হলো যাতে QA-স্যুট ছাড়াই বাকি core.* সাবমডিউল
 # (cache, config, otp_router ইত্যাদি) স্বাভাবিকভাবে import হতে পারে।
+# aiohttp (used by core.testing.qa_suite) is a dev-only dependency — keep the
+# optional availability flag, but with ONE canonical import path instead of a
+# three-level fallback ladder (#1347).
 try:
     from .testing.qa_suite import (
         ChaosEngineer,
@@ -151,55 +101,22 @@ try:
 
     QA_SUITE_AVAILABLE = True
 except (ImportError, ValueError):
-    try:
-        from testing.qa_suite import (
-            ChaosEngineer,
-            IntegrationTestRunner,
-            PerformanceTester,
-            QASuite,
-            SecurityTester,
-            TestCase,
-            TestCategory,
-            TestPriority,
-            TestResult,
-            TestSuite,
-            UnitTestGenerator,
-        )
+    QA_SUITE_AVAILABLE = False
 
-        QA_SUITE_AVAILABLE = True
-    except (ImportError, ValueError):
-        try:
-            from core.testing.qa_suite import (
-                ChaosEngineer,
-                IntegrationTestRunner,
-                PerformanceTester,
-                QASuite,
-                SecurityTester,
-                TestCase,
-                TestCategory,
-                TestPriority,
-                TestResult,
-                TestSuite,
-                UnitTestGenerator,
-            )
-
-            QA_SUITE_AVAILABLE = True
-        except (ImportError, ValueError):
-            QA_SUITE_AVAILABLE = False
-            import sys
-
-            _mod = sys.modules[__name__]
-            _mod.ChaosEngineer = None
-            _mod.IntegrationTestRunner = None
-            _mod.PerformanceTester = None
-            _mod.QASuite = None
-            _mod.SecurityTester = None
-            _mod.TestCase = None
-            _mod.TestCategory = None
-            _mod.TestPriority = None
-            _mod.TestResult = None
-            _mod.TestSuite = None
-            _mod.UnitTestGenerator = None
+_QA_LAZY_EXPORTS = (
+    "ChaosEngineer",
+    "IntegrationTestRunner",
+    "PerformanceTester",
+    "QASuite",
+    "SecurityTester",
+    "TestCase",
+    "TestCategory",
+    "TestPriority",
+    "TestResult",
+    "TestSuite",
+    "UnitTestGenerator",
+)
+_SELF_CHECK_EXPORTS = ("get_complete_ai_system", "run_complete_system_test")
 
 # Import evolution components — LAZY (PEP 562)
 # বাংলা মন্তব্য: evolution প্যাকেজের কিছু সাব-মডিউল (EWC, adversarial defense,
@@ -248,21 +165,11 @@ _EVOLUTION_LAZY_FLAGS: dict[str, tuple[str, ...]] = {
     "NEURAL_SYMBOLIC_AVAILABLE": ("NeuralSymbolicIntegrator",),
 }
 
-# These symbols don't exist anywhere (deleted with evolution/ subfolders):
-# DigitalTwinWorldModel, get_digital_twin_model, FLConfig, AggregationMethod,
-# MathematicalReasoningEngine, TheoryOfMindSystem, ToMConfig, ToMLevel,
-# TemporalAbstractionSystem, TemporalAbstractionConfig, TemporalGranularity
-DigitalTwinWorldModel = None
-get_digital_twin_model = None
-FLConfig = None
-AggregationMethod = None
-MathematicalReasoningEngine = None
-TheoryOfMindSystem = None
-ToMConfig = None
-ToMLevel = None
-TemporalAbstractionSystem = None
-TemporalAbstractionConfig = None
-TemporalGranularity = None
+# bridge-20261027-core-hygiene (#1347): the 11 permanently-None aliases for
+# symbols deleted with the evolution/ subfolders (DigitalTwinWorldModel,
+# TheoryOfMindSystem, FLConfig, TemporalAbstraction*, ToM*, …) were removed.
+# `__all__` no longer lies about what exists: importing one of them now raises
+# the honest AttributeError via PEP 562 instead of returning a None time-bomb.
 
 
 def _load_evolution_symbol(name: str) -> Any:
@@ -301,7 +208,6 @@ __all__ = [
     # Adversarial Defense
     "AdversarialDefenseSystem",
     "AdversarialTrainer",
-    "AggregationMethod",
     "AsyncLRUCache",
     "ChaosEngineer",
     "ColorContrastChecker",
@@ -311,19 +217,14 @@ __all__ = [
     "DeploymentEnvironment",
     "DeploymentManager",
     "DeploymentStatus",
-    # Evolution Components
-    # Digital Twin
-    "DigitalTwinWorldModel",
-    "EWCConfig",
+            "EWCConfig",
     "EWCTrainer",
-    "FLConfig",
     "HTMLAccessibilityChecker",
     "HealthChecker",
     "ImageBuilder",
     "ImpactSimulator",
     "IntegrationTestRunner",
     "LRUCache",
-    "MathematicalReasoningEngine",
     "NeuralSymbolicConfig",
     # Neural-Symbolic Integration
     "NeuralSymbolicIntegrator",
@@ -339,85 +240,18 @@ __all__ = [
     "RemediationEngine",
     "SecurityTester",
     "SystemTopologyMapper",
-    "TemporalAbstractionConfig",
-    # Temporal Abstraction
-    "TemporalAbstractionSystem",
-    "TemporalGranularity",
-    "TestCase",
+        "TestCase",
     "TestCategory",
     "TestPriority",
     "TestResult",
     "TestSuite",
-    # Theory of Mind
-    "TheoryOfMindSystem",
-    "ToMConfig",
-    "ToMLevel",
-    "UnitTestGenerator",
+        "UnitTestGenerator",
     "WCAGGuideline",
     "WCAGLevel",
     "WCAGPrinciple",
-    "get_digital_twin_model",
     "get_performance_optimizer",
     "performance_monitor",
 ]
-
-
-def get_complete_ai_system():
-    """
-    Get a complete AI system with all research and production components integrated.
-
-    Returns:
-        A comprehensive system with all major components
-    """
-    try:
-        from ..evolution import get_evolution_pipeline
-    except (ImportError, ValueError):
-        try:
-            from evolution import get_evolution_pipeline
-        except (ImportError, ValueError):
-            from core.evolution import get_evolution_pipeline
-
-    # Get all evolution components
-    evolution_components = get_evolution_pipeline()
-
-    # Add production hardening components
-    system = {
-        # Evolution/research components
-        **evolution_components,
-        # Production hardening components
-        "performance_optimizer": get_performance_optimizer(),
-        "accessibility_engine": AccessibilityComplianceEngine(),
-        "qa_suite": QASuite(),
-        "deployment_system": ProductionDeploymentSystem(),
-    }
-
-    return system
-
-
-def run_complete_system_test():
-    """
-    Run a comprehensive test of all system components.
-    """
-    logger.debug("Running Complete System Test...")
-
-    # Get complete system
-    system = get_complete_ai_system()
-
-    logger.debug("\n✓ Digital Twin System:", type(system["digital_twin"]).__name__)
-    logger.debug("✓ Adversarial Defense System:", type(system["defense_system"]).__name__)
-    logger.debug("✓ Neural-Symbolic System:", type(system["neural_symbolic"]).__name__)
-    logger.debug("✓ Theory of Mind System:", type(system["theory_of_mind"]).__name__)
-    logger.debug("✓ Temporal Abstraction System:", type(system["temporal_abstraction"]).__name__)
-    logger.debug("✓ Performance Optimizer:", type(system["performance_optimizer"]).__name__)
-    logger.debug("✓ Accessibility Engine:", type(system["accessibility_engine"]).__name__)
-    logger.debug("✓ QA Suite:", type(system["qa_suite"]).__name__)
-    logger.debug("✓ Deployment System:", type(system["deployment_system"]).__name__)
-
-    logger.debug("\n✓ EWC System: Initialized")
-    logger.debug("✓ Federated Learning System: Initialized")
-
-    logger.debug("\nAll system components successfully loaded!")
-    logger.debug("Complete SupremeAI 2.0 system ready for advanced AI operations.")
 
 
 def __getattr__(name: str) -> Any:
@@ -441,6 +275,18 @@ def __getattr__(name: str) -> Any:
         available = all(_resolve_or_none(attr) is not None for attr in _EVOLUTION_LAZY_FLAGS[name])
         globals()[name] = available
         return available
+    if name in _QA_LAZY_EXPORTS:
+        # aiohttp-optional QA symbols keep their historical None contract
+        # (#1347: conditional-None is allowed; permanently-None is not).
+        if QA_SUITE_AVAILABLE:
+            return importlib.import_module("core.testing.qa_suite") and globals().get(name)
+        globals()[name] = None
+        return None
+    if name in _SELF_CHECK_EXPORTS:
+        mod = importlib.import_module("core.selfcheck")
+        value = getattr(mod, name)
+        globals()[name] = value
+        return value
     if name == "EVOLUTION_COMPONENTS_AVAILABLE":
         available = any(
             _resolve_or_none(attr) is not None
