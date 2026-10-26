@@ -609,6 +609,7 @@ Agent workflow:
     parser.add_argument("--self-test", action="store_true", help="Offline contract self-test")
     parser.add_argument("--ci-sweep", action="store_true", help="Run CI guards + satellite GitHub CI check")
     parser.add_argument("--full", action="store_true", help="Run infra + CI sweep combined")
+    parser.add_argument("--heal", action="store_true", help="Auto-heal: sweep full health and trigger agent loop on top priority failure")
     args = parser.parse_args(argv)
 
     if args.self_test:
@@ -619,10 +620,10 @@ Agent workflow:
     guards: list[GuardResult] = []
     satellites: list[SatelliteCIResult] = []
 
-    if args.full or not args.ci_sweep:
+    if args.full or args.heal or not args.ci_sweep:
         report = discover_and_evaluate(timeout=args.timeout)
 
-    if args.ci_sweep or args.full:
+    if args.ci_sweep or args.full or args.heal:
         guards, satellites = run_ci_sweep(token=token)
 
     if args.json:
@@ -647,6 +648,17 @@ Agent workflow:
 
     infra_ok = report is None or report.overall_status == "healthy"
     ci_ok = all(g.status == "pass" for g in guards) and all(s.status == "green" for s in satellites)
+
+    # ── Auto-heal execution hook ──────────────────────────────────────────
+    if args.heal:
+        if infra_ok and ci_ok:
+            print(f"\n{_TICK} System is already GREEN! Nothing to heal.")
+            return 0
+        print(f"\n{_ROCKET} Launching Continuous Agent Loop to heal top priority failure...")
+        heal_cmd = [sys.executable, str(REPO_ROOT / "scripts" / "agents" / "continuous_agent_loop.py"), "--max-tasks", "1"]
+        proc = subprocess.run(heal_cmd, cwd=REPO_ROOT)
+        return proc.returncode
+
     return 0 if (infra_ok and ci_ok) else 1
 
 
