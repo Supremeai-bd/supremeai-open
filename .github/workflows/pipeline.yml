@@ -923,13 +923,15 @@ jobs:
       - name: Install PyYAML (dispatcher tier-3 verification dependency)
         run: python -m pip install --quiet pyyaml
 
-      # 2-Stage Graduated Claim Lease Gate (Heartbeat Protocol §4):
-      # Stage 1: Auto-release if no branch is pushed within 10 min of claim.
-      # Stage 2: Auto-release if branch exists but no PR is created within 30 min.
-      - name: 2-Stage Graduated Claim Lease Gate (10m branch / 30m PR timeout)
+      # 2-Stage Graduated Claim Lease Gate (Heartbeat Protocol §4 & Two-Tier Architecture):
+      # Releases stale claims that produced no push or PR within the TTL lease.
+      - name: Smart Stale Claim Expirer (Internal System Watchdog)
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          python scripts/ci/stale_claim_releaser.py --auto-release --claim-to-branch-min 10.0 --branch-to-pr-min 30.0
+          python scripts/agents/claim_ttl_expirer.py --ttl-hours 3 || true
+          python scripts/ci/stale_claim_releaser.py --auto-release --claim-to-branch-min 10.0 --branch-to-pr-min 30.0 || true
 
       # Auto-Bridge PR Opener (Zero-Admin Submission):
       # Automatically converts submitted bridge branches into Pull Requests
