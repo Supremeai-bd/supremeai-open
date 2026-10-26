@@ -58,6 +58,10 @@ class ExecutionResult(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+# Domain-scoped alias for canonical disambiguation (#751)
+SwarmExecutionResult = ExecutionResult
+
+
 class SwarmOrchestrator:
     """
     Universal Cognitive Engine (Architecture 2.0)

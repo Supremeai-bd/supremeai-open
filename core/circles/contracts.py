@@ -117,6 +117,10 @@ class ExecutionResult(BaseModel):
     finished_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+# Domain-scoped alias for canonical disambiguation (#751)
+CircleExecutionResult = ExecutionResult
+
+
 class EventEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

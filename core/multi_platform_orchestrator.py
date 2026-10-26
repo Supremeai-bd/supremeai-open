@@ -75,6 +75,10 @@ class ExecutionResult:
     errors: list[str] = field(default_factory=list)
 
 
+# Domain-scoped alias for canonical disambiguation (#751)
+MultiPlatformExecutionResult = ExecutionResult
+
+
 class MultiPlatformOrchestrator:
     """
     মাল্টি-প্ল্যাটফর্ম এআই আউটপুট ইন্টারসেপ্টর ও কোডস্পেস অর্কেস্ট্রেটর।
