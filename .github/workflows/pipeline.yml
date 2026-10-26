@@ -741,8 +741,11 @@ jobs:
     name: "🛬 Autonomous Auto-Landing"
     needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower]
     if: |
+      always() &&
       github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false
+      github.event.pull_request.draft == false &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
