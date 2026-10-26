@@ -99,14 +99,14 @@ flowchart TD
 
 ```text
 [SUPREMEAI VERIFIED ECOSYSTEM KNOWLEDGE]
-- Federation Architecture: 12 Product Satellites + 1 Control Plane (MCP Tower).
+- Federation Architecture: Active Product Satellites + 1 Control Plane (MCP Tower).
 - Active Satellites:
   * studio: Frontend web dashboard & workspace (supremeai-studio)
   * gateway/api: Unified provider gateway & auth shield (supremeai-api)
   * core: Brain, decision engine & consensus (supremeai-core)
   * vscode: Developer IDE extension (supremeai-vscode)
   * browser: Headless automation sandbox & scraper (supremeai-browser)
-- Operating Doctrine: Zero-Admin (Admin work <= 0.01%), Satellite-First, Single-Domain PRs, 14 Anchor Hubs.
+- Operating Doctrine: Zero-Admin (Admin work <= 0.01%), Satellite-First, Single-Domain PRs, Federation Anchor Hubs SSOT.
 - Never invent repositories or services outside this official charter.
 ```
 

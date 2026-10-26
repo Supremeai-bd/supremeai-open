@@ -32,9 +32,9 @@ Across the 14 repositories in `Supremeai-bd`:
 
 ---
 
-## 1.1. CI Failure Tracking in supremeai-open Issues (The 14-Anchor SSOT)
+## 1.1. CI Failure Tracking in supremeai-open Issues (Federation Anchor Hub SSOT)
 
-Under the **Single Central Task Board & 14 Anchor Hubs doctrine** (`FEDERATION_CHARTER.md` & `AGENTS.md` §5), `Supremeai-bd/supremeai-open` maintains strictly **14 persistent anchor hub issues** (#749 to #762) to prevent loose issue pollution and maintain a zero-issue mandate across satellites.
+Under the **Single Central Task Board & Federation Anchor Hubs doctrine** (`FEDERATION_CHARTER.md` & `AGENTS.md` §5), `Supremeai-bd/supremeai-open` maintains persistent parent anchor hub issues to prevent loose issue pollution and maintain a zero-issue mandate across satellites.
 
 CI pipeline failures across the federation are recorded directly into **Anchor Hub #761: `[Federation Hub] 🚨 CI Pipeline Failures & Incident Desk`** as structured task contract comments (idempotent via `<!-- MIRROR_RUN: {repo}/actions/runs/{run_id} -->`).
 

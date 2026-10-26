@@ -14,10 +14,12 @@ from scripts.ci.federation_anchors import (
 
 class TestFederationAnchors(unittest.TestCase):
     def test_anchor_counts(self):
-        """Must have exactly 14 persistent anchor hubs."""
-        self.assertEqual(len(ANCHOR_HUBS), 14)
+        """Must have valid registry with active and retired subsets."""
+        from scripts.ci.federation_anchors import ACTIVE_ANCHOR_HUBS, RETIRED_ANCHOR_HUBS
+        self.assertTrue(set(ACTIVE_ANCHOR_HUBS.keys()).issubset(set(ANCHOR_HUBS.keys())))
+        self.assertTrue(set(RETIRED_ANCHOR_HUBS.keys()).issubset(set(ANCHOR_HUBS.keys())))
         unique_numbers = set(ANCHOR_HUBS.values())
-        self.assertEqual(len(unique_numbers), 14)
+        self.assertEqual(len(unique_numbers), len(ANCHOR_HUBS))
 
     def test_sequential_anchor_range(self):
         """Anchor issue numbers must span 749 through 762."""

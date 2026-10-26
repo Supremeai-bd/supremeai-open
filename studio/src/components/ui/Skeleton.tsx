@@ -1,3 +1,15 @@
-export function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse bg-slate-800/50 rounded ${className}`} />;
+import React from 'react';
+import { Skeleton as CommonSkeleton, WorkspaceSkeleton } from '../common/Skeleton';
+
+export interface SkeletonProps {
+  className?: string;
+  variant?: 'text' | 'circular' | 'rectangular';
+  width?: string | number;
+  height?: string | number;
 }
+
+export const Skeleton: React.FC<SkeletonProps> = (props) => {
+  return <CommonSkeleton {...props} />;
+};
+
+export { WorkspaceSkeleton };

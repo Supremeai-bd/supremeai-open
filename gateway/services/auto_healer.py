@@ -341,6 +341,10 @@ class CircuitBreaker:
         }
 
 
+# Domain-scoped alias for canonical disambiguation (#751)
+AutoHealerCircuitBreaker = CircuitBreaker
+
+
 class RetryPolicy:
     """Configurable retry policy with exponential backoff"""
 
