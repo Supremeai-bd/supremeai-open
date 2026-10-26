@@ -115,7 +115,7 @@ export function MarketplacePage() {
 
   return (
     <WorkspaceLayout>
-      <div className="mx-auto w-full max-w-7xl px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
+      <div className="mx-auto w-full max-w-dash px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
         <header className="flex flex-col gap-4 border-b border-[var(--sa-border)] pb-8">
           <div>
             <p className="sa-eyebrow">Extend / Marketplace</p>
