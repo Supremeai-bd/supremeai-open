@@ -101,6 +101,14 @@ export function markAccountQuotaExhausted(label: string, untilMs: number = nextQ
   const prev = quotaCooldownUntil.get(label) ?? 0;
   if (untilMs > prev) {
     quotaCooldownUntil.set(label, untilMs);
+    // (#1345): Explicit quota exhaustion implies the slot's usage hit the ceiling;
+    // ensure quotaUsageCount satisfies assertCooldownInvariant so self-healing
+    // does not falsely discard genuine exhaustion stamps.
+    const windowStartMs = currentQuotaWindowStartMs();
+    const currentUsage = quotaUsageCount.get(label);
+    if (!currentUsage || currentUsage.count < upstashSoftThreshold() || currentUsage.windowStartMs !== windowStartMs) {
+      quotaUsageCount.set(label, { count: upstashSoftThreshold(), windowStartMs });
+    }
     console.warn(
       `[redis-chain] Upstash account "${label}" কোটা শেষ — ` +
         `cooldown until ${new Date(untilMs).toISOString()} (স্বয়ংক্রিয় auto-rotate সক্রিয়)।`,
