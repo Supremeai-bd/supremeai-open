@@ -78,6 +78,10 @@ class CircuitBreaker:
             self.cooldown_until = time.time() + self.cooldown_seconds
 
 
+# Domain-scoped alias for canonical disambiguation (#751)
+ChaosCircuitBreaker = CircuitBreaker
+
+
 class NightlyChaosAuditor:
     """Autonomous Self-Testing & Healing Auditor guarded by Circuit Breaker."""
 
