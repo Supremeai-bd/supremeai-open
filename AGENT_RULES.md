@@ -130,7 +130,8 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
 
 - **Task Validation:** `python scripts/ci/issue_template_guard.py --self-test`
 - **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
-- **Board SSOT Guard:** `python3 scripts/ci/satellite_board_guard.py --check` — 0/0 satellite mandate audit (#626; charter: `docs/FEDERATION_CHARTER.md`)
 - **Federation Anchor Hub SSOT Guard:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 8 active primary root anchor hubs
-- **Boundary Sanitization Guard:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — approved mirror surfaces & proprietary isolation (#107, #508)
+- **Boundary & Surface Path SSOT:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — approved mirror surfaces & proprietary isolation (#107, #508)
+- **Master Health & Preflight SSOT:** `python scripts/ops/master_health_check.py --full` — one-sweep: infrastructure + 9 CI guards + 6 satellite GitHub CI checks; emits ACTION PLAN. `--ci-sweep` for CI-only. `--json` for machine consumption.
+- **Agent Loop SSOT:** `python scripts/agents/continuous_agent_loop.py --loop` — SCAN→FIX→VERIFY until green. When board is empty, dynamically creates issues from ACTION PLAN (zero-duplicate via title fingerprint). `--scan-only` to preview; `--dry-run` to simulate.
 - **Frontend Performance Guard:** `python scripts/ci/frontend_performance_guard.py --self-test` (and `--check studio/src/App.tsx`)

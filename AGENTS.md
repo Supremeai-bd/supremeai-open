@@ -26,13 +26,13 @@ flowchart TD
         P3["Pathway 3: Ephemeral JIT Lease<br>(Automated CLI Runners)"] --> OPEN
     end
 
-    subgraph LOOP ["2. The 8-Step Agent Lifecycle (§3)"]
-        OPEN --> S1["1. Understand & 2. Load Rules"]
-        S1 --> S2["3. Inspect State & Preflight (§2.4)"]
-        S2 --> S3["4. Atomic Claim & Start Sync (Rebase onto main)"]
-        S3 --> S4["5. Smallest Safe Diff (≤ 30 files, ≤ 200 KB)"]
-        S4 --> S5["6. 3-Tier Verification (Reflection → Smoke → Tests)"]
-        S5 --> S6["7. Pre-Push Rebase & PR Record + 8. Board Freshness"]
+    subgraph LOOP ["2. Agent Lifecycle — SCAN → FIX → VERIFY (§3)"]
+        OPEN --> S1["1. Preflight: Load Rules & Sync origin/main"]
+        S1 --> S2["2. SCAN: master_health_check --full → ACTION PLAN"]
+        S2 --> S3["3. PICK top issue (or CREATE from ACTION PLAN, dedup)"]
+        S3 --> S4["4. Atomic Claim + Branch (no claim → no branch)"]
+        S4 --> S5["5. 3-Tier Verify (py_compile · json · sizing)"]
+        S5 --> S6["6. Pre-Push Rebase & PR — repeat until GREEN"]
     end
 
     subgraph TRANSIT ["3. Ephemeral Transit & Landing (§4)"]
@@ -157,5 +157,7 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
 - **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
 - **Federation Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 8 active persistent root hubs (#749 Studio, #750 API, #751 Core, #754 VSCode, #756 Browser, #760 Bridge/Archive, #761 Monorepo CI, #762 Open Embassy; 6 transit hubs consolidated into API/VSCode); all tasks/failures are Sub-Issues.
 - **Boundary & Surface Path SSOT:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — prevents root-level shadowing and unapproved surface leaks (#107, #508).
+- **Master Health & Preflight SSOT:** `python scripts/ops/master_health_check.py --full` — one-sweep: infrastructure + 9 CI guards + 6 satellite GitHub CI checks; emits machine-readable ACTION PLAN for agents (Zero-Maintenance doctrine).
+- **Agent Loop SSOT:** `python scripts/agents/continuous_agent_loop.py --loop` — SCAN→FIX→VERIFY; self-feeds from ACTION PLAN when board is empty; stops only when system is fully green. `--scan-only` to preview without writes.
 - **Frontend Performance SSOT:** `python scripts/ci/frontend_performance_guard.py --self-test` — code-splitting & zero-blocking landing doctrine (FCP < 1.0s).
 - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.

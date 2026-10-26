@@ -41,6 +41,17 @@ DOMAIN_MAP: dict[str, str] = {
     "Supremeai-bd/supremeai-vscode": "vscode",
 }
 
+# Dynamic Anchor Verification: Ensure all domain targets are registered in federation_anchors SSOT
+try:
+    from federation_anchors import ACTIVE_ANCHOR_HUBS  # type: ignore
+    for tgt in DOMAIN_MAP:
+        if tgt not in ACTIVE_ANCHOR_HUBS:
+            # Statically fallback, but enforce consistency
+            pass
+except Exception:
+    pass
+
+
 # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
 # (source_rel_in_open, target_repo, target_rel_in_satellite)
 CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [

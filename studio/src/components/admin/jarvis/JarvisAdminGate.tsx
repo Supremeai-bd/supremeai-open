@@ -66,8 +66,15 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
         }
         setError('Invalid Authenticator code.');
         setCode('');
-      } catch (err) {
-        const message = err instanceof Error && err.message ? err.message : 'Access denied. Incorrect Authenticator code.';
+      } catch (err: any) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : err && typeof err === 'object' && 'message' in err
+            ? String(err.message)
+            : typeof err === 'string'
+            ? err
+            : 'Access denied. Incorrect Authenticator code.';
         setError(message);
         setCode('');
       } finally {

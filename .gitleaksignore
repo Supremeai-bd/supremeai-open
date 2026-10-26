@@ -10,3 +10,8 @@ c7f61dfaf1007c9fbcd573a758a55d69c89ccb70:docs/PROJECT_STATUS_AND_FIXES_BN_2026-1
 # Base64 WebP image data URLs in avatarAssets.ts matching supremeai-aws-secret-key in bridge commit df32c1b0 (issue #1235)
 df32c1b027918e4cbe5deeb0d26e55daeff39b2f:studio/src/components/jarvis/avatarAssets.ts:supremeai-aws-secret-key:9
 df32c1b027918e4cbe5deeb0d26e55daeff39b2f:studio/src/components/jarvis/avatarAssets.ts:supremeai-aws-secret-key:15
+# Mock test fixtures in master_secret_shield.py self-test
+4e4011b40b6150417716d6ba0933c05d983b08b8:scripts/ci/master_secret_shield.py:github-pat:181
+4e4011b40b6150417716d6ba0933c05d983b08b8:scripts/ci/master_secret_shield.py:gcp-api-key:182
+4e4011b40b6150417716d6ba0933c05d983b08b8:scripts/ci/master_secret_shield.py:generic-api-key:183
+4e4011b40b6150417716d6ba0933c05d983b08b8:scripts/ci/master_secret_shield.py:generic-api-key:190
