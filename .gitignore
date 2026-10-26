@@ -33,3 +33,9 @@ audit.raw.json
 .agents/**/audit.raw.json
 .agents/**/test_shot.png
 
+# Local development workspace and secrets
+.local/
+.secrets/
+core/.secrets/
+
+
