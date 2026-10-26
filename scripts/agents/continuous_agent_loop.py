@@ -886,26 +886,9 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
         if exclude:
             excluded_set = {str(e) for e in exclude}
             candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
-        # Traffic-officer lane rule: ci-fixer is a single-agent narrow road.
-        # If ANY open area:ci order is actively claimed, the CI lane is busy —
-        # suppress further CI candidates this round so remaining agents route
-        # to other lanes instead of piling onto parallel CI fixes (CI repair
-        # is serial by nature: same pipelines, green-run gating, shared root
-        # causes). When the active claim closes, the lane reopens naturally.
-        if any(
-            "area:ci" in set(label_names(i)) and "status:claimed" in set(label_names(i))
-            for i in issues
-        ):
-            before_count = len(candidates)
-            candidates = [
-                i for i in candidates if "area:ci" not in set(label_names(i))
-            ]
-            if len(candidates) != before_count:
-                log(
-                    "🚦",
-                    "[Lane] ci-fixer lane busy (active area:ci claim) — "
-                    f"suppressed {before_count - len(candidates)} CI candidate(s) this round.",
-                )
+        # Multi-Agent Concurrency: Issues are locked atomically per issue number.
+        # Distinct CI orders (e.g. core vs monorepo) run in parallel safely
+        # while the GitHub Actions Landing Concurrency serializes squash-merging.
         sorted_issues = sorted(candidates, key=priority_key)
         if sorted_issues:
             return str(sorted_issues[0].get("number"))
