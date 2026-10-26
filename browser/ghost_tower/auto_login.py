@@ -119,7 +119,7 @@ async def handle_google_flow(
                 current_otp = pyotp.TOTP(totp_secret).now()
                 await totp_elem.fill(current_otp)
                 await page.keyboard.press("Enter")
-                logger.info(f"[SSO] Submitted 2FA code: {current_otp}")
+                logger.info("[SSO] Submitted 2FA code: [REDACTED_OTP]")
                 await asyncio.sleep(3)
             else:
                 logger.info("[NOTICE]: 2FA challenge detected.")

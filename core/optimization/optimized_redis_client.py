@@ -48,6 +48,10 @@ class CircuitBreaker:
         return True
 
 
+# Domain-scoped alias for canonical disambiguation (#751)
+RedisCircuitBreaker = CircuitBreaker
+
+
 class OptimizedRedisClient:
     """
     Optimized Redis client with connection pooling, circuit breaker,
