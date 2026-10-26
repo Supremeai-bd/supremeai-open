@@ -227,7 +227,7 @@ export default function DevToolsPage() {
   const [active, setActive] = useState<ToolId>('jsonforge');
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10">
+    <div className="mx-auto max-w-dash px-4 py-10">
       <header className="mb-8">
         <h1 className="text-3xl font-semibold tracking-tight text-white">Free Developer Tools</h1>
         <p className="mt-2 text-sm text-white/60">
