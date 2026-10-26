@@ -144,7 +144,7 @@ export function GuardrailsPage() {
   );
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
+    <div className="max-w-dash mx-auto px-6 py-8">
       <div className="flex items-center gap-3 mb-6">
         <Shield size={28} className="text-blue-500" />
         <div>
