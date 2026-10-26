@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import subprocess
@@ -28,6 +29,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -342,6 +344,62 @@ def run_local_guards() -> list[GuardResult]:
     return results
 
 
+def inspect_failed_run_logs(repo: str, run_id: int, token: str = "") -> dict[str, Any]:
+    """Extract failed step name and key error log lines directly from GitHub Actions."""
+    headers: dict[str, str] = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "SupremeAI-MasterHealth/1.0",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    info: dict[str, Any] = {"failed_job": "", "failed_step": "", "error_excerpt": ""}
+
+    # 1. Discover failed job and step
+    jobs_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs"
+    try:
+        req = urllib.request.Request(jobs_url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        for j in data.get("jobs", []):
+            if j.get("conclusion") == "failure":
+                info["failed_job"] = j.get("name", "")
+                for s in j.get("steps", []):
+                    if s.get("conclusion") == "failure":
+                        info["failed_step"] = s.get("name", "")
+                        break
+                break
+    except Exception:
+        pass
+
+    # 2. Extract error lines from run logs archive if available
+    logs_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/logs"
+    try:
+        req = urllib.request.Request(logs_url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            z = zipfile.ZipFile(io.BytesIO(resp.read()))
+            for name in z.namelist():
+                # Read main job txt logs (skip system.txt)
+                if name.endswith(".txt") and "system" not in name.lower():
+                    raw = z.read(name).decode("utf-8", errors="replace")
+                    error_lines = [
+                        l.strip() for l in raw.splitlines()
+                        if any(marker in l for marker in ("##[error]", " FAIL ", "Error:", "error TS", "FAILED ", "Exception:"))
+                    ]
+                    if error_lines:
+                        # Clean up timestamps from GitHub Actions logs if present
+                        cleaned = []
+                        for l in error_lines[-4:]:
+                            parts = l.split("Z ", 1)
+                            cleaned.append(parts[1] if len(parts) == 2 else l)
+                        info["error_excerpt"] = " | ".join(cleaned)
+                        break
+    except Exception:
+        pass
+
+    return info
+
+
 def check_satellite_ci(token: str = "") -> list[SatelliteCIResult]:
     results: list[SatelliteCIResult] = []
     headers: dict[str, str] = {
@@ -385,7 +443,15 @@ def check_satellite_ci(token: str = "") -> list[SatelliteCIResult]:
             and r.get("status") == "completed"
         ]
         if failing:
-            hint_parts = [f"Fix run #{f['id']} ({f['name']}) at {f['url']}" for f in failing[:2]]
+            # Inspect top failure for live root-cause excerpt
+            top_run = failing[0]
+            log_info = inspect_failed_run_logs(repo, top_run["id"], token=token)
+            top_run["failed_job"] = log_info.get("failed_job", "")
+            top_run["failed_step"] = log_info.get("failed_step", "")
+            top_run["error_excerpt"] = log_info.get("error_excerpt", "")
+
+            step_desc = f" [{top_run['failed_step']}]" if top_run.get("failed_step") else ""
+            hint_parts = [f"Fix run #{f['id']} ({f['name']}){step_desc} at {f['url']}" for f in failing[:2]]
             results.append(SatelliteCIResult(
                 repo=repo, status="failing",
                 failed_runs=failing,
@@ -462,7 +528,10 @@ def print_ci_sweep_report(
         if s.status != "green":
             print(f"   FIX: {s.fix_hint}")
             for run in s.failed_runs[:2]:
-                print(f"      Run #{run['id']} ({run['name']}) -> {run['url']}")
+                step_str = f" [Step: {run['failed_step']}]" if run.get("failed_step") else ""
+                print(f"      Run #{run['id']} ({run['name']}){step_str} -> {run['url']}")
+                if run.get("error_excerpt"):
+                    print(f"      Error: {run['error_excerpt'][:200]}")
 
     overall_ok = guards_failed == 0 and sats_failing == 0
     print("")
@@ -481,7 +550,10 @@ def print_ci_sweep_report(
                 idx += 1
         for s in satellites:
             if s.status != "green":
-                print(f"  {idx}. [SATELLITE CI] {s.repo}: {s.fix_hint}")
+                err_detail = ""
+                if s.failed_runs and s.failed_runs[0].get("error_excerpt"):
+                    err_detail = f" | Cause: {s.failed_runs[0]['error_excerpt'][:120]}"
+                print(f"  {idx}. [SATELLITE CI] {s.repo}: {s.fix_hint}{err_detail}")
                 idx += 1
     print("=" * 72)
 
