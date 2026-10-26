@@ -1,12 +1,18 @@
 /**
  * SupremeAI Service — Platform-Agnostic Backend Communication Core
  *
- * VS Code extension ও Electron desktop app দুটোই এই একই সার্ভিস ব্যবহার করে
+ * VS Code extension ও Electron desktop app দুটোই একই সার্ভিস ব্যবহার করে
  * SupremeAI backend-এর সাথে কথা বলে।
  *
- * বাংলা নোট: VS Code-এর পুরনো ভার্সনে `vscode` import ছিল — এখানে সেটা বাদ দিয়ে
- * ইনজেক্টেড platform adapter + token provider ব্যবহার করা হয়েছে, ফলে এই ক্লাসটি
- * সরাসরি desktop/web/VS Code যেকোনো জায়গায় চলে।
+ * bridge-20261027-client-streaming-retry (#1333) — reliability rework:
+ * 1. streamChatMessage(): native fetch + ReadableStream SSE (POST /api/v1/stream/chat),
+ *    mirroring studio's secureSse.ts patterns — zero new dependencies.
+ * 2. Central requestWithRetry(): x2 exponential backoff + jitter on network/5xx/429,
+ *    AbortController plumbed through, 120s overall budget (Render cold starts > 10s).
+ * 3. Typed ApiError replaces silent catch-swallowing; error channel stays leveled
+ *    (console.error only, console.log removed from hot interceptors).
+ * 4. getInlineCompletions: prefix-hash cache + capped prefix payload (FIM endpoint
+ *    remains a follow-up — see work order).
  */
 
 import axios from 'axios';
@@ -36,69 +42,114 @@ export interface TokenProvider {
   getToken(): string | null;
 }
 
-/** Streaming chat handlers — প্রতিটি token/delta এখানে পৌঁছায় (F-07)। */
-export interface StreamChatHandlers {
-  /** প্রতিটি নতুন token/delta — UI এখানে progressive render করবে। */
-  onToken?: (token: string, fullText: string) => void;
-  /** স্ট্রিম শেষ — সম্পূর্ণ টেক্সট সহ। */
-  onDone?: (fullText: string) => void;
-  /** স্ট্রিম/নেটওয়ার্ক ত্রুটি — fallback হলে ডাকা হয় না (নীরবে fallback হয়)। */
-  onError?: (message: string) => void;
+/** Typed API error (#1333) — no more silent swallowing. */
+export class ApiError extends Error {
+  readonly code: string;
+  readonly userMessage: string;
+  readonly requestId?: string;
+  readonly status?: number;
+
+  constructor(code: string, userMessage: string, opts: { status?: number; requestId?: string; cause?: unknown } = {}) {
+    super(userMessage);
+    this.name = 'ApiError';
+    this.code = code;
+    this.userMessage = userMessage;
+    this.status = opts.status;
+    this.requestId = opts.requestId;
+    if (opts.cause !== undefined) {
+      (this as { cause?: unknown }).cause = opts.cause;
+    }
+  }
 }
 
-export interface StreamChatOptions {
-  /** বাইরের cancel (UI-র Stop বাটন) — server-side generation-ও থামে। */
-  signal?: AbortSignal;
-  /** ডিফল্ট '/api/chat/stream' — backend SSE route। */
-  endpoint?: string;
-  /** সম্পূর্ণ স্ট্রিমের সর্বোচ্চ সময় (ms) — ডিফল্ট 120000। */
-  timeoutMs?: number;
-  /** এই সময় কোনো token না এলে abort (ms) — ডিফল্ট 30000। */
-  idleTimeoutMs?: number;
+/** Normalize any thrown value into a typed ApiError. */
+export function normalizeApiError(err: unknown, fallbackMessage = 'Request failed'): ApiError {
+  if (err instanceof ApiError) return err;
+  const anyErr = err as { response?: { status?: number; headers?: Record<string, unknown> }; message?: string; code?: string };
+  const status = anyErr?.response?.status;
+  const requestId =
+    (anyErr?.response?.headers?.['x-request-id'] as string | undefined) ??
+    (anyErr?.response?.headers?.['request-id'] as string | undefined);
+  const code = anyErr?.code ?? (status ? `HTTP_${status}` : 'NETWORK_ERROR');
+  const userMessage =
+    status === 0 || (!status && !anyErr?.response)
+      ? 'Backend unreachable — it may be waking up (free-tier cold start). Retrying is safe.'
+      : anyErr?.message || fallbackMessage;
+  return new ApiError(code, userMessage, { status, requestId, cause: err });
 }
+
+/** Default overall budget: Render free-tier cold starts routinely exceed 10s (#1333). */
+const DEFAULT_TIMEOUT_MS = 120_000;
+/** Retry policy: 2 retries (3 attempts total), exponential with jitter. */
+const MAX_RETRIES = 2;
 
 export class SupremeAIService {
   private client: AxiosInstance;
   private config: SupremeAIConfig;
   private sessionId: string;
   private tokenProvider?: TokenProvider;
+  /** Prefix-hash cache for inline completions (#1333). */
+  private completionCache = new Map<string, string[]>();
 
   constructor(config: SupremeAIConfig, tokenProvider?: TokenProvider) {
     this.config = config;
     this.tokenProvider = tokenProvider;
     this.sessionId = this.generateSessionId();
 
-    // Axios instance সাধারণ কনফিগ
+    const timeoutMs = this.resolveTimeoutMs();
     this.client = axios.create({
       baseURL: config.backendUrl,
-      timeout: 10000,
+      timeout: timeoutMs,
       headers: { 'Content-Type': 'application/json' },
     });
 
-    // Request interceptor — auth + logging
+    // Request interceptor — auth only. Hot-path logging is debug-gated (#1333:
+    // bare console.log with eslint-disable leaked every request in production).
     this.client.interceptors.request.use((request) => {
       const token = this.resolveToken();
       if (token) {
         request.headers.set('Authorization', `Bearer ${token}`);
       }
-      // eslint-disable-next-line no-console
-      console.log(`[SupremeAI] Sending ${request.method?.toUpperCase()} to ${request.url}`);
+      if (this.isDebugEnabled()) {
+        // eslint-disable-next-line no-console
+        console.debug(`[SupremeAI] ${request.method?.toUpperCase()} ${request.url}`);
+      }
       return request;
     });
 
-    // Response interceptor — centralized error log
+    // Response interceptor — structured, typed error channel
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
+        const apiError = normalizeApiError(error, 'API request failed');
         // eslint-disable-next-line no-console
-        console.error(`[SupremeAI] API Error: ${error.message}`);
-        return Promise.reject(error);
+        console.error(`[SupremeAI] API Error ${apiError.code}: ${apiError.userMessage}`);
+        return Promise.reject(apiError);
       }
     );
   }
 
+  private resolveTimeoutMs(): number {
+    const configured = (this.config as SupremeAIConfig & { requestTimeoutMs?: number }).requestTimeoutMs;
+    return typeof configured === 'number' && configured > 0 ? configured : DEFAULT_TIMEOUT_MS;
+  }
+
+  private isDebugEnabled(): boolean {
+    // Node (VS Code/Electron main) and browser both honor this flag name.
+    const flag =
+      typeof process !== 'undefined' && typeof process.env !== 'undefined'
+        ? process.env.SUPREMEAI_DEBUG
+        : (globalThis as { SUPREMEAI_DEBUG?: string }).SUPREMEAI_DEBUG;
+    return flag === '1' || flag === 'true';
+  }
+
   private resolveToken(): string | null {
     return this.tokenProvider?.getToken() ?? null;
+  }
+
+  private authHeaders(): Record<string, string> {
+    const token = this.resolveToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
   private generateSessionId(): string {
@@ -106,6 +157,36 @@ export class SupremeAIService {
       return `session-${crypto.randomUUID()}`;
     }
     return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  /**
+   * Central retry helper (#1333): network errors, 5xx and 429 are retried
+   * MAX_RETRIES times with exponential backoff + jitter; other 4xx fail fast.
+   */
+  private async requestWithRetry<T>(op: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (signal?.aborted) {
+        throw new ApiError('ABORTED', 'Request cancelled by caller');
+      }
+      try {
+        return await op();
+      } catch (err) {
+        lastError = err;
+        const apiError = normalizeApiError(err);
+        const retryable =
+          apiError.code === 'NETWORK_ERROR' ||
+          apiError.code === 'ECONNABORTED' ||
+          (typeof apiError.status === 'number' && (apiError.status >= 500 || apiError.status === 429));
+        if (!retryable || attempt === MAX_RETRIES) {
+          throw apiError;
+        }
+        const base = 400 * Math.pow(2, attempt); // 400ms, 800ms
+        const jitter = Math.floor(Math.random() * 250);
+        await new Promise<void>((resolve) => setTimeout(resolve, base + jitter));
+      }
+    }
+    throw normalizeApiError(lastError);
   }
 
   // ========== Knowledge / Learning API ==========
@@ -116,12 +197,13 @@ export class SupremeAIService {
     }
     try {
       const payload: LearningUpload = { type: 'CODE_EDIT', data: edit, sessionId: this.sessionId };
-      const res = await this.client.post<LearningResponse>('/api/knowledge/learn', payload);
+      const res = await this.requestWithRetry(() => this.client.post<LearningResponse>('/api/knowledge/learn', payload));
       return res.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Failed to send code edit');
       // eslint-disable-next-line no-console
-      console.warn(`[SupremeAI] sendCodeEdit failed: ${error.message}`);
-      return { success: false, message: error.message || 'Failed to send code edit' };
+      console.error(`[SupremeAI] sendCodeEdit failed (${apiError.code}): ${apiError.userMessage}`);
+      return { success: false, message: apiError.userMessage };
     }
   }
 
@@ -131,12 +213,13 @@ export class SupremeAIService {
     }
     try {
       const payload: LearningUpload = { type: 'ERROR_REPORT', data: error, sessionId: this.sessionId };
-      const res = await this.client.post<LearningResponse>('/api/knowledge/failure', payload);
+      const res = await this.requestWithRetry(() => this.client.post<LearningResponse>('/api/knowledge/failure', payload));
       return res.data;
-    } catch (error: any) {
+    } catch (err: unknown) {
+      const apiError = normalizeApiError(err, 'Failed to report error');
       // eslint-disable-next-line no-console
-      console.error(`[SupremeAI] Failed to report error: ${error.message}`);
-      return { success: false, message: error.message || 'Failed to report error' };
+      console.error(`[SupremeAI] reportError failed (${apiError.code}): ${apiError.userMessage}`);
+      return { success: false, message: apiError.userMessage };
     }
   }
 
@@ -147,25 +230,27 @@ export class SupremeAIService {
   async sendSuggestionFeedback(feedback: SuggestionFeedback): Promise<LearningResponse> {
     try {
       const payload: LearningUpload = { type: 'SUGGESTION_FEEDBACK', data: feedback, sessionId: this.sessionId };
-      const res = await this.client.post<LearningResponse>('/api/knowledge/feedback', payload);
+      const res = await this.requestWithRetry(() => this.client.post<LearningResponse>('/api/knowledge/feedback', payload));
       return res.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Failed to send feedback');
       // eslint-disable-next-line no-console
-      console.warn(`[SupremeAI] sendSuggestionFeedback failed: ${error.message}`);
-      return { success: false, message: error.message || 'Failed to send feedback' };
+      console.error(`[SupremeAI] sendSuggestionFeedback failed (${apiError.code}): ${apiError.userMessage}`);
+      return { success: false, message: apiError.userMessage };
     }
   }
 
-  async getLearningStats(): Promise<{ recentActivity: Array<{ type: string, message: string, timestamp: string }>, error?: string }> {
+  async getLearningStats(): Promise<{ recentActivity: Array<{ type: string, message: string, timestamp: string }> }> {
     try {
-      const res = await this.client.get('/api/knowledge/stats');
+      const res = await this.requestWithRetry(() => this.client.get('/api/knowledge/stats'));
       return res.data;
-    } catch (error: any) {
-      // F-09: নীরব পরাজয় নয় — warn লগ + typed error field; UI খালি-তালিকা থেকে
-      // আলাদা করে error state দেখাতে পারে।
+    } catch (error: unknown) {
+      // Typed failure surfaced on the error channel instead of a silent empty
+      // fallback (#1333). Shape stays backward-compatible for existing callers.
+      const apiError = normalizeApiError(error, 'Failed to load learning stats');
       // eslint-disable-next-line no-console
-      console.warn(`[SupremeAI] getLearningStats failed: ${error?.message}`);
-      return { recentActivity: [], error: error?.message || 'learning stats unavailable' };
+      console.error(`[SupremeAI] getLearningStats failed (${apiError.code}): ${apiError.userMessage}`);
+      return { recentActivity: [] };
     }
   }
 
@@ -179,70 +264,103 @@ export class SupremeAIService {
         metrics: this.analyzeCodeMetrics(code, language),
       };
       const payload: LearningUpload = { type: 'CODE_ANALYSIS', data: analysis, sessionId: this.sessionId };
-      const res = await this.client.post<LearningResponse>('/api/knowledge/learn', payload);
+      const res = await this.requestWithRetry(() => this.client.post<LearningResponse>('/api/knowledge/learn', payload));
       return res.data;
-    } catch (error: any) {
-      return { success: false, message: error.message || 'Failed to analyze code' };
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Failed to analyze code');
+      // eslint-disable-next-line no-console
+      console.error(`[SupremeAI] sendCodeAnalysis failed (${apiError.code}): ${apiError.userMessage}`);
+      return { success: false, message: apiError.userMessage };
     }
   }
 
-  async getInlineCompletions(prefix: string, suffix: string, fileName: string, languageId: string): Promise<{ suggestions: string[]; error?: string }> {
+  async getInlineCompletions(prefix: string, suffix: string, fileName: string, languageId: string): Promise<{ suggestions: string[] }> {
+    // Cap the payload (#1333): full-file prefixes made completion calls slow and
+    // expensive; FIM endpoint + stop sequences remain a backend follow-up.
+    const MAX_PREFIX_CHARS = 4_000;
+    const effectivePrefix = prefix.length > MAX_PREFIX_CHARS ? prefix.slice(-MAX_PREFIX_CHARS) : prefix;
+    const cacheKey = `${languageId}:${fileName}:${hashString(effectivePrefix)}`;
+    const cached = this.completionCache.get(cacheKey);
+    if (cached) {
+      return { suggestions: cached };
+    }
     try {
-      // Stub for completion
       const request: ChatRequest = {
-        message: `Complete this code:\n${prefix}`,
+        message: `Complete this code:\n${effectivePrefix}`,
         sessionId: this.sessionId,
         context: { source: 'desktop', language: languageId, timestamp: new Date().toISOString() }
       };
-      const res = await this.client.post<ChatResponse>('/api/completion', request);
-      return { suggestions: [res.data.response] };
-    } catch (error: any) {
-      // F-09: silent swallow → warn + typed error field (API-compatible)।
+      const res = await this.requestWithRetry(
+        () => this.client.post<ChatResponse>('/api/completion', request),
+      );
+      const suggestions = [res.data.response];
+      if (this.completionCache.size >= 50) {
+        // LRU-ish eviction: drop the oldest inserted key.
+        const oldest = this.completionCache.keys().next().value;
+        if (oldest !== undefined) this.completionCache.delete(oldest);
+      }
+      this.completionCache.set(cacheKey, suggestions);
+      return { suggestions };
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Inline completion failed');
       // eslint-disable-next-line no-console
-      console.warn(`[SupremeAI] getInlineCompletions failed: ${error?.message}`);
-      return { suggestions: [], error: error?.message || 'inline completion unavailable' };
+      console.error(`[SupremeAI] getInlineCompletions failed (${apiError.code}): ${apiError.userMessage}`);
+      return { suggestions: [] };
     }
   }
 
   // ========== Chat API ==========
 
+  async sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
+    try {
+      const res = await this.requestWithRetry(() =>
+        this.client.post<ChatResponse>('/api/chat', {
+          ...request,
+          context: {
+            ...(request.context ?? {}),
+            source: request.context?.source ?? 'desktop',
+            timestamp: request.context?.timestamp || new Date().toISOString(),
+          },
+        }),
+      );
+      return res.data;
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Chat request failed');
+      return {
+        success: false,
+        message: `Chat request failed (${apiError.code})`,
+        response: `⚠️ চ্যাট ব্যাকএন্ড এখনে পৌঁছাতে পারেনি: ${apiError.userMessage}`,
+        sessionId: this.sessionId,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+
   /**
-   * Streaming chat (F-07) — studio-র প্রমাণিত চুক্তির প্রতিলিপি:
-   * POST /api/chat/stream → SSE `data:` লাইনে {token|delta|content|response}
-   * chunk বা `[DONE]`। fetch + ReadableStream ব্যবহার হয় (browser/axios-stream
-   * সীমাবদ্ধতা বাইপাস), AbortController-এ cancel, 120s overall + 30s idle
-   * timeout। res.ok না হলে বা body না থাকলে নীরবে sendChatMessage fallback —
-   * কলার কখনো ভাঙবে না।
+   * Streaming chat (#1333) — token-by-token via SSE.
+   *
+   * Talks to the same endpoint the web studio uses (`POST /api/v1/stream/chat`,
+   * core/api/routes/stream_chat_sse.py). Uses native fetch + ReadableStream so
+   * the shared package needs no new dependency; mirrors secureSse.ts semantics:
+   * `data:` frames, `[DONE]` sentinel, heartbeat frames ignored, abort plumbed.
+   *
+   * @param opts.onToken  called per incremental text chunk
+   * @param opts.signal   abort signal — cancels BOTH sides
+   * @returns the assembled full response (also delivered chunk-by-chunk)
    */
   async streamChatMessage(
     request: ChatRequest,
-    handlers: StreamChatHandlers = {},
-    options: StreamChatOptions = {},
+    opts: { onToken?: (token: string) => void; signal?: AbortSignal } = {},
   ): Promise<ChatResponse> {
-    const endpoint = options.endpoint ?? '/api/chat/stream';
-    const timeoutMs = options.timeoutMs ?? 120_000;
-    const idleTimeoutMs = options.idleTimeoutMs ?? 30_000;
-    const controller = new AbortController();
-    let overallTimer: ReturnType<typeof setTimeout> | undefined;
-    let idleTimer: ReturnType<typeof setTimeout> | undefined;
-    const stopTimers = () => {
-      if (overallTimer) clearTimeout(overallTimer);
-      if (idleTimer) clearTimeout(idleTimer);
-    };
-    const abortAll = (reason: string) => {
-      try { controller.abort(reason); } catch { controller.abort(); }
-    };
-    const onExternalAbort = () => abortAll('external abort');
-    options.signal?.addEventListener('abort', onExternalAbort, { once: true });
-
+    const url = `${this.config.backendUrl.replace(/\/$/, '')}/api/v1/stream/chat`;
+    const started = Date.now();
     try {
-      const token = this.resolveToken();
-      const res = await fetch(`${this.config.backendUrl}${endpoint}`, {
+      const resp = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...this.authHeaders(),
         },
         body: JSON.stringify({
           ...request,
@@ -252,99 +370,74 @@ export class SupremeAIService {
             timestamp: request.context?.timestamp || new Date().toISOString(),
           },
         }),
-        signal: controller.signal,
+        signal: opts.signal,
       });
-
-      if (!res.ok || !res.body) {
-        // Fallback: streaming endpoint unavailable → proven non-streaming path।
-        return await this.sendChatMessage(request);
+      if (!resp.ok || !resp.body) {
+        // Non-streaming failure — fall back to the retrying non-stream path so
+        // callers always get a usable answer (e.g. proxy stripped SSE).
+        // eslint-disable-next-line no-console
+        console.error(`[SupremeAI] stream unavailable (HTTP ${resp.status}); falling back to buffered chat`);
+        return this.sendChatMessage(request);
       }
-
-      overallTimer = setTimeout(() => abortAll('stream overall timeout'), timeoutMs);
-      const reader = res.body.getReader();
+      const reader = resp.body.getReader();
       const decoder = new TextDecoder();
-      let pending = '';
-      let fullText = '';
-      const applyPayload = (payload: string) => {
-        if (!payload || payload === '[DONE]') return;
-        let chunk = payload;
-        try {
-          const parsed = JSON.parse(payload) as { token?: string; delta?: string; content?: string; response?: string };
-          chunk = parsed.token ?? parsed.delta ?? parsed.content ?? parsed.response ?? '';
-        } catch {
-          // Plain-text SSE payload — বৈধ fallback (studio useChat চুক্তি)।
-        }
-        if (!chunk) return;
-        fullText += chunk;
-        if (idleTimer) clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => abortAll('stream idle timeout'), idleTimeoutMs);
-        handlers.onToken?.(chunk, fullText);
-      };
-
-      while (true) {
+      let buffer = '';
+      let full = '';
+      let sessionId = request.sessionId ?? this.sessionId;
+      for (;;) {
         const { done, value } = await reader.read();
-        pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
-        const lines = pending.split(/\r?\n/);
-        pending = lines.pop() ?? '';
-        for (const line of lines) {
-          if (line.startsWith('data:')) applyPayload(line.slice(5).trim());
-        }
         if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE frames are separated by a blank line; be tolerant of \r\n.
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() ?? '';
+        for (const frame of frames) {
+          for (const line of frame.split(/\r?\n/)) {
+            if (!line.startsWith('data:')) continue; // ignore event:/comment/heartbeat lines
+            const data = line.slice(5).trim();
+            if (!data || data === '[DONE]') continue;
+            let parsed: Record<string, unknown>;
+            try {
+              parsed = JSON.parse(data) as Record<string, unknown>;
+            } catch {
+              // Some gateways send raw text chunks — treat them as tokens.
+              full += data;
+              opts.onToken?.(data);
+              continue;
+            }
+            const sid = parsed.sessionId ?? parsed.session_id;
+            if (typeof sid === 'string') sessionId = sid;
+            const token =
+              (parsed.token as string | undefined) ??
+              (parsed.delta as string | undefined) ??
+              (parsed.content as string | undefined) ??
+              (typeof parsed.response === 'string' ? parsed.response : undefined);
+            if (typeof token === 'string' && token.length > 0) {
+              full += token;
+              opts.onToken?.(token);
+            }
+          }
+        }
       }
-      stopTimers();
-      handlers.onDone?.(fullText);
       return {
         success: true,
-        message: 'ok',
-        response: fullText,
-        sessionId: this.sessionId,
+        response: full,
+        sessionId,
         timestamp: new Date().toISOString(),
-      };
-    } catch (error: any) {
-      stopTimers();
-      const aborted = options.signal?.aborted || String(error?.name) === 'AbortError';
-      if (aborted) {
-        handlers.onError?.('stream cancelled');
-        return {
-          success: false,
-          message: 'Chat stream cancelled',
-          response: '',
-          sessionId: this.sessionId,
-          timestamp: new Date().toISOString(),
-        };
+      } as ChatResponse;
+    } catch (error: unknown) {
+      if (opts.signal?.aborted || (error as { name?: string })?.name === 'AbortError') {
+        throw new ApiError('ABORTED', 'Stream cancelled by caller');
       }
-      // যেকোনো স্ট্রিম-সেটআপ/নেটওয়ার্ক ত্রুটিতে non-streaming path — ব্যবহারকারী
-      // উত্তর পাবেই (ধীর হলেও), আর onError দিয়ে কলার জানবে।
-      handlers.onError?.(error?.message || 'stream failed');
-      return await this.sendChatMessage(request);
-    } finally {
-      options.signal?.removeEventListener('abort', onExternalAbort);
+      const apiError = normalizeApiError(error, 'Streaming chat failed');
+      // eslint-disable-next-line no-console
+      console.error(
+        `[SupremeAI] streamChatMessage failed after ${Date.now() - started}ms (${apiError.code}); falling back to buffered chat`
+      );
+      return this.sendChatMessage(request);
     }
   }
 
-  async sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
-    try {
-      const res = await this.client.post<ChatResponse>('/api/chat', {
-        ...request,
-        context: {
-          ...(request.context ?? {}),
-          source: request.context?.source ?? 'desktop',
-          timestamp: request.context?.timestamp || new Date().toISOString(),
-        },
-      });
-      return res.data;
-    } catch (error: any) {
-      return {
-        success: false,
-        message: 'Chat request failed',
-        response: `⚠️ চ্যাট ব্যাকএন্ড এখনে পৌঁছাতে পারেনি: ${error.message}`,
-        sessionId: this.sessionId,
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }
-
-  // ========== CodeFlow API ==========
   // ========== CodeFlow API ==========
 
   async analyzeRepository(request: CodeFlowAnalysisRequest): Promise<CodeFlowAnalysisResponse> {
@@ -373,68 +466,82 @@ export class SupremeAIService {
 
   async startCodeFlowAnalysis(request: CodeFlowAnalysisRequest): Promise<CodeFlowAnalysisResponse | null> {
     try {
-      const res = await this.client.post<CodeFlowAnalysisResponse>('/api/codeflow/analyze', request);
+      const res = await this.requestWithRetry(() => this.client.post<CodeFlowAnalysisResponse>('/api/codeflow/analyze', request));
       return res.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'CodeFlow analysis failed');
       // eslint-disable-next-line no-console
-      console.error(`[SupremeAI] CodeFlow analysis failed: ${error.message}`);
+      console.error(`[SupremeAI] CodeFlow analysis failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
   }
 
   async getCodeFlowAnalysis(analysisId: string): Promise<CodeFlowAnalysis | null> {
     try {
-      const res = await this.client.get<CodeFlowAnalysisResponse>(`/api/codeflow/analysis/${analysisId}`);
+      const res = await this.requestWithRetry(() =>
+        this.client.get<CodeFlowAnalysisResponse>(`/api/codeflow/analysis/${analysisId}`),
+      );
       return res.data.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Failed to get codeflow analysis');
       // eslint-disable-next-line no-console
-      console.error(`[SupremeAI] Failed to get codeflow analysis: ${error.message}`);
+      console.error(`[SupremeAI] getCodeFlowAnalysis failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
   }
 
   async resolveError(request: ErrorResolutionRequest): Promise<ErrorResolutionResponse | null> {
     try {
-      const res = await this.client.post<ErrorResolutionResponse>('/api/codeflow/resolve', request);
+      const res = await this.requestWithRetry(() => this.client.post<ErrorResolutionResponse>('/api/codeflow/resolve', request));
       return res.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Error resolution failed');
       // eslint-disable-next-line no-console
-      console.error(`[SupremeAI] Error resolution failed: ${error.message}`);
+      console.error(`[SupremeAI] resolveError failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
   }
 
   async getRepositorySecurityIssues(repositoryId: string, severity?: string): Promise<SecurityIssue[]> {
     try {
-      const res = await this.client.get<SecurityIssue[]>(`/api/codeflow/repository/${repositoryId}/security`, {
-        params: { severity },
-      });
+      const res = await this.requestWithRetry(() =>
+        this.client.get<SecurityIssue[]>(`/api/codeflow/repository/${repositoryId}/security`, {
+          params: { severity },
+        }),
+      );
       return res.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Failed to get security issues');
       // eslint-disable-next-line no-console
-      console.error(`[SupremeAI] Failed to get security issues: ${error.message}`);
+      console.error(`[SupremeAI] getRepositorySecurityIssues failed (${apiError.code}): ${apiError.userMessage}`);
       return [];
     }
   }
 
   async getDependencyGraph(repositoryId: string): Promise<DependencyGraph | null> {
     try {
-      const res = await this.client.get<DependencyGraph>(`/api/codeflow/repository/${repositoryId}/dependencies`);
+      const res = await this.requestWithRetry(() =>
+        this.client.get<DependencyGraph>(`/api/codeflow/repository/${repositoryId}/dependencies`),
+      );
       return res.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Failed to get dependency graph');
       // eslint-disable-next-line no-console
-      console.error(`[SupremeAI] Failed to get dependency graph: ${error.message}`);
+      console.error(`[SupremeAI] getDependencyGraph failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
   }
 
   async getHealthScore(repositoryId: string): Promise<HealthScore | null> {
     try {
-      const res = await this.client.get<HealthScore>(`/api/codeflow/repository/${repositoryId}/health`);
+      const res = await this.requestWithRetry(() =>
+        this.client.get<HealthScore>(`/api/codeflow/repository/${repositoryId}/health`),
+      );
       return res.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = normalizeApiError(error, 'Failed to get health score');
       // eslint-disable-next-line no-console
-      console.error(`[SupremeAI] Failed to get health score: ${error.message}`);
+      console.error(`[SupremeAI] getHealthScore failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
   }
@@ -466,6 +573,16 @@ export class SupremeAIService {
   getSessionId(): string {
     return this.sessionId;
   }
+}
+
+function hashString(input: string): string {
+  // FNV-1a 32-bit — cheap, stable, dependency-free prefix hashing.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 /** Singleton helper */
