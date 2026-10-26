@@ -45,33 +45,86 @@ except ImportError:
 # ways. `core` is only ever imported as a package, so one canonical
 # package-relative path per symbol is enough — the fallback ladder just
 # tripled maintenance surface and hid real breakage behind silent orderings.
-from .accessibility.wcag_compliance import (
-    AccessibilityComplianceEngine,
-    AccessibilityIssue,
-    ColorContrastChecker,
-    HTMLAccessibilityChecker,
-    WCAGGuideline,
-    WCAGLevel,
-    WCAGPrinciple,
-)
-from .deployment.production_deploy import (
-    ConfigManager,
-    DeploymentConfig,
-    DeploymentEnvironment,
-    DeploymentManager,
-    DeploymentStatus,
-    HealthChecker,
-    ImageBuilder,
-    ProductionDeploymentSystem,
-)
-from .optimization.performance_optimizer import (
-    AsyncLRUCache,
-    LRUCache,
-    OptimizationLevel,
-    PerformanceOptimizer,
-    get_performance_optimizer,
-    performance_monitor,
-)
+# bridge-20261027-fix-coreci-ci-green: accessibility/, deployment/ and
+# optimization/ are OPTIONAL platform submodules. Satellite deployments
+# (supremeai-core) ship without them — cleanup PRs removed the duplicated
+# trees — so the hard imports above made `import core` (and therefore every
+# `from core.X import …` consumer, e.g. decision_engine via core.logging_config)
+# fail at import time, which killed pytest collection and kept the Core CI red
+# across every sync. Same guard pattern as the qa_suite and evolution blocks
+# below: one canonical package-relative path per symbol (#1347), an
+# availability flag, and a PEP 562 lazy re-export on first access.
+try:
+    from .accessibility.wcag_compliance import (
+        AccessibilityComplianceEngine,
+        AccessibilityIssue,
+        ColorContrastChecker,
+        HTMLAccessibilityChecker,
+        WCAGGuideline,
+        WCAGLevel,
+        WCAGPrinciple,
+    )
+
+    ACCESSIBILITY_AVAILABLE = True
+except (ImportError, ValueError):
+    ACCESSIBILITY_AVAILABLE = False
+
+try:
+    from .deployment.production_deploy import (
+        ConfigManager,
+        DeploymentConfig,
+        DeploymentEnvironment,
+        DeploymentManager,
+        DeploymentStatus,
+        HealthChecker,
+        ImageBuilder,
+        ProductionDeploymentSystem,
+    )
+
+    DEPLOYMENT_AVAILABLE = True
+except (ImportError, ValueError):
+    DEPLOYMENT_AVAILABLE = False
+
+try:
+    from .optimization.performance_optimizer import (
+        AsyncLRUCache,
+        LRUCache,
+        OptimizationLevel,
+        PerformanceOptimizer,
+        get_performance_optimizer,
+        performance_monitor,
+    )
+
+    OPTIMIZATION_AVAILABLE = True
+except (ImportError, ValueError):
+    OPTIMIZATION_AVAILABLE = False
+
+# Optional platform re-exports: name -> (canonical module, attr). Resolved on
+# first access; None when the submodule is not shipped in this deployment
+# (same conditional-None contract as the evolution/QA blocks).
+_PLATFORM_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "AccessibilityComplianceEngine": ("core.accessibility.wcag_compliance", "AccessibilityComplianceEngine"),
+    "AccessibilityIssue": ("core.accessibility.wcag_compliance", "AccessibilityIssue"),
+    "ColorContrastChecker": ("core.accessibility.wcag_compliance", "ColorContrastChecker"),
+    "HTMLAccessibilityChecker": ("core.accessibility.wcag_compliance", "HTMLAccessibilityChecker"),
+    "WCAGGuideline": ("core.accessibility.wcag_compliance", "WCAGGuideline"),
+    "WCAGLevel": ("core.accessibility.wcag_compliance", "WCAGLevel"),
+    "WCAGPrinciple": ("core.accessibility.wcag_compliance", "WCAGPrinciple"),
+    "ConfigManager": ("core.deployment.production_deploy", "ConfigManager"),
+    "DeploymentConfig": ("core.deployment.production_deploy", "DeploymentConfig"),
+    "DeploymentEnvironment": ("core.deployment.production_deploy", "DeploymentEnvironment"),
+    "DeploymentManager": ("core.deployment.production_deploy", "DeploymentManager"),
+    "DeploymentStatus": ("core.deployment.production_deploy", "DeploymentStatus"),
+    "HealthChecker": ("core.deployment.production_deploy", "HealthChecker"),
+    "ImageBuilder": ("core.deployment.production_deploy", "ImageBuilder"),
+    "ProductionDeploymentSystem": ("core.deployment.production_deploy", "ProductionDeploymentSystem"),
+    "AsyncLRUCache": ("core.optimization.performance_optimizer", "AsyncLRUCache"),
+    "LRUCache": ("core.optimization.performance_optimizer", "LRUCache"),
+    "OptimizationLevel": ("core.optimization.performance_optimizer", "OptimizationLevel"),
+    "PerformanceOptimizer": ("core.optimization.performance_optimizer", "PerformanceOptimizer"),
+    "get_performance_optimizer": ("core.optimization.performance_optimizer", "get_performance_optimizer"),
+    "performance_monitor": ("core.optimization.performance_optimizer", "performance_monitor"),
+}
 
 # বাংলা মন্তব্য: core.testing.qa_suite নিজে aiohttp আমদানি করে (একটা optional/dev-only
 # dependency — production API path কখনো এটা ব্যবহার করে না)। কিন্তু এই ব্লকটা আগে
@@ -262,6 +315,14 @@ def __getattr__(name: str) -> Any:
     """
     import importlib
 
+    if name in _PLATFORM_LAZY_EXPORTS:
+        module_path, attr = _PLATFORM_LAZY_EXPORTS[name]
+        try:
+            value = getattr(importlib.import_module(module_path), attr)
+        except (ImportError, AttributeError):
+            value = None
+        globals()[name] = value
+        return value
     if name in _EVOLUTION_LAZY_EXPORTS:
         # Match the historical eager contract: torch/sympy-dependent research
         # exports become None (not an ImportError) when their deps are absent.
