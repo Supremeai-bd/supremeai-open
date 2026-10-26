@@ -39,3 +39,6 @@ audit.raw.json
 core/.secrets/
 
 
+
+# Runtime health-report outputs
+reports/
