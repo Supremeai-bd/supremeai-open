@@ -305,8 +305,6 @@ def link_sub_issue(
                     if resp_l.status in (200, 201):
                         return True
         except urllib.error.HTTPError as exc:
-            # Fail LOUD: a silent False here cost the board 9 loose CI
-            # incidents (#910-#918) that nobody noticed for days.
             try:
                 detail = exc.read().decode("utf-8", errors="replace")[:300]
             except OSError:
@@ -315,6 +313,33 @@ def link_sub_issue(
                 f"[anchors] link_sub_issue REST failed: HTTP {exc.code} "
                 f"for child #{child_issue_number} -> parent #{parent_issue_number}: {detail}"
             )
+            # Self-healing: if parent reached GitHub's 100 sub-issue hard limit, auto-prune closed sub-issues and retry once
+            if exc.code == 422 and "Parent cannot have more than 100 sub-issues" in detail:
+                print(f"[anchors] Parent #{parent_issue_number} reached 100 sub-issues limit. Auto-pruning closed sub-issues...")
+                try:
+                    list_url = f"https://api.github.com/repos/{repo}/issues/{parent_issue_number}/sub_issues?per_page=100"
+                    r_sub = urllib.request.Request(list_url, headers=_gh_headers(tok))
+                    with urllib.request.urlopen(r_sub, timeout=10) as s_resp:
+                        sub_items = json.loads(s_resp.read().decode("utf-8"))
+                    closed_subs = [i for i in sub_items if i.get("state") == "closed"]
+                    pruned = 0
+                    for c_sub in closed_subs[:10]:
+                        del_url = f"https://api.github.com/repos/{repo}/issues/{parent_issue_number}/sub_issue"
+                        d_bytes = json.dumps({"sub_issue_id": c_sub["id"]}).encode("utf-8")
+                        del_req = urllib.request.Request(del_url, data=d_bytes, headers=_gh_headers(tok), method="DELETE")
+                        try:
+                            with urllib.request.urlopen(del_req, timeout=8):
+                                pruned += 1
+                        except Exception:
+                            pass
+                    if pruned > 0:
+                        print(f"[anchors] Auto-pruned {pruned} closed sub-issues from #{parent_issue_number}. Retrying link...")
+                        # Retry link
+                        with urllib.request.urlopen(req_l, timeout=10) as retry_resp:
+                            if retry_resp.status in (200, 201):
+                                return True
+                except Exception as prune_err:
+                    print(f"[anchors] Auto-prune retry failed: {prune_err}")
         except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
             print(f"[anchors] link_sub_issue REST failed: {exc}")
 
