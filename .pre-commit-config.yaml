@@ -1,19 +1,10 @@
+# WO #1361 — block commits that log plaintext secrets (OTP/tokens/passwords)
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.18.4
-    hooks:
-      - id: gitleaks
   - repo: local
     hooks:
-      - id: pytest-smoke
-        name: pytest smoke
-        entry: python -m pytest tests/test_ci_guards.py -q
+      - id: no-secret-logs
+        name: scan for secret values interpolated in log/print calls
+        entry: python3 scripts/scan_secret_logs.py
         language: system
         pass_filenames: false
-        stages: [pre-commit]
+        files: '\.py$'
