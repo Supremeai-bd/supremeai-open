@@ -99,5 +99,25 @@ class TestLastRunStore(unittest.TestCase):
             self.assertEqual(cal.load_last_run_store(p), {})
 
 
+class TestP0Drainage(unittest.TestCase):
+    def test_has_open_p0_blocker_positive(self):
+        issues = [
+            {"number": 101, "labels": [{"name": "P1-high"}]},
+            {"number": 102, "labels": [{"name": "P0-critical"}]},
+        ]
+        self.assertTrue(cal.has_open_p0_blocker(issues))
+
+    def test_has_open_p0_blocker_negative(self):
+        issues = [
+            {"number": 101, "labels": [{"name": "P1-high"}]},
+            {"number": 103, "labels": [{"name": "P2-medium"}]},
+        ]
+        self.assertFalse(cal.has_open_p0_blocker(issues))
+
+    def test_label_names_extraction(self):
+        item = {"labels": [{"name": "P0-critical"}, {"name": "Status:Unclaimed"}]}
+        self.assertEqual(cal.label_names(item), ["p0-critical", "status:unclaimed"])
+
+
 if __name__ == "__main__":
     unittest.main()

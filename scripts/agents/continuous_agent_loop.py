@@ -122,6 +122,22 @@ def build_task_contract(
         }
     }
 
+def label_names(item: dict[str, Any]) -> list[str]:
+    labels = item.get("labels")
+    if not isinstance(labels, list):
+        return []
+    return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+
+def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
+    """Check if there is any open P0-critical architectural issue on the board."""
+    for item in issues:
+        if not isinstance(item, dict):
+            continue
+        names = label_names(item)
+        if any(name == "p0" or name.startswith("p0-") or name.startswith("p0 ") for name in names):
+            return True
+    return False
+
 def pick_next_issue(
     exclude: set[str] | list[str] | None = None,
     issues: list[dict[str, Any]] | None = None,
@@ -148,12 +164,6 @@ def pick_next_issue(
                 pass
     if not issues:
         return None
-
-    def label_names(item: dict[str, Any]) -> list[str]:
-        labels = item.get("labels")
-        if not isinstance(labels, list):
-            return []
-        return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
 
     lease_store = load_issue_lease_store()
     now_ts = time.time()
@@ -219,7 +229,8 @@ COMMON_RULES = """=== UNIVERSAL INVARIANTS (ALL ROLES MUST FOLLOW) ===
 1. Dual-Rebase: Rebase origin/main at work-start AND pre-push (0 behind).
 2. Boundary: Zero satellite code in repo root (src/*, service/*, packages/*).
 3. Superior Replacement: Discard broken legacy code/tests; never hack new code to appease past errors.
-4. Verification: No direct push to protected branches; all PRs require local proof."""
+4. Verification: No direct push to protected branches; all PRs require local proof.
+5. P0 Drainage & Anti-Stampede: Architectural P0 blockers supersede all routine audits/scout tickets; idempotency check mandatory."""
 
 def log(icon: str, msg: str) -> None:
     try:
@@ -920,6 +931,15 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
     # role আগের মতোই প্রথমটি — ডিসপ্যাচ টেক্সট ও ক্রম বাইট-অপরিবর্তিত;
     # ডিফল্ট কনফিগে canonical_role() identity, তাই আচরণে কোনো পরিবর্তন নেই।
     # immediate state-advance (নিয়ম ৪) অক্ষত: mark → save → print → return।
+    # বাংলা: P0 Drainage Invariant (Rule 5) — যদি বোর্ডে কোনো P0-critical
+    # ইস্যু সক্রিয় থাকে (এমনকি অন্য রানার যদি অস্থায়ী লিজ নিয়েও থাকে), তবুও
+    # কোনো রুটিন অডিট/স্কাউট রোল রান হবে না যাতে ব্যাকলগ আটকে রেখে অগুরুত্বপূর্ণ
+    # কাজ না হয়। P0 সমাধান না হওয়া পর্যন্ত ক্যাডেন্স স্থগিত থাকবে।
+    if not board_unavailable and has_open_p0_blocker(raw):
+        log("!", "P0 Drainage Invariant: Active P0-critical blocker detected on board. Holding cadence roles until P0 issues are resolved.")
+        print("ACTION: System is draining P0-critical architectural backlog. Routine cadence roles held.")
+        return 0
+
     for role in due_roles(state, now, cfg):
         mark_role_run(role, state, now, cfg)
         save_last_run_store(state)
