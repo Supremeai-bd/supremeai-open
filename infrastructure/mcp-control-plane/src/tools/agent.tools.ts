@@ -87,7 +87,7 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
 
   server.tool(
     "agent_status",
-    "List live agent-slot heartbeats with derived real-time state: online (≤90s), stale (>90s, key alive), expired (no runtime signal).",
+    "List live agent-slot heartbeats with derived real-time state: online (≤90s), stale (>90s, key alive), expired (no runtime signal, visible for 24h archive grace). Expired slots beyond the grace are reaped from the registry and returned once under `archived` (#1641).",
     {},
     async () => {
       try {
