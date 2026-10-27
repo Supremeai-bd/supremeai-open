@@ -70,6 +70,7 @@ APPROVED_TOP_LEVEL_DIRS = {
     ".agents",  # Agent workspace customizations (rules, skills, minimal-elegance)
     "api-schemas",
     "docs",
+    "evals",  # Golden eval suite — 100-case AI quality benchmark + offline runner (issue #1362)
     "examples",
     "infrastructure",
     "scripts",
