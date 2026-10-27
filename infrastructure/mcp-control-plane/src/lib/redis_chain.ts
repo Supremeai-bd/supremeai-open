@@ -11,6 +11,12 @@
 // instead of failing on the primary alone (false DOWN while the chain serves).
 
 import { env } from "./env.js";
+import {
+  isCooldownLedgerEnabled,
+  persistCooldownClear,
+  persistCooldownStamp,
+  validLedgerStamps,
+} from "./cooldown_ledger.js";
 
 export type RedisAccountConfig = {
   label: string;
@@ -96,8 +102,49 @@ export function nextUtcResetEpochMs(nowMs: number = Date.now()): number {
   return nextQuotaResetEpochMs(nowMs);
 }
 
+// ── Persistent cooldown ledger hydration (#1360 deliverable C) ─────────────
+// One-shot lazy merge from the file ledger (env REDIS_COOLDOWN_LEDGER_PATH).
+// When the env is unset this is a no-op — behavior byte-identical to the
+// pre-ledger in-memory registry. Restored stamps are pre-validated by
+// validLedgerStamps (future-dated + window-current + usage ≥ soft threshold),
+// so a hydrated registry never violates the #1345 cooldown invariant.
+let ledgerHydrated = false;
+
+function hydrateCooldownLedgerOnce(nowMs: number = Date.now()): void {
+  if (ledgerHydrated || !isCooldownLedgerEnabled()) return;
+  ledgerHydrated = true;
+  try {
+    const stamps = validLedgerStamps(
+      buildAccountChain().map((a) => a.label),
+      upstashSoftThreshold(),
+      currentQuotaWindowStartMs(nowMs),
+      nowMs,
+    );
+    for (const [label, entry] of stamps) {
+      if ((quotaCooldownUntil.get(label) ?? 0) < entry.cooldownUntilMs) {
+        quotaCooldownUntil.set(label, entry.cooldownUntilMs);
+      }
+      const existing = quotaUsageCount.get(label);
+      if (!existing || existing.windowStartMs !== entry.usage.windowStartMs || existing.count < entry.usage.count) {
+        quotaUsageCount.set(label, { count: entry.usage.count, windowStartMs: entry.usage.windowStartMs });
+      }
+    }
+    if (stamps.size > 0) {
+      console.log(
+        `[redis-chain] Cooldown ledger hydrated: ${stamps.size} stamp(s) restored across restart ` +
+          `(${[...stamps.keys()].join(", ")}) — quota-dead accounts stay skipped without burning probe commands (#1360).`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[redis-chain] Cooldown ledger hydration failed: ${(err as Error).message} — continuing in-memory (fail-open).`,
+    );
+  }
+}
+
 /** ওই account-কে কোটা cooldown-এ ফেলে ও পরের অ্যাকাউন্টে অটো-রোটেট করে (R2)। */
 export function markAccountQuotaExhausted(label: string, untilMs: number = nextQuotaResetEpochMs()): void {
+  hydrateCooldownLedgerOnce();
   const prev = quotaCooldownUntil.get(label) ?? 0;
   if (untilMs > prev) {
     quotaCooldownUntil.set(label, untilMs);
@@ -113,6 +160,10 @@ export function markAccountQuotaExhausted(label: string, untilMs: number = nextQ
       `[redis-chain] Upstash account "${label}" কোটা শেষ — ` +
         `cooldown until ${new Date(untilMs).toISOString()} (স্বয়ংক্রিয় auto-rotate সক্রিয়)।`,
     );
+    const stampedUsage = quotaUsageCount.get(label);
+    if (stampedUsage) {
+      persistCooldownStamp(label, untilMs, stampedUsage);
+    }
   }
 }
 
@@ -123,10 +174,12 @@ export function forceRotateAccount(label: string, untilMs: number = nextQuotaRes
 
 /** Account কি এই মুহূর্তে কোটা cooldown-এ? (মেয়াদ শেষ হলে entry পরিষ্কার হয়) */
 export function isAccountQuotaExhausted(label: string, nowMs: number = Date.now()): boolean {
+  hydrateCooldownLedgerOnce(nowMs);
   const until = quotaCooldownUntil.get(label);
   if (until === undefined) return false;
   if (nowMs >= until) {
     quotaCooldownUntil.delete(label);
+    persistCooldownClear(label);
     return false;
   }
   return true;
@@ -136,8 +189,10 @@ export function isAccountQuotaExhausted(label: string, nowMs: number = Date.now(
  * কোটা cooldown থেকে কোনো অ্যাকাউন্টকে আগাম মুক্তি দেওয়া (যেমন পিং টেস্টে সফল হলে)।
  */
 export function clearAccountCooldown(label: string): boolean {
+  hydrateCooldownLedgerOnce();
   if (quotaCooldownUntil.has(label)) {
     quotaCooldownUntil.delete(label);
+    persistCooldownClear(label);
     console.log(`[redis-chain] Account "${label}" cooldown cleared via recovery probe.`);
     return true;
   }
@@ -249,6 +304,7 @@ export function assertCooldownInvariant(label: string, nowMs: number = Date.now(
       `(< soft threshold ${upstashSoftThreshold()}) — mis-stamped slot self-healed.`,
   );
   quotaCooldownUntil.delete(label);
+  persistCooldownClear(label);
   return false;
 }
 
@@ -323,6 +379,42 @@ export function upstashSoftThreshold(): number {
   const raw = Number(process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD);
   if (Number.isFinite(raw) && raw > 0) return raw;
   return Math.floor(upstashCommandLimit() * 0.96);
+}
+
+// ── Three-tier alert ladder (#1360 deliverable B) ───────────────────────────
+// #1522 landed warn(80%)/crit(95%); the #1360 contract requires the middle
+// 90% rung so ops sees the burn crossing from "watch" to "act" while there is
+// still usable headroom. Pure function (env-overridable tiers) so the ladder
+// is unit-testable without constructing MCP tool invocations.
+export type QuotaTier = "warn" | "high" | "crit" | null;
+
+export function quotaWarnPct(): number {
+  const raw = Number(process.env.REDIS_QUOTA_ALERT_PCT);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? raw : 80;
+}
+
+export function quotaHighPct(): number {
+  const raw = Number(process.env.REDIS_QUOTA_HIGH_PCT);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? raw : 90;
+}
+
+export function quotaCritPct(): number {
+  const raw = Number(process.env.REDIS_QUOTA_CRIT_PCT);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? raw : 95;
+}
+
+/** Maps a usage percentage to its alert tier (highest rung wins; null = quiet). */
+export function quotaTierFor(
+  pct: number | null,
+  warnPct: number = quotaWarnPct(),
+  highPct: number = quotaHighPct(),
+  critPct: number = quotaCritPct(),
+): QuotaTier {
+  if (pct === null || !Number.isFinite(pct)) return null;
+  if (pct >= critPct) return "crit";
+  if (pct >= highPct) return "high";
+  if (pct >= warnPct) return "warn";
+  return null;
 }
 
 /**
