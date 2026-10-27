@@ -8,8 +8,6 @@ and clicks the exact '#send-message-button' to keep agents running 24/7.
 import argparse
 import asyncio
 import os
-import sys
-import time
 from datetime import datetime
 from playwright.async_api import async_playwright, BrowserContext, Page
 
