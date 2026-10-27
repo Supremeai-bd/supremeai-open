@@ -79,6 +79,14 @@ export async function fetchWithRetry(
       lastError = new Error(`HTTP ${response.status}`);
 
     } catch (error) {
+      // supremeai-studio#1 (CORS residual): network-layer failures surface as
+      // TypeError per the fetch spec (CORS origin-policy rejection, DNS, refused
+      // connection). An origin-policy rejection is DETERMINISTIC — re-firing the
+      // same request up to 3 more times cannot succeed and only multiplies the
+      // browser's un-suppressable console errors. Retry remains reserved for
+      // retryable HTTP statuses (handled above) and constructed errors (timeouts,
+      // cold-start 50x wrappers) thrown by higher layers.
+      if (error instanceof TypeError) throw error;
       lastError = error as Error;
       console.warn(`⚠️ Attempt ${attempt + 1}/${config.maxRetries + 1}:`, error);
     }
@@ -120,8 +128,7 @@ export const USER_BACKEND_URL: string = normalizeBackendUrl(
   import.meta.env.VITE_USER_BACKEND ||
     import.meta.env.VITE_API_BASE ||
     import.meta.env.VITE_API_URL ||
-    import.meta.env.VITE_BACKEND_URL ||
-    'https://supremeai-api-ulw0.onrender.com',
+    import.meta.env.VITE_BACKEND_URL,
 );
 
 /** Admin-context API calls-এর canonical backend URL (build-time resolved, runtime-picked) */
