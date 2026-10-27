@@ -155,8 +155,8 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
             "Auto-rotation (#646) protects traffic at 96%, but capacity is running out — top up, downgrade burn, or add an account.",
           );
           try {
-            const sent = await sendTelegram(lines.join("\n"), chatId);
-            telegram = { sent: true, messageId: sent.messageId };
+            const sent = (await sendTelegram(lines.join("\n"), chatId)) as { messageId?: unknown };
+            telegram = { sent: true, messageId: sent?.messageId };
             for (const a of fresh) quotaAlertSent.set(alertKey(a), windowKey);
           } catch (notifyErr) {
             // Graceful degradation (#3): a Telegram outage must not fail the report.
