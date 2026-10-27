@@ -4,11 +4,14 @@
 Covers the agent-loop slice of the 3-tier enforcement:
 
   * Tier 1 — `scripts/agents/continuous_agent_loop.py` step_2_rules():
-    - RULE_FRESHNESS_FILES SSOT (AGENTS.md, AGENT_RULES.md,
-      .github/PULL_REQUEST_TEMPLATE.md);
+    - RULE_FRESHNESS_FILES SSOT (AGENTS.md,
+      .github/PULL_REQUEST_TEMPLATE.md — AGENT_RULES.md was deleted by #1526);
     - pure divergence classifier `diff_rule_freshness()`;
     - fail-closed matrix: git missing (rc 127), fetch failure (network down),
-      origin-side constitution deletion, unverifiable worktree blob;
+      unverifiable worktree blob, missing-local-with-self-heal-failure;
+    - honest-skip semantics (#1539): a file deleted/renamed UPSTREAM is
+      skipped for the run with an honest notice — never a permanent fail,
+      never auto-synced via checkout (the AGENT_RULES.md self-defeat class);
     - auto-sync: divergence triggers 'git checkout origin/main -- <files>',
       checkout failure fail-closes, all-fresh runs NO checkout;
     - report-only mode (--verify-only boot smoke): drift is reported, the
@@ -19,7 +22,8 @@ Covers the agent-loop slice of the 3-tier enforcement:
     - mandatory invariant checklist SSOT (reflection evidence, P7 sizing,
       claim gate, boundary guard, stale-base guard);
     - #67 parity marker: CONTRACT_VERSION string and its print format are
-      byte-stable (the final stdout line of --verify-only).
+      byte-stable (the final stdout line of --verify-only, emitted exactly
+      once from run_verify() since #1551).
 
 Pure stdlib, fully offline (git interactions are simulated via scripted
 run_cmd doubles and a hermetic REPO_ROOT tempdir — no network, no repo
@@ -31,6 +35,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -241,8 +246,16 @@ class Step2FailClosed(_GateHarness):
         )
         self.assertFalse(cal.step_2_rules())
 
-    def test_17_origin_constitution_deletion_fails_closed(self):
+    def test_17_origin_constitution_deletion_is_honest_skip(self):
+        # #1539 landed semantics (synced 2026-10-28): a file deleted/renamed
+        # UPSTREAM must not fail-closed the gate forever — preconditioning the
+        # gate on the repo's own deleted file is the loop's self-defeat class
+        # (AGENT_RULES.md #1526 froze the loop exactly this way). The run now
+        # honestly skips that file and still passes; deletion is never
+        # auto-synced via checkout.
         self.seed_repo()
+        captured: list[str] = []
+        cal.log = lambda icon, msg, **k: captured.append(f"{icon} {msg}")
         shas = {p: _blob_sha(p) for p in cal.RULE_FRESHNESS_FILES}
         script: list[tuple[str, tuple[int, str, str]]] = [("git fetch", (0, "", ""))]
         for path in cal.RULE_FRESHNESS_FILES:
@@ -260,7 +273,14 @@ class Step2FailClosed(_GateHarness):
                     )
                 )
         self.script(script)
-        self.assertFalse(cal.step_2_rules())
+        self.assertTrue(
+            cal.step_2_rules(),
+            "upstream deletion is an honest skip, not a permanent fail",
+        )
+        self.assertTrue(
+            any("deleted upstream" in m for m in captured),
+            "the skip must be announced honestly (log notice)",
+        )
         self.assertFalse(
             any("git checkout" in t for t in self.seen),
             "deletion must never be auto-synced via checkout",
@@ -361,23 +381,75 @@ class VerifyOnlyReportOnlyMode(_GateHarness):
     def test_23_parity_marker_contract_is_byte_stable(self):
         # #67: the FINAL stdout line of --verify-only is a cross-repo parity
         # grep target — the format string and version must not drift silently.
+        # #1551 moved the single emission into run_verify() (main()'s duplicate
+        # print removed); the pin follows the emission, exactly once.
         self.assertEqual(cal.CONTRACT_VERSION, "agent-loop-contract/1")
-        source = inspect.getsource(cal.main)
-        self.assertIn("CONTRACT_VERSION={CONTRACT_VERSION}", source)
+        self.assertIn(
+            "CONTRACT_VERSION={CONTRACT_VERSION}",
+            inspect.getsource(cal.run_verify),
+        )
+        self.assertNotIn(
+            "CONTRACT_VERSION={CONTRACT_VERSION}",
+            inspect.getsource(cal.main),
+            "marker must be emitted exactly once (run_verify owns the final line)",
+        )
 
 
 class TaskCycleWiring(unittest.TestCase):
-    """run_cycle must route the freshness gate before any rule loading."""
+    """The dispatch path must route the offline escape hatch honestly.
 
-    def test_24_run_cycle_calls_step_2_rules_with_offline_flag(self):
-        source = inspect.getsource(cal.run_cycle)
-        self.assertIn("step_2_rules(", source)
+    run_cycle() was removed as dead code (#1551: its only job was calling
+    step_2_rules, and no dispatch path ever invoked it). The #1560 wheel
+    refactor moved the board query verbatim from main() into
+    run_dispatch_cycle() — the offline routing pin follows that home.
+    """
+
+    def test_24_dispatch_cycle_honors_offline_escape_hatch(self):
+        source = inspect.getsource(cal.run_dispatch_cycle)
         self.assertIn('getattr(args, "offline", False)', source)
+        self.assertIn("_offline_requested(", source)
 
     def test_25_argparser_exposes_offline_escape_hatch(self):
         source = inspect.getsource(cal.main)
         self.assertIn('"--offline"', source)
         self.assertIn("SUPREMEAI_OFFLINE", inspect.getsource(cal))
+
+
+class VerifyOnlyExitContract(unittest.TestCase):
+    """#1551 landed contract: --verify-only is fail-closed, marker exactly once.
+
+    Behavioral guard (real subprocess, fully offline) — this contract was
+    silently lost twice before (#1541 -> #1544 rebase) and re-landed by
+    #1551; the pin makes the next silent loss loud.
+    """
+
+    def test_26_verify_only_passes_with_single_final_marker(self):
+        env = dict(os.environ)
+        env["SUPREMEAI_OFFLINE"] = "1"
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(_ROOT / "scripts" / "agents" / "continuous_agent_loop.py"),
+                "--verify-only",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr[-400:])
+        lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+        self.assertTrue(lines, "--verify-only must emit tier evidence")
+        self.assertEqual(
+            lines[-1],
+            f"CONTRACT_VERSION={cal.CONTRACT_VERSION}",
+            "marker must be the final stdout line (SPEC §4b)",
+        )
+        self.assertEqual(
+            sum(1 for ln in lines if ln.startswith("CONTRACT_VERSION=")),
+            1,
+            "marker must print exactly once",
+        )
 
 
 if __name__ == "__main__":
