@@ -3,8 +3,8 @@
 // ২) প্রথম মেসেজেই ক্লায়েন্ট-জেনারেটেড conversation_id প্রতিটি orchestration payload-এ
 // যায় এবং পরের কলে একই id বজায় থাকে; ৩) S2 ThinkingPanel ও S3 ArtifactsPanel
 // সত্যিই মাউন্ট/আনমাউন্ট হয়।
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // বাংলা: jsdom scrollIntoView বাস্তবায়ন করে না — UnifiedChatBubble/ChatInterface
@@ -221,5 +221,119 @@ describe('ChatInterface Tier-S wiring contract (M10)', () => {
       (URL as unknown as { createObjectURL: unknown }).createObjectURL = originalCreateObjectURL;
       (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = originalRevokeObjectURL;
     }
+  });
+});
+
+// বাংলা মন্তব্য (M8, issue #1519): ভয়েস-ইনপুট ওয়্যারিং চুক্তি-টেস্ট।
+// ১) SpeechRecognition-বিহীন ব্রাউজারে মাইক বোতাম সৎভাবে disabled (ভাঙা-বোতাম নয়);
+// ২) স্টাব করা SR-এ ক্লিক → recognition.start() সত্যিই চলে, ফাইনাল ট্রান্সক্রিপ্ট
+//    কম্পোজারে append হয় (overwrite নয় — দুইবার ফাইনাল = স্পেস-জোড়া),
+//    interim ট্রান্সক্রিপ্ট placeholder-এ লাইভ দেখায়;
+// ৩) STT lang চুক্তি: uiLang en → 'en-US', bn → 'bn-BD' — একক BCP-47 ট্যাগ;
+//    পুরনো অবৈধ 'bn-BD, en-US' মান কম্পোজারে পৌঁছাতেই পারে না।
+describe('ChatInterface M8 voice wiring contract (issue #1519)', () => {
+  const win = window as unknown as { SpeechRecognition?: unknown };
+
+  class FakeRecognition {
+    lang = '';
+    continuous = false;
+    interimResults = false;
+    started = false;
+    stopped = false;
+    aborted = false;
+    onresult: ((e: unknown) => void) | null = null;
+    onerror: ((e: unknown) => void) | null = null;
+    onend: (() => void) | null = null;
+    static instances: FakeRecognition[] = [];
+    constructor() {
+      FakeRecognition.instances.push(this);
+    }
+    start() {
+      this.started = true;
+    }
+    stop() {
+      this.stopped = true;
+    }
+    abort() {
+      this.aborted = true;
+    }
+    // বাংলা: হুকের SpeechRecognitionEventLike শেপ অনুযায়ী ইভেন্ট তৈরি
+    static finalEvent(text: string) {
+      return {
+        results: {
+          0: { 0: { transcript: text }, isFinal: true },
+          length: 1,
+        },
+      };
+    }
+    static interimEvent(text: string) {
+      return {
+        results: {
+          0: { 0: { transcript: text }, isFinal: false },
+          length: 1,
+        },
+      };
+    }
+  }
+
+  afterEach(() => {
+    delete win.SpeechRecognition;
+    try {
+      localStorage.removeItem('sa_ui_lang');
+    } catch {
+      /* noop */
+    }
+  });
+
+  it('honestly disables the mic button when SpeechRecognition is unavailable', () => {
+    localStorage.setItem('sa_ui_lang', 'en');
+    render(<ChatInterface />);
+    const mic = screen.getByTestId('chat-mic-button');
+    expect(mic).toBeDisabled();
+    // টুলটিপ থাকে — বোতাম নীরব-অদৃশ্য নয়
+    expect(mic).toHaveAttribute('aria-label', 'Start voice input');
+  });
+
+  it('starts recognition on click and appends final transcript into the composer', () => {
+    localStorage.setItem('sa_ui_lang', 'en');
+    win.SpeechRecognition = FakeRecognition;
+    render(<ChatInterface />);
+
+    const mic = screen.getByTestId('chat-mic-button');
+    expect(mic).not.toBeDisabled();
+    fireEvent.click(mic);
+
+    const inst = FakeRecognition.instances.at(-1);
+    expect(inst).toBeDefined();
+    expect(inst!.started).toBe(true);
+    expect(inst!.lang).toBe('en-US');
+    expect(inst!.continuous).toBe(false);
+    expect(inst!.interimResults).toBe(true);
+
+    // লাইভ interim ট্রান্সক্রিপ্ট placeholder-এ — ইনপুট state স্পর্শ করে না
+    act(() => inst!.onresult!(FakeRecognition.interimEvent('হ্যালো')));
+    // বাংলা: getByDisplayValue('') অন্য খালি ইনপুটেও ম্যাচ করে (অস্পষ্ট) —
+    // placeholder-এ খোঁজা textarea-র .value সরাসরি দেখি।
+    const ta = screen.getByPlaceholderText(/হ্যালো/) as HTMLTextAreaElement;
+    expect(ta.value).toBe('');
+
+    // ফাইনাল ১ + ফাইনাল ২ → append (স্পেস-জোড়া), overwrite নয়
+    act(() => inst!.onresult!(FakeRecognition.finalEvent('প্রথম কথা')));
+    act(() => inst!.onresult!(FakeRecognition.finalEvent('দ্বিতীয় কথা')));
+    expect(screen.getByDisplayValue('প্রথম কথা দ্বিতীয় কথা')).toBeInTheDocument();
+  });
+
+  it('uses bn-BD for STT when the UI language is Bangla', () => {
+    localStorage.setItem('sa_ui_lang', 'bn');
+    win.SpeechRecognition = FakeRecognition;
+    render(<ChatInterface />);
+
+    const inst = FakeRecognition.instances.at(-1);
+    expect(inst!.lang).toBe('bn-BD');
+    // বাংলা UI-তে মাইক টুলটিপও বাংলা
+    expect(screen.getByTestId('chat-mic-button')).toHaveAttribute(
+      'aria-label',
+      'ভয়েস ইনপুট শুরু করুন',
+    );
   });
 });
