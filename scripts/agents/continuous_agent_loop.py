@@ -24,9 +24,12 @@ STATE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence_state.json"
 
 RULE_FRESHNESS_FILES = (
     "AGENTS.md",
-    "AGENT_RULES.md",
     ".github/PULL_REQUEST_TEMPLATE.md",
 )
+# বাংলা: AGENT_RULES.md আর নেই — PR #1526 নিজেই ফাইলটি মুছে দিয়েছে (Single Door
+# SSOT এখন AGENTS.md)। তালিকায় মুছে-যাওয়া ফাইল রাখলে step_2_rules()/run_cycle()
+# fresh main-এ সবসময় exit 1 দেয় (missing_local + rev-parse দুই জায়গাতেই fail) —
+# নিজের মুছে-ফেলা ফাইলকে পূর্বশর্ত করে রাখা লুপের আত্ম-পরাজয়।
 
 OFFLINE_ENV_VARS = (
     "SUPREMEAI_OFFLINE",
@@ -434,20 +437,79 @@ def mark_role_run(
     return store
 
 def run_verify() -> list[dict[str, Any]]:
-    evidence = [
-        {"tier": 1, "name": "syntax_py_compile", "passed": True},
-        {"tier": 2, "name": "json_validity", "passed": True},
-        {"tier": 3, "name": "yaml_validity", "passed": True},
-        {"tier": 4, "name": "binary_guard", "passed": True},
-        {"tier": 5, "name": "contract_guard", "passed": True},
-        {"tier": 6, "name": "group_registry_guard", "passed": True},
-        {"tier": 7, "name": "envelope_determinism", "passed": True},
-        {"tier": 8, "name": "machine_path_isolation", "passed": True},
-    ]
-    for ev in evidence:
+    """Honest 8-tier verification (U2 truth — no fabricated PASS).
+
+    বাংলা: প্রতিটি টিয়ার এখন সত্যিই চেক হয় (সস্তা, dependency-মুক্ত সেলফ-চেক);
+    ব্যর্থ বা exception হলে passed=False। আগের সংস্করণ ৮টি টিয়ারই শর্তহীনভাবে
+    PASS ছাপাত — যাচাই-ভয়াবহতা (false assurance) U2 লঙ্ঘন; পুরনো ১২৫০-লাইন
+    লুপে এই ত্রুটি PR #1498 ঠিক করেছিল, #1526 রিরাইটে আবার ফিরে এসেছিল।
+    """
+    results: list[dict[str, Any]] = []
+
+    def check(tier: int, name: str, fn: Any) -> None:
+        try:
+            passed = bool(fn())
+        except Exception:
+            passed = False
+        results.append({"tier": tier, "name": name, "passed": passed})
+
+    def _json_ok() -> bool:
+        # বাংলা: থাকা ফাইলগুলো অবশ্যই বৈধ JSON হতে হবে; অনুপস্থিত হলে বাধা নেই।
+        for p in (CADENCE_FILE, STATE_FILE):
+            if p.exists():
+                json.loads(p.read_text(encoding="utf-8"))
+        return True
+
+    def _yaml_ok() -> bool:
+        wf = REPO_ROOT / ".github" / "workflows"
+        if not wf.is_dir():
+            return False
+        files = [p for p in wf.iterdir() if p.suffix in (".yml", ".yaml")]
+        return bool(files) and all(p.stat().st_size > 0 for p in files)
+
+    def _binary_ok() -> bool:
+        agents_dir = REPO_ROOT / "scripts" / "agents"
+        for p in agents_dir.glob("*.py"):
+            blob = p.read_bytes()
+            if b"\x00" in blob or b"\x7fELF" in blob:
+                return False
+        return True
+
+    check(
+        1,
+        "syntax_py_compile",
+        lambda: compile(
+            Path(__file__).read_text(encoding="utf-8"),
+            "continuous_agent_loop.py",
+            "exec",
+        )
+        is not None,
+    )
+    check(2, "json_validity", _json_ok)
+    check(3, "yaml_validity", _yaml_ok)
+    check(4, "binary_guard", _binary_ok)
+    check(5, "contract_guard", lambda: CONTRACT_VERSION == "agent-loop-contract/1")
+    check(
+        6,
+        "group_registry_guard",
+        lambda: isinstance(VALID_GROUPS, frozenset) and "core" in VALID_GROUPS,
+    )
+    check(
+        7,
+        "envelope_determinism",
+        lambda: build_task_contract("verify-probe") == build_task_contract("verify-probe"),
+    )
+    check(
+        8,
+        "machine_path_isolation",
+        lambda: Path(__file__).resolve().parents[2] == REPO_ROOT
+        and (REPO_ROOT / "scripts" / "agents").is_dir(),
+    )
+
+    for ev in results:
         print(f"[{ev['tier']}/8] {ev['name']}: {'PASS' if ev['passed'] else 'FAIL'}")
     print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
-    return evidence
+    return results
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
@@ -470,15 +532,26 @@ def main() -> int:
         return 0
 
     cmd = ["gh", "issue", "list", "--json", "number,labels", "--state", "open", "--limit", "100"]
-    p = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
-    raw = json.loads(p.stdout) if p.returncode == 0 and p.stdout.strip() else []
+    # বাংলা: main() এখানে run_cmd() বাইপাস করে সরাসরি subprocess.run() ডাকছিল —
+    # gh CLI অনুপস্থিত মেশিনে FileNotFoundError ছুঁড়ে পুরো লুপ crash করত
+    # (স্ট্যাকট্রেস সহ)। এখন সৎভাবে জানায় বোর্ড জিজ্ঞেস করা যায়নি, solver
+    # dispatch বাদ দিয়ে cadence পাথ চলতে থাকে — নীরব মিথ্যা "clean" নয়।
+    board_unavailable = False
+    try:
+        p = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
+        raw = json.loads(p.stdout) if p.returncode == 0 and p.stdout.strip() else []
+    except FileNotFoundError:
+        board_unavailable = True
+        raw = []
     skip = {"status:claimed", "status:in-progress", "anchor-hub", "admin-only"}
     unclaimed = [i for i in raw if not any(l.get("name") in skip for l in i.get("labels", []))]
 
     print(COMMON_RULES)
     print("=" * 52)
 
-    if unclaimed:
+    if board_unavailable:
+        log("!", "gh CLI unavailable — cannot query the issue board; skipping solver dispatch. Cadence roles still evaluated.")
+    elif unclaimed:
         print(f"ASSIGNED ROLE: solver (Unlimited concurrency allowed)\nROLE MANDATE: {ROLE_RULES['solver']}")
         print("ACTION: Unclaimed issues found. Apply 'status:claimed' label, pick an issue, and solve it.")
         return 0
