@@ -46,10 +46,19 @@ def check(name: str, cond: bool, evidence: str = "") -> None:
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f" — {evidence}" if evidence and not cond else ""))
 
 
-# ── Import target modules (satellite layout) ────────────────────────────────
+# ── Import target modules (dual layout, canonical-first) ──────────────────────
+# Identity rule (drift class F-K, 2026-10-28): always bind the CANONICAL
+# gateway.service.* module when it exists. Bare service.* imports create a SECOND
+# module object (split-brain singletons: telemetry collector, adapters state) the
+# moment any file puts the gateway/ dir on sys.path — order-dependent suite reds.
+# Satellite repos (no gateway/ package) fall back to the bare layout.
 os.environ["STEALTH_WEBHOOK_URL"] = "https://dead-host.invalid/v1/chat/completions"
-from service.providers import adapters as ad  # noqa: E402
-import service.app as appmod  # noqa: E402
+try:
+    from gateway.service.providers import adapters as ad  # noqa: E402
+    from gateway.service import app as appmod  # noqa: E402
+except ImportError:  # satellite layout: repo root IS the gateway package dir
+    from service.providers import adapters as ad  # noqa: E402
+    import service.app as appmod  # noqa: E402
 
 
 # ── G1..G4 normalize_stealth_url ────────────────────────────────────────────

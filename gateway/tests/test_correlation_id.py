@@ -13,7 +13,10 @@ _GATEWAY_DIR = next(
     ),
     Path(__file__).resolve().parent.parent,
 )
-for p in (str(_GATEWAY_DIR), str(_GATEWAY_DIR.parent)):
+for p in (str(_GATEWAY_DIR.parent),):
+    # Repo root ONLY. Never put the gateway/ package dir itself on sys.path:
+    # it forks gateway.service.* into duplicate module objects (split-brain
+    # singletons — drift class F-K, order-dependent suite failures).
     if p not in sys.path:
         sys.path.insert(0, p)
 

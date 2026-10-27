@@ -35,7 +35,9 @@ class TestContextCompiler:
         assert "NOT a generic model from Google, Meta, OpenAI" in anchor
         assert "DO NOT GUESS or fabricate answers" in anchor
         assert "Cold-Start Safety" in anchor
-        assert "Federation Architecture: 12 Product Satellites" in anchor
+        # Landed grounding-sheet vocabulary (context_compiler.PLATFORM_GROUNDING_SHEET):
+        # satellite count is deliberately not hardcoded — "Active Product Satellites".
+        assert "Federation Architecture: Active Product Satellites + 1 Control Plane (MCP Tower)" in anchor
         assert "Zero-Admin" in anchor
 
     def test_sampling_knobs_logic_vs_chat(self):
@@ -223,7 +225,9 @@ class TestChatGatewayIntegration:
         assert len(forwarded_messages) >= 2
         assert forwarded_messages[0]["role"] == "system"
         assert "You are SupremeAI" in forwarded_messages[0]["content"]
-        assert "Platform Grounding Sheet" in forwarded_messages[0]["content"] or "12 Product Satellites" in forwarded_messages[0]["content"]
+        # The compiled anchor must carry the landed grounding sheet (its federation line),
+        # not the pre-landing "Platform Grounding Sheet"/"12 Product Satellites" vocabulary.
+        assert "Federation Architecture: Active Product Satellites" in forwarded_messages[0]["content"]
 
         # 2. Verification of Response Guard:
         # The response returned to the client must have identity bleed purged and markdown repaired
