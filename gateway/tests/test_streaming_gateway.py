@@ -690,6 +690,11 @@ def test_config_rejects_drift():
 
 
 def test_config_provider_enum_matches_task_router_ssot():
+    # Gateway-plane enum = task-router.schema.json's 7 schema providers
+    # PLUS the gateway-only providers with live drivers + policy hops:
+    # "web" (web_session.py) and "perplexity" (adapters.py, sonar cascade).
+    # A copy that lags the runtime makes load_config() reject the shipped
+    # routing_policy.json (drift class F-J, 2026-10-28) — extend, don't lag.
     assert ALLOWED_PROVIDERS == frozenset(
         {
             "openai",
@@ -700,6 +705,7 @@ def test_config_provider_enum_matches_task_router_ssot():
             "mistral",
             "deepseek",
             "web",
+            "perplexity",
         }
     )
 
