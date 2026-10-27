@@ -1,7 +1,0 @@
-{
-  "_comment": "#4269 — deploy-firebase স্টেশনের প্রজেক্ট-কনফিগ SSOT (firestore-only, URL-মুক্ত)। root firebase.json হলো deploy-time generated artifact (backend-URL বাহী — .gitignore-এ কমিট-নিষিদ্ধ); এই ফাইল সেই লেন নয় — শুধু rules/indexes টার্গেট-ঘোষণা। পাথগুলি সহ-অবস্থিত ফাইলের সাপেক্ষে।",
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  }
-}
