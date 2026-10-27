@@ -113,10 +113,13 @@ class _GateHarness(unittest.TestCase):
 class FreshnessSurfaceSSOT(unittest.TestCase):
     """The invariant's declared surface must stay exactly the constitution."""
 
-    def test_01_freshness_file_triple_is_verbatim(self):
+    def test_01_freshness_file_surface_is_verbatim(self):
+        # SSOT sync (#1526 follow-up): AGENT_RULES.md was deleted by #1526 —
+        # the freshness surface is now the Single Door double (AGENTS.md +
+        # PR template). The old triple expectation kept the suite red.
         self.assertEqual(
             cal.RULE_FRESHNESS_FILES,
-            ("AGENTS.md", "AGENT_RULES.md", ".github/PULL_REQUEST_TEMPLATE.md"),
+            ("AGENTS.md", ".github/PULL_REQUEST_TEMPLATE.md"),
         )
 
     def test_02_checklist_covers_all_fail_closed_guards(self):
@@ -210,7 +213,7 @@ class OfflineEscapeHatch(_GateHarness):
 
     def test_13_missing_local_constitution_fails_even_offline(self):
         self.seed_repo()
-        (cal.REPO_ROOT / "AGENT_RULES.md").unlink()
+        (cal.REPO_ROOT / ".github/PULL_REQUEST_TEMPLATE.md").unlink()
         self.script([("git", (127, "", "unused — must not be reached"))])
         self.assertFalse(cal.step_2_rules(offline=True))
 
@@ -284,11 +287,11 @@ class Step2AutoSync(_GateHarness):
 
     def test_18_divergence_auto_checkouts_only_diverged_files(self):
         self.seed_repo()
-        self._shas_script({"AGENT_RULES.md"})
+        self._shas_script({".github/PULL_REQUEST_TEMPLATE.md"})
         self.assertTrue(cal.step_2_rules())
         checkouts = [t for t in self.seen if t.startswith("git checkout")]
         self.assertEqual(len(checkouts), 1)
-        self.assertEqual(checkouts[0], "git checkout origin/main -- AGENT_RULES.md")
+        self.assertEqual(checkouts[0], "git checkout origin/main -- .github/PULL_REQUEST_TEMPLATE.md")
 
     def test_19_failed_auto_checkout_fails_closed(self):
         self.seed_repo()
