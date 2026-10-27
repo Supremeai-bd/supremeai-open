@@ -17,7 +17,11 @@ export const LandingHeader: React.FC = () => {
   };
   return (
     <header className="sticky top-0 z-overlay flex h-16 w-full items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 sm:px-6 backdrop-blur-xl">
-      <Link to="/" className="flex items-center gap-3">
+      <Link
+        to="/"
+        className="flex items-center gap-3 py-3 -my-3"
+        aria-label="SupremeAI home"
+      >
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 font-bold text-white shadow-lg shadow-purple-500/20">
           S
         </span>
@@ -41,13 +45,16 @@ export const LandingHeader: React.FC = () => {
       </nav>
 
       <div className="flex items-center gap-3">
-        {/* Mobile hamburger: nav links were hidden md:flex with no mobile fallback */}
+        {/* Mobile hamburger: nav links were hidden md:flex with no mobile fallback.
+            #1696 D3: p-3 keeps the 20px icon but lifts the tap target from 36px
+            to the 44px platform ergonomics minimum (WCAG 2.5.8 passes at 24px,
+            mobile ergonomics guidance wants 44px+). */}
         <button
           type="button"
           aria-label="Toggle navigation menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((v) => !v)}
-          className="md:hidden rounded-lg p-2 text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+          className="md:hidden rounded-lg p-3 -m-1 text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
         >
           {menuOpen ? (
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
