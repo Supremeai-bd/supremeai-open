@@ -4,7 +4,7 @@ satellite_board_guard.py — Zero-Issue Satellite Mandate Guard (#626)
 
 Milestone 3 of the Single Central Task Board SSOT doctrine (#626): the
 doctrine's home is docs/FEDERATION_CHARTER.md, with machine-enforcement
-anchors in AGENTS.md §5 and AGENT_RULES.md §5. This guard audits the
+anchors in AGENTS.md §5. This guard audits the
 12 federation satellite repositories for the mandated zero-open-issues /
 zero-open-PRs clean state, so any stray issue or PR created on a satellite
 is flagged at the central board instead of orphaning work off-SSOT.
