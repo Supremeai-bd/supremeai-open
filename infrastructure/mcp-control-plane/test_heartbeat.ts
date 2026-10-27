@@ -17,10 +17,13 @@ import {
   HEARTBEAT_KEY_PREFIX,
   HEARTBEAT_ONLINE_THRESHOLD_SECONDS,
   HEARTBEAT_TTL_SECONDS,
+  archiveGraceSeconds,
   buildAccountChain,
+  buildStatusEntry,
   deriveState,
   heartbeatKey,
   listHeartbeats,
+  partitionSlots,
   recordHeartbeat,
   validateSlot,
 } from "./src/registry/agent_heartbeat.js";
@@ -142,5 +145,64 @@ assert.equal(tcpChain.length, 5);
 assert.equal(tcpChain[0].label, "primary");
 assert.equal(tcpChain[0].tcpUrl, "rediss://default:pw@primary.upstash.io:6379");
 delete process.env.REDIS_URL;
+
+// ── 5. #1641 archive partition + entry normalization (pure logic) ──────────
+// Tower slot registry retained expired heartbeats aged 21–24 days because the
+// heartbeat HASH has no field TTL (legacy keys die at 300s, hash fields don't).
+// The read-time lazy reaper partitions expired-beyond-grace slots out of the
+// default listing and HDELs them (best-effort) — bounded registry growth.
+
+const t0 = 1_700_000_000_000;
+const rec = (ageMs: number, agentId?: string | null) => ({
+  slot: "agent-1",
+  agentId: (agentId ?? undefined) as string,
+  source: "mcp-tower" as const,
+  updatedAtMs: t0 - ageMs,
+  updatedAt: new Date(t0 - ageMs).toISOString(),
+});
+
+// agentId normalization: legacy null/blank records show the slot id, never null.
+assert.equal(buildStatusEntry("agent-9", rec(0, null as unknown as string), t0).agentId, "agent-9");
+assert.equal(buildStatusEntry("agent-9", rec(0, "   "), t0).agentId, "agent-9");
+assert.equal(
+  buildStatusEntry("agent-9", rec(0, "supremeai-coder-1"), t0).agentId,
+  "supremeai-coder-1",
+);
+assert.equal(buildStatusEntry("agent-9", rec(45_000), t0).state, "online");
+
+const entries = [
+  buildStatusEntry("agent-1", rec(45_000), t0), // online
+  buildStatusEntry("agent-2", rec(200_000), t0), // stale
+  buildStatusEntry("agent-3", rec(600_000), t0), // expired, within default 24h grace
+  buildStatusEntry("agent-5", rec(21 * 86_400_000), t0), // expired 21 days → archive
+  buildStatusEntry("agent-7", rec(86_400_000), t0), // exactly 24h old = grace boundary inclusive → still listed
+];
+
+// Default grace (24h): dead-beyond-grace leaves the listing; recent death stays visible.
+const pDefault = partitionSlots(entries, t0);
+assert.deepEqual(pDefault.slots.map((e) => e.slot), ["agent-1", "agent-2", "agent-3", "agent-7"]);
+assert.deepEqual(pDefault.archived.map((e) => e.slot), ["agent-5"]);
+assert.deepEqual(pDefault.reapTargets, ["agent-5"]);
+assert.equal(pDefault.archived[0].state, "expired"); // honest state, not silently rewritten
+
+// grace=0: every expired entry leaves the default listing immediately (audit-strict mode).
+const pZero = partitionSlots(entries, t0, 0);
+assert.deepEqual(pZero.slots.map((e) => e.slot), ["agent-1", "agent-2"]);
+assert.deepEqual(pZero.reapTargets, ["agent-3", "agent-5", "agent-7"]);
+
+// Tiny grace never archives online/stale entries (state machine preserved).
+const pTiny = partitionSlots(entries, t0, 100);
+assert.deepEqual(pTiny.slots.map((e) => e.slot), ["agent-1", "agent-2"]);
+assert.deepEqual(pTiny.reapTargets, ["agent-3", "agent-5", "agent-7"]);
+
+// Negative grace clamps to 0 (no accidental full-archive of fresh entries).
+process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS = "-5";
+assert.equal(archiveGraceSeconds(), 86_400); // invalid → default
+process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS = "0";
+assert.equal(archiveGraceSeconds(), 0);
+process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS = "3600";
+assert.equal(archiveGraceSeconds(), 3600);
+delete process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS;
+assert.equal(archiveGraceSeconds(), 86_400);
 
 console.log("agent heartbeat contract tests passed");
