@@ -32,6 +32,8 @@ import { registerOrchestratorTools } from "./orchestrator.tools.js";
 import { registerIntelligenceTools } from "./intelligence.tools.js";
 import type { MemorySubAdapter } from "../adapters/memory/index.js";
 
+import { registerUnifiedStatusTool } from "./unified.status.tools.js";
+
 /**
  * Registers all MCP tools with the server.
  * Tools are grouped by domain.
@@ -40,6 +42,9 @@ export async function registerAllTools(
   server: McpServer,
   memoryAdapter?: MemorySubAdapter,
 ): Promise<void> {
+  // ── Unified Observability Hub (S0.4 status tool)
+  await registerUnifiedStatusTool(server);
+
   // ── System Tools
   await registerSystemTools(server);
   await registerSystemSummaryTools(server);

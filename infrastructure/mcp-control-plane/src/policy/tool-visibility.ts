@@ -69,6 +69,10 @@ export type ToolProfile = "chatgpt" | "readonly";
  *    (and remain RBAC-gated on the call path).
  */
 const CHATGPT_CURATED_TOOLS: readonly string[] = [
+  // unified observability & work hub (S0.4)
+  "status",
+  "bridge_work",
+  "bridge_submit",
   // system / observability
   "system_summary",
   "system_health",
@@ -132,6 +136,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
 const MUTATING_TOOLS: readonly string[] = [
   "notify_telegram",
   "agent_review_workflow_execute",
+  "bridge_submit",
   "bridge_submit_patch",
   "work_claim",
   // #621: renew posts markers, release flips labels — both are lane writes
