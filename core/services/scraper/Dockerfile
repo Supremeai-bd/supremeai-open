@@ -13,7 +13,7 @@ COPY pyproject.toml poetry.lock* ./
 
 # Install dependencies in project virtualenv including browser group
 RUN poetry config virtualenvs.in-project true \
-    && (test -f poetry.lock || poetry lock --no-update) \
+    && (test -f poetry.lock || poetry lock --no-interaction) \
     && poetry install --no-interaction --no-ansi --only main,browser --no-root
 
 # Stage 2: Runtime — browser-ready image (Playwright + Chromium)

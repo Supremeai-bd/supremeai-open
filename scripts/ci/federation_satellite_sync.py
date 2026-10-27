@@ -299,6 +299,18 @@ def sync_satellite(
             if schemas_src.exists():
                 copy_tree_contents(schemas_src, tmp_repo / "contracts" / "schemas", prune=True)
                 print(f"📋 Synced API schemas -> contracts/schemas in {target_repo}")
+            # Sync gateway Dockerfile & requirements.txt directly to satellite root for Render builds
+            df_src = repo_root / "gateway" / "Dockerfile"
+            if df_src.exists():
+                shutil.copy2(df_src, tmp_repo / "Dockerfile")
+                print(f"📋 Synced Dockerfile -> Dockerfile (root) in {target_repo}")
+            req_src = repo_root / "gateway" / "requirements.txt"
+            if req_src.exists():
+                shutil.copy2(req_src, tmp_repo / "requirements.txt")
+                # Also ensure service/requirements.txt exists for backwards compatibility
+                (tmp_repo / "service").mkdir(parents=True, exist_ok=True)
+                shutil.copy2(req_src, tmp_repo / "service" / "requirements.txt")
+                print(f"📋 Synced requirements.txt -> root and service/ in {target_repo}")
         elif target_repo == "Supremeai-bd/supremeai-studio":
             # Copy domain files into the satellite root (non-destructive)
             copy_tree_contents(src_path, tmp_repo, prune=False)
