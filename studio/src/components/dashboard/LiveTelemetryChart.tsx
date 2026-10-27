@@ -66,7 +66,7 @@ export const LiveTelemetryChart: React.FC<LiveTelemetryChartProps> = ({
         </div>
       </div>
 
-      <div className="h-56 w-full min-h-[220px]">
+      <div className="h-56 w-full min-h-[180px] sm:min-h-[220px]">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <defs>

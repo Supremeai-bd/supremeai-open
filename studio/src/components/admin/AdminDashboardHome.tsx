@@ -152,7 +152,7 @@ export const AdminDashboardHome: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
 
         {/* Card A: Model Performance Analytics */}
-        <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 flex flex-col justify-between min-h-[380px] shadow-[0_0_15px_rgba(0,0,0,0.3)]">
+        <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 flex flex-col justify-between min-h-[240px] sm:min-h-[300px] sm:min-h-[380px] shadow-[0_0_15px_rgba(0,0,0,0.3)]">
           <div className="flex justify-between items-center mb-4">
             <span className="text-[10px] text-[#00f3ff] uppercase font-bold tracking-wider">Model Perf. Analytics</span>
             <select
@@ -222,7 +222,7 @@ export const AdminDashboardHome: React.FC = () => {
         </div>
 
         {/* Card B: Workflow Pipeline Visualization */}
-        <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 flex flex-col justify-between min-h-[380px] shadow-[0_0_15px_rgba(0,0,0,0.3)]">
+        <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 flex flex-col justify-between min-h-[240px] sm:min-h-[300px] sm:min-h-[380px] shadow-[0_0_15px_rgba(0,0,0,0.3)]">
           <div className="flex justify-between items-center mb-4">
             <span className="text-[10px] text-[#00f3ff] uppercase font-bold tracking-wider">Workflow Pipeline</span>
             <div className="flex gap-2 text-[9px]">
@@ -273,7 +273,7 @@ export const AdminDashboardHome: React.FC = () => {
         </div>
 
         {/* Card C: Compute Resource Allocation */}
-        <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 flex flex-col justify-between min-h-[380px] shadow-[0_0_15px_rgba(0,0,0,0.3)]">
+        <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 flex flex-col justify-between min-h-[240px] sm:min-h-[300px] sm:min-h-[380px] shadow-[0_0_15px_rgba(0,0,0,0.3)]">
           <div className="flex justify-between items-center mb-4">
             <span className="text-[10px] text-[#00f3ff] uppercase font-bold tracking-wider">Compute Resource</span>
             <span className="text-[9px] text-slate-400">DYNAMIC UTILIZATION</span>
@@ -347,7 +347,7 @@ export const AdminDashboardHome: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
 
         {/* Card D: Live Event Log */}
-        <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 flex flex-col justify-between min-h-[300px] shadow-[0_0_15px_rgba(0,0,0,0.3)]">
+        <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 flex flex-col justify-between min-h-[240px] sm:min-h-[300px] shadow-[0_0_15px_rgba(0,0,0,0.3)]">
           <div className="flex justify-between items-center mb-3">
             <span className="text-[10px] text-[#00f3ff] uppercase font-bold tracking-wider">Live Event Log</span>
             <span className="text-[9px] text-slate-400">SYNC ACTIVE</span>

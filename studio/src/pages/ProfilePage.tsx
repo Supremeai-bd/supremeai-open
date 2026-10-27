@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { User, Shield, Key, Bell, Check, Lock, Moon, Sun } from 'lucide-react';
 import { WorkspaceLayout } from '../components/layout/WorkspaceLayout';
 import { apiClient } from '../services/apiClient';
@@ -7,6 +8,7 @@ import { useAuthStore } from '../store/authStore';
 import { useTheme } from '../contexts/useTheme';
 
 export const ProfilePage: React.FC = () => {
+  const navigate = useNavigate();
   const [saved, setSaved] = useState(false);
   const { user } = useAuthStore();
   const [name, setName] = useState('');
@@ -343,8 +345,12 @@ export const ProfilePage: React.FC = () => {
                   <button className="w-full py-2.5 px-4 rounded-lg border border-slate-700 hover:bg-slate-800 text-sm text-slate-300 transition">
                     Change Password
                   </button>
-                  <button className="w-full py-2.5 px-4 rounded-lg border border-slate-700 hover:bg-slate-800 text-sm text-slate-300 transition">
-                    Manage API Keys
+                  <button 
+                    onClick={() => navigate('/settings/api-keys')}
+                    className="w-full py-2.5 px-4 rounded-lg border border-slate-700 hover:bg-slate-800 text-sm text-slate-300 transition text-left flex items-center justify-between"
+                  >
+                    <span>Manage API Keys (BYOK)</span>
+                    <Key className="w-4 h-4 text-cyan-400" />
                   </button>
                   <button className="w-full py-2.5 px-4 rounded-lg border border-red-900/50 bg-red-900/20 hover:bg-red-900/30 text-red-400 text-sm transition">
                     Delete Account

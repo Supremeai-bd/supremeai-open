@@ -37,6 +37,7 @@ const DeepResearchPanel = lazy(
 const ScheduledTasksPanel = lazy(
   () => import('../components/schedule/ScheduledTasksPanel'),
 );
+const BYOKPage = lazy(() => import('../pages/user/BYOKPage'));
 
 // ─── Route definitions ───────────────────────────────────────────────────
 
@@ -137,6 +138,13 @@ export const workspaceFeatureRoutes: RouteObject[] = [
       <WorkspaceLayout>
         <ScheduledTasksPanel />
       </WorkspaceLayout>,
+    ),
+  },
+  {
+    path: '/settings/api-keys',
+    element: protectedPage(
+      'api keys',
+      <BYOKPage />,
     ),
   },
 ];

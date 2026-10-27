@@ -419,7 +419,7 @@ const EvolutionForgeCanvas = () => {
       {/* Deploy to Marketplace Dialog */}
       {showDeployDialog && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-modal flex items-center justify-center">
-          <div className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl p-6 w-full max-w-[450px] mx-4">
+          <div className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl p-6 w-full max-w-[90vw] sm:max-w-[450px] mx-4">
             <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
               <Sparkles className="text-cyan-400" />
               Deploy to Skill Marketplace

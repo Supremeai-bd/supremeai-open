@@ -35,7 +35,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
            #1303): the wrapper owns a fixed 320px column (one reflow on mount/
            unmount) and the inner panel slides in via transform - no per-frame
            width layout of the browser viewport row. */
-        <div className="hidden lg:flex w-[320px] shrink-0 overflow-hidden bg-gradient-to-b from-[#0d1117] to-[#161b22] border-l border-purple-500/30 flex-col">
+        <div className="hidden lg:flex w-[280px] xl:w-[360px] shrink-0 overflow-hidden bg-gradient-to-b from-[#0d1117] to-[#161b22] border-l border-purple-500/30 flex-col">
           <motion.div
             initial={{ x: 320, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
