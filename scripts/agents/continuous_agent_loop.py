@@ -813,7 +813,7 @@ def main() -> int:
     args, _ = parser.parse_known_args()
 
     if args.verify_only:
-        # বাংলা: আগে সব টিয়ার FAIL হলেও exit 0 — CI কখনো ব্যর্থতা ধর��ে পারত না
+        # বাংলা: আগে সব টিয়ার FAIL হলেও exit 0 — CI কখনো ব্যর্থতা ধরতে পারত না
         # (fail-open, U6 লঙ্ঘন)। এখন fail-closed; CONTRACT_VERSION শেষ লাইনই থাকে।
         evidence = run_verify()
         print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
