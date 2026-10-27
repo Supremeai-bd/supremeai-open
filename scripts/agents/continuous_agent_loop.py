@@ -23,7 +23,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CADENCE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence.json"
 STATE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence_state.json"
 ISSUE_LEASE_FILE = REPO_ROOT / "scripts" / "agents" / "dispatched_issues_state.json"
-ISSUE_LEASE_SECONDS = 1800.0  # 30-minute autonomous lease (Rule 9 parity without GitHub claim friction)
+# #57 SSOT: the lease length is owned by scripts/agents/claim_thresholds.py.
+# That module was landed to end the release<->re-claim flip-flop war, but the
+# loop kept its own hardcoded copy — the exact dual-SSOT drift #57 documents.
+# Same-dir import works for direct runs (sys.path[0]) and for tests that put
+# scripts/agents on sys.path (mirrors tests/test_agent_cadence.py).
+from claim_thresholds import ORPHAN_RELEASE_MINUTES  # noqa: E402
+
+ISSUE_LEASE_SECONDS = ORPHAN_RELEASE_MINUTES * 60.0  # 30-minute autonomous lease (Rule 9 parity without GitHub claim friction)
 
 RULE_FRESHNESS_FILES = (
     "AGENTS.md",
