@@ -83,6 +83,62 @@ def build_task_contract(
         }
     }
 
+def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
+    code, out, _ = run_cmd([
+        "gh", "issue", "list",
+        "--repo", UPSTREAM_REPO,
+        "--state", "open",
+        "--limit", "200",
+        "--json", "number,title,labels",
+    ])
+    issues = []
+    if code == 0 and out.strip():
+        try:
+            issues = json.loads(out)
+        except Exception:
+            pass
+    if not issues:
+        return None
+
+    EXCLUDED_LABELS = {
+        "status:claimed",
+        "status:in-progress",
+        "state:seq-hold",
+        "blocked-by-upstream",
+        "mirror:private",
+    }
+
+    def label_names(item: dict[str, Any]) -> list[str]:
+        labels = item.get("labels")
+        if not isinstance(labels, list):
+            return []
+        return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+
+    def is_claimable(item: dict[str, Any]) -> bool:
+        names = label_names(item)
+        return not (EXCLUDED_LABELS & set(names))
+
+    PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
+
+    def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+        names = label_names(item)
+        tier = 4
+        for marker, rank in PRIORITY_MAP:
+            if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
+                tier = rank
+                break
+        return (tier, int(item.get("number", 0)))
+
+    candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
+    if exclude:
+        excluded_set = {str(e) for e in exclude}
+        candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
+    sorted_issues = sorted(candidates, key=priority_key)
+    if sorted_issues:
+        return str(sorted_issues[0].get("number"))
+    return None
+
+
 DEFAULT_CADENCE_HOURS: dict[str, int] = {
     "ecosystem-scout": 12,
     "auditor": 12,
