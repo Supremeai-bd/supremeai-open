@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { pingRedis, getRedisStats, readRedisKey } from "../adapters/redis/index.js";
-import { quotaChainStatus, nextQuotaResetEpochMs, upstashCommandLimit } from "../lib/redis_chain.js";
+import { quotaChainStatus, nextQuotaResetEpochMs, upstashCommandLimit, quotaTierFor, quotaWarnPct, quotaCritPct } from "../lib/redis_chain.js";
 import { sendTelegram } from "../adapters/notify/actions.js";
 import { cacheLookup, cacheStore, cacheConfigStatus } from "../lib/semantic_cache.js";
 
@@ -119,8 +119,8 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
     },
     async ({ thresholdPct, chatId }) => {
       try {
-        const warnPct = thresholdPct ?? (Number(process.env.REDIS_QUOTA_ALERT_PCT) || 80);
-        const critPct = Number(process.env.REDIS_QUOTA_CRIT_PCT) || 95;
+        const warnPct = thresholdPct ?? quotaWarnPct();
+        const critPct = quotaCritPct();
         const nowMs = Date.now();
         const chain = quotaChainStatus(nowMs);
         const windowKey = new Date(nextQuotaResetEpochMs(nowMs)).toISOString();
@@ -128,7 +128,10 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
           const used = entry.usage?.estimatedCommands ?? 0;
           const limit = entry.usage?.limit ?? upstashCommandLimit();
           const pct = limit > 0 ? Math.round((used * 10000) / limit) / 100 : null;
-          const tier = pct === null ? null : pct >= critPct ? "crit" : pct >= warnPct ? "warn" : null;
+          // #1360: three-tier ladder (warn 80 / high 90 / crit 95) — the middle
+          // rung is the "act now while headroom remains" signal the two-tier
+          // version skipped over.
+          const tier = quotaTierFor(pct, warnPct, Number(process.env.REDIS_QUOTA_HIGH_PCT) || 90, critPct);
           return {
             label: entry.label,
             used,
@@ -146,7 +149,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
         if (fresh.length > 0) {
           const lines = fresh.map(
             (a) =>
-              `${a.tier === "crit" ? "[CRITICAL]" : "[WARN]"} Upstash Redis account '${a.label}' at ${a.pct}% of quota (${a.used} / ${a.limit} commands).`,
+              `${a.tier === "crit" ? "[CRITICAL]" : a.tier === "high" ? "[HIGH]" : "[WARN]"} Upstash Redis account '${a.label}' at ${a.pct}% of quota (${a.used} / ${a.limit} commands).`,
           );
           const primary = chain.find((c) => c.isActivePrimary)?.label ?? "unknown";
           lines.push(`Active rotation primary: ${primary}.`);
