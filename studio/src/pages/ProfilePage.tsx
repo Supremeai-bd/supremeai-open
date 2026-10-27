@@ -227,9 +227,48 @@ export const ProfilePage: React.FC = () => {
                       />
                     </button>
                   </div>
+
+                  {/* Passkey / Biometric Registration */}
+                  <div className="pt-4 border-t border-slate-800/80">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-200 flex items-center gap-1.5">
+                          <Lock className="w-4 h-4 text-cyan-400" /> Passkey &amp; Biometric Login
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Register this device&apos;s fingerprint (Touch ID / Windows Hello) for passwordless login.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const { registerPasskey } = await import('../services/passkeyService');
+                            await registerPasskey({
+                              userId: user?.id,
+                              email: user?.email,
+                              displayName: name,
+                              deviceName: navigator.userAgent.includes('Mac')
+                                ? 'MacBook Touch ID'
+                                : navigator.userAgent.includes('Windows')
+                                ? 'Windows Hello PC'
+                                : 'Mobile Biometric',
+                            });
+                            showToast('success', 'Fingerprint registered successfully!');
+                          } catch (err: any) {
+                            showToast('error', err?.message || 'Failed to register biometric device');
+                          }
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/40 text-xs font-semibold text-cyan-300 hover:bg-cyan-900/60 transition shadow-sm"
+                      >
+                        + Add Fingerprint
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+
 
             {/* Right Column */}
             <div className="lg:col-span-1">

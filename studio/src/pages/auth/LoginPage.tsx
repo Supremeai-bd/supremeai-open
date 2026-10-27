@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { useAuthStore, AuthStatus } from '../../store/authStore';
 import { AuthShell } from '../../components/auth/AuthShell';
 import { apiClient } from '../../services/apiClient';
+import { Fingerprint } from 'lucide-react';
+import { loginWithPasskey, isPasskeySupported } from '../../services/passkeyService';
 
 // ROOT-CAUSE UNIFY (Refs #890 funnel / owner request "2 rokom na ase"):
 // বাংলা মন্তব্য: লগইন পেজের সব shell (header, hero, health bar, card, footer)
@@ -126,6 +128,31 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  const handlePasskeyLogin = async () => {
+    setError('');
+    setIsLoading(true);
+    try {
+      const res = await loginWithPasskey('user');
+      if (res && res.access_token) {
+        useAuthStore.setState({
+          token: res.access_token,
+          user: {
+            id: res.user_id,
+            email: `${res.user_id}@supremeai.local`,
+            role: res.role,
+          },
+          status: AuthStatus.LOGGED_IN,
+        });
+        navigate('/workspace');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Biometric authentication was cancelled or failed.');
+      setErrorKey((k) => k + 1);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <AuthShell>
       <div className="mb-8">
@@ -163,8 +190,31 @@ export const LoginPage: React.FC = () => {
         </motion.div>
       )}
 
+      {/* One-Click Passkey / Fingerprint Sign In */}
+      {isPasskeySupported() && (
+        <div className="mb-6">
+          <button
+            type="button"
+            data-testid="passkey-login-button"
+            onClick={handlePasskeyLogin}
+            disabled={isLoading}
+            className="flex items-center justify-center gap-3 w-full rounded-xl border border-cyan-500/40 bg-gradient-to-r from-cyan-950/50 via-slate-900 to-purple-950/40 px-4 py-3.5 font-medium text-cyan-300 shadow-md shadow-cyan-500/10 transition hover:border-cyan-400 hover:text-white hover:shadow-cyan-500/20 active:scale-[0.99] disabled:opacity-50"
+          >
+            <Fingerprint className="size-5 text-cyan-400 animate-pulse" />
+            <span>Sign in with Fingerprint / Passkey</span>
+          </button>
+
+          <div className="relative my-6 flex items-center justify-center">
+            <div className="w-full border-t border-white/10" />
+            <span className="absolute bg-[#0f172a] px-3 font-mono text-[11px] text-slate-500 uppercase tracking-widest">
+              or password
+            </span>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleLogin} className="space-y-5">
-        <label className="block text-sm font-medium text-slate-300" htmlFor="login-email">Email address<input id="login-email" name="email" data-testid="email-input" autoComplete="email" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30" /></label>
+        <label className="block text-sm font-medium text-slate-300" htmlFor="login-email">Email address<input id="login-email" name="email" data-testid="email-input" autoComplete="username webauthn" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30" /></label>
         <label className="block text-sm font-medium text-slate-300" htmlFor="login-password">Password<input id="login-password" name="password" data-testid="password-input" autoComplete="current-password" type="password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-purple-400/60 focus:ring-2 focus:ring-purple-500/30" /></label>
         <button type="submit" data-testid="login-submit" disabled={isLoading} className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-3 font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-purple-500/40 disabled:cursor-not-allowed disabled:opacity-60">{isLoading ? 'Signing in…' : 'Sign in'}</button>
         <button type="button" disabled title="Google sign-in is coming soon" className="w-full cursor-not-allowed rounded-xl border border-white/10 px-4 py-3 text-sm font-medium text-slate-500/70 transition">Continue with Google (coming soon)</button>
@@ -173,4 +223,5 @@ export const LoginPage: React.FC = () => {
       <p className="mt-7 text-center text-sm text-slate-400">Don&apos;t have an account? <Link to="/register" className="font-semibold text-emerald-400 hover:underline">Create one</Link></p>
     </AuthShell>
   );
+
 };
