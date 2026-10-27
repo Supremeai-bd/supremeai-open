@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, searchCode } from "../adapters/github/index.js";
+import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, searchCode, createIssue } from "../adapters/github/index.js";
 import { RequestContextStore, roleRank, type UserRole } from "../policy/auth.context.js";
 import { scopeAllows } from "../policy/client-registry.js";
 import { buildAccountRegistry } from "../registry/account.registry.js";
@@ -305,6 +305,43 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       try {
         const results = await searchCode(query, repo, limit ?? 10);
         return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+      }
+    }
+  );
+
+  server.tool(
+    "github.create_issue",
+    "Create a new issue in a SupremeAI repository (e.g. supremeai-open). Zero-credential self-serve for autonomous auditor/scout agents.",
+    {
+      title: z.string().min(5).max(250).describe("Issue title"),
+      body: z.string().min(10).describe("Issue description / markdown body"),
+      repo: z.string().optional().describe("Repository name (default: supremeai-open)"),
+      labels: z.array(z.string()).optional().describe("Labels to apply (e.g. ['audit:finding', 'P1-major', 'status:unclaimed'])"),
+    },
+    async ({ title, body, repo, labels }) => {
+      const targetRepo = repo || "supremeai-open";
+      try {
+        const result = await createIssue(targetRepo, title, body, labels);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  number: result.number,
+                  url: result.htmlUrl,
+                  title: result.title,
+                  repo: targetRepo,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
       } catch (err) {
         return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
       }

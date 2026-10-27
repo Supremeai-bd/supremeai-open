@@ -162,3 +162,36 @@ export async function listPullRequests(accountId: string, state: string = "open"
   }));
 }
 
+export async function createIssue(
+  accountIdOrRepo: string,
+  title: string,
+  body: string,
+  labels?: string[]
+): Promise<{ number: number; htmlUrl: string; title: string }> {
+  const { apiKey: token, baseUrl } = getAccountConfig(accountIdOrRepo);
+  const res = await httpRequest<{ number?: number; html_url?: string; message?: string }>(`${baseUrl}/issues`, {
+    method: "POST",
+    headers: {
+      ...githubHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: {
+      title,
+      body,
+      ...(labels && labels.length > 0 ? { labels } : {}),
+    },
+    timeoutMs: 15_000,
+  });
+
+  if (!res.ok || !res.data?.number) {
+    const errorMsg = res.data?.message || `Failed to create issue (HTTP ${res.status})`;
+    throw new Error(`GitHub create issue error: ${errorMsg}`);
+  }
+
+  return {
+    number: res.data.number,
+    htmlUrl: res.data.html_url || "",
+    title,
+  };
+}
+
