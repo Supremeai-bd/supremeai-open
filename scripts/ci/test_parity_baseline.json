@@ -27,7 +27,6 @@
     "scripts/agents/gh_label_ensure.py",
     "scripts/agents/group_taxonomy.py",
     "scripts/agents/heartbeat_ping.py",
-    "scripts/agents/instruction_builder.py",
     "scripts/agents/inventory_lint.py",
     "scripts/agents/issue_fingerprint.py",
     "scripts/agents/issue_revalidator.py",
