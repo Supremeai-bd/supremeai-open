@@ -362,6 +362,44 @@ for line in $updates; do
         fi
     fi
 
+    # 11. BANDIT SAST GUARD (#1809).
+    # Python source static-security ratchet over the non-test surface
+    # (core scripts gateway browser skills examples infrastructure evals).
+    # Engages ONLY when the push touches .py files inside the scan targets.
+    # Shrink-only baseline (scripts/ci/bandit_sast_baseline.json): NEW or
+    # GROWN (path, test_id) findings under scripts/** fail-close the push
+    # (agent-bridge-able); drift under the satellite mirrors is report-only
+    # routing to the owning domain. Skips-with-evidence when bandit is not
+    # installed (honest degradation, #1760 oasdiff pattern). Self-contained
+    # under `set -u`.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/bandit_sast_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            sast_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            sast_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        sast_py_files=$(printf '%s\n' "$sast_changed" | grep -E '\.py$' | grep -E '^(core|scripts|gateway|browser|skills|examples|infrastructure|evals)/' || true)
+        if [ -n "$sast_py_files" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/bandit_sast_guard.py --files $sast_py_files; then
+                    reject "BANDIT SAST GUARD (#1809) FAILED" \
+                        "The push introduces NEW or GROWN Python-source security findings under scripts/." \
+                        "Fix the finding (see the [bandit-sast-guard] evidence lines above) — the baseline may never grow." \
+                        "Satellite-mirror findings are report-only and route to their owning domain." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"
