@@ -48,6 +48,22 @@ export const HEARTBEAT_KEY_PREFIX = "supremeai:agent-heartbeat:";
 export const HEARTBEAT_HASH_KEY = "supremeai:agent-heartbeats";
 export const HEARTBEAT_TTL_SECONDS = 300;
 export const HEARTBEAT_ONLINE_THRESHOLD_SECONDS = 90;
+
+// #1641 (audit: tower slot registry retains expired heartbeats aged 21–24 days):
+// বাংলা: legacy individual key-র 300s TTL আছে, কিন্তু HEARTBEAT_HASH_KEY-এর
+// ফিল্ডের কোনো TTL নেই — HSET চিরকাল বাঁচে। ফলে মরা slot-গুলো রেজিস্ট্রিতে
+// জমতে থাকে (প্রমাণিত: 21–24 দিন ধরে expired, এক query window-এ 13→14)।
+// নিচের read-time lazy reaper: expired এবং grace (ডিফল্ট ২৪ঘ, env
+// REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS, 0 = expiry-তেই) ছাড়িয়ে গেলে সেই
+// ফিল্ড HDEL করে ডিফল্ট listing থেকে বাদ — একই পাঠে `archived`-এ একবার
+// দেখানো হয় (forensics), পরের পাঠে সম্পূর্ণ অদৃশ্য। ফিরে-আসা agent নিজেই
+// HSET করে নতুন রেকর্ড লেখে — মোছা কোনো তথ্য হারায় না।
+export const HEARTBEAT_ARCHIVE_GRACE_SECONDS_DEFAULT = 86_400;
+
+export function archiveGraceSeconds(): number {
+  const raw = Number(process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : HEARTBEAT_ARCHIVE_GRACE_SECONDS_DEFAULT;
+}
 export const SLOT_PATTERN = /^(agent|z\.ai|claude|chatgpt|cursor|gemini|copilot|coder|planner|ci|pr-helper|browser|platform|super)-\d+$/;
 
 export type HeartbeatSource = "mcp-tower" | "backend" | "dashboard" | "cli";
@@ -119,6 +135,57 @@ export function ageSecondsOf(updatedAtMs: number, nowMs: number): number {
   return Math.max(0, Math.floor((nowMs - updatedAtMs) / 1000));
 }
 
+/**
+ * #1641: স্টোর-করা record → listing entry (pure, Redis ছাড়া টেস্টযোগ্য)।
+ * agentId normalization: পুরনো লেখকের রেকর্ডে agentId null/ফাঁকা থাকলে
+ * slot-id-ই সৎ পরিচয় — listing-এ কখনো null দেখাবে না।
+ */
+export function buildStatusEntry(
+  slot: string,
+  record: HeartbeatRecord,
+  nowMs: number,
+): HeartbeatStatusEntry {
+  return {
+    ...record,
+    slot,
+    agentId: record.agentId?.trim() || slot,
+    ageSeconds: ageSecondsOf(record.updatedAtMs, nowMs),
+    state: deriveState(record.updatedAtMs, nowMs),
+  };
+}
+
+export type SlotPartition = {
+  /** ডিফল্ট listing: online/stale + grace-ভিতরের expired (সৎ "expired" স্টেট দৃশ্যমান)। */
+  slots: HeartbeatStatusEntry[];
+  /** grace ছাড়ানো মরা entry — এই পাঠে একবার দেখানো হয়, তারপর reaped। */
+  archived: HeartbeatStatusEntry[];
+  /** HDEL করার জন্য slot নাম (hash ফিল্ড)। */
+  reapTargets: string[];
+};
+
+/**
+ * #1641 (pure): grace-সীমা অনুযায়ী listing ভাগ করে। expired = >300s;
+ * grace (ডিফল্ট ২৪ঘ) ছাড়িয়ে গেলেই archive+reap — ২৪ঘ-ভিতরের মরা slot
+ * অপারেটরকে দেখাতে থাকে (recent-death forensics), তারপর সৎভাবে সরে যায়।
+ */
+export function partitionSlots(
+  entries: HeartbeatStatusEntry[],
+  nowMs: number,
+  graceSeconds: number = archiveGraceSeconds(),
+): SlotPartition {
+  const grace = Math.max(0, graceSeconds);
+  const slots: HeartbeatStatusEntry[] = [];
+  const archived: HeartbeatStatusEntry[] = [];
+  for (const entry of entries) {
+    if (entry.state === "expired" && entry.ageSeconds > grace) {
+      archived.push(entry);
+    } else {
+      slots.push(entry);
+    }
+  }
+  return { slots, archived, reapTargets: archived.map((e) => e.slot) };
+}
+
 // ── Redis transport: Upstash multi-account fallback chain ──────────────────
 // Chain construction lives in lib/redis_chain.ts (shared with the read-only
 // health adapter so fleet health reflects real chain capability). This module
@@ -133,6 +200,8 @@ type HeartbeatRedisClient = {
   keys: (pattern: string) => Promise<string[]>;
   hset: (key: string, field: string, value: string) => Promise<void>;
   hgetall: (key: string) => Promise<Record<string, string>>;
+  /** #1641: lazy reaper — মরা hash ফিল্ড মোছে (fields খালি হলে no-op)। */
+  hdel: (key: string, fields: string[]) => Promise<void>;
 };
 
 // buildAccountChain() moved to lib/redis_chain.ts (shared with adapters/redis)
@@ -205,6 +274,10 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
       }
       return result;
     },
+    hdel: async (key, fields) => {
+      if (!fields.length) return;
+      await call(["HDEL", key, ...fields]);
+    },
   };
 }
 
@@ -219,6 +292,7 @@ function makeTcpClient(account: RedisAccountConfig): HeartbeatRedisClient {
       keys: (pattern: string) => Promise<string[]>;
       hset: (key: string, field: string, value: string) => Promise<number>;
       hgetall: (key: string) => Promise<Record<string, string>>;
+      hdel: (key: string, ...fields: string[]) => Promise<number>;
       disconnect: () => void;
     })(account.tcpUrl as string, { maxRetriesPerRequest: 1, connectTimeout: 5000 });
   return {
@@ -260,6 +334,15 @@ function makeTcpClient(account: RedisAccountConfig): HeartbeatRedisClient {
       const c = connect();
       try {
         return (await c.hgetall(key)) || {};
+      } finally {
+        c.disconnect();
+      }
+    },
+    hdel: async (key, fields) => {
+      if (!fields.length) return;
+      const c = connect();
+      try {
+        await c.hdel(key, ...fields);
       } finally {
         c.disconnect();
       }
@@ -395,14 +478,22 @@ export type AccountReadStatus = {
 
 /** Lists every live heartbeat record with derived real-time state.
  *  #646 AC2: L1 read-through cache (default 5s, env REDIS_L1_CACHE_TTL_MS,
- *  0 = off) — dashboard sweep burst একটি TTL উইন্ডোতে একবারই Redis-এ যায়। */
+ *  0 = off) — dashboard sweep burst একটি TTL উইন্ডোতে একবারই Redis-এ যায়।
+ *  #1641: expired-এর grace (ডিফল্ট ২৪ঘ) ছাড়িয়ে গেলে সেই slot ডিফল্ট listing
+ *  থেকে বাদ + hash থেকে lazy-reap (HDEL) — একই পাঠে `archived`-এ একবার
+ *  ফরেনসিক-ভিউ, পরের পাঠে অদৃশ্য। রেজিস্ট্রি এখন আর মরা slot জমায় না। */
 export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
   ok: true;
   now: string;
   ttlSeconds: number;
   onlineThresholdSeconds: number;
+  archiveGraceSeconds: number;
   accounts: AccountReadStatus[];
   slots: HeartbeatStatusEntry[];
+  /** #1641: grace ছাড়ানো মরা entry — এই পাঠেই সর্বশেষ দেখা। */
+  archived?: HeartbeatStatusEntry[];
+  /** #1641: যেসব hash ফিল্ড HDEL করা হলো। */
+  reapTargets?: string[];
 }> {
   return withL1Cache("l1:agent-heartbeats", l1CacheTtlMs(), () => listHeartbeatsFresh(nowMs), nowMs);
 }
@@ -412,8 +503,11 @@ async function listHeartbeatsFresh(nowMs: number): Promise<{
   now: string;
   ttlSeconds: number;
   onlineThresholdSeconds: number;
+  archiveGraceSeconds: number;
   accounts: AccountReadStatus[];
   slots: HeartbeatStatusEntry[];
+  archived?: HeartbeatStatusEntry[];
+  reapTargets?: string[];
 }> {
   const chain = activeAccountChain();
   if (chain.length === 0) {
@@ -426,6 +520,8 @@ async function listHeartbeatsFresh(nowMs: number): Promise<{
   // older copy of a slot that failed over to secondary — keep the freshest).
   const freshest = new Map<string, HeartbeatRecord>();
   const accounts: AccountReadStatus[] = [];
+  // #1641: reachable client-দের রেখে দিই — reaper-এর HDEL এদের কাছেই যাবে।
+  const reachableClients: HeartbeatRedisClient[] = [];
 
   // বাংলা মন্তব্য (#2613 R2): পড়ার সময়ও cooldown-এ থাকা account-এ একটিও
   // HGETALL পাঠাই না — তবে dashboard-সততার জন্য সেই account-গুলোকে স্পষ্ট
@@ -452,6 +548,7 @@ async function listHeartbeatsFresh(nowMs: number): Promise<{
       // Fast path (issue #1994): single HGETALL command instead of KEYS + N*GET per account
       const hashRecords = await client.hgetall(HEARTBEAT_HASH_KEY);
       status.reachable = true;
+      reachableClients.push(client);
       let hasRecords = false;
       for (const [slot, raw] of Object.entries(hashRecords)) {
         if (!raw) continue;
@@ -495,22 +592,37 @@ async function listHeartbeatsFresh(nowMs: number): Promise<{
     accounts.push(status);
   }
 
-  const slots: HeartbeatStatusEntry[] = [...freshest.entries()]
-    .map(([slot, record]) => ({
-      ...record,
-      slot,
-      ageSeconds: ageSecondsOf(record.updatedAtMs, nowMs),
-      state: deriveState(record.updatedAtMs, nowMs),
-    }))
+  // #1641: buildStatusEntry — agentId normalization (null/ফাঁকা → slot-id),
+  // বয়স ও state ডেরিভেশন এক জায়গায় (pure, টেস্টযোগ্য)।
+  const entries = [...freshest.entries()]
+    .map(([slot, record]) => buildStatusEntry(slot, record, nowMs))
     .sort((a, b) => a.slot.localeCompare(b.slot));
+
+  // #1641: grace ছাড়ানো মরা slot → ডিফল্ট listing থেকে বাদ + hash থেকে
+  // lazy-reap (HDEL)। জানা সীমাবদ্ধতা (সৎ মন্তব্য): read→HDEL মাইক্রো-সেকেন্ড
+  // window-এ ঠিক ওই slot ফিরে এসে re-ping করলে সদ্য-লেখা রেকর্ডও মুছে যেতে
+  // পারে — ২৪ দিনের মৃত agent-এর ঠিক ওই মুহূর্তে ফেরার সম্ভাবনা নগণ্য, আর
+  // ফিরলেও ৪৫s cadence-এ পরের ping-এ স্লট আবার online দেখায়।
+  const { slots, archived, reapTargets } = partitionSlots(entries, nowMs);
+  if (reapTargets.length) {
+    for (const client of reachableClients) {
+      try {
+        await client.hdel(HEARTBEAT_HASH_KEY, reapTargets);
+      } catch {
+        // বাংলা: reaping best-effort — এই পাঠে ব্যর্থ হলে পরের পাঠে আবার চেষ্টা
+      }
+    }
+  }
 
   return {
     ok: true,
     now: new Date(nowMs).toISOString(),
     ttlSeconds: HEARTBEAT_TTL_SECONDS,
     onlineThresholdSeconds: HEARTBEAT_ONLINE_THRESHOLD_SECONDS,
+    archiveGraceSeconds: archiveGraceSeconds(),
     accounts,
     slots,
+    ...(archived.length ? { archived, reapTargets } : {}),
   };
 }
 
