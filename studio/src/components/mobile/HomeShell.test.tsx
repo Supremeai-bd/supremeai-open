@@ -30,6 +30,13 @@ beforeAll(() => {
     removeEventListener: () => {},
     dispatchEvent: () => false,
   }));
+  // বাংলা: jsdom-এ PointerEvent ক্লাসও নেই — ফলে fireEvent.pointerDown/Up
+  // সাধারণ Event বানায় এবং init-এর clientY হারিয়ে যায় (e.clientY ===
+  // undefined)। জেসচার ম্যাথের dy NaN হয়ে যায়, তাই Notification/Control
+  // Center কখনো খোলে না। আসল ব্রাউজারে PointerEvent-এ clientY সবসময় থাকে,
+  // তাই MouseEvent এক্সটেন্ড করে স্টাব দিলেই ব্রাউজার-অভিন্ন আচরণ ফেরে।
+  class PointerEventStub extends MouseEvent {}
+  vi.stubGlobal('PointerEvent', PointerEventStub);
   // jsdom-এ কোনো layout ইঞ্জিন নেই — clientWidth/Height 0 ফেরত দেয়, তাতে
   // AppWindow (size.w > 0 গার্ড) কখনো মাউন্ট হয় না। ফোন-স্ক্রিনের মাপ দিই।
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 390 });
