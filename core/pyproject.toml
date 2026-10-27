@@ -67,7 +67,6 @@ email-validator = "^2.2.0"
 asyncpg = "^0.30.0"
 aiosqlite = "^0.20.0"
 google-cloud-firestore = "^2.19.0"
-google-cloud-storage = "^2.18.2"
 google-auth = "^2.36.0"
 # CI FIX (P1-1): Removed google-auth-httplib2 — it was declared but NEVER
 # imported anywhere in the codebase. It pulls in httplib2 which has known
