@@ -48,6 +48,7 @@ import json
 import re
 import sqlite3
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -66,11 +67,11 @@ SQLITE_DB_PATH = ROOT_DIR / "data" / "supremeai.db"
 BUNDLE_SCHEMA_VERSION = 1
 
 # Canonical source files — seed-এর উপাদান, bundle-এর authority নয়।
-# বাংলা মন্তব্য: AGENTS.md = immutable entry contract (শুধু hash ধরা হয়),
-# AGENT_RULES.md + rules.yml = seed material যা DB-তে versioned কপি হয়।
+# বাংলা মন্তব্য: AGENTS.md = immutable entry contract (hash ধরা হয়) এবং
+# #1526-এর পর এটিই Single Door SSOT — seed material ও এখান থেকেই আসে
+# (AGENT_RULES.md মুছে ফেলা হয়েছে; constitution rules.yml = DB-তে versioned কপি)।
 CANONICAL_FILES = {
     "agents_md": ROOT_DIR / "AGENTS.md",
-    "agent_rules_md": ROOT_DIR / "AGENT_RULES.md",
     "constitution_rules_yml": ROOT_DIR / ".github" / "constitution" / "rules.yml",
 }
 
@@ -106,36 +107,32 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
 
 
 # ---------------------------------------------------------------------------
-# Canonical seed parsing — AGENT_RULES.md + constitution rules.yml → DB rows
+# Canonical seed parsing — AGENTS.md (Single Door SSOT) + constitution rules.yml → DB rows
 # ---------------------------------------------------------------------------
-_RULE_HEADER_RE = re.compile(r"^## (U\d+|P\d+) — (.+?)\s*$")
+_H2_HEADER_RE = re.compile(r"^## (.+?)\s*$")
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
-# বাংলা মন্তব্য: role header → canonical role scope কী (AGENT_RULES.md §3-এর
-# ৮টি role এবং continuous_agent_loop.py-র ROLE_ALIASES-এর সাথে সামঞ্জস্যপূর্ণ)।
-_ROLE_HEADER_TO_SCOPE = {
-    "Auditor": "auditor",
-    "Ecosystem Scout / Planner": "planner",
-    "Coder": "coder",
-    "CI Fixer": "ci-fixer",
-    "Watcher": "watcher",
-    "Human-Eyes / Browser Agent": "human-eyes",
-    "Breaker / Adversarial Auditor": "breaker",
-    "Merge Agent": "merge-agent",
-}
+def _section_slug(title: str) -> str:
+    """`## 🚪 The Single Door` → `the-single-door` — stable DB rule_id।"""
+    stripped = "".join(ch for ch in title if not unicodedata.combining(ch))
+    ascii_only = stripped.encode("ascii", "ignore").decode("ascii")
+    slug = _SLUG_RE.sub("-", ascii_only.lower()).strip("-")
+    return slug or "section"
 
 
-def parse_agent_rules_md(path: Path) -> list[dict]:
-    """AGENT_RULES.md পার্স করে policy row dict তৈরি করে।
+def parse_agents_md(path: Path) -> list[dict]:
+    """AGENTS.md (Single Door SSOT) পার্স করে policy row dict তৈরি করে।
 
-    # বাংলা মন্তব্য: §1 Universal (U*) → scope='universal', mandatory=1;
-    # §2 Engineering (P*) → scope='engineering', mandatory=1 (Non-Negotiable);
-    # §3 Role সেকশন → scope='role:<name>', mandatory=0 (role-filterable)।
+    # বাংলা মন্তব্য: আগের parse_agent_rules_md U*/P*/role হেডার পার্স করত —
+    # সেই ফাইল #1526-এ মুছে গেছে, ফলে seed পথটাই মৃত ছিল (#1642)। এখন জীবন্ত
+    # SSOT-এর প্রতিটি `## ` সেকশন → একটি universal mandatory row; MUST FOLLOW /
+    # MUST AVOID invariant-গুলো সেকশন body-তেই থাকে।
     """
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     rules: list[dict] = []
-    section = None  # (kind, key, title) — kind: 'rule' | 'role'
+    section: tuple[str, str] | None = None  # (rule_id, title)
     buf: list[str] = []
 
     def _flush():
@@ -145,38 +142,23 @@ def parse_agent_rules_md(path: Path) -> list[dict]:
             return
         body = "\n".join(buf).strip()
         if body:
-            kind, key, title = section
-            if kind == "rule":
-                # U* = universal contract, P* = engineering policy — দুটোই mandatory
-                scope = "universal" if key.startswith("U") else "engineering"
-                rules.append({
-                    "rule_id": key, "scope": scope, "category": scope,
-                    "title": title, "body": body, "mandatory": 1,
-                    "source": "seed:AGENT_RULES.md",
-                })
-            else:
-                rules.append({
-                    "rule_id": f"role:{key}", "scope": f"role:{key}", "category": "role",
-                    "title": title, "body": body, "mandatory": 0,
-                    "source": "seed:AGENT_RULES.md",
-                })
+            rule_id, title = section
+            rules.append({
+                "rule_id": rule_id, "scope": "universal", "category": "universal",
+                "title": title, "body": body, "mandatory": 1,
+                "source": "seed:AGENTS.md",
+            })
         buf = []
 
     for line in lines:
-        m = _RULE_HEADER_RE.match(line)
+        m = _H2_HEADER_RE.match(line)
         if m:
             _flush()
-            section = ("rule", m.group(1), m.group(2))
+            title = m.group(1)
+            section = (f"agents-md:{_section_slug(title)}", title)
             continue
-        if line.startswith("## "):
-            role_name = line[3:].strip()
-            if role_name in _ROLE_HEADER_TO_SCOPE:
-                _flush()
-                section = ("role", _ROLE_HEADER_TO_SCOPE[role_name], role_name)
-                continue
         if line.startswith("# "):
-            # H1 — নতুন top-level সেকশন, চলমান rule/role flush করা ঠিক নয়;
-            # শুধু buf ধরে রাখি (§ হেডারের পরের প্রথম H1 এসে flush হবে)।
+            # H1 — নতুন top-level সেকশন, চলমান rule flush করে সীমানা টানা হয়।
             _flush()
             section = None
             continue
@@ -221,8 +203,16 @@ def seed_from_canonical(db_path: Path | None = None, force: bool = False) -> dic
     # নতুন version row তৈরি হয় এবং পুরনো version superseded=1 হয়।
     # ফলে DB-ই সত্যের উৎস, ফাইল শুধু bootstrap material।
     """
-    parsed = parse_agent_rules_md(CANONICAL_FILES["agent_rules_md"])
-    parsed += parse_constitution_rules_yml(CANONICAL_FILES["constitution_rules_yml"])
+    parsed = parse_agents_md(CANONICAL_FILES["agents_md"])
+    missing_sources: list[str] = []
+    rules_yml = CANONICAL_FILES["constitution_rules_yml"]
+    if rules_yml.is_file():
+        parsed += parse_constitution_rules_yml(rules_yml)
+    else:
+        # বাংলা: প্রাইভেট-মিরর রিলোকেশন — .github/constitution/rules.yml শুধু
+        # প্রাইভেট monorepo-তে থাকে; open মিররে অনুপস্থিতি সৎভাবে ঘোষণা হয়,
+        # চুপচাপ ক্র্যাশ নয় (U2 Truth & Evidence)।
+        missing_sources.append(str(rules_yml))
     now = datetime.now(timezone.utc).isoformat()
     conn = _connect(db_path)
     try:
@@ -263,7 +253,7 @@ def seed_from_canonical(db_path: Path | None = None, force: bool = False) -> dic
                 unchanged += 1
         conn.commit()
         return {"added": added, "updated": updated, "unchanged": unchanged,
-                "total_parsed": len(parsed)}
+                "total_parsed": len(parsed), "missing_sources": missing_sources}
     finally:
         conn.close()
 

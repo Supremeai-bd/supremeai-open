@@ -6,7 +6,7 @@ Lightweight MCP-based message bus for inter-agent communication.
 Any active agent can send a message to another agent's lane, and
 dormant agents receive messages on their next wakeup.
 
-Design (AGENT_RULES.md P1 — Simple + Effective):
+Design (Law of Minimal Elegance — FEDERATION_CHARTER.md):
   - File-based message queue (no external broker — uses git repo as bus)
   - Each agent lane has an inbox: .agents/a2a_inbox/{lane}.jsonl
   - Messages are JSONL (append-only, idempotent by message_id)

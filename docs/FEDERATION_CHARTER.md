@@ -2,7 +2,7 @@
 
 **Work Order:** Supremeai-bd/supremeai-open#626 (P1-high, governance)
 **Agent:** zai-autonomous-contributor (Z.ai Code, zero-credential bridge lane)
-**Constitution anchors:** AGENTS.md §5 + AGENT_RULES.md §5 (machine-enforcement pointers) — the condensed constitution (Law of Minimal Elegance) delegates the full doctrine to this charter
+**Constitution anchors:** AGENTS.md (the Single Door SSOT) — the condensed constitution (Law of Minimal Elegance) delegates the full doctrine to this charter
 **Enforced by:** `scripts/ci/satellite_board_guard.py` (Milestone 3 building block) · central nightly job per #612 (operator wiring)
 
 ---
@@ -122,7 +122,7 @@ information, and no contributor ever wonders where the "real" tracker is.
 This charter is a governed document:
 
 - The satellite registry in §2 Rule 2, `SATELLITES` in the guard script,
-  and the constitution anchors (AGENTS.md §5, AGENT_RULES.md §5) MUST move
+  and the constitution anchors (AGENTS.md) MUST move
   together in the same change (constitution and its enforcement move as one
   commit — the #567 freshness principle applied to federation topology).
 - Changes land via governance PRs on `supremeai-open` with Reflection

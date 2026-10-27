@@ -1,9 +1,9 @@
 """Hierarchical context tiers (#4051 — Roadmap v2 §3.1, OpenViking-inspired).
 
 বাংলা নোট: L0 শুধু memory নয় — এটা *governance context*। AGENTS.md +
-AGENT_RULES.md + SECURITY.md সবসময় loaded থাকবে এবং সব আচরণকে নিয়ন্ত্রিত
+AGENTS.md (Single Door SSOT) + SECURITY.md সবসময় loaded থাকবে এবং সব আচরণকে নিয়ন্ত্রিত
 রাখবে। L0-তে যেকোনো পরিবর্তন = Tier-3 constitutional change → ADMIN_DECISION
-ছাড়া করা যাবে না (AGENT_RULES §6)।
+ছাড়া করা যাবে না (AGENTS.md constitution)।
 
 Tier মডেল:
   L0 (Immutable / Constitutional) — সবসময় loaded, parsed (raw dump নয়)
@@ -14,7 +14,7 @@ Budget নীতি (acceptance): total window budget-এ allocation ক্র�
 L0 আগে reserved, তারপর L1, বাকিটা L2 পায়। কোনো tier বাজেট ছাড়িয়ে গেলে
 sentence-boundary truncation (core.llm.token_budget-এর single owner) হয়।
 
-Design guardrails (AGENT_RULES P1/P2):
+Design guardrails (AGENTS.md constitution):
   * নতুন vector store / retrieval system তৈরি হয়নি — L2 বিদ্যমান
     ExperienceDatabase.find_similar() + MemoryRepository.search_similar() ব্যবহার
     করে (SSOT reuse; second retrieval stack নিষিদ্ধ)।
@@ -51,7 +51,7 @@ __all__ = [
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # L0 constitutional sources — parsed, raw dump নয় (acceptance #2)।
-CONSTITUTION_FILES: tuple[str, ...] = ("AGENTS.md", "AGENT_RULES.md", "SECURITY.md")
+CONSTITUTION_FILES: tuple[str, ...] = ("AGENTS.md", "SECURITY.md")
 
 # বাংলা (#4051): L0-ই constitutional context — এর পরিবর্তন সবসময় Tier-3
 # admin approval দাবী করবে। এটা hard policy constant, caller override করতে পারবে না।
@@ -111,7 +111,7 @@ class ConstitutionDrift:
     """L0 constitutional hash পরিবর্তনের সনাক্তকরণ ফল।
 
     changed=True মানে L0 content বদলেছে — Tier-3 ADMIN_DECISION ছাড়া
-    এই পরিবর্তন গ্রহণযোগ্য নয় (AGENT_RULES §6)। requires_admin_approval
+    এই পরিবর্তন গ্রহণযোগ্য নয় (constitution — admin-only)। requires_admin_approval
     সবসময় True — এটা policy, এটা কেউ কনফিগার করে False করতে পারবে না।
     """
 
@@ -141,7 +141,7 @@ class L0Context:
 
     @classmethod
     def load(cls, repo_root: Path | None = None) -> L0Context:
-        """AGENTS.md + AGENT_RULES.md + SECURITY.md parse করে L0 গঠন করে।
+        """AGENTS.md + SECURITY.md parse করে L0 গঠন করে।
 
         বাংলা: fail-honest — কোনো constitutional ফাইল পাওয়া না গেলে সেটা
         missing_files-এ ঘোষণা হয়, চুপচাপ ঢাকা হয় না (U2 Truth & Evidence)।
@@ -214,7 +214,7 @@ class L1Context:
 
     @classmethod
     def from_task_contract(cls, contract: dict[str, Any]) -> L1Context:
-        """Standard Task Contract (AGENT_RULES §7) থেকে L1 গঠন করে।
+        """Standard Task Contract (AGENTS.md constitution) থেকে L1 গঠন করে।
 
         বাংলা: contract খালি/None হলে খালি L1 — চুপচাপ placeholder বানানো হয় না।
         """
@@ -354,7 +354,7 @@ class L2Context:
         বাংলা: experience_db.find_similar sync, memory_repo.search_similar async —
         দুটোই optional inject করা যায় (টেস্টে mock)। কোনো store ব্যর্থ হলে
         degraded=True + সৎ লগ; কখনো কলার ক্র্যাশ করানো হয় না (graceful
-        degradation — AGENT_RULES §13)।
+        degradation — AGENTS.md house doctrine)।
         """
         # Policy Engine scope (acceptance #7): tenant ছাড়া L2 নেই।
         if not tenant_id:

@@ -98,7 +98,6 @@ class RoutingMatrixSSOT(unittest.TestCase):
             "docs/SPEC.md",
             "patches/x.patch",
             "AGENTS.md",
-            "AGENT_RULES.md",
         ):
             self.assertEqual(hb.route_path(path), "monorepo", msg=path)
 

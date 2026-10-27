@@ -99,7 +99,8 @@ APPROVED_ROOT_FILES = {
     ".gitleaksignore",
     ".pre-commit-config.yaml",
     "AGENTS.md",
-    "AGENT_RULES.md",
+    # "AGENT_RULES.md" deliberately NOT approved — deleted by #1526 (#1642);
+    # keeping it here would invite re-creating the dead constitution at root.
     "AUTONOMOUS_TRANSIT_PIPELINE.md",
     "ECOSYSTEM_MAP.md",
     "LICENSE",

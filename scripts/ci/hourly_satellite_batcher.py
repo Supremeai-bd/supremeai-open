@@ -97,7 +97,7 @@ ROUTING_MATRIX: Final = (
 )
 
 #: §3.1 monorepo-designated literal files (repo-root, always-synced channel).
-MONOREPO_ROOT_FILES: Final = ("AGENTS.md", "AGENT_RULES.md")
+MONOREPO_ROOT_FILES: Final = ("AGENTS.md",)  # AGENT_RULES.md deleted by #1526 (#1642)
 
 
 class BatchError(ValueError):
@@ -443,7 +443,7 @@ def self_test() -> bool:
     assert route_path("docs/AGENT_LOOP_SPEC.md") == "monorepo"
     assert route_path("patches/x.patch") == "monorepo"
     assert route_path("AGENTS.md") == "monorepo"
-    assert route_path("AGENT_RULES.md") == "monorepo"
+    assert route_path("AGENT_RULES.md") is None  # deleted constitution — fail-closed quarantine (#1642)
     # fail-closed quarantine
     assert route_path("README.md") is None
     assert route_path("mcp.json") is None

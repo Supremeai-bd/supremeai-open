@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Issue Revalidator — machine-readable live-issue gate (#3215).
 
-নীতি (AGENT_RULES.md U3 + #3215): "No live validation = no implementation."
+নীতি (#3215 live-validation doctrine): "No live validation = no implementation."
 একটি open issue কেবল তার অস্তিত্বের কারণে valid নয়। যেকোনো agent claim-এর
 আগে এই gate চালাবে — রায় machine-readable state হিসেবে আসবে:
 

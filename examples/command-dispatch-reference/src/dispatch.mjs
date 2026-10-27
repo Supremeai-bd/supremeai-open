@@ -211,7 +211,7 @@ export function createDispatcher(opts) {
             id: "smallest-safe-change",
             statement:
               "Implement the smallest safe change strictly inside the declared Touching Files.",
-            source: "AGENT_RULES.md U1",
+            source: "AGENTS.md",
           },
         ],
         admin_gate: { required: false, status: "NOT_REQUIRED" },

@@ -225,7 +225,7 @@ def _sample_inputs() -> tuple[dict, list[dict]]:
     policy = {"token_budget": 6000, "base_priority": 1.0, "decay_factor": 0.8, "strategy": STRATEGY}
     items = [
         {"kind": "constitution-doc", "label": "AGENTS.md — core constitution", "tokens": 600},
-        {"kind": "constitution-doc", "label": "AGENT_RULES.md — behavior rules", "tokens": 300},
+        {"kind": "constitution-doc", "label": "docs/AGENT_LOOP_SPEC.md — loop contract", "tokens": 300},
         {"kind": "issue-contract", "label": "Issue #29 — mission, acceptance criteria, Touching Files", "tokens": 450},
         {"kind": "file-scope", "label": "api-schemas/context-assembly.schema.json", "tokens": 700,
          "ref": {"path": "api-schemas/context-assembly.schema.json"}},

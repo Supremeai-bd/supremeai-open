@@ -8,7 +8,7 @@
 ## 1. Authority & Governance
 
 1. **Admin Decision Mandate:** Admin explicit instructions hold the highest authority. Destructive operations or architecture deviations require prior approval.
-2. **Constitutional SSOT:** This document and the central [`AGENT_RULES.md`](https://github.com/Supremeai-bd/supremeai-open/blob/main/AGENT_RULES.md) govern all extension code.
+2. **Constitutional SSOT:** This document and the central [`AGENTS.md`](https://github.com/Supremeai-bd/supremeai-open/blob/main/AGENTS.md) govern all extension code.
 3. **Public-First Ingress (Two-Tier Invariant #430):**
    - **No Claim -> No Branch:** Claim marker (`status:claimed` + `<!-- atomic-claim -->`) must exist before branch checkout.
    - **No Branch -> No Push:** Pushes to unclaiimed issues are rejected. All PRs flow through `Supremeai-bd/supremeai-open` via bridge dispatches.

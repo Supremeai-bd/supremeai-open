@@ -95,7 +95,7 @@ TIER2_ACTIONS = {
 
 # Tier-3 (Admin-only) — human approval required
 TIER3_ACTIONS = {
-    "constitutional_change",  # modify AGENTS.md / AGENT_RULES.md
+    "constitutional_change",  # modify AGENTS.md (Single Door SSOT)
     "security_sensitive_provider",  # new provider with data exposure risk
     "permission_escalation",  # grant new scope to agent
     "new_external_capability",  # adopt new external repo

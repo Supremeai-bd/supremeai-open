@@ -5,8 +5,9 @@ Spec SSOT chain:
   - docs/AGENT_LOOP_SPEC.md (task-envelope-v1, §2 envelope, §4 verification tiers)
   - AGENTS.md §3 8-step table: Understand → Rules → Inspect → Claim → Work
     → Verify → Record → Return
-  - AGENT_RULES.md: U1 scope, U2 evidence, U7 verification, U8 handoff
-    (``Closes #N`` rides in the commit message — squash auto-close doctrine)
+  - AGENTS.md (Single Door SSOT): 4 Universal Invariants — Dual-Rebase,
+    Boundary, Superior Replacement, Verification & PR Blueprint
+    (``Closes #N`` rides in the PR description — squash auto-close doctrine)
 
 The runner CONSUMES the canonical task envelope emitted by
 ``scripts/agents/continuous_agent_loop.py --task-envelope`` — it never
@@ -20,7 +21,7 @@ no filesystem mutation ("no claim, no work", AGENTS.md §3 step 4).
 House style (mirrors examples/gateway_client.py and the telemetry logger):
 - offline-safe import: module import performs zero file/network I/O;
   all I/O happens on explicit construction/run/CLI action
-- zero third-party dependencies (AGENT_RULES.md §13)
+- zero third-party dependencies (house doctrine — AGENTS.md)
 - honest errors: every contract violation names the offending field/step/path
 - credentials and payloads are never echoed — captured command output is
   secret-redacted before it enters the evidence ledger
@@ -461,14 +462,17 @@ class AgentRunner:
         forbidden.extend(missing_defaults)
         scope["forbidden_paths"] = forbidden
 
-        rules_path = self.repo_root / "AGENT_RULES.md"
+        # AGENT_RULES.md was deleted by #1526 — the Single Door SSOT is
+        # AGENTS.md now (authority-pointer sweep, #1642). Pointers are the
+        # real top-level sections of the live constitution, not a dead twin.
+        rules_path = self.repo_root / "AGENTS.md"
         rule_pointers: list[str] = []
         rules_source = "absent"
         if rules_path.is_file():
             try:
                 text = rules_path.read_text(encoding="utf-8", errors="replace")
-                rule_pointers = sorted(set(re.findall(r"^## ([UP]\d+) — ", text, re.M)))
-                rules_source = "AGENT_RULES.md"
+                rule_pointers = sorted(set(re.findall(r"^## (.+?)\s*$", text, re.M)))
+                rules_source = "AGENTS.md"
             except OSError as exc:
                 rule_pointers = []
                 rules_source = f"unreadable: {exc}"
@@ -988,8 +992,8 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        (root / "AGENT_RULES.md").write_text(
-            "# AGENT_RULES\n## U1 — Scope\n## U7 — Verification\n## P1 — Simple\n",
+        (root / "AGENTS.md").write_text(
+            "# AGENTS\n## The Single Door\n## The 4 Universal Invariants (Must Follow vs Must Avoid)\n",
             encoding="utf-8",
         )
         pass_cmd = [sys.executable, "-c", "print('tier ok')"]

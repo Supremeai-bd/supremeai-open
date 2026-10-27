@@ -402,7 +402,7 @@ def incremental_update(
 
 def self_test() -> bool:
     sources = {
-        "docs/AGENT_RULES.md": "# Rules\n\nU4 hold doctrine. See AGENT_RULES.md#U4 "
+        "docs/AGENT_LOOP_SPEC.md": "# Loop spec\n\nU4 hold doctrine. See AGENT_LOOP_SPEC.md#envelope "
         "and GATEWAY.md#auth\n",
         "docs/GATEWAY.md": "# Gateway SSOT\nBearer + key auth\n",
         "scripts/agents/loop.py": (
@@ -450,7 +450,7 @@ def self_test() -> bool:
             pass
 
     # 1-hop resolution within budget.
-    resolution = graph.resolve_context("file:docs/AGENT_RULES.md")
+    resolution = graph.resolve_context("file:docs/AGENT_LOOP_SPEC.md")
     assert resolution.budget_ok, resolution.tokens_estimate
     # Anchor advisory: ref GATEWAY.md#auth resolves to the file-level node.
     assert any(
@@ -464,7 +464,7 @@ def self_test() -> bool:
         pass
 
     # Benchmark: graph 1-hop vs raw dump — synthetic >50x.
-    big_rule = "docs/AGENT_RULES.md"
+    big_rule = "docs/AGENT_LOOP_SPEC.md"
     raw = {
         big_rule: ("line of doctrine text " * 4000),
         "docs/GATEWAY.md": "line of gateway text " * 4000,

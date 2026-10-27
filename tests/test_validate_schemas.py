@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tests/test_validate_schemas.py — test suite for scripts/validate_schemas.py (issue #45).
 
-Dual-mode by design (zero-dependency doctrine, AGENT_RULES.md §13):
+Dual-mode by design (zero-dependency house doctrine — AGENTS.md):
   - pytest:  pytest tests/test_validate_schemas.py
   - stdlib:  python3 tests/test_validate_schemas.py   (plain runner, no pytest import)
 

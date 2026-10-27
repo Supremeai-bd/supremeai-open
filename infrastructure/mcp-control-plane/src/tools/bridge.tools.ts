@@ -590,7 +590,7 @@ export function bridgeGuide() {
       prTemplateSource: readPullRequestTemplate().source,
       mandatoryReflectionFields: [...REQUIRED_REFLECTION_FIELDS],
       requiredReflectionSection: REFLECTION_EVIDENCE_SECTION,
-      ruleP7DomainSizing: "Cohesive task sizing ceiling: 30 files / 200 KB diff (AGENT_RULES.md P7)",
+      ruleP7DomainSizing: "Cohesive task sizing ceiling: 30 files / 200 KB diff (bridge diff caps)",
       preValidation: "Submissions missing reflection evidence fail pre-push with STALE_TEMPLATE_ERROR",
     },
     escalation: {
