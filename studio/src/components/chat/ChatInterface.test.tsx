@@ -4,7 +4,7 @@
 // যায় এবং পরের কলে একই id বজায় থাকে; ৩) S2 ThinkingPanel ও S3 ArtifactsPanel
 // সত্যিই মাউন্ট/আনমাউন্ট হয়।
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // বাংলা: jsdom scrollIntoView বাস্তবায়ন করে না — UnifiedChatBubble/ChatInterface
@@ -147,5 +147,79 @@ describe('ChatInterface Tier-S wiring contract (M10)', () => {
     await userEvent.click(langBtn);
     expect(langBtn).toHaveTextContent('বাং');
     expect(screen.getByPlaceholderText(/এআই এজেন্টকে আপনার মেসেজ লিখুন/i)).toBeInTheDocument();
+  });
+
+  // M7 (issue #1518) বাংলা: আপলোড কলব্যাক আর no-op নয়। চুক্তি-টেস্ট:
+  // ১) সফল XHR আপলোডে pending chip দেখা যায়; ২) পাঠানোর সময় অ্যাটাচমেন্ট
+  // shared-types Attachment শেপে orchestration metadata-তে যায় (gateway
+  // _chat_orchestrate metadata হুবহু ConversationCommand-এ পাস করে); ৩) ইউজার
+  // মেসেজের metadata.attachments-এও থাকে; ৪) পাঠানোর পরে chips পরিষ্কার।
+  it('wires image upload into pending chips and the orchestration metadata (M7)', async () => {
+    // jsdom-এ XMLHttpRequest/URL.createObjectURL নেই — সফল আপলোড সিমুলেট।
+    class FakeXHR {
+      upload = { addEventListener: vi.fn() };
+      private listeners: Record<string, (ev?: unknown) => void> = {};
+      status = 200;
+      responseText = JSON.stringify({
+        id: 'att-1', url: 'https://cdn.example/x.png',
+        name: 'x.png', size: 1234, mime_type: 'image/png',
+      });
+      addEventListener(ev: string, fn: (ev?: unknown) => void) { this.listeners[ev] = fn; }
+      open() { /* no-op */ }
+      setRequestHeader() { /* no-op */ }
+      send() { this.listeners['load']?.(); }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXHR);
+    // বাংলা: jsdom-এ URL.createObjectURL/revokeObjectURL নেই — ম্যানুয়ালি
+    // স্টাব করে finally-তে ফেরত দেওয়া হয় (vitest 3.x-এ vi.stubOnProperty নেই)।
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    (URL as unknown as { createObjectURL: unknown }).createObjectURL = vi.fn(() => 'blob:fake-preview');
+    (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = vi.fn();
+
+    try {
+      // বাংলা: আগের টেস্টে lang-toggle localStorage 'bn' করে রাখে — এই টেস্টে
+      // EN placeholder নিশ্চিত করতে সেট।
+      localStorage.setItem('sa_ui_lang', 'en');
+      mockedExecute.mockResolvedValueOnce({ status: 'ok', response: 'reply' });
+      render(<ChatInterface />);
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(fileInput).not.toBeNull();
+      const file = new File(['pixels'], 'x.png', { type: 'image/png' });
+      Object.defineProperty(fileInput, 'files', { value: [file] });
+      fireEvent.change(fileInput);
+
+      // আপলোড সফল → pending chip (থাম্বনেইল + রিমুভ বাটন) দেখা যায়
+      // বাংলা: দুটি থাম্বনেইলই স্বাভাবিক — ImageUploadButton-এর নিজস্ব প্রিভিউ
+      // (blob:) + composer-এর pending chip (ব্যাকএন্ড URL)।
+      const chip = await screen.findByRole('listitem');
+      expect(chip).toBeInTheDocument();
+      expect(screen.getAllByAltText('x.png').length).toBeGreaterThan(0);
+
+      await userEvent.type(screen.getByPlaceholderText(/type your message to the ai agent/i), 'What is this?');
+      await userEvent.click(screen.getByRole('button', { name: /send/i }));
+      await waitFor(() => expect(mockedExecute).toHaveBeenCalledTimes(1));
+
+      const expectedAttachment = {
+        id: 'att-1', type: 'image', name: 'x.png',
+        url: 'https://cdn.example/x.png', size: 1234, mimeType: 'image/png',
+      };
+      const call = mockedExecute.mock.calls[0][0] as { payload: { metadata: { attachments?: unknown[] } } };
+      // ২) orchestration metadata-তে অ্যাটাচমেন্ট যায়
+      expect(call.payload.metadata.attachments).toEqual([expectedAttachment]);
+      // ৩) ইউজার মেসেজ metadata-তেও থাকে (store-এ hasAttachments পথ)
+      // বাংলা: at(-1) নয় — assistant রিপ্লাই পরে যোগ হয়; user মেসেজ খুঁজে নিই।
+      const userMsg = useStore.getState().chatHistory.find(
+        (m) => m.role === 'user' && m.content === 'What is this?',
+      );
+      expect(userMsg?.metadata?.attachments).toEqual([expectedAttachment]);
+      // ৪) পাঠানোর পরে pending chips পরিষ্কার
+      await waitFor(() => expect(screen.queryByRole('listitem')).toBeNull());
+    } finally {
+      vi.unstubAllGlobals();
+      (URL as unknown as { createObjectURL: unknown }).createObjectURL = originalCreateObjectURL;
+      (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = originalRevokeObjectURL;
+    }
   });
 });
