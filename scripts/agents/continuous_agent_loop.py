@@ -202,6 +202,8 @@ DEFAULT_CADENCE_HOURS: dict[str, int] = {
 DEFAULT_MERGED_ROLES: dict[str, str] = {
     "federation-auditor": "auditor",
     "task-auditor": "auditor",
+    "ci-fixer": "solver",
+    "coder": "solver",
 }
 
 ROLE_RULES: dict[str, str] = {
@@ -402,13 +404,7 @@ def classify_task_role(
         return "coder"
     return "coder"
 
-# বাংলা: classify_task_role() আগে dead code ছিল — main() কখনো ডাকত না, ফলে
-# status:runway (ci-fixer) বা gate:pre-landing (task-auditor) issue-ও সবসময়
-# "solver" হিসেবে ডিসপ্যাচ হত। SPECIALIST_ROLES এই ৩টি ক্লাস + ROLE_RULES-এর
-# ৬টি শিডিউল-রোল = envelope/dispatch-এ গ্রহণযোগ্য role surface (--role override-ও
-# এই সেটের বাইরে গেলে সৎ warning দিয়ে fallback হয় — fail-closed নয়, কারণ SPEC
-# §4b শুধু --group-এর জন্য fail-closed দাবি করে)।
-SPECIALIST_ROLES = frozenset({"coder", "ci-fixer", "task-auditor"})
+SPECIALIST_ROLES = frozenset({"solver", "coder", "ci-fixer", "auditor", "task-auditor"})
 
 ENVELOPE_FORBIDDEN_PATHS = [".env*", "secrets/**", "credentials/**", "vault/**"]
 
