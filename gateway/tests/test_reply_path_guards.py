@@ -84,10 +84,40 @@ def check(name: str, cond: bool, detail: str = ""):
 _TEST_ENV_KEYS = ("STEALTH_WEBHOOK_URL", "GUEST_RATE_LIMIT_PER_MIN", "SUPREMEAI_API_KEY", "ENVIRONMENT")
 
 
+if "pytest" in sys.modules:
+    import pytest
+
+    @pytest.fixture(autouse=True)
+    def _restore_app_env():
+        """Test-boundary hygiene for this file's by-design env mutation + app reload.
+
+        reload_app() documents 'env is intentionally left set after reload —
+        main() cleans up', but under pytest main() never runs: the final reload
+        (test_readiness_probe's STEALTH_WEBHOOK_URL="") leaked both the env var
+        and the re-captured app-module global into every later test file — the
+        2026-10-28 full-suite reds in test_stealth_dns_guards (G10/G11: /readyz
+        branches on the falsy global and never consults the monkeypatched DNS
+        snapshot). Restore the controlled keys and the import-captured global at
+        each test boundary; per-request reads (SUPREMEAI_API_KEY) need no global
+        restore. Plain-script mode keeps main()'s final cleanup."""
+        saved_env = {k: os.environ.get(k) for k in _TEST_ENV_KEYS}
+        saved_global = getattr(app_module, "STEALTH_WEBHOOK_URL", None)
+        yield
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        if saved_global is not None:
+            app_module.STEALTH_WEBHOOK_URL = saved_global
+
+
 def reload_app(**env):
     """Reload service.app with a controlled env. NOTE: env is intentionally left
     set after reload — _verify_client_auth re-reads SUPREMEAI_API_KEY per request,
-    so restoring immediately would break keyed-auth cases. main() cleans up."""
+    so restoring immediately would break keyed-auth cases. The autouse
+    _restore_app_env fixture restores it at each pytest test boundary (main()
+    cleans up in plain-script mode)."""
     os.environ.update(env)
     importlib.reload(app_module)
     if hasattr(app_module, "_guest_hits"):
