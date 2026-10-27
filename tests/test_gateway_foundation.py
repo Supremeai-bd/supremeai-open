@@ -1,7 +1,8 @@
 """tests/test_gateway_foundation.py — 3-tier verification (tier 3, unit).
 
 Tests the SupremeAI Unified Gateway router foundation (issue #511):
-- Config parsing, SSOT provider validation (7 allowed providers) & drift rejection.
+- Config parsing, gateway-plane provider enum validation (schema 7 + gateway-only
+  web & perplexity drivers) & drift rejection.
 - Sliding window rate limiting: remaining tokens, reset epoch, retry-after.
 - Provider failover chain: deterministic sequential attempt, fallback on 429/503,
   and failover exhaustion with honest transition ledger.
@@ -38,6 +39,11 @@ from gateway.rate_limit import SlidingWindowLimiter
 
 class TestGatewayConfig(unittest.TestCase):
     def test_allowed_providers_ssot(self):
+        # Gateway-plane enum = task-router.schema.json's 7 schema providers
+        # PLUS the gateway-only providers with live drivers + policy hops:
+        # "web" (web_session.py) and "perplexity" (adapters.py, sonar cascade).
+        # A copy that lags the runtime makes load_config() reject the shipped
+        # routing_policy.json (drift class F-J, 2026-10-28) — extend, don't lag.
         expected = {
             "openai",
             "anthropic",
@@ -47,6 +53,7 @@ class TestGatewayConfig(unittest.TestCase):
             "mistral",
             "deepseek",
             "web",
+            "perplexity",
         }
         self.assertEqual(ALLOWED_PROVIDERS, frozenset(expected))
 
