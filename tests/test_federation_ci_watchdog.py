@@ -18,9 +18,11 @@ from scripts.ci.federation_ci_watchdog import (
     build_issue_labels,
     build_issue_title,
     build_mirror_marker,
+    classify_failure_lane,
     find_loose_mirrors,
     find_mirror_in_items,
     is_fresh_run,
+    pr_number_from_merge_ref,
     relink_loose_mirrors,
     repo_short_name,
 )
@@ -199,6 +201,9 @@ class TestFederationCiWatchdog(unittest.TestCase):
         self.assertFalse(is_fresh_run("2026-10-18T11:00:00Z", now, -1))
 
     def test_issue_body_contract(self):
+        # PR-lane branch ("staging" is not the tracked branch): the incident
+        # must file as PR-lane P2-medium — claiming P0-critical Production for
+        # a non-main red run is the #1764 misclassification class.
         body = build_issue_body(
             repo="Supremeai-bd/supremeai-skills",
             workflow_name="Test Matrix",
@@ -210,12 +215,119 @@ class TestFederationCiWatchdog(unittest.TestCase):
         )
         self.assertIn("### 🤖 SupremeAI Agent Task Contract", body)
         self.assertIn("Supremeai-bd/supremeai-skills", body)
-        self.assertIn("P0-critical", body)
+        self.assertIn("P2-medium (PR-lane CI failure", body)
+        self.assertNotIn("P0-critical", body)
+        self.assertIn("Lane Classification (PR-lane)", body)
         self.assertIn("agent-orchestration", body)
         self.assertIn(
             "<!-- MIRROR_RUN: Supremeai-bd/supremeai-skills/actions/runs/888 -->", body
         )
         self.assertIn("AssertionError: 5 != 6", body)
+
+
+class TestLaneClassification(unittest.TestCase):
+    """#1764: priority must describe the failure's lane scope.
+
+    Live incident class (2026-10-28): PR merge-ref runs (`1763/merge` etc.)
+    failing the U4 Anti-Duplicate PR Guard were mirrored as "P0-critical
+    (Production CI failure / blocker)" while `main` was green — the loop's
+    P0 Drainage Invariant then held routine work for noise, and solvers were
+    dispatched onto PR lanes they cannot push to.
+    """
+
+    def test_production_lane_is_main_only(self):
+        self.assertEqual(classify_failure_lane("main"), "production")
+        self.assertEqual(classify_failure_lane("  main "), "production")
+
+    def test_pr_lanes_never_classify_production(self):
+        self.assertEqual(classify_failure_lane("1763/merge"), "pr-lane")
+        self.assertEqual(classify_failure_lane("1787/merge"), "pr-lane")
+        self.assertEqual(classify_failure_lane("feature/some-work"), "pr-lane")
+        self.assertEqual(classify_failure_lane("bridge/bridge-20261028-x"), "pr-lane")
+
+    def test_unknown_branch_fails_safe_to_pr_lane(self):
+        # Fail-safe direction: never cry wolf — an unknown/empty branch is
+        # NOT promoted to production.
+        self.assertEqual(classify_failure_lane(""), "pr-lane")
+        self.assertEqual(classify_failure_lane("   "), "pr-lane")
+        self.assertEqual(classify_failure_lane(None), "pr-lane")
+
+    def test_pr_number_from_merge_ref(self):
+        self.assertEqual(pr_number_from_merge_ref("1763/merge"), 1763)
+        self.assertIsNone(pr_number_from_merge_ref("feature/x"))
+        self.assertIsNone(pr_number_from_merge_ref("main"))
+        self.assertIsNone(pr_number_from_merge_ref(""))
+        self.assertIsNone(pr_number_from_merge_ref("1763/MERGE"))  # exact ref only
+        self.assertIsNone(pr_number_from_merge_ref("1763/merges"))
+
+    def test_production_labels_keep_legacy_p0_contract(self):
+        # Default branch param preserves the pre-#1764 behavior for main.
+        labels = build_issue_labels("Supremeai-bd/supremeai-studio")
+        self.assertIn("P0-critical", labels)
+        self.assertNotIn("P2-medium", labels)
+        self.assertIn("status:runway", labels)
+
+    def test_pr_lane_labels_file_honestly_as_p2(self):
+        labels = build_issue_labels(
+            "Supremeai-bd/supremeai-open", branch="1763/merge"
+        )
+        self.assertIn("P2-medium", labels)
+        self.assertNotIn("P0-critical", labels)
+        # ci-fixer triage routing (S09 label-bridge) must survive the lane fix.
+        self.assertIn("status:runway", labels)
+        self.assertIn("status:unclaimed", labels)
+        self.assertIn("area:ci", labels)
+        self.assertIn("repo:open", labels)
+
+    def test_production_body_has_no_lane_note(self):
+        body = build_issue_body(
+            repo="Supremeai-bd/supremeai-command",
+            workflow_name="CI Pipeline",
+            run_id=1,
+            html_url="u",
+            branch="main",
+            commit_sha="a",
+        )
+        self.assertIn("P0-critical (Production CI failure / blocker)", body)
+        self.assertNotIn("Lane Classification (PR-lane)", body)
+
+    def test_pr_lane_body_names_pr_and_disclaims_production(self):
+        body = build_issue_body(
+            repo="Supremeai-bd/supremeai-open",
+            workflow_name="CI — Open Unified Pipeline",
+            run_id=40595046266,
+            html_url="u",
+            branch="1763/merge",
+            commit_sha="554e5015734f",
+        )
+        self.assertIn("P2-medium (PR-lane CI failure", body)
+        self.assertNotIn("P0-critical", body)
+        self.assertIn("PR #1763", body)
+        self.assertIn("not a tracked-branch production blocker", body)
+        # Honesty boundary: lane scope, no fabricated claim about main.
+        self.assertIn("makes no claim about `main` status", body)
+
+    def test_feature_branch_body_uses_branch_subject(self):
+        body = build_issue_body(
+            repo="Supremeai-bd/supremeai-api",
+            workflow_name="Test Matrix",
+            run_id=2,
+            html_url="u",
+            branch="feature/some-work",
+            commit_sha="b",
+        )
+        self.assertIn("P2-medium (PR-lane CI failure", body)
+        self.assertIn("branch `feature/some-work`", body)
+
+    def test_mirror_failure_passes_branch_to_labels(self):
+        # Wiring pin: mirror_failure must thread the run's branch into the
+        # label builder, or every event-driven mirror regresses to P0.
+        import inspect
+
+        import scripts.ci.federation_ci_watchdog as wd
+
+        source = inspect.getsource(wd.mirror_failure)
+        self.assertIn("build_issue_labels(repo, branch=branch)", source)
 
 
 if __name__ == "__main__":
