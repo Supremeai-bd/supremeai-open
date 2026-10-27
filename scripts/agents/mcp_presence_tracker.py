@@ -6,7 +6,7 @@ Tracks interactive AI clients (ChatGPT, Claude Desktop, Gemini, Cursor,
 Copilot) connected via MCP Control Tower. Makes them visible in the
 active agent workspace alongside autonomous Git workers.
 
-Design (AGENT_RULES.md P1 — Simple + Effective):
+Design (Law of Minimal Elegance — FEDERATION_CHARTER.md):
   - Polls MCP Tower API for connected clients
   - Writes presence to docs/master_docs/MCP_PRESENCE_LEDGER.json
   - Integrates with agent_dashboard.py for unified view
