@@ -137,7 +137,7 @@ parity contract:
    | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
    | `--auto-pr` | shared | accepted for pipeline parity (#89); honest stderr note; the minimal loop opens no PR itself |
    | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
-   | `--issue` / `--pick-next` / `--loop` / `--loop-interval` / `--max-cycles` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role; `--loop` reruns the dispatch cycle in-process after every task (interval seconds, default 300, minimum 1; `--max-cycles` N caps it, 0 = unlimited) |
+   | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role; `--loop` runs a single dispatch cycle per invocation (scheduler/orchestrator is the outer loop) |
    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
     | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private agent-loop workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
 
