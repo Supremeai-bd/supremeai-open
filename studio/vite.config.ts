@@ -10,6 +10,7 @@ const projectRoot = process.cwd()
 Object.assign(process.env, loadEnv(process.env.NODE_ENV || 'development', projectRoot, ''))
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { swAssetManifestPlugin } from './vite.swAssets'
 
 // বাংলা (unified backend URL architecture):
 // এখন User ও Admin উভয় ইন্টারফেস একই ইউনিফাইড ব্যাকএন্ড এপিআই ক্লাস্টারে কানেক্ট হয়।
@@ -131,7 +132,12 @@ export default defineConfig({
     tailwindcss({
       config: './tailwind.config.js',
     }),
-    buildInfoPlugin()
+    buildInfoPlugin(),
+    // #1761: emit dist/sw-assets.json (exact hashed-asset paths of THIS build)
+    // — sw.js's runtime cache allowlist. Its old lowercase-hex regex matched
+    // 0/11 deployed assets (live probe 2026-10-28), making runtime caching a
+    // dead branch; build truth replaces hash-shape guessing.
+    swAssetManifestPlugin()
   ],
   esbuild: {
     jsx: 'automatic',
