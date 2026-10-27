@@ -4,12 +4,29 @@ test_model_cascades.py — Tests for Zero-Waste Model Priority Cascade and Fallb
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
+import gateway.service.providers.adapters as _adapters
 from gateway.service.providers.adapters import (
     forward_chat_completion,
     PROVIDER_MODEL_CASCADES,
     PROVIDER_CONFIGS,
 )
 from gateway.service.pool import FederationSquad, ProviderKeyPool, KeySlot
+
+
+@pytest.fixture(autouse=True)
+def _reset_pooled_stealth_client():
+    """Drop the shared production client pool at each test boundary.
+
+    forward_chat_completion() acquires the SHARED pool via _get_stealth_client();
+    the class-level patch('httpx.AsyncClient.post') mocks only .post, so the
+    constructor still builds a REAL client and _get_stealth_client caches it
+    (is_closed present). Every later test file's forwarder fake was then bypassed
+    by that cached real client — the 2026-10-28 G6e/G7/G8 suite reds in
+    test_stealth_dns_guards. No real connections are made here (post is mocked),
+    so dropping the reference without aclose leaks nothing."""
+    _adapters._STEALTH_CLIENT = None
+    yield
+    _adapters._STEALTH_CLIENT = None
 
 
 def test_provider_cascades_defined():
