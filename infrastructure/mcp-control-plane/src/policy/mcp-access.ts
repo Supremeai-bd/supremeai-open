@@ -41,10 +41,10 @@ export const publicSafeCapabilities: readonly McpCapabilityMetadata[] = [
   { name: "system.summary", kind: "tool", access: "safe", requiredScope: "system:read", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
   // #123: Bridge onboarding surface — the zero-credential front door for
   // external agents working from `Supremeai-bd/supremeai-open`.
-  // bridge.guide is pure static contract data (zero network); the queue tools
-  // only read PUBLIC repo content (issues) and never accept or return
-  // credentials. Read-only + public ⇒ callable by every access mode.
-  // (Wire/sanitized names — the same form classifyToolCapability uses.)
+  // #123 / S0.4: Bridge & Status onboarding surface — zero-credential front door
+  { name: "status", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+  { name: "bridge_work", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+  { name: "bridge_submit", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
   { name: "bridge_guide", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
   { name: "bridge_work_queue", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
   { name: "bridge_work_order", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
@@ -121,7 +121,7 @@ export function isPublicSafeResource(uri: string): boolean {
  * দেখায়, agent_heartbeat শুধু slot validate করে ও Redis-এ heartbeat লেখে।
  */
 export function classifyToolCapability(name: string): McpCapabilityMetadata {
-  if (name === "system_summary" || name === "system_health") {
+  if (name === "system_summary" || name === "system_health" || name === "status") {
     return {
       name,
       kind: "tool",
@@ -146,11 +146,10 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
       approvalRequired: false,
     };
   }
-  // #123: Bridge onboarding tools — zero-credential front door for external
-  // agents. bridge.guide serves the static contract; the queue tools read ONLY
-  // public repo issue content (never credentials, never private data) and
-  // return sanitized fields. Read-only + public ⇒ safe for public_viewer.
+  // #123 / S0.4: Bridge onboarding & unified tools — zero-credential front door for external agents.
   if (
+    name === "bridge_work" ||
+    name === "bridge_submit" ||
     name === "bridge_guide" ||
     name === "bridge_work_queue" ||
     name === "bridge_work_order" ||
@@ -166,6 +165,7 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
       access: "safe",
       requiredScope: undefined,
       riskLevel:
+        name === "bridge_submit" ||
         name === "bridge_submit_patch" ||
         name === "work_claim" ||
         name === "bridge_work_renew" ||

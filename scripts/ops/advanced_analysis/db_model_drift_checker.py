@@ -31,11 +31,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# রিপো রুট ডিরেক্টরি — স্ক্রিপ্ট অবস্থান থেকে দুই ধাপ উপরে
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-MODELS_DIR = REPO_ROOT / "backend" / "models"
-ALEMBIC_DIR = REPO_ROOT / "backend" / "alembic_migrations" / "versions"
-SQL_MIGRATIONS_DIR = REPO_ROOT / "migrations"
+# রিপো রুট ডিরেক্টরি — scripts/ops/advanced_analysis থেকে ৩ ধাপ উপরে
+REPO_ROOT = Path(__file__).resolve().parents[3]
+MODELS_DIR = REPO_ROOT / "core" / "models"
+ALEMBIC_DIR = REPO_ROOT / "core" / "alembic_migrations" / "versions"
+SQL_MIGRATIONS_DIR = REPO_ROOT / "core" / "alembic_migrations" / "versions"
 
 # সমালোচনামূলক টেবিল — এগুলোতে ড্রিফট HIGH রিস্ক
 CRITICAL_TABLES = frozenset({"users", "user_wallets", "transaction_ledger", "api_keys", "payments", "subscriptions"})

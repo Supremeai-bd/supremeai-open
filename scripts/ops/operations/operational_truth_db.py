@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # ── Table specs: (name, pk_cols, create-DDL) — op_truth_0001 Alembic-এর মিরর ──
 # দুই flavor-ই CREATE TABLE IF NOT EXISTS সাপোর্ট করে। TIMESTAMPTZ → Postgres;

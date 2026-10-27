@@ -809,30 +809,110 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     }
   );
 
+  // S0.4 Tool Consolidation: bridge.work (Unified work queue / order viewer)
   server.tool(
-    "bridge.submit_patch",
-    "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
+    "bridge.work",
+    "Unified Bridge work hub (S0.4). View available work orders (view='queue'), inspect a specific task (taskId=number), or read onboarding contracts (view='guide').",
     {
-      taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
-      summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
-      scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
-      testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
-      files: z.array(z.object({
-        path: z.string().min(1),
-        content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
-        mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
-        diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
-      })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
-      rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
-      agentIdentity: z.string().optional().describe("Agent name / session attribution"),
-      reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
-      alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
+      view: z.enum(["queue", "order", "guide"]).default("queue").describe("Operation view: 'queue' to browse tasks, 'order' to view a specific task, 'guide' for contract."),
+      taskId: z.number().int().positive().optional().describe("Task issue number when viewing a specific order (view='order' or when taskId is supplied)."),
+      limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return when viewing queue (default: 20)."),
+      label: z.string().optional().describe("Optional label filter for queue."),
     },
-    async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity, reflectionWhy, alternativesRejected }) => {
-      // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
-      const candidateBody = [
-        REFLECTION_EVIDENCE_SECTION,
-        `- **why:** ${reflectionWhy || ""}`,
+    async ({ view, taskId, limit, label }) => {
+      const repo = bridgeOpenRepo();
+      if (view === "guide") {
+        return { content: [{ type: "text", text: JSON.stringify(bridgeGuide(), null, 2) }] };
+      }
+      if (taskId !== undefined || view === "order") {
+        if (!taskId) {
+          return { isError: true, content: [{ type: "text", text: "taskId (issue number) is required when view='order'." }] };
+        }
+        try {
+          let res = await httpRequest<RawIssue>(
+            `https://api.github.com/repos/${repo}/issues/${taskId}`,
+            { headers: await githubHeaders(true), timeoutMs: 15_000 }
+          );
+          if (!res.ok && (res.status === 401 || res.status === 403)) {
+            res = await httpRequest<RawIssue>(
+              `https://api.github.com/repos/${repo}/issues/${taskId}`,
+              { headers: await githubHeaders(false), timeoutMs: 15_000 }
+            );
+          }
+          if (!res.ok) {
+            return { isError: true, content: [{ type: "text", text: `Work order #${taskId} unavailable from ${repo} (HTTP ${res.status}).` }] };
+          }
+          if (!isIssueNotPullRequest(res.data)) {
+            return { isError: true, content: [{ type: "text", text: `#${taskId} is a pull request, not a work order issue.` }] };
+          }
+          const item = normalizeQueueItem(res.data);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ ...item, body: clipBody(res.data.body), contract: bridgeGuide().contract }, null, 2),
+            }],
+          };
+        } catch (err) {
+          return { isError: true, content: [{ type: "text", text: `Work order #${taskId} fetch failed: ${(err as Error).message}` }] };
+        }
+      }
+
+      // Default: view='queue'
+      const appliedLabel = typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
+      const queryParams = new URLSearchParams({ state: "open", per_page: "50", sort: "created", direction: "desc" });
+      if (appliedLabel) queryParams.set("labels", appliedLabel);
+      try {
+        let res = await httpRequest<RawIssue[]>(
+          `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
+          { headers: await githubHeaders(true), timeoutMs: 15_000 }
+        );
+        if (!res.ok && (res.status === 401 || res.status === 403)) {
+          res = await httpRequest<RawIssue[]>(
+            `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
+            { headers: await githubHeaders(false), timeoutMs: 15_000 }
+          );
+        }
+        if (!res.ok) {
+          return { isError: true, content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}).` }] };
+        }
+        const queued = queueFromIssues(res.data, limit ?? 20);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({ repo, label: appliedLabel, count: queued.length, workOrders: queued }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Bridge work queue fetch failed: ${(err as Error).message}` }] };
+      }
+    }
+  );
+
+  const submitPatchHandler = async ({
+    taskId,
+    summary,
+    scopePaths,
+    testsEvidence,
+    files,
+    rollbackPath,
+    agentIdentity,
+    reflectionWhy,
+    alternativesRejected,
+  }: {
+    taskId: string;
+    summary: string;
+    scopePaths: string[];
+    testsEvidence: string;
+    files: Array<{ path: string; content?: string; mode?: "full_file" | "unified_diff"; diff?: string }>;
+    rollbackPath?: string;
+    agentIdentity?: string;
+    reflectionWhy?: string;
+    alternativesRejected?: string;
+  }) => {
+    // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
+    const candidateBody = [
+      REFLECTION_EVIDENCE_SECTION,
+      `- **why:** ${reflectionWhy || ""}`,
         `- **alternatives_rejected:** ${alternativesRejected || ""}`,
       ].join("\n");
       const missingReflection = validateReflectionEvidence(candidateBody);
@@ -1128,7 +1208,38 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           content: [{ type: "text", text: `Bridge patch submission error: ${(err as Error).message}` }],
         };
       }
-    }
+  };
+
+  const submitPatchSchema = {
+    taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
+    summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
+    scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
+    testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
+    files: z.array(z.object({
+      path: z.string().min(1),
+      content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
+      mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
+      diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
+    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
+    rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
+    agentIdentity: z.string().optional().describe("Agent name / session attribution"),
+    reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
+    alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
+  };
+
+  server.tool(
+    "bridge.submit_patch",
+    "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
+    submitPatchSchema,
+    submitPatchHandler as any
+  );
+
+  // S0.4 Tool Consolidation: bridge.submit alias (canonical unified name)
+  server.tool(
+    "bridge.submit",
+    "Unified patch submission endpoint (S0.4 canonical alias of bridge.submit_patch). Submits work to the public repo atomically with automatic branch creation, commit, and PR generation.",
+    submitPatchSchema,
+    submitPatchHandler as any
   );
 
   const claimHandler = async ({
