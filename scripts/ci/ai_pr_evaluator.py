@@ -683,7 +683,7 @@ def _llm_providers() -> list[dict[str, str]]:
     """কী-পুল (env) — Groq→Gemini→OpenRouter রাউন্ড-রবিন; কী না থাকলে খালি।
 
     বাংলা: কী শুধুই approved credential broker/env থেকে — কখনো hardcode নয়
-    (AGENT_RULES §13)। CI-তে কী না থাকলে deterministic-evidence-ই সত্য।
+    (AGENTS.md house doctrine)। CI-তে কী না থাকলে deterministic-evidence-ই সত্য।
     """
     providers: list[dict[str, str]] = []
     if os.getenv("GROQ_API_KEY"):
