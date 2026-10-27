@@ -10,6 +10,13 @@ Supports:
   2. Watchdog polling: audits all 12 federation repositories for recent failed runs.
   3. Strict deduplication: idempotent via `<!-- MIRROR_RUN: {repo}/actions/runs/{run_id} -->`.
   4. Offline self-test: `--self-test` verifies formatting, contract compliance, and dedup.
+  5. Lane-honest classification (#1764): a failure on `main` is a production
+     P0-critical incident; a failure on any PR lane (`<N>/merge` merge-ref or
+     feature branch) is a P2-medium PR-lane incident — the poll previously
+     labeled both "P0-critical (Production CI failure / blocker)", which
+     misrouted the whole solver fleet onto policy rejections (e.g. the U4
+     Anti-Duplicate PR Guard correctly bouncing a duplicate PR) while live
+     `main` was green. Priority must describe the lane scope, not amplify it.
 """
 
 from __future__ import annotations
@@ -49,6 +56,30 @@ except ImportError:
         link_sub_issue = None
 
 OPEN_REPO = "Supremeai-bd/supremeai-open"
+
+# Lane classification (#1764): production incidents are failures on the
+# tracked branch. Everything else — GitHub PR merge-refs (`<N>/merge`, the
+# head_branch shape of pull_request runs) and feature branches — is PR-lane
+# scope: real signal, but never a production outage on the tracked branch.
+PRODUCTION_BRANCH = "main"
+
+
+def classify_failure_lane(branch: str) -> str:
+    """Pure: 'production' only for the tracked branch, else 'pr-lane'.
+
+    Fail-safe direction: an unknown/empty branch is NOT promoted to
+    production — crying wolf is the failure mode this gate exists to stop
+    (the empty-string default would otherwise classify as `main` upstream
+    callers that forgot to pass the branch through).
+    """
+    return "production" if (branch or "").strip() == PRODUCTION_BRANCH else "pr-lane"
+
+
+def pr_number_from_merge_ref(branch: str) -> int | None:
+    """Pure: extract the PR number from a `<N>/merge` run head_branch, else None."""
+    match = re.fullmatch(r"(\d+)/merge", (branch or "").strip())
+    return int(match.group(1)) if match else None
+
 
 FEDERATION_REPOS: tuple[str, ...] = (
     "Supremeai-bd/supremeai-open",
@@ -96,6 +127,32 @@ def build_issue_body(
 
     marker = build_mirror_marker(repo, run_id)
 
+    # Lane-honest contract (#1764): the priority tier must describe the lane
+    # scope of the failure, not blindly amplify every red run to P0. A PR-lane
+    # failure is real signal for its PR's author / rescue lane, but claiming
+    # "Production CI failure / blocker" for it misfires the loop's P0 Drainage
+    # Invariant and misroutes solvers onto lanes they cannot push to.
+    lane = classify_failure_lane(branch)
+    if lane == "production":
+        priority_line = "P0-critical (Production CI failure / blocker)"
+        lane_note = ""
+    else:
+        priority_line = (
+            "P2-medium (PR-lane CI failure — scoped to this PR lane, "
+            "not a tracked-branch production blocker)"
+        )
+        pr_num = pr_number_from_merge_ref(branch)
+        lane_subject = f"PR #{pr_num}" if pr_num is not None else f"branch `{branch}`"
+        lane_note = (
+            f"\n### Lane Classification (PR-lane)\n"
+            f"This failure is confined to {lane_subject} (head ref `{branch}`). "
+            "Priority reflects lane scope; it makes no claim about `main` status. "
+            "The fix belongs to the PR author lane / bridge rescue path — board "
+            "agents cannot push to another agent's bridge branch, so triage "
+            "(evidence on the failing check) is the actionable work here, not a "
+            "main-side fix.\n"
+        )
+
     return f"""### 🤖 SupremeAI Agent Task Contract
 This task is mirrored automatically from a federation CI workflow failure. Open to **all autonomous agents** (Local Antigravity, Claude, ChatGPT, Mistral, external contributors).
 
@@ -103,14 +160,14 @@ This task is mirrored automatically from a federation CI workflow failure. Open 
 {repo}
 
 ### Priority Tier
-P0-critical (Production CI failure / blocker)
+{priority_line}
 
 ### Topological Layer
 Layer 2 (Tools / Workers / Sidecars)
 
 ### Task Group (VALID_GROUPS registry)
 agent-orchestration
-
+{lane_note}
 ### Summary / Problem Statement
 Workflow **{workflow_name}** failed on repository `{repo}` (branch `{branch}`).
 - **Workflow Run:** [{run_id}]({html_url})
@@ -138,11 +195,21 @@ def build_issue_title(
     return f"fix(ci): [{short_repo}] {workflow_name} failed on {branch} (Run #{run_id})"
 
 
-def build_issue_labels(repo: str) -> list[str]:
+def build_issue_labels(repo: str, branch: str = PRODUCTION_BRANCH) -> list[str]:
     short_repo = repo_short_name(repo)
+    # Lane-honest priority (#1764): production lane keeps P0-critical; PR-lane
+    # failures file as P2-medium so the loop's priority dispatch (P0→P3 tier
+    # sort) and its P0 Drainage Invariant stop treating policy rejections on
+    # PR merge-refs as production outages. `status:runway` stays on both —
+    # ci-fixer triage is still the right role for PR-lane incidents.
+    priority_label = (
+        "P0-critical"
+        if classify_failure_lane(branch) == "production"
+        else "P2-medium"
+    )
     return [
         "status:unclaimed",
-        "P0-critical",
+        priority_label,
         # S09 (#489) label-bridge: `status:runway` is LABEL_PRIORITY[0] in
         # scripts/agents/role_trigger_matrix.py, so the continuous loop's
         # deterministic dispatch routes every mirrored CI failure to the
@@ -308,7 +375,7 @@ def mirror_failure(
     body = f"## 🚨 CI Failure Incident: {title}\n\n" + build_issue_body(
         repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
     )
-    labels = build_issue_labels(repo)
+    labels = build_issue_labels(repo, branch=branch)
 
     code, resp = gh_api(
         f"repos/{OPEN_REPO}/issues",
@@ -808,7 +875,52 @@ def self_test() -> int:
     assert resolved is not None and resolved["id"] == 555126
     assert is_run_resolved(999999, sample_runs, branch="main") is None
 
-    print("✅ [self-test] All 10 contract assertion groups passed!")
+    # 11. Lane-honest classification (#1764): production vs PR-lane
+    assert classify_failure_lane("main") == "production"
+    assert classify_failure_lane("  main  ") == "production"
+    assert classify_failure_lane("1763/merge") == "pr-lane"
+    assert classify_failure_lane("feature/some-work") == "pr-lane"
+    assert classify_failure_lane("") == "pr-lane"  # fail-safe: never cry wolf
+    assert pr_number_from_merge_ref("1763/merge") == 1763
+    assert pr_number_from_merge_ref("feature/x") is None
+    assert pr_number_from_merge_ref("main") is None
+
+    # Production lane keeps the legacy P0 contract (default branch param).
+    prod_labels = build_issue_labels("Supremeai-bd/supremeai-command")
+    assert "P0-critical" in prod_labels
+    assert "P2-medium" not in prod_labels
+    prod_body = build_issue_body(
+        repo="Supremeai-bd/supremeai-command",
+        workflow_name="CI Pipeline",
+        run_id=123456,
+        html_url="https://github.com/Supremeai-bd/supremeai-command/actions/runs/123456",
+        branch="main",
+        commit_sha="abcdef123456",
+    )
+    assert "P0-critical (Production CI failure / blocker)" in prod_body
+    assert "Lane Classification (PR-lane)" not in prod_body
+
+    # PR-lane files honestly: P2-medium, never P0-critical, lane note present.
+    pr_labels = build_issue_labels("Supremeai-bd/supremeai-open", branch="1763/merge")
+    assert "P2-medium" in pr_labels
+    assert "P0-critical" not in pr_labels
+    assert "status:runway" in pr_labels  # ci-fixer triage routing unchanged
+    assert "repo:open" in pr_labels
+    pr_body = build_issue_body(
+        repo="Supremeai-bd/supremeai-open",
+        workflow_name="CI — Open Unified Pipeline",
+        run_id=40595046266,
+        html_url="https://github.com/Supremeai-bd/supremeai-open/actions/runs/40595046266",
+        branch="1763/merge",
+        commit_sha="554e5015734f",
+    )
+    assert "P2-medium (PR-lane CI failure" in pr_body
+    assert "P0-critical" not in pr_body
+    assert "PR #1763" in pr_body  # merge-ref resolves to a human-readable lane
+    assert "Lane Classification (PR-lane)" in pr_body
+    assert "not a tracked-branch production blocker" in pr_body
+
+    print("✅ [self-test] All 11 contract assertion groups passed!")
     return 0
 
 
