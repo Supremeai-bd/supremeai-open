@@ -3,10 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // বাংলা মন্তব্য: লগইন পেজের জন্য Public Service Health Bar — কোনো Authentication লাগবে না
-import { getApiBaseUrl } from '../../utils/api';
+import { apiClient } from '../../services/apiClient';
 
 interface HealthCheckResult {
-  name?: string;
   status: string;
   message: string;
   details?: Record<string, unknown>;
@@ -35,7 +34,6 @@ interface ServiceStatusProps {
 
 const SERVICE_LABEL_MAP: Record<string, string> = {
   application: 'Backend Core',
-  api: 'API Gateway',
   database: 'Data Store (Postgres)',
   redis: 'Cache Cluster (Redis)',
   scraper: 'Scraper Service',
@@ -116,22 +114,18 @@ const ServiceStatusItem: React.FC<ServiceStatusProps> = ({ name, status, respons
 
 // বাংলা মন্তব্য: Public Health Check Function — কোনো Auth Header ছাড়াই কল হবে
 const fetchPublicHealth = async (): Promise<HealthData> => {
-  const apiBaseUrl = getApiBaseUrl();
   
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout for health check
-
   try {
-    const res = await fetch(`${apiBaseUrl}/api/health-aggregation`, {
+    // Issue #2522: raw fetch -> apiClient.stream(auth:false) — public endpoint,
+    // তাই Authorization পাঠানো হয় না; timeout/queue ক্লায়েন্ট থেকে আসে।
+    const res = await apiClient.stream('/api/health-aggregation', {
       method: 'GET',
+      auth: false,
       headers: {
         'Content-Type': 'application/json',
         // বাংলা: কোনো Authorization header নেই — public endpoint
       },
-      signal: controller.signal,
     });
-
-    clearTimeout(timeoutId);
 
     const contentType = res.headers.get('content-type') || '';
     const body = await res.text();
@@ -153,18 +147,18 @@ const fetchPublicHealth = async (): Promise<HealthData> => {
       throw new Error(`Health check returned invalid JSON from ${res.url}`);
     }
   } catch (error) {
-    clearTimeout(timeoutId);
 
     // The aggregate endpoint may be unavailable while the canonical liveness
     // endpoint is healthy. Keep the status chip truthful instead of reporting
     // individual services as down from a stale/degraded aggregate response.
     try {
-      const fallback = await fetch(`${apiBaseUrl}/api/v1/health`, {
+      // Issue #2522: raw fetch -> apiClient.get — 4s caller-signal এখন
+      // client timeout-এর সাথে AbortSignal.any দিয়ে combine হয়।
+      const payload = await apiClient.get<{ status?: string; database?: string }>('/api/v1/health', {
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(4000),
       });
-      if (fallback.ok) {
-        const payload = await fallback.json() as { status?: string; database?: string };
+      {
         const healthy = payload.status === 'healthy';
         return {
           status: healthy ? 'healthy' : 'degraded',
@@ -189,12 +183,29 @@ const fetchPublicHealth = async (): Promise<HealthData> => {
   }
 };
 
+// supremeai-studio#1 (CORS residual / failed health telemetry): while the
+// backend rejects this deployment's origin (fix tracked in supremeai#205),
+// every health cycle fails. The old policy (`refetchInterval: error ? false`)
+// STOPPED polling forever on the first error — the chip could never recover
+// when the backend policy landed, until a manual page reload. Policy now:
+// healthy cadence 20s, error-state cadence 60s (slower, but self-healing).
+export const HEALTH_REFETCH_INTERVAL_MS = 20_000;
+export const HEALTH_ERROR_REFETCH_INTERVAL_MS = 60_000;
+export const publicHealthRefetchInterval = (status: string): number =>
+  status === 'error' ? HEALTH_ERROR_REFETCH_INTERVAL_MS : HEALTH_REFETCH_INTERVAL_MS;
+
 export const ServiceHealthBar: React.FC = () => {
   const [isOpen, setIsOpen] = React.useState(false);
   const { data, error, isLoading, isError } = useQuery<HealthData>({
     queryKey: ['public-health-status'],
     queryFn: fetchPublicHealth,
-    refetchInterval: (query) => (query.state.status === 'error' ? false : 20000), // 20 seconds refresh
+    refetchInterval: (query) => publicHealthRefetchInterval(query.state.status),
+    // Query-level retry intentionally NOT set inline — the app-wide
+    // QueryClient (services/queryClient.ts smartRetryDecision) owns retry
+    // policy; an inline value here would override caller-provided clients
+    // (component tests, embeds). Network-attempt amplification is already
+    // capped one layer down: the api client no longer re-fires deterministic
+    // network-layer failures (supremeai-studio#1).
     staleTime: 12_000,
     enabled: true,
 
@@ -277,7 +288,7 @@ export const ServiceHealthBar: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.96 }}
             transition={{ duration: 0.16 }}
-            className="absolute top-10 z-modal w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
+            className="absolute top-10 z-50 w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
           >
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
               <div className="flex items-center gap-1.5">
@@ -304,7 +315,7 @@ export const ServiceHealthBar: React.FC = () => {
                 {Object.entries(data.checks || {}).map(([key, check]) => (
                   <ServiceStatusItem
                     key={key}
-                    name={check?.name || getServiceLabel(key)}
+                    name={getServiceLabel(key)}
                     status={getServiceStatus(check)}
                     responseTime={check?.response_time_ms}
                   />
