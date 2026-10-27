@@ -4,6 +4,7 @@ gateway/tests/test_passkey_auth.py — Hermetic Tests for Native WebAuthn/Passke
 import base64
 import json
 import unittest
+import uuid
 from unittest.mock import patch
 
 from cryptography.hazmat.primitives import hashes
@@ -52,7 +53,14 @@ class TestPasskeyAuth(unittest.TestCase):
         self.assertEqual(data["userVerification"], "required")
 
     def test_passkey_device_storage_lifecycle(self):
-        cred_id = "cred-mock-test-" + base64.urlsafe_b64encode(b"random-key").decode().rstrip("=")
+        # Hermetic credential id: the shared /tmp gateway_state.db outlives the pytest
+        # process, and save_user_passkey's upsert does not reset `revoked` — a constant
+        # id revoked by the previous run stayed revoked=1 and step 2's `revoked = 0`
+        # lookup returned None (cross-run pollution, class F-K). Unique id per run.
+        run_nonce = uuid.uuid4().hex[:12]
+        cred_id = "cred-mock-test-" + base64.urlsafe_b64encode(
+            f"random-key-{run_nonce}".encode()
+        ).decode().rstrip("=")
         user_id = "usr-tester-99"
 
         # 1. Save
