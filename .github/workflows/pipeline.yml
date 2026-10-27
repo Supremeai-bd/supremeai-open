@@ -740,11 +740,57 @@ jobs:
             -d "{\"event_type\": \"federation_ci_failed\", \"client_payload\": {\"repo\": \"${{ github.repository }}\", \"workflow_name\": \"${{ github.workflow }}\", \"run_id\": \"${{ github.run_id }}\", \"html_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"branch\": \"${{ github.ref_name }}\", \"commit_sha\": \"${{ github.sha }}\"}}" || true
 
   # ---------------------------------------------------------------------------
+  # 🎨 Studio — TypeScript verification (mirrors supremeai-studio CI)
+  # ---------------------------------------------------------------------------
+  studio-verification:
+    name: Studio TypeScript Verification (tsc)
+    needs: boundary_sanitization_guard
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Check if Studio exists
+        id: check_studio
+        run: |
+          if [ -d "studio" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm
+        if: steps.check_studio.outputs.exists == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node
+        if: steps.check_studio.outputs.exists == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: studio/pnpm-lock.yaml
+
+      - name: Typecheck Studio
+        if: steps.check_studio.outputs.exists == 'true'
+        run: |
+          set -euo pipefail
+          cd studio
+          pnpm install --frozen-lockfile --prefer-offline || npm ci
+          pnpm run typecheck
+
+    # ---------------------------------------------------------------------------
   # 🛬 Autonomous Auto-Landing (Squash-Merge PR on Green Verification)
   # ---------------------------------------------------------------------------
   auto-landing:
     name: "🛬 Autonomous Auto-Landing"
-    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower]
+    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower, studio-verification]
     if: |
       always() &&
       github.event_name == 'pull_request' &&
