@@ -324,7 +324,7 @@ export function InteractiveChatTab({
   };
 
   return (
-    <div className={`w-full h-[calc(100vh-140px)] flex flex-col transition-all duration-500 ${isSimple ? 'text-slate-800' : 'text-slate-200'}`}>
+    <div className={`w-full h-full min-h-0 flex-1 flex flex-col transition-all duration-500 overflow-hidden ${isSimple ? 'text-slate-800' : 'text-slate-200'}`}>
 
       {/* কন্ট্রোল প্যানেল — অ্যাডভান্সড মোডে */}
       {!isSimple && (
@@ -377,10 +377,10 @@ export function InteractiveChatTab({
       <div className="flex-1 grid grid-cols-12 overflow-hidden bg-black/10">
 
         {/* চ্যাট প্যানেল */}
-        <div className={`h-full flex flex-col border-r border-slate-800 transition-all duration-500 ${
+        <div className={`h-full flex flex-col border-r border-slate-800 transition-all duration-500 overflow-hidden ${
           isSimple
             ? 'col-span-12 bg-white text-slate-900'
-            : `${!chatTabTerminalOpen && !chatTabBrowserOpen ? 'col-span-12' : (chatTabTerminalOpen && chatTabBrowserOpen ? 'col-span-6' : 'col-span-9')} bg-[#05070c]/50 text-slate-200`
+            : `${!chatTabTerminalOpen && !chatTabBrowserOpen ? 'col-span-12' : (chatTabTerminalOpen && chatTabBrowserOpen ? 'col-span-12 lg:col-span-6' : 'col-span-12 lg:col-span-8')} bg-[#05070c]/50 text-slate-200`
         }`}>
           {/* চ্যাট হেডার */}
           <div className={`h-10 border-b flex items-center justify-between px-4 ${isSimple ? 'bg-slate-100 border-slate-200' : 'bg-[#080a10] border-slate-800'}`}>
@@ -449,10 +449,10 @@ export function InteractiveChatTab({
 
         {/* টার্মিনাল */}
         {!isSimple && chatTabTerminalOpen && (
-          <div className={`h-full flex flex-col border-r border-slate-800 bg-[#020306] ${
-            chatTabBrowserOpen ? 'col-span-3' : 'col-span-6'
+          <div className={`h-full flex flex-col border-r border-slate-800 bg-[#020306] overflow-hidden ${
+            chatTabBrowserOpen ? 'col-span-12 lg:col-span-3' : 'col-span-12 lg:col-span-4'
           }`}>
-            <div className="h-10 border-b border-slate-800 bg-[#07090e] px-4 flex items-center justify-between">
+            <div className="h-10 border-b border-slate-800 bg-[#07090e] px-4 flex items-center justify-between shrink-0">
               <span className="text-[10px] font-bold text-[#00ff66] tracking-wider uppercase font-mono flex items-center gap-1.5">
                 <TerminalSquare size={12} /> Live Shell
               </span>
@@ -466,7 +466,7 @@ export function InteractiveChatTab({
               ))}
               <div ref={terminalEndRef} />
             </div>
-            <form onSubmit={handleTerminalSubmit} className="p-2 border-t border-slate-800 bg-[#04060b]">
+            <form onSubmit={handleTerminalSubmit} className="p-2 border-t border-slate-800 bg-[#04060b] shrink-0">
               <div className="flex items-center gap-1">
                 <span className="text-[#00ff66] font-mono text-[10px] select-none">$</span>
                 <input
@@ -483,10 +483,10 @@ export function InteractiveChatTab({
 
         {/* ব্রাউজার */}
         {!isSimple && chatTabBrowserOpen && (
-          <div className={`h-full flex flex-col bg-[#0f1118] ${
-            chatTabTerminalOpen ? 'col-span-3' : 'col-span-6'
+          <div className={`h-full flex flex-col bg-[#0f1118] overflow-hidden ${
+            chatTabTerminalOpen ? 'col-span-12 lg:col-span-3' : 'col-span-12 lg:col-span-4'
           }`}>
-            <div className="h-10 border-b border-slate-800 bg-[#08090d] px-2.5 flex items-center gap-2">
+            <div className="h-10 border-b border-slate-800 bg-[#08090d] px-2.5 flex items-center gap-2 shrink-0">
               <div className="flex gap-1.5">
                 <div className="w-2.5 h-2.5 rounded-full bg-red-500/80"></div>
                 <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/80"></div>

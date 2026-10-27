@@ -61,9 +61,15 @@ export const StudioSplitCanvas: React.FC<StudioSplitCanvasProps> = ({
   }
 
   return (
-    <div ref={containerRef} className={`flex h-full w-full ${className}`}>
-      <div style={{ width: `${leftSize}%` }} className="flex flex-col min-w-0">
-        <div className="flex items-center justify-between px-2 py-1 border-b border-slate-700 bg-[#161b22]">
+    <div ref={containerRef} className={`flex flex-col md:flex-row h-full w-full overflow-hidden ${className}`}>
+      <div
+        style={{ width: undefined }}
+        className="flex flex-col min-w-0 w-full md:w-[var(--left-w)] md:shrink-0"
+        ref={(el) => {
+          if (el) el.style.setProperty('--left-w', `${leftSize}%`);
+        }}
+      >
+        <div className="flex items-center justify-between px-2 py-1 border-b border-slate-700 bg-[#161b22] shrink-0">
           <span className="text-xs text-slate-400">Jerbez Copilot</span>
           {onToggleCollapse && (
             <button onClick={onToggleCollapse} className="p-1 text-slate-400 hover:text-white" aria-label="collapse-left">
@@ -71,18 +77,21 @@ export const StudioSplitCanvas: React.FC<StudioSplitCanvasProps> = ({
             </button>
           )}
         </div>
-        <div className="flex-1 overflow-hidden">{left}</div>
+        <div className="flex-1 overflow-hidden min-h-[220px] md:min-h-0">{left}</div>
       </div>
       <div
         onMouseDown={onMouseDown}
-        className="w-1 bg-slate-700 hover:bg-cyan-500 transition-colors cursor-col-resize flex items-center justify-center"
+        className="hidden md:flex w-1 bg-slate-700 hover:bg-cyan-500 transition-colors cursor-col-resize items-center justify-center shrink-0"
         role="separator"
         aria-orientation="vertical"
       >
         <GripVertical size={10} className="text-slate-500" />
       </div>
-      <div style={{ width: `${100 - leftSize}%` }} className="flex flex-col min-w-0">
-        <div className="flex-1 overflow-hidden">{right}</div>
+      <div
+        style={{ width: undefined }}
+        className="flex flex-col min-w-0 w-full md:flex-1"
+      >
+        <div className="flex-1 overflow-hidden min-h-[260px] md:min-h-0">{right}</div>
       </div>
     </div>
   );

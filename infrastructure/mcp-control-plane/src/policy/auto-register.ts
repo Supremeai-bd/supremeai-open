@@ -125,10 +125,14 @@ export function autoRegisterGuestClient(
   tenantId = "tenant_default",
 ): ExternalClient {
   const { provider, label } = detectProviderLabel(String(req.headers["user-agent"] ?? ""));
-  // Tool Exposure Policy: chatgpt guests get the curated discovery surface by
-  // default (derive-once — admin-set profiles are never clobbered, see
-  // getOrCreateGuestClient). Every other provider keeps the full surface.
-  const toolProfile = profileForProvider(provider);
+  // Tool Exposure Policy: check for client-requested profile via header or query,
+  // then provider default (e.g. chatgpt), or fallback to undefined (full).
+  const headerProfile = String(req.headers["x-tool-profile"] ?? "").trim().toLowerCase();
+  const queryProfile = new URL(req.url ?? "/", "https://tower.invalid").searchParams.get("profile")?.trim().toLowerCase();
+  const requestedProfile = headerProfile || queryProfile;
+  const toolProfile = (requestedProfile && (requestedProfile === "chatgpt" || requestedProfile === "readonly"))
+    ? (requestedProfile as "chatgpt" | "readonly")
+    : profileForProvider(provider);
 
   // #110: named identity path — stable `named_<name>` id wins over IP guests.
   const named = namedClientFromUrl(req.url);
