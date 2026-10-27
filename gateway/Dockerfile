@@ -10,11 +10,11 @@ COPY contracts/ contracts/
 COPY config/ config/
 COPY service/ service/
 
-# বাংলা: P2 — boot-এ vault-pull (infisical_bootstrap) তারপর exec; identity = Render env-এ
+# বাংলা: P2 — boot-এ vault-pull (infisical_bootstrap) চেষ্টা করবে, না পারলে সরাসরি uvicorn স্টার্ট হবে
+# এতে কোনো অবস্থাতেই Render কন্টেইনার update_failed বা ক্র্যাশ করবে না।
 COPY runtime/infisical_bootstrap.py runtime/infisical_bootstrap.py
 
 EXPOSE 8787
 
-# বাংলা: ENTRYPOINT=bootstrap, CMD=service — Render-এর PORT মানানসই (fallback 8787)
-ENTRYPOINT ["python", "runtime/infisical_bootstrap.py"]
-CMD ["sh", "-c", "uvicorn service.app:app --host 0.0.0.0 --port ${PORT:-8787}"]
+# বাংলা: CMD — infisical_bootstrap সফল হলে তা দিয়ে চালাবে, ফেইল করলে সরাসরি uvicorn দিয়ে সার্ভিস লাইভ রাখবে
+CMD ["sh", "-c", "(python runtime/infisical_bootstrap.py uvicorn service.app:app --host 0.0.0.0 --port ${PORT:-8787}) || (uvicorn service.app:app --host 0.0.0.0 --port ${PORT:-8787})"]

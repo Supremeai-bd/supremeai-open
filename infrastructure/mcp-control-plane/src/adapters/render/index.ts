@@ -253,23 +253,54 @@ export async function getServiceHealth(accountId: string, serviceId: string): Pr
     headers: bearerAuth(apiKey),
   });
 
-  // Try to fetch last deploy
+  // Try to fetch deploys to calculate last deploy status and monthly free build minutes usage
   let deployStatus = "unknown";
+  let monthlyBuildMinutes = 0;
+  const FREE_BUILD_MINUTES_LIMIT = 500; // Render Free Tier limit per account: 500 build minutes/month
+
   try {
-    const deploysRes = await httpRequest(`${BASE_URL}/services/${serviceId}/deploys?limit=1`, {
+    const deploysRes = await httpRequest(`${BASE_URL}/services/${serviceId}/deploys?limit=20`, {
       headers: bearerAuth(apiKey),
     });
     const deploys = deploysRes.data;
     if (Array.isArray(deploys) && deploys.length > 0) {
       deployStatus = deploys[0]?.deploy?.status ?? "unknown";
+
+      const now = new Date();
+      const currentYear = now.getUTCFullYear();
+      const currentMonth = now.getUTCMonth();
+
+      let totalSeconds = 0;
+      for (const item of deploys) {
+        const dep = item.deploy ?? item;
+        const createdAt = dep.createdAt;
+        const finishedAt = dep.finishedAt;
+        if (!createdAt || !finishedAt) continue;
+        const started = new Date(createdAt);
+        const finished = new Date(finishedAt);
+        if (started.getUTCFullYear() === currentYear && started.getUTCMonth() === currentMonth) {
+          const duration = (finished.getTime() - started.getTime()) / 1000;
+          if (duration > 0) {
+            totalSeconds += duration;
+          }
+        }
+      }
+      monthlyBuildMinutes = Math.round((totalSeconds / 60) * 10) / 10;
     }
   } catch (err) {
     // Ignore error for deploys
   }
 
+  const freeLimitRemaining = Math.max(0, FREE_BUILD_MINUTES_LIMIT - monthlyBuildMinutes);
+  const freeLimitExhausted = monthlyBuildMinutes >= FREE_BUILD_MINUTES_LIMIT;
+
   return {
     service: res.data,
-    lastDeployStatus: deployStatus
+    lastDeployStatus: deployStatus,
+    monthlyBuildMinutes,
+    freeLimitRemaining,
+    freeLimitExhausted,
+    freeLimitLimit: FREE_BUILD_MINUTES_LIMIT,
   };
 }
 
