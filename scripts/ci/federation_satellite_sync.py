@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import shutil
 import subprocess
@@ -74,6 +75,49 @@ ARCHIVE_MIRROR_PAIRS: list[tuple[str, str]] = [
         "docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md",
         "adrs/ADR-008-OPEN_FOUNDATION_BOUNDARY.md",
     ),
+]
+
+# Post-sync sentinel verification (#1689): mirror<->satellite pairs that must stay
+# byte-identical. The manifest scripts/ci/satellite_sentinels.json is config-driven;
+# the built-in defaults below are used when the manifest is absent or unreadable.
+SENTINEL_MANIFEST_PATH = Path("scripts/ci/satellite_sentinels.json")
+DEFAULT_SENTINEL_PAIRS: list[dict[str, str]] = [
+    {
+        "open": "gateway/main.py",
+        "satellite": "Supremeai-bd/supremeai-api",
+        "path": "main.py",
+        "note": "satellite root entrypoint artifact - drift source of #1689",
+    },
+    {
+        "open": "core/main.py",
+        "satellite": "Supremeai-bd/supremeai-core",
+        "path": "main.py",
+    },
+    {
+        "open": "browser/main.py",
+        "satellite": "Supremeai-bd/supremeai-browser",
+        "path": "main.py",
+    },
+    {
+        "open": "studio/package.json",
+        "satellite": "Supremeai-bd/supremeai-studio",
+        "path": "package.json",
+    },
+    {
+        "open": "vscode/package.json",
+        "satellite": "Supremeai-bd/supremeai-vscode",
+        "path": "package.json",
+    },
+    {
+        "open": "api-schemas/gateway.openapi.yaml",
+        "satellite": "Supremeai-bd/supremeai-api",
+        "path": "contracts/openapi.yaml",
+    },
+    {
+        "open": "examples/gateway_client.py",
+        "satellite": "Supremeai-bd/supremeai-api",
+        "path": "scripts/clients/gateway_client.py",
+    },
 ]
 
 # Monorepo sync ignores: files in supremeai-open that should not overwrite monorepo root configs
@@ -241,6 +285,15 @@ def sync_satellite(
             if root_auth.exists():
                 shutil.copy2(root_auth, tmp_repo / "admin_auth.py")
                 print(f"📋 Synced clean admin_auth.py to root in {target_repo}")
+            # Sync root entrypoint artifact into satellite root (#1689): the satellite
+            # root main.py is a mirrored copy of gateway/main.py and must track it
+            # byte-identically, or the root surface silently drifts to an older
+            # unsanitized revision (observed live: satellite root main.py was 90 lines
+            # behind, missing the entire sanitization hardening).
+            root_main = repo_root / "gateway" / "main.py"
+            if root_main.exists():
+                shutil.copy2(root_main, tmp_repo / "main.py")
+                print(f"📋 Synced root entrypoint gateway/main.py -> main.py (root) in {target_repo}")
             # Sync central API schemas into contracts/schemas/ in supremeai-api
             schemas_src = repo_root / "api-schemas"
             if schemas_src.exists():
@@ -665,6 +718,114 @@ def prune_ephemeral_patches(repo_root: Path) -> None:
             print(f"  ⚠️ Could not remove {pf.name}: {e}")
 
 
+def load_sentinel_pairs(repo_root: Path) -> list[dict[str, str]]:
+    """Load sentinel pairs from the config manifest, falling back to built-in defaults."""
+    manifest = repo_root / SENTINEL_MANIFEST_PATH
+    if manifest.exists():
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            pairs = data.get("pairs") if isinstance(data, dict) else None
+            if isinstance(pairs, list) and pairs:
+                return [dict(p) for p in pairs if isinstance(p, dict)]
+            print("⚠️ Sentinel manifest has no usable 'pairs' list; using built-in defaults.")
+        except Exception as e:
+            print(f"⚠️ Sentinel manifest unreadable ({e}); using built-in defaults.")
+    return [dict(p) for p in DEFAULT_SENTINEL_PAIRS]
+
+
+def _fetch_remote_bytes(repo: str, path: str, token: str, ref: str = "main") -> bytes | None:
+    """Fetch a file blob via the GitHub contents API (stdlib only).
+
+    Returns decoded bytes, or None for definitive absence (404).
+    Raises on infrastructure errors (auth, network, rate limit) - callers must
+    treat raised errors as fail-closed verification failures, not drift.
+    """
+    import base64 as _b64
+    import urllib.error as _ue
+    import urllib.request as _uq
+
+    api = f"https://api.github.com/repos/{repo}/contents/{path}?ref={ref}"
+    req = _uq.Request(
+        api,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "federation-satellite-sync-sentinel",
+        },
+    )
+    try:
+        with _uq.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except _ue.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+    content = data.get("content")
+    if content is None:
+        return None
+    return _b64.b64decode(content)
+
+
+def verify_sentinels(
+    repo_root: Path,
+    token: str,
+    ref: str = "main",
+    only_satellites: list[str] | None = None,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Verify mirror<->satellite sentinel pairs are byte-identical (#1689).
+
+    Open side is read from the local checkout (repo_root); satellite side is
+    fetched live from the GitHub contents API. Returns (clean, drift, errors):
+      - clean  : pairs verified byte-identical
+      - drift  : pairs present on both sides but differing (actionable)
+      - errors : pairs that could not be verified (fail-closed, not drift)
+    """
+    import hashlib as _h
+
+    pairs = load_sentinel_pairs(repo_root)
+    clean: list[dict] = []
+    drift: list[dict] = []
+    errors: list[dict] = []
+    for p in pairs:
+        open_rel = str(p.get("open", "")).strip()
+        sat_repo = str(p.get("satellite", "")).strip()
+        sat_rel = str(p.get("path", "")).strip()
+        if not (open_rel and sat_repo and sat_rel):
+            errors.append({**p, "detail": "malformed pair (requires open/satellite/path)"})
+            continue
+        if only_satellites and sat_repo not in only_satellites:
+            continue
+        local = repo_root / open_rel
+        if not local.exists():
+            errors.append({**p, "detail": f"open-side file missing in checkout: {open_rel}"})
+            continue
+        try:
+            local_bytes = local.read_bytes()
+            remote_bytes = _fetch_remote_bytes(sat_repo, sat_rel, token, ref)
+        except Exception as e:
+            errors.append({**p, "detail": f"verification fetch failed: {e}"})
+            continue
+        if remote_bytes is None:
+            drift.append({**p, "detail": f"satellite surface absent: {sat_repo}:{sat_rel}"})
+            print(
+                f"  ❌ sentinel DRIFT  {open_rel} != {sat_repo}:{sat_rel} (satellite surface absent)"
+            )
+            continue
+        l_sha = _h.sha256(local_bytes).hexdigest()
+        r_sha = _h.sha256(remote_bytes).hexdigest()
+        if l_sha == r_sha:
+            clean.append(p)
+            print(f"  ✅ sentinel OK    {open_rel} == {sat_repo}:{sat_rel}")
+        else:
+            drift.append({**p, "detail": f"sha256 local={l_sha[:16]} remote={r_sha[:16]}"})
+            print(
+                f"  ❌ sentinel DRIFT  {open_rel} != {sat_repo}:{sat_rel}"
+                f" ({p.get('note') or 'content divergence'})"
+            )
+    return clean, drift, errors
+
+
 def self_test() -> bool:
     """Self-test verifying contract and mappings."""
     assert len(DOMAIN_MAP) == 5, (
@@ -715,6 +876,44 @@ def self_test() -> bool:
         assert (d_wf / "ci.yml").exists(), "Active workflow must be copied"
         assert not (d_wf / "old-pipeline.yml").exists(), "Stale workflow must be pruned"
 
+    # Sentinel pair contract (#1689)
+    for p in DEFAULT_SENTINEL_PAIRS:
+        assert p.get("open") and p.get("satellite") and p.get("path"), (
+            f"Malformed sentinel pair: {p}"
+        )
+        assert p["satellite"] in DOMAIN_MAP, (
+            f"Sentinel target {p['satellite']} must be a mapped satellite"
+        )
+    assert any(
+        p["open"] == "gateway/main.py" and p["path"] == "main.py"
+        for p in DEFAULT_SENTINEL_PAIRS
+    ), "api satellite root main.py parity pair is mandatory (#1689)"
+    with tempfile.TemporaryDirectory() as td:
+        fake_root = Path(td)
+        assert load_sentinel_pairs(fake_root) == [dict(p) for p in DEFAULT_SENTINEL_PAIRS], (
+            "Manifest fallback must return built-in defaults"
+        )
+        man_dir = fake_root / "scripts" / "ci"
+        man_dir.mkdir(parents=True)
+        (man_dir / "satellite_sentinels.json").write_text(
+            json.dumps(
+                {
+                    "pairs": [
+                        {
+                            "open": "x.py",
+                            "satellite": "Supremeai-bd/supremeai-core",
+                            "path": "y.py",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        loaded = load_sentinel_pairs(fake_root)
+        assert len(loaded) == 1 and loaded[0]["open"] == "x.py", (
+            "Manifest pairs must override built-in defaults"
+        )
+
     return True
 
 
@@ -753,6 +952,19 @@ def main() -> int:
         action="store_true",
         help="Auto-prune ephemeral patches in patches/",
     )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help=(
+            "Verify sentinel pairs (mirror<->satellite byte parity) without syncing. "
+            "Exit codes: 0 clean, 1 drift, 2 verification errors (fail-closed)."
+        ),
+    )
+    parser.add_argument(
+        "--sentinel-ref",
+        default="main",
+        help="Git ref used for sentinel verification (default: main)",
+    )
 
     args = parser.parse_args()
 
@@ -773,6 +985,27 @@ def main() -> int:
     except Exception as e:
         print(f"❌ Authentication Error: {e}")
         return 2
+
+    if args.verify_only:
+        only = [t for t in (args.targets or []) if t in DOMAIN_MAP] or None
+        clean, drift, errors = verify_sentinels(repo_root, token, ref=args.sentinel_ref, only_satellites=only)
+        print(
+            f"🛡️ Sentinel verification: {len(clean)} clean / {len(drift)} drift / {len(errors)} errors"
+        )
+        if drift:
+            print("❌ Sentinel drift detected (mirror<->satellite parity broken):")
+            for d in drift:
+                print(f"   - {d.get('open')} != {d.get('satellite')}:{d.get('path')} :: {d.get('detail')}")
+        if errors:
+            print("❌ Sentinel verification could not complete for some pairs (fail-closed):")
+            for e in errors:
+                print(f"   - {e.get('satellite')}:{e.get('path')} :: {e.get('detail')}")
+        if errors:
+            return 2
+        if drift:
+            return 1
+        print("✅ All sentinel pairs byte-identical.")
+        return 0
 
     # Determine targets
     targets_to_sync: list[str] = []
@@ -826,6 +1059,24 @@ def main() -> int:
         ok = sync_monorepo(repo_root, token, safe_commit_msg)
         if not ok:
             success = False
+
+    # Post-sync sentinel observation (#1689). CI should still run --verify-only as a
+    # separate fail-closed gate step after a short propagation delay; this inline
+    # check is observational only (the contents API can lag a just-pushed ref) and
+    # never flips the sync exit code.
+    try:
+        obs_clean, obs_drift, obs_errors = verify_sentinels(repo_root, token)
+        print(
+            f"🛡️ [observe] post-sync sentinels: "
+            f"{len(obs_clean)} clean / {len(obs_drift)} drift / {len(obs_errors)} errors"
+        )
+        for d in obs_drift:
+            print(
+                f"   ⚠️ drift: {d.get('open')} != {d.get('satellite')}:{d.get('path')}"
+                f" :: {d.get('detail')}"
+            )
+    except Exception as e:
+        print(f"⚠️ [observe] post-sync sentinel check skipped: {e}")
 
     if not success:
         print("❌ One or more repository sync operations failed.")
