@@ -705,7 +705,10 @@ def run_verify() -> list[dict[str, Any]]:
 
     for ev in evidence:
         print(f"[{ev['tier']}/8] {ev['name']}: {'PASS' if ev['passed'] else 'FAIL'}")
-    print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
+    # বাংলা: CONTRACT_VERSION লাইনটি main() চূড়ান্ত stdout লাইন হিসেবে একবারই
+    # ছাপে (SPEC §4b: --verify-only-র final stdout line) — run_verify() ভেতরে
+    # আরেকবার ছাপা হলে ডুপ্লিকেট নয়েজ হয় (#1535/F4 এটি ঠিক করেছিল, পরের
+    # ওভারল্যাপিং PR ব্যাচ আবার ফিরিয়ে এনেছিল — drift repair, 2026-10-28 audit)।
     return evidence
 
 def main() -> int:
@@ -738,9 +741,26 @@ def main() -> int:
         return 2
 
     if args.verify_only:
-        run_verify()
+        evidence = run_verify()
+        failed = [ev for ev in evidence if not ev.get("passed")]
+        if failed:
+            # বাংলা: #1541-এ স্থাপিত আচরণ — যেকোনো টিয়ার ব্যর্থ হলে exit 1
+            # (fail-closed, U2)। #1544-এর রিবেস এটি নীরবে হারিয়ে দিয়েছিল —
+            # ব্যর্থ যাচাই কখনো exit 0 দিয়ে "সফল" দেখাতে পারে না। ব্যর্থতার
+            # সারসংক্ষেপ stderr-এ (SPEC §4b: marker হবে stdout-এর final line,
+            # exit code independent — তাই stdout পরিষ্কার রাখতে হবে)।
+            print(
+                f"[Verify] {len(failed)}/{len(evidence)} tier(s) FAILED: "
+                + ", ".join(str(ev.get("name", "?")) for ev in failed),
+                file=sys.stderr,
+            )
+            exit_code = 1
+        else:
+            exit_code = 0
+        # বাংলা: marker একবারই ছাপা হয়, stdout-এর final লাইন হিসেবে — দুই
+        # exit-path-এ আলাদা করে ছাপলে সেটিও এক ধরনের ডুপ্লিকেট সারফেস।
         print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
-        return 0
+        return exit_code
 
     cmd = [
         "gh", "issue", "list",
