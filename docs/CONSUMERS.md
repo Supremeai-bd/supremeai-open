@@ -14,6 +14,12 @@ Contract SSOT: [`api-schemas/gateway.openapi.yaml`](../api-schemas/gateway.opena
 > **Live status (সৎ-নোট):** এই লেখার সময় Render deployment সব route-এ
 > `x-render-routing: no-server` দিচ্ছে — deployment debugging Phase 0 Seq 0.1-এ
 > ট্র্যাকড (#401)। Liveness প্রোব (auth ছাড়া): `GET /healthz` → `200` মানে লাইভ।
+>
+> **আপডেট (#1729):** পাবলিক `GET /` এখন শুধু `{status, service_name, version, chat_ready}`
+> ফেরত দেয় এবং `/healthz` শুধু liveness ফিল্ড — HTTP-200 চুক্তি অপরিবর্তিত (চুক্তি
+> এই ডক অনুযায়ীই body-ফিল্ড নয়, HTTP status-এ শাখা দেওয়া)। ফ্লিট বিস্তারিত — key
+> inventory, stealth posture, web-session ম্যাপ — এখন auth-যুক্ত `GET /internal/status`-এ
+> (বৈধ `sk-supreme-`/admin key লাগবে, guest bypass নেই)।
 > নিচের snippet-গুলো OpenAPI চুক্তির সাথে শব্দে-শব্দে মিলে — deployment লাইভ হওয়ার
 > সাথে সাথেই কাজ করবে। কোনো snippet লাইভ-কল দিয়ে "প্রমাণিত" দাবি করা হয়নি।
 
