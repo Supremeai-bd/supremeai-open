@@ -122,7 +122,19 @@ def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
             }
         )
 
-    return stranded
+    # Anti-stampede idempotency: Deduplicate items targeting the same patch branch,
+    # keeping the earliest/lowest issue number to prevent race-condition duplicate PRs.
+    deduped_stranded: list[dict[str, Any]] = []
+    seen_branches: set[str] = set()
+    for s in stranded:
+        b = s["branch"]
+        if b in seen_branches:
+            print(f"⚠️ Skipping duplicate stranded work order #{s['issue_number']} for branch '{b}'.", file=sys.stderr)
+            continue
+        seen_branches.add(b)
+        deduped_stranded.append(s)
+
+    return deduped_stranded
 
 
 def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
