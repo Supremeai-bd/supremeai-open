@@ -183,7 +183,7 @@ const DeploymentModal: React.FC<DeploymentModalProps> = ({
             animate={{ scale: 1, y: 0 }}
             exit={{ scale: 0.95, y: 20 }}
             transition={{ type: 'spring', damping: 20, stiffness: 100 }}
-            className="w-[500px] max-h-[85vh] sci-fi-glass-panel rounded-2xl p-6 flex flex-col shadow-[0_0_40px_rgba(0,243,255,0.15)]"
+            className="w-full max-w-[500px] max-h-[85vh] mx-4 sci-fi-glass-panel rounded-2xl p-6 flex flex-col shadow-[0_0_40px_rgba(0,243,255,0.15)]"
           >
             <div className="flex items-center justify-between border-b border-[rgba(0,243,255,0.25)] pb-4 mb-4">
               <div className="flex items-center gap-3">

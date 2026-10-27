@@ -70,3 +70,38 @@ def test_stealth_secret_auth_guard() -> None:
             assert resp_bearer.status_code == 200
             data = resp_bearer.json()
             assert data["choices"][0]["message"]["content"] == "authenticated reply"
+
+
+def test_duck_ai_routing_and_fallback() -> None:
+    """Verify Duck.ai explicit model routing and Gemini failure fallback."""
+    client = TestClient(main.app)
+
+    # 1. Explicit duck model routes to duck_engine
+    with mock.patch.object(main.duck_engine, "ask", return_value="duck reply") as mock_duck:
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "duck-gpt-4o-mini",
+                "messages": [{"role": "user", "content": "test prompt"}],
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["choices"][0]["message"]["content"] == "duck reply"
+        assert data["model"] == "duck-gpt-4o-mini"
+        assert data["supremeai_engine"] == "dk"
+        mock_duck.assert_called_once_with("test prompt", model="duck-gpt-4o-mini")
+
+    # 2. When Gemini fails, it seamlessly falls back to Duck.ai
+    with mock.patch.object(main.relay_engine, "ask", side_effect=Exception("Gemini cookie expired")):
+        with mock.patch.object(main.duck_engine, "ask", return_value="fallback reply") as mock_fallback:
+            resp = client.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "prompt needing fallback"}]},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["choices"][0]["message"]["content"] == "fallback reply"
+            assert data["model"] == "duck-gpt-4o-mini"
+            assert data["supremeai_engine"] == "dk"
+            mock_fallback.assert_called_once_with("prompt needing fallback", model="gpt-4o-mini")

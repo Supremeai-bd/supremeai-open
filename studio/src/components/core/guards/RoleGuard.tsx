@@ -17,7 +17,7 @@ import { getRoutePolicy } from '../../../auth/routePolicies';
 /** বাংলা: Access Denied — fake available functionality নয়, স্পষ্ট প্রত্যাখ্যান UX। */
 export const AccessDenied: React.FC<{ reason: string }> = ({ reason }) => (
   <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-100 font-sans">
-    <div className="w-[420px] p-8 rounded-2xl bg-white/5 border border-red-500/30 text-center flex flex-col items-center gap-4">
+    <div className="w-full max-w-[420px] mx-4 p-8 rounded-2xl bg-white/5 border border-red-500/30 text-center flex flex-col items-center gap-4">
       <ShieldAlert className="w-14 h-14 text-red-500" />
       <h1 className="text-2xl font-semibold">Access Denied</h1>
       <p className="text-sm text-gray-400">{reason}</p>

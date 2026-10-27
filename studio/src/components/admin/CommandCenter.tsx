@@ -330,7 +330,7 @@ export function CommandCenter() {
           </div>
 
           {/* Floating Telemetry Waveform Panel at Bottom of Canvas */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[380px] bg-[var(--waveform-bg)] border border-[var(--border-accent)] rounded-lg p-3 shadow-lg backdrop-blur-md z-20 flex flex-col items-center transition-colors duration-500">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-[380px] bg-[var(--waveform-bg)] border border-[var(--border-accent)] rounded-lg p-3 shadow-lg backdrop-blur-md z-20 flex flex-col items-center transition-colors duration-500">
             <div className="flex justify-between w-full text-[9px] text-[var(--text-secondary)] font-bold mb-1">
               <span>CMD | v3.0</span>
               <button

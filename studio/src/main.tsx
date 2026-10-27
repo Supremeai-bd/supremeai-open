@@ -48,13 +48,6 @@ if (import.meta.env.PROD) {
   startAntiSleepHeartbeat();
 }
 
-// ROOT-CAUSE FIX (#2734): Firebase App+Auth eager init loaded 60-70KB auth SDK
-// on every guest boot — even the `/` funnel which never touches auth. Now:
-// Firebase is lazy-imported on the auth path (login/ProtectedRoute/AdminLogin).
-// The lazy caller already awaits init via `initFirebase()` which is idempotent.
-// Static import removed; dynamic import happens on first auth-path render.
-// বাংলা: গেস্ট বুটে Firebase SDK আর eager লোড হয় না — auth path-এ lazy import।
-
 import { ThemeProvider } from './contexts/ThemeProvider'
 // Shared providers (react-query, monaco defaults)
 import { SharedProviders } from '@supremeai/ui-components'

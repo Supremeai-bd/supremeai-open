@@ -74,9 +74,6 @@ cd frontend
 pnpm run build
 cd ..
 
-echo "🔧 Generating Firebase config..."
-python scripts/deploy/generate_firebase_config.py
-
 # 🔬 Evolution v3.0: Post-build verification
 echo "🔬 Running post-build verification..."
 

@@ -37,7 +37,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl w-[500px] max-h-[400px] overflow-hidden"
+            className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl w-full max-w-[500px] mx-4 max-h-[400px] overflow-hidden"
           >
             <div className="p-4 border-b border-slate-700 flex items-center justify-between">
               <h3 className="font-bold text-white flex items-center gap-2">

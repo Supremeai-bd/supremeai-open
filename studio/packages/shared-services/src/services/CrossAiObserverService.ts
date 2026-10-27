@@ -41,7 +41,7 @@ export class CrossAiObserverService {
       // বাংলা মন্তব্য (#3078): backendUrl অনুপস্থিত — একবারই সতর্ক করে স্কিপ (graceful degradation)।
       if (!CrossAiObserverService._warnedNoBackend) {
         CrossAiObserverService._warnedNoBackend = true;
-        // eslint-disable-next-line no-console
+         
         console.warn(
           '📡 [Cross-AI Observer] backendUrl অনুপস্থিত — learning-report স্কিপ করা হচ্ছে (#3078: মৃত Cloud Run ডিফল্ট সরানো হয়েছে)।'
         );
@@ -63,7 +63,7 @@ export class CrossAiObserverService {
       // eslint-disable-next-line no-console
       console.log('💾 [Cross-AI Learned] Intercepted workflow synced to Supreme Database Pool.');
     } catch (error) {
-      // eslint-disable-next-line no-console
+       
       console.error('❌ Failed to stream cross-AI observed metrics to backend:', error);
     }
   }

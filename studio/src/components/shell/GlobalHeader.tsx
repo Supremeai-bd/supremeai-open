@@ -14,6 +14,7 @@ import { useStore } from '../../store/useStore';
 import { useTheme } from '../../contexts/useTheme';
 import { useWorkspaceSettings } from '../../hooks/useWorkspaceSettings';
 import { useMobileNav } from '../../hooks/useMobileNav';
+import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { canAccessAdminContext, resolveLandingPath } from '../../auth/identity';
 import { PANEL_OPEN_EVENT } from './shellEvents';
 
@@ -52,6 +53,7 @@ export function GlobalHeader({ context, onLogout, notifications = [], actions }:
   // misleading "SYSTEM UNAVAILABLE" during cold start.
   const isServerStatusChecking = useStore((s) => s.isServerStatusChecking);
   const { isSidebarCollapsed, toggleSidebar } = useWorkspaceSettings();
+  const isMd = useBreakpoint('md');
   // Issue #1526: mobile drawer state — GlobalHeader's sidebar button opens the
   // overlay nav below md; DashboardLayout closes it on route change/backdrop.
   const { isMobileNavOpen, toggleMobileNav } = useMobileNav();
@@ -107,7 +109,7 @@ export function GlobalHeader({ context, onLogout, notifications = [], actions }:
       <button
         type="button"
         onClick={() => {
-          if (typeof window !== 'undefined' && window.innerWidth < 768) {
+          if (!isMd) {
             toggleMobileNav();
           } else {
             toggleSidebar();

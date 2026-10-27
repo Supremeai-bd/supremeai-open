@@ -24,7 +24,7 @@ export const QrSyncModal: React.FC<QrSyncModalProps> = ({ open, url, onClose }) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#161b22] border border-slate-700 rounded-xl p-6 w-[320px] shadow-2xl">
+      <div className="bg-[#161b22] border border-slate-700 rounded-xl p-6 w-full max-w-[320px] mx-4 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-white">Scan on your phone</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16} /></button>

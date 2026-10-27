@@ -50,7 +50,7 @@ export const JitOtpDialogHost: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-critical bg-black/70 flex items-center justify-center">
-      <div className="bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl w-[420px] p-5">
+      <div className="bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl w-full max-w-[420px] mx-4 p-5">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="text-blue-400 font-bold text-sm">{data?.title || "SupremeAI"}</div>

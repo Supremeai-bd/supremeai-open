@@ -356,6 +356,9 @@ class SettingsFieldsMixin:
             # with secrets.compare_digest — forged completions are rejected).
             "/api/v1/kaggle/callback",
             "/actuator",
+            "/api/admin/login",
+            "/api/admin/totp-setup",
+            "/api/admin/totp-verify",
             "/api/admin/firebase-auth",
             "/api/admin/firebase-login",
             "/api/admin/firebase-totp-setup",
