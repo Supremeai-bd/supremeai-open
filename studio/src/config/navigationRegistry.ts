@@ -183,9 +183,8 @@ export const NAVIGATION_REGISTRY: NavGroup[] = [
       // FIX(nav-truth 2026-10-24): no route for /memory in App.tsx or
       // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
       { id: 'nav-memory', label: 'Neural Memory', icon: BrainCircuit, kind: 'route', path: '/memory', contexts: ['user'], status: 'planned', priority: 40 },
-      // FIX(nav-truth 2026-10-24): no route for /settings/api-keys in App.tsx or
-      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
-      { id: 'nav-api-keys', label: 'API Keys', icon: KeyRound, kind: 'route', path: '/settings/api-keys', contexts: ['user'], status: 'planned', priority: 50 },
+      // BYOK & Collective Key Vault: registered in workspaceFeatureRoutes to BYOKPage
+      { id: 'nav-api-keys', label: 'API Keys (BYOK)', icon: KeyRound, kind: 'route', path: '/settings/api-keys', contexts: ['user'], status: 'implemented', priority: 50 },
     ],
   },
   // বাংলা (P2 রিব্যালেন্স, 2026-10-25 ফ্রন্টএন্ড রিসার্চ রিপোর্ট §6.4/Table 8):

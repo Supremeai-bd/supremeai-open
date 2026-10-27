@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Save, Loader2, Shield, Trash2, Cpu } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Save, Loader2, Shield, Trash2, Cpu, KeyRound } from 'lucide-react';
 import { useWorkspaceSettings, WORKSPACE_MODULES, type WorkspaceModuleId } from '../../hooks/useWorkspaceSettings';
 import { apiClient } from '../../services/apiClient';
 import { connectionsApi } from '../../services/connectionsApi';
@@ -222,6 +223,27 @@ export function SettingsPage({ theme, toggleTheme }: SettingsPageProps) {
               <option value="detailed">Detailed</option>
             </select>
           </div>
+        </div>
+
+        {/* 🔑 BYOK & Collective Key Vault Banner */}
+        <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-r from-cyan-950/30 to-blue-950/20 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 mt-0.5">
+              <KeyRound size={20} />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white">Bring Your Own Key (BYOK) & Quota Multiplier</h2>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Add free-tier keys for Gemini, Groq, OpenAI & 9+ providers to boost daily limits and power collective AI routing.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/settings/api-keys"
+            className="px-4 py-2 text-xs font-semibold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 whitespace-nowrap transition shadow-sm shadow-cyan-500/20"
+          >
+            Manage BYOK Keys →
+          </Link>
         </div>
 
         <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">

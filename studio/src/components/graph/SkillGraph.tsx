@@ -97,7 +97,7 @@ export default function SkillGraph() {
   );
 
   return (
-    <div className="w-full h-[600px] border border-gray-200 rounded-xl overflow-hidden shadow-inner bg-slate-50 relative">
+    <div className="w-full h-[60vh] min-h-[360px] border border-gray-200 rounded-xl overflow-hidden shadow-inner bg-slate-50 relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}

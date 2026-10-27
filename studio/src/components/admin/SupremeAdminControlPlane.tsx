@@ -302,7 +302,7 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
   </div>
 )}
 </article>
-<article className="max-h-[620px] overflow-hidden rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><AdminAlertsTab /></article></section>
+<article className="max-h-[60vh] overflow-hidden rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><AdminAlertsTab /></article></section>
 
 <section className="grid gap-5 xl:grid-cols-2"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="sa-eyebrow">Requested work</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Approve or reject</h2></div><CheckCircle2 size={19} className="text-emerald-300" /></div><ApprovalQueue /></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="sa-eyebrow">Quick access</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Controlled modules</h2></div></div><div className="grid gap-2 sm:grid-cols-2"><QuickAction icon={Cpu} label="Agents / swarm" onClick={() => open('agents-swarm')} /><QuickAction icon={ShieldCheck} label="Security & guardrails" onClick={() => open('security')} /><QuickAction icon={Activity} label="Audit trail" onClick={() => open('audit')} /><QuickAction icon={ArrowUpRight} label="Customer / RBAC" onClick={() => open('tenants-rbac')} /></div></article></section>
 

@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { SettingsPage } from './SettingsPage';
 import { connectionsApi } from '../../services/connectionsApi';
+
+const renderSettingsPage = (props: { theme?: 'dark' | 'light'; toggleTheme?: () => void } = {}) =>
+  render(
+    <MemoryRouter>
+      <SettingsPage theme={props.theme ?? 'dark'} toggleTheme={props.toggleTheme ?? vi.fn()} />
+    </MemoryRouter>,
+  );
 
 vi.mock('../../services/apiClient', () => ({
   apiClient: {
@@ -50,7 +58,7 @@ describe('SettingsPage - Execution Mode integration', () => {
   });
 
   it('renders all three execution modes with labels', async () => {
-    render(<SettingsPage theme="dark" toggleTheme={vi.fn()} />);
+    renderSettingsPage();
 
     await waitFor(() => {
       expect(screen.getByText('Execution Mode')).toBeInTheDocument();
@@ -71,7 +79,7 @@ describe('SettingsPage - Execution Mode integration', () => {
       recentActivity: [],
     });
 
-    render(<SettingsPage theme="dark" toggleTheme={vi.fn()} />);
+    renderSettingsPage();
 
     await waitFor(() => {
       const readOnlyRadio = screen.getByRole('radio', { name: /read only/i });
@@ -80,7 +88,7 @@ describe('SettingsPage - Execution Mode integration', () => {
   });
 
   it('calls setExecutionMode when a new mode is selected', async () => {
-    render(<SettingsPage theme="dark" toggleTheme={vi.fn()} />);
+    renderSettingsPage();
 
     await waitFor(() => {
       expect(screen.getByText('Execution Mode')).toBeInTheDocument();

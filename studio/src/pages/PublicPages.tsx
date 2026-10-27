@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { FileText, History, Menu, Search, Sparkles, WandSparkles, Wrench, X, Zap } from 'lucide-react';
 import { UnifiedChatBubble } from '../components/chat/UnifiedChatBubble';
 import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../lib/brandLabel';
+import { JarvisOnboardingModal } from '../components/jarvis/JarvisOnboardingModal';
 
 // ROOT-CAUSE RESTYLE (Refs #878 / bridge-20261023-frontend-guestchat-cosmic):
 // বাংলা মন্তব্য: গেস্ট চ্যাট আগে legacy slate/cyan প্যালেট ব্যবহার করত ও নিজের
@@ -91,7 +92,12 @@ const GUEST_DOCK_APPS = [
 export function GuestChat() {
   // P2 satisfaction measurement (2026-10-25 report §7/Table 8): guest chat
   // opts in to the one-question CSAT pulse; self-throttled, dismiss-safe.
-  return <UnifiedChatPanel showDock dockApps={GUEST_DOCK_APPS} showSatisfactionPulse />;
+  return (
+    <>
+      <UnifiedChatPanel showDock dockApps={GUEST_DOCK_APPS} showSatisfactionPulse />
+      <JarvisOnboardingModal />
+    </>
+  );
 }
 
 

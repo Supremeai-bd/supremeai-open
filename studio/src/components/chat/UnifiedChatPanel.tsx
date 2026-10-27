@@ -72,7 +72,25 @@ export async function callLiveAI(
   const modelId = modelName.toLowerCase().includes('reasoning') ? 'supremeai/openrouter' : (modelName.toLowerCase().includes('fast') ? 'supremeai/groq' : 'auto');
 
   const today = new Date().toISOString().split('T')[0];
-  const systemPrompt = `You are SupremeAI. Today is ${today}. Your training data has a knowledge cutoff and may not reflect very recent events (elections, resignations, political changes, breaking news). For any time-sensitive factual question, provide what you know but explicitly state your knowledge may be outdated and recommend verifying with a current news source. Never assert outdated information as a current fact without this caveat.`;
+  
+  // Dynamic JARVIS personalization from user/guest onboarding survey
+  let jarvisDirectives = '';
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('supremeai_jarvis_profile');
+      if (stored) {
+        const p = JSON.parse(stored);
+        const name = p.jarvisCustomName || 'JARVIS';
+        const salutation = p.preferredSalutation || 'Sir';
+        const goal = p.primaryGoal || 'general tasks';
+        jarvisDirectives = ` Your persona name is "${name}". Always address the user politely as "${salutation}". The user's primary goal and workflow focus is "${goal}". Tailor your reasoning, tone, and technical depth specifically for this goal.`;
+      }
+    } catch {
+      // Ignore parse failure
+    }
+  }
+
+  const systemPrompt = `You are SupremeAI.${jarvisDirectives} Today is ${today}. Your training data has a knowledge cutoff and may not reflect very recent events (elections, resignations, political changes, breaking news). For any time-sensitive factual question, provide what you know but explicitly state your knowledge may be outdated and recommend verifying with a current news source. Never assert outdated information as a current fact without this caveat.`;
 
   // Persistent conversation identifier across turns
   const convId = options?.conversationId
@@ -851,7 +869,24 @@ export function UnifiedChatPanel({
             <span className="bg-gradient-to-r from-emerald-400 to-purple-500 bg-clip-text text-2xl font-bold text-transparent">S</span>
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-slate-100 sm:text-2xl">How can SupremeAI help you today?</h2>
+            <h2 className="text-xl font-semibold text-slate-100 sm:text-2xl">
+              {(() => {
+                if (typeof localStorage !== 'undefined') {
+                  try {
+                    const stored = localStorage.getItem('supremeai_jarvis_profile');
+                    if (stored) {
+                      const p = JSON.parse(stored);
+                      const salutation = p.preferredSalutation || 'Sir';
+                      const name = p.jarvisCustomName || 'JARVIS';
+                      return `How can ${name} help you today, ${salutation}?`;
+                    }
+                  } catch {
+                    // fallback
+                  }
+                }
+                return 'How can SupremeAI help you today?';
+              })()}
+            </h2>
             <p className="mt-2 text-sm text-slate-500">Ask anything — or pick a starting point below.</p>
           </div>
           <div className="grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">

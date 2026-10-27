@@ -23,6 +23,7 @@ from api.routes.reasoning import router as reasoning_router
 from api.routes.scheduled_tasks import router as scheduled_tasks_router
 from api.routes.share import router as share_router
 from api.routes.slash_commands import router as slash_commands_router
+from routes.keys import router as user_keys_router
 
 if TYPE_CHECKING:
     from fastapi import APIRouter
@@ -45,6 +46,7 @@ TIER_S_ROUTERS: list[tuple[APIRouter, str, list[str]]] = [
     (branch_conversations_router, "", ["branch-conversations"]),
     (scheduled_tasks_router, "", ["scheduled-tasks"]),
     (deep_research_router, "", ["deep-research"]),
+    (user_keys_router, "", ["user-keys"]),
 ]
 
 # Convenience flat list of just the router objects.
@@ -205,6 +207,19 @@ ALTER TABLE messages
     ADD COLUMN IF NOT EXISTS parent_message_id UUID REFERENCES messages(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS ix_messages_parent_message_id
     ON messages (parent_message_id);
+
+-- 10. user_keys (BYOK Collective Pool & Daily Quota Boost)
+CREATE TABLE IF NOT EXISTS user_keys (
+    user_id          TEXT        NOT NULL,
+    provider         TEXT        NOT NULL,
+    encrypted_key    TEXT        NOT NULL,
+    status           TEXT        NOT NULL DEFAULT 'active',
+    last_verified_at TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, provider)
+);
+CREATE INDEX IF NOT EXISTS ix_user_keys_user_id ON user_keys (user_id);
+CREATE INDEX IF NOT EXISTS ix_user_keys_status ON user_keys (status);
 """
 
 __all__ = [
