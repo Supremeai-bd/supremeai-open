@@ -144,6 +144,13 @@ class _FakeClient:
 def test_forwarder() -> None:
     print("G6..G8 forward_stealth_webhook")
     real_client = httpx.AsyncClient
+    # Defense-in-depth: a REAL client cached in ad._STEALTH_CLIENT by an earlier
+    # test file's forward call (2026-10-28: model_cascades' class-level post
+    # patch caches a real client) makes _get_stealth_client() return BEFORE
+    # consulting the patched httpx.AsyncClient — drop the pool so the fake
+    # factory below is authoritative. Fakes lack is_closed, so nothing is cached
+    # by this test itself.
+    ad._STEALTH_CLIENT = None
     try:
         factory = _FakeClientFactory("dns")
         ad.httpx.AsyncClient = factory  # type: ignore[assignment]
@@ -198,6 +205,12 @@ def test_endpoints() -> None:
 
     client = TestClient(appmod.app)
     real = appmod._stealth_dns_snapshot
+    # Pin the import-captured global: /readyz branches on `if STEALTH_WEBHOOK_URL`
+    # BEFORE consulting _stealth_dns_snapshot, so a leaked empty global from an
+    # earlier test file (2026-10-28: reply-path reload left "") silently bypassed
+    # every monkeypatched snapshot below — G10b/G10c/G11a/G11b suite reds.
+    real_url = appmod.STEALTH_WEBHOOK_URL
+    appmod.STEALTH_WEBHOOK_URL = "https://dead-host.invalid/v1/chat/completions"
 
     async def _bad(force: bool = False) -> Dict[str, Any]:
         return {"ok": False, "checked_at": 1.0, "detail": "host dead… invalid does not resolve ([Errno -2] Name or service not known) — fix Infisical STEALTH_WEBHOOK_URL"}
@@ -221,6 +234,7 @@ def test_endpoints() -> None:
         check("G11a readyz 200 ready when DNS ok", r2.status_code == 200 and r2.json().get("status") == "ready", str(r2.status_code))
         check("G11b readyz carries stealth_dns ok", r2.json().get("stealth_dns", {}).get("ok") is True)
     finally:
+        appmod.STEALTH_WEBHOOK_URL = real_url
         appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
 
 
@@ -249,40 +263,53 @@ def test_unconfigured(monkeypatched: Dict[str, Any] = {}) -> None:
             appmod.STEALTH_WEBHOOK_URL = real_url
             appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
     finally:
-        if real_env is not None:
+        if real_env is None:
+            os.environ.pop("STEALTH_WEBHOOK_URL", None)
+        else:
             os.environ["STEALTH_WEBHOOK_URL"] = real_env
 
 
 # ── pytest wrappers ─────────────────────────────────────────────────────────
+def _assert_from(mark: int) -> None:
+    """Assert only this wrapper's own guard slice.
+
+    The historical _assert_all() asserted the WHOLE accumulated RESULTS, so one
+    real check failure failed every wrapper after it (2026-10-28: 4 real G10/G11
+    failures surfaced as 5 pytest failures, masking the root cause). Each block
+    is still asserted exactly once — by its own wrapper."""
+    failed = [r for r in RESULTS[mark:] if not r[1]]
+    assert not failed, f"failed guards: {[f[0] for f in failed]}"
+
+
 def test_normalize_stealth_url() -> None:  # pragma: no cover
+    mark = len(RESULTS)
     test_normalize()
-    _assert_all()
+    _assert_from(mark)
 
 
 def test_mask_host_fn() -> None:  # pragma: no cover
+    mark = len(RESULTS)
     test_mask_host()
-    _assert_all()
+    _assert_from(mark)
 
 
 def test_forwarder_paths() -> None:  # pragma: no cover
+    mark = len(RESULTS)
     test_forwarder()
-    _assert_all()
+    _assert_from(mark)
 
 
 def test_apex_critical() -> None:  # pragma: no cover
+    mark = len(RESULTS)
     test_apex_warning()
-    _assert_all()
+    _assert_from(mark)
 
 
 def test_probe_endpoints() -> None:  # pragma: no cover
+    mark = len(RESULTS)
     test_endpoints()
     test_unconfigured()
-    _assert_all()
-
-
-def _assert_all() -> None:
-    failed = [r for r in RESULTS if not r[1]]
-    assert not failed, f"failed guards: {[f[0] for f in failed]}"
+    _assert_from(mark)
 
 
 if __name__ == "__main__":
