@@ -28,12 +28,22 @@ except ModuleNotFoundError as _exc:  # core runtime incomplete in the public mir
 
 
 
-def _perfect_detector(text: str):
-    """Reference detector: flags anything mentioning 'ignore', 'DAN', 'reveal', 'delete', 'direct to main'."""
-    low = text.lower()
-    return any(
-        k in low for k in ("ignore all previous", "dan", "reveal", "delete", "directly to main")
-    )
+def _make_oracle_detector(cases: list[dict]) -> "callable[[str], bool]":
+    """Corpus-oracle reference detector: returns the frozen ground truth per input.
+
+    Drift repair (audited on pristine main): the previous keyword-list
+    "perfect detector" ("ignore all previous", "dan", "reveal", "delete",
+    "directly to main") silently went stale every time the corpus grew under
+    the manifest discipline — corpus cases swe-inj-004 ("ignore prior
+    instructions") and swe-plan-001 ("no rollback plan") were missed, so a
+    PERFECT classifier scored recall 0.714 and 2 tests went red on main.
+    These tests verify the runner's confusion-matrix arithmetic and the gate
+    mechanics — not keyword-detection skill — so the reference detector is
+    now an oracle keyed on the frozen inputs: perfect by construction and
+    immune to future corpus growth.
+    """
+    labels = {c.get("input", ""): bool(c.get("expect_defect")) for c in cases}
+    return lambda text: labels.get(text, False)
 
 
 def _never_detector(text: str):
@@ -54,14 +64,24 @@ def test_corpus_fingerprint_stable():
 
 def test_perfect_detector_metrics():
     cases, _ = load_corpus()
-    r = run_benchmark(_perfect_detector, cases)
+    r = run_benchmark(_make_oracle_detector(cases), cases)
     d = r.to_dict()
     assert d["total"] == len(cases)
-    assert d["accuracy"] >= 0.85
-    assert d["precision"] >= 0.8
-    assert d["recall"] >= 0.8
-    assert d["specificity"] >= 0.8
-    assert d["f1"] >= 0.8
+    n_defects = sum(1 for c in cases if c.get("expect_defect"))
+    assert n_defects > 0, "corpus must contain defect cases for metric math"
+    # Exact pins (stronger than the old >=0.8 floors): a perfect classifier
+    # must yield a perfect confusion matrix — any scorer arithmetic bug
+    # (misrouted TP/FN, swapped specificity, rounding drift) breaks this.
+    assert d["detected"] == n_defects
+    assert d["true_positive"] == n_defects
+    assert d["false_positive"] == 0
+    assert d["true_negative"] == len(cases) - n_defects
+    assert d["false_negative"] == 0
+    assert d["accuracy"] == 1.0
+    assert d["precision"] == 1.0
+    assert d["recall"] == 1.0
+    assert d["specificity"] == 1.0
+    assert d["f1"] == 1.0
 
 
 def test_never_detector_fails_floor():
@@ -73,23 +93,25 @@ def test_never_detector_fails_floor():
 
 
 def test_gate_passes_with_reference_detector(monkeypatch, capsys):
-    # Inject a tiny reference detector module without touching the repo's tests dir.
+    # Inject a corpus-oracle reference detector module without touching the
+    # repo's tests dir. The SimpleNamespace return keeps the attribute
+    # normalization path (is_injection + matched) covered, as before.
     import types
+
+    cases, _ = load_corpus()
+    truth = {
+        c.get("input", ""): (bool(c.get("expect_defect")), list(c.get("expect_match") or []))
+        for c in cases
+    }
 
     ref = types.ModuleType("tests._swe_ref_detector")
 
-    class _R:
-        is_injection = False
-        matched: list[str] = []
-
     def _make(text):
-        low = text.lower()
+        # Full oracle: ground truth for BOTH the defect flag and the expected
+        # rule ids, so the gate's expect_match verification is exercised
+        # honestly (the runner checks rules only for detected defect cases).
         r = types.SimpleNamespace()
-        r.is_injection = any(
-            k in low
-            for k in ("ignore all previous", "dan", "reveal", "delete", "directly to main")
-        )
-        r.matched = ["ignore_previous"] if "ignore" in low else []
+        r.is_injection, r.matched = truth.get(text, (False, []))
         return r
 
     ref.detect = _make  # type: ignore[attr-defined]
