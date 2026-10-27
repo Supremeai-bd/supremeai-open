@@ -834,6 +834,14 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                 )
                 return 1
 
+        # বাংলা: envelope-পথেও lease mark হবে — mark_issue_leased() আগে শুধু
+        # dispatch-পথে ছিল; কিন্তু --task-envelope auto-pick এবং --issue N — এই দুই
+        # পথেও issue এজেন্টকে অর্পণই হয়, lease ছাড়া একই মেশিনে ৩০ মিনিটের মধ্যে
+        # পুনঃরান করলে pick_next_issue একই issue আবার বেছে নিত (lease-ফিচার যে
+        # ডুপ্লিকেট-ডিসপ্যাচ আটকায় তা SPEC-ক্যাননিকাল envelope মোডেই ঘটত)।
+        # শুধু সত্যিকারের resolved target-এ mark — board-unavailable/ad-hoc এনভেলপে নয়।
+        if target_issue is not None and target_issue.get("number") is not None:
+            mark_issue_leased(target_issue["number"])
         envelope = build_task_envelope(
             target_issue,
             group=args.group,
