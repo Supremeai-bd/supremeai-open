@@ -175,7 +175,7 @@ const LIVE_TEMPLATE = [
     taskId: "bridge-20261017-freshness",
     summary: "Enforce constitution freshness",
     issueNumber: 567,
-    scopePaths: ["docs/CONSTITUTION_FRESHNESS_INVARIANT.md"],
+    scopePaths: ["core/freshness.py"],
     testsEvidence: "25/25 unittest green",
     reflectionWhy: "Stale-context submissions waste full cycles on mechanical CI rejections.",
     alternativesRejected: "post-merge lint warning\nmanual operator review",
@@ -190,6 +190,18 @@ const LIVE_TEMPLATE = [
   assert.match(body, /  - manual operator review/);
   assert.match(body, /## Test Evidence \(3-tier contract\)/);
   assert.deepEqual(validateReflectionEvidence(body), []);
+
+  const specOnlyBody = buildBridgePrBody({
+    taskId: "bridge-20261027-spec",
+    summary: "Add spec order",
+    issueNumber: 888,
+    scopePaths: ["docs/bridge/bridge-spec.md"],
+    testsEvidence: "doc valid",
+    reflectionWhy: "Spec needed first",
+    alternativesRejected: "no spec",
+  });
+  assert.match(specOnlyBody, /Refs #888/);
+  assert.ok(!specOnlyBody.includes("Closes #888"), "spec-only PR must NEVER auto-close issue");
 
   const noIssue = buildBridgePrBody({
     taskId: "bridge-20261017-freshness",

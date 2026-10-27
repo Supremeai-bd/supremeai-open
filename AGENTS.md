@@ -75,7 +75,7 @@ flowchart TD
 > ২. **Missing Claim / Issue Link (Claim Gate Guard #392):** কোনো ইস্যু ক্লেইম না করে অন্ধভাবে PR খোলা।  
 > ৩. **Stale Base (Stale-Base Guard #161):** কাজ শুরুর সময় বা পুশের ঠিক আগে `origin/main` থেকে রিবেস না করা।  
 > ৪. **Invalid Branch Name (Branch Naming Guard):** ভুল প্রিফিক্স ব্যবহার করা (স্যাটেলাইট কোডে ভুলেও `bridge/*` প্রিফিক্স দেওয়া যাবে না, দিলে `landing.yml` স্যাটেলাইটে ডিসপ্যাচ স্কিপ করবে)।  
-> ৫. **Cross-Domain বা Root Shadowing (Boundary Sanitization Guard #107):** রুট `src/*`-এ কোড পুশ করা বা একই PR-এ একাধিক স্যাটেলাইট ডোমেন স্পর্শ করা।  
+> ৫. **Cross-Domain বা Root Shadowing (Boundary Sanitization Guard #107):** স্যাটেলাইট কোড রুট ডিরেক্টরিতে পুশ করা (যেমন: `supremeai-api` এর কোড সরাসরি রুটে `service/*`-এ রাখা যা অবশ্যই `gateway/service/*`-এ হতে হবে, কিংবা শেয়ার্ড সার্ভিস রুটে `packages/*`-এ রাখা যা অবশ্যই `studio/packages/*`-এ হতে হবে)। রুট `src/*`, `service/*`, `packages/*`-এ কোড পুশ করা কঠোরভাবে নিষিদ্ধ।
 > ৬. **Blind Coder Syndrome:** বিদ্যমান কোড, ইমপোর্ট বা টাইপস না পড়ে মনগড়া কোড লিখে টাইপচেক/বিল্ড নষ্ট করা (P3 Non-Regression লঙ্ঘন)।
 
 #### 📋 The Canonical PR Body Blueprint (Copy-Paste Ready)

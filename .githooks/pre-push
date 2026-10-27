@@ -226,6 +226,60 @@ for line in $updates; do
             fi
         fi
     fi
+    # 6. BOUNDARY SANITIZATION GUARD (#107, #508).
+    # Prevent unauthorized root files or invalid domain mirroring (e.g. root service/ or packages/) before push.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/boundary_sanitization_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            # New branch push — diff against main
+            changed_files=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            # Existing branch update — diff against remote tip
+            changed_files=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        if [ -n "$changed_files" ]; then
+            # Filter to existing files in worktree
+            valid_scan_files=""
+            for f in $changed_files; do
+                if [ -f "$f" ]; then
+                    valid_scan_files="$valid_scan_files $f"
+                fi
+            done
+            if [ -n "$valid_scan_files" ]; then
+                py_cmd=""
+                if python3 -c "import sys" >/dev/null 2>&1; then
+                    py_cmd="python3"
+                elif python -c "import sys" >/dev/null 2>&1; then
+                    py_cmd="python"
+                elif py -3 -c "import sys" >/dev/null 2>&1; then
+                    py_cmd="py -3"
+                fi
+                if [ -n "$py_cmd" ]; then
+                    if ! $py_cmd scripts/ci/boundary_sanitization_guard.py --files $valid_scan_files; then
+                        reject "BOUNDARY SANITIZATION GUARD (#107, #508) FAILED" \
+                            "Changed files violate the public surface registry or proprietary path boundaries." \
+                            "Do not place satellite code at root (e.g. root service/ or packages/)." \
+                            "Use proper domain mirrors (gateway/service/, studio/packages/, etc.)." \
+                            "Deliberate admin bypass: git push --no-verify."
+                    fi
+                fi
+            fi
+        fi
+    fi
+
+    # 7. Ruff strict name/syntax check (Federation CI Parity) on gateway/ and core/.
+    if command -v ruff >/dev/null 2>&1; then
+        for d in gateway core; do
+            if [ -d "$d" ]; then
+                if ! ruff check "$d" --select=E9,F63,F7,F82; then
+                    reject "ruff check failed on $d/ (Federation CI Parity)" \
+                        "Undefined names / syntax errors would break supremeai-api CI on dispatch." \
+                        "Fix the reported ruff errors before pushing." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        done
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"

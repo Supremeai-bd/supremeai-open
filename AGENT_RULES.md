@@ -74,8 +74,16 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
   1. **Live Preflight & Dual-Rebase:** Synchronize with latest `origin/main` (rebase before branch). Reproduce issue on current `main` before modifying files. Rebase and re-verify before push. Never fix ghost issues.
   2. **Solution Optimality:** Evaluate if the issue suggestion is truly the simplest/cleanest way, or if a better 1-line solution exists.
   3. **Defect-Class Elimination (P6):** Ban superficial symptom patches (no error masking/swallowing). Solve root cause.
-  4. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.
-  5. **Canonical PR Blueprint Execution:** Every PR must be created strictly following `AGENTS.md` §2.1 format. Never open unlinked PRs or PRs with unfilled placeholders. Run `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before opening PR.
+  4. **Domain Mirror Invariant (No Root Poisoning):**
+     Code destined for satellites must NEVER be placed at the root level (`service/*`, `packages/*`, `src/*`, etc.).
+     - `supremeai-api` targets MUST live inside `gateway/` (e.g. `gateway/service/...`, never root `service/`).
+     - `supremeai-studio` packages MUST live inside `studio/packages/` (e.g. `studio/packages/shared-services/...`, never root `packages/`).
+     - `supremeai-browser` targets MUST live inside `browser/`.
+     - `supremeai-vscode` targets MUST live inside `vscode/`.
+     - `supremeai-core` targets MUST live inside `core/`.
+     Any PR violating this will immediately fail `Boundary Sanitization Guard (#107)`.
+  5. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.
+  6. **Canonical PR Blueprint Execution:** Every PR must be created strictly following `AGENTS.md` §2.1 format. Never open unlinked PRs or PRs with unfilled placeholders. Run `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before opening PR.
 
 ### 3.3 🔍 Auditor / Rules-Breaker Agent
 - **Work Area:** Governance compliance, boundary audits, secret scan triage, dead code & workflow consolidation.
