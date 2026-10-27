@@ -11,10 +11,12 @@ import { eventBus, Events } from '../../lib/componentEventBus';
 import { getApiBaseUrl } from '../../utils/api';
 import { getAdminToken, getUserToken } from '../../services/tokenStorage';
 import { AudioPlaybackService } from '../../services/audio/AudioPlaybackService';
-import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2, Languages, Sparkles, X } from 'lucide-react';
+import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2, Languages, Sparkles, X, Mic } from 'lucide-react';
 
 import { ShareDialog } from '../share/ShareDialog';
 import { ImageUploadButton } from './ImageUploadButton';
+// M8 (issue #1519): bn-BD/en-US স্পিচ-টু-টেক্সট হুক — মাইক বোতামে সংযুক্ত।
+import { useSmartVoice } from '../../hooks/useSmartVoice';
 import ExportMenu from '../export/ExportMenu';
 import BranchButton from '../branch/BranchButton';
 import { SlashCommandMenu } from '../commands/SlashCommandMenu';
@@ -140,6 +142,14 @@ export const ChatInterface: React.FC = () => {
       void e;
     }
   };
+
+  // M8 (issue #1519) বাংলা: ভয়েস ইনপুট — ফাইনাল ট্রান্সক্রিপ্ট কম্পোজারে
+  // যোগ হয় (append, overwrite নয়) — ইউজার শনাক্তকরণ দেখে শুধরে Send চাপেন;
+  // অটো-সেন্ড নয় (P1 সেফটি: ভুল শনাক্তকরণে অনিচ্ছাকৃত পাঠানো ঝুঁকি)।
+  // STT ভাষা UI ভাষা অনুসরণ করে: bn → bn-BD, en → en-US (একক BCP-47 ট্যাগ)।
+  const voice = useSmartVoice((text) => {
+    setInput((prev) => (prev ? `${prev} ${text}` : text));
+  }, { lang: uiLang === 'bn' ? 'bn-BD' : 'en-US' });
 
   const chatChips = [
     { en: 'Audit my project', bn: 'প্রজেক্ট অডিট করুন' },
@@ -639,11 +649,39 @@ export const ChatInterface: React.FC = () => {
               orchestration চলাকালীন নতুন আপলোড বন্ধ (কম্পোজারের বাকি অংশের মতো)। */}
           <ImageUploadButton onUpload={handleImageUpload} disabled={isOrchestrating} />
 
+          {/* M8 (issue #1519): মাইক বোতাম — bn-BD/en-US ভয়েস ইনপুট। SpeechRecognition
+              অসমর্থ ব্রাউজারে সৎভাবে disabled (ভাঙা-বোতাম নয়); শোনার সময় লাল pulse। */}
+          <button
+            type="button"
+            data-testid="chat-mic-button"
+            onClick={voice.toggleListening}
+            disabled={isOrchestrating || !voice.micAvailable}
+            aria-label={voice.isListening
+              ? (uiLang === 'bn' ? 'শোনা বন্ধ করুন' : 'Stop listening')
+              : (uiLang === 'bn' ? 'ভয়েস ইনপুট শুরু করুন' : 'Start voice input')}
+            title={voice.isListening
+              ? (uiLang === 'bn' ? 'শোনা বন্ধ করুন' : 'Stop listening')
+              : (uiLang === 'bn' ? 'ভয়েস ইনপুট শুরু করুন' : 'Start voice input')}
+            className={`shrink-0 p-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              voice.isListening
+                ? 'bg-red-600 text-white animate-pulse'
+                : 'text-slate-400 hover:bg-slate-800'
+            }`}
+          >
+            <Mic size={18} />
+          </button>
+
           <textarea
             value={input}
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}
-            placeholder={uiLang === 'bn' ? 'এআই এজেন্টকে আপনার মেসেজ লিখুন...' : 'Type your message to the AI agent...'}
+            placeholder={
+              voice.isListening
+                // M8: লাইভ interim ট্রান্সক্রিপ্ট placeholder-এ — প্রমাণ যে শুনছে;
+                // input state আলাদা থাকে, তাই final append-এর সাথে কোনো রেস নেই।
+                ? (voice.transcript || (uiLang === 'bn' ? 'শুনছি…' : 'Listening…'))
+                : (uiLang === 'bn' ? 'এআই এজেন্টকে আপনার মেসেজ লিখুন...' : 'Type your message to the AI agent...')
+            }
             className="min-w-0 flex-[1_1_12rem] bg-slate-800 text-white rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
             rows={2}
             disabled={isOrchestrating}
