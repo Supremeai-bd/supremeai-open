@@ -292,6 +292,43 @@ for line in $updates; do
         fi
     fi
 
+    # 9. OPENAPI BREAKING-CHANGE GUARD (#1711).
+    # Machine revision-diff of the stable external contract
+    # api-schemas/gateway.openapi.yaml (oasdiff). Engages ONLY when the push
+    # touches the contract file; skips-with-evidence when the differ binary is
+    # absent (honest degradation, same pattern as the loop's gh handling);
+    # fail-closed on detected breaking changes. Intentional breaks pass via an
+    # admin-reviewed 'contract-break-approved:' trailer commit in the range.
+    # Self-contained under `set -u`: never leans on section-6 state.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/openapi_breaking_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            # New branch push — diff against main
+            contract_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            # Existing branch update — diff against remote tip
+            contract_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        if printf '%s\n' "$contract_changed" | grep -qx 'api-schemas/gateway.openapi.yaml'; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/openapi_breaking_guard.py --files $contract_changed; then
+                    reject "OPENAPI BREAKING-CHANGE GUARD (#1711) FAILED" \
+                        "api-schemas/gateway.openapi.yaml revision introduces breaking changes for external consumers." \
+                        "Fix the revision, or land an admin-reviewed 'contract-break-approved:' trailer commit in this range." \
+                        "Evidence lines above carry the [openapi-breaking-guard] tag." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"
