@@ -399,12 +399,13 @@ class TaskCycleWiring(unittest.TestCase):
     """The dispatch path must route the offline escape hatch honestly.
 
     run_cycle() was removed as dead code (#1551: its only job was calling
-    step_2_rules, and no dispatch path ever invoked it) — the offline
-    routing it pinned now lives in main()'s board query.
+    step_2_rules, and no dispatch path ever invoked it). The #1560 wheel
+    refactor moved the board query verbatim from main() into
+    run_dispatch_cycle() — the offline routing pin follows that home.
     """
 
-    def test_24_main_honors_offline_escape_hatch_in_dispatch_path(self):
-        source = inspect.getsource(cal.main)
+    def test_24_dispatch_cycle_honors_offline_escape_hatch(self):
+        source = inspect.getsource(cal.run_dispatch_cycle)
         self.assertIn('getattr(args, "offline", False)', source)
         self.assertIn("_offline_requested(", source)
 
