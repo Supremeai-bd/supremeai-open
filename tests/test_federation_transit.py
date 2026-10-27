@@ -551,15 +551,26 @@ class PrePushRebaseGuard(unittest.TestCase):
         self.assertFalse(fresh)
         self.assertIn("unparseable", detail)
 
-    def test_37_wiring_guard_runs_before_push_with_reverification(self):
-        source = inspect.getsource(cal.step_7_record)
-        self.assertIn("pre_push_rebase_guard()", source)
-        self.assertIn("step_6_verify()", source)
-        self.assertLess(
-            source.index("pre_push_rebase_guard()"),
-            source.index("push_branch_to_fork("),
-            "the invariant must gate the fork push",
-        )
+    def test_37_fabricated_push_pipeline_stays_gone_guard_remains(self):
+        # #1526/#1551 removed the fabricated step pipeline (step_4_branch,
+        # step_6_verify, step_7_record, push_branch_to_fork, run_cycle): they
+        # returned success without doing work (U2) and had zero dispatch-path
+        # callers — branch/push/record belong to the bridge pipeline. The
+        # honest #514 rebase guard stays as the library surface, fail-closed.
+        for ghost in (
+            "step_4_branch",
+            "step_6_verify",
+            "step_7_record",
+            "push_branch_to_fork",
+            "run_cycle",
+        ):
+            self.assertFalse(
+                hasattr(cal, ghost),
+                f"{ghost} was removed as fabricated success (U2) — it must not return",
+            )
+        doc = cal.pre_push_rebase_guard.__doc__ or ""
+        self.assertIn("#514 Pre-Push Rebase Invariant", doc)
+        self.assertIn("Fail-closed", doc)
 
     def test_38_guard_contract_documented(self):
         doc = cal.pre_push_rebase_guard.__doc__ or ""
@@ -611,11 +622,13 @@ class PrePushRebaseGuard(unittest.TestCase):
         self.assertIn("aborted", detail)
         self.assertTrue(any("rebase --abort" in t for t in seen))
 
-    def test_42_step_4_branch_wired_with_pre_work_guard(self):
-        source = inspect.getsource(cal.step_4_branch)
-        self.assertIn("pre_work_rebase_guard()", source)
+    def test_42_pre_work_guard_delegates_to_pre_push_guard(self):
+        # Start-of-Work Rebase Mandate: one honest implementation, no
+        # duplicated rebase logic — pre_work delegates to pre_push.
         doc = cal.pre_work_rebase_guard.__doc__ or ""
         self.assertIn("Start-of-Work Rebase Mandate", doc)
+        source = inspect.getsource(cal.pre_work_rebase_guard)
+        self.assertIn("pre_push_rebase_guard()", source)
 
 
 if __name__ == "__main__":
