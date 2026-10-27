@@ -7,6 +7,7 @@ import { env } from "../lib/env.js";
 import { RequestContextStore } from "../policy/auth.context.js";
 import { activeAccountChain, getActiveRedisAccount, markAccountQuotaExhausted, responseIndicatesQuotaExhaustion } from "../lib/redis_chain.js";
 import { pingRedis } from "../adapters/redis/index.js";
+import { getServiceHealth } from "../adapters/render/index.js";
 
 /**
  * System-level MCP tools: summary, health, dependencies, and resource discovery.
@@ -29,6 +30,7 @@ interface HealthProbe {
   status: HealthStatus;
   httpStatus: number | null;
   latencyMs: number | null;
+  deployStatus?: string;
   error?: string;
 }
 
@@ -281,9 +283,22 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
     }
   }
 
+  // ── Render services: cross-check deployment status with live container health ──
+  let renderDeployStatus: string | undefined;
+  if (svc.provider === "render" && svc.serviceId) {
+    try {
+      const renderHealth = (await getServiceHealth(svc.id, svc.serviceId)) as { lastDeployStatus?: string };
+      if (renderHealth && renderHealth.lastDeployStatus) {
+        renderDeployStatus = renderHealth.lastDeployStatus;
+      }
+    } catch {
+      // Fallback to container probe if Render API key is unconfigured or throttled
+    }
+  }
+
   // ── HTTP services (render et al.): explicit path → /health → /api/v1/health ──
   if (!svc.url) {
-    return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, error: `no probeable URL for provider '${svc.provider}'` };
+    return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: `no probeable URL for provider '${svc.provider}'` };
   }
   const candidates = [
     ...(svc.healthPath ? [svc.healthPath] : []),
@@ -294,7 +309,20 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
   for (const url of candidates) {
     const out = await probeHttp(url);
     if (out !== "unreachable" && out !== "degraded") {
-      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
+      // If container answers 200 OK but latest deployment failed, flag as degraded!
+      // This prevents false-green silent build failures.
+      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded")) {
+        return {
+          ...base,
+          url,
+          status: "degraded",
+          httpStatus: out.status,
+          latencyMs: out.latencyMs,
+          deployStatus: renderDeployStatus,
+          error: `Container running previous build, but latest deployment ${renderDeployStatus}`,
+        };
+      }
+      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, deployStatus: renderDeployStatus };
     }
   }
 
@@ -302,13 +330,24 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
   for (const url of candidates) {
     const out = await probeHttp(url);
     if (out === "degraded") {
-      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, error: "health endpoint responded non-2xx" };
+      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: "health endpoint responded non-2xx" };
     }
     if (out !== "unreachable") {
-      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
+      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded")) {
+        return {
+          ...base,
+          url,
+          status: "degraded",
+          httpStatus: out.status,
+          latencyMs: out.latencyMs,
+          deployStatus: renderDeployStatus,
+          error: `Container running previous build, but latest deployment ${renderDeployStatus}`,
+        };
+      }
+      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, deployStatus: renderDeployStatus };
     }
   }
-  return { ...base, url: candidates[0], status: "unreachable", httpStatus: null, latencyMs: null, error: "no health endpoint answered" };
+  return { ...base, url: candidates[0], status: "unreachable", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: "no health endpoint answered" };
 }
 
 export async function registerSystemTools(server: McpServer): Promise<void> {

@@ -9,11 +9,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 ENV PIP_ROOT_USER_ACTION=ignore
 RUN pip install --no-cache-dir poetry==2.4.1
 
-# Copy dependencies
-COPY pyproject.toml poetry.lock ./
+# Copy dependencies (poetry.lock* allows build to succeed whether lockfile is committed or generated)
+COPY pyproject.toml poetry.lock* ./
 
 # Install dependencies in project virtualenv
 RUN poetry config virtualenvs.in-project true \
+    && (test -f poetry.lock || poetry lock --no-update) \
     && poetry install --no-interaction --no-ansi --only main --no-root
 
 # Stage 2: Runtime
