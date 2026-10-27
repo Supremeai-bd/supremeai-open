@@ -137,10 +137,14 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
   ];
 
   if (opts.issueNumber) {
+    const isSpecOnly = opts.scopePaths.length > 0 && opts.scopePaths.every((p) =>
+      p.startsWith("docs/") || p.startsWith("docs/bridge/") || p.startsWith("docs/work-orders/")
+    );
     lines.push(
       "## Linked Work Order",
-      `Closes #${opts.issueNumber}`,
-      `Refs #${opts.issueNumber}`,
+      ...(isSpecOnly
+        ? [`Refs #${opts.issueNumber}`, `<!-- spec-only: keeps #${opts.issueNumber} open until code implementation -->`]
+        : [`Closes #${opts.issueNumber}`, `Refs #${opts.issueNumber}`]),
       ""
     );
   }
