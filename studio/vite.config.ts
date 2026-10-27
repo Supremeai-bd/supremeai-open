@@ -198,6 +198,19 @@ export default defineConfig({
           // loaded the entire vendor-ui chunk (including recharts) on every page
           // — even the guest `/` funnel which never charts. Now: recharts gets
           // its own 'vendor-charts' chunk, loaded only by lazy admin chunks.
+          // ROOT-CAUSE FIX (#1696 D1): the #2734 split was silently defeated —
+          // eventemitter3 is a shared dependency of BOTH recharts (forced into
+          // 'vendor-charts' here) AND p-queue (eager: utils/api.ts circuit
+          // breaker queue). Rollup hoisted the tiny EventEmitter class INTO
+          // vendor-charts, so the entry chunk was forced to statically import
+          // the whole ~403KB charts bundle for ONE class — measured live:
+          // vendor-charts fetched on `/` with 0 chart DOM nodes (FCP 1184ms
+          // vs <1000ms mandate). Give eventemitter3 its own bucket placed
+          // BEFORE the recharts rule: entry imports only the measured 2.9KB
+          // vendor-events chunk, and vendor-charts becomes reachable exclusively
+          // through lazy admin chunks (AdminShell) again. Chunk-boundary only —
+          // zero runtime behavior change (same module instance, same semantics).
+          if (/[\\/]node_modules[\\/]eventemitter3[\\/]/.test(id)) return 'vendor-events'
           if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) return 'vendor-charts'
           if (/[\\/]node_modules[\\/](@xterm|xterm)[\\/]/.test(id)) return 'vendor-terminal'
           if (/[\\/]node_modules[\\/](@monaco-editor|monaco-editor)[\\/]/.test(id)) return 'vendor-editor'
