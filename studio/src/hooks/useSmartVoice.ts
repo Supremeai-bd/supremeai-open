@@ -37,7 +37,16 @@ function getSpeechRecognitionCtor(): SRCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
+// M8 (issue #1519) বাংলা: Web Speech API-র `lang` একটিমাত্র BCP-47 ট্যাগ গ্রহণ
+// করে — "bn-BD, en-US" অবৈধ মান, ব্রাউজার নীরবে default locale-এ ফিরে যায়,
+// ফলে বাংলা STT আসলে কখনোই চলত না। কলার এখন একটি সঠিক ট্যাগ পাঠায়
+// (ChatInterface: uiLang bn → bn-BD, en → en-US); ডিফল্ট bn-BD (ওয়ার্ক-অর্ডারের
+// প্রাথমিক লক্ষ্য)। lang বদলালে recognition নতুন করে তৈরি হয় (effect dep)।
+export function useSmartVoice(
+  onFinalTranscript?: (text: string) => void,
+  opts?: { lang?: string },
+) {
+  const sttLang = opts?.lang ?? 'bn-BD';
   const [orbState, setOrbState] = useState<VoiceState>('idle');
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -56,7 +65,7 @@ export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
     onFinalTranscriptRef.current = onFinalTranscript;
   }, [onFinalTranscript]);
 
-  // Initialize Speech Recognition once on client
+  // Initialize Speech Recognition on client; rebuilt when sttLang changes
   useEffect(() => {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) {
@@ -68,7 +77,7 @@ export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
       const recog = new Ctor();
       recog.continuous = false;
       recog.interimResults = true;
-      recog.lang = 'bn-BD, en-US';
+      recog.lang = sttLang;
 
       recog.onresult = (e: SpeechRecognitionEventLike) => {
         let interimText = '';
@@ -116,7 +125,7 @@ export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
         /* noop */
       }
     };
-  }, []);
+  }, [sttLang]);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current || isListening) return;
