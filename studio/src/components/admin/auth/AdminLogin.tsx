@@ -144,6 +144,44 @@ export function LoginView({
           onSubmit={handleSubmit}
           aria-label="Admin authentication form"
         >
+          {/* Quick Biometric Access */}
+          <button
+            type="button"
+            data-testid="admin-passkey-button"
+            onClick={async () => {
+              setLocalError('');
+              setIsSubmitting(true);
+              try {
+                const { loginWithPasskey } = await import('../../../services/passkeyService');
+                const res = await loginWithPasskey('admin');
+                if (res && res.access_token) {
+                  const { setAdminToken } = await import('../../../services/tokenStorage');
+                  const { updateTokenCache } = await import('../../../services/apiClient');
+                  const { useAdminStore } = await import('../../../store/adminStore');
+                  setAdminToken(res.access_token);
+                  updateTokenCache(res.access_token);
+                  useAdminStore.setState({ adminAuthenticated: true, adminRole: 'admin' });
+                }
+              } catch (err: any) {
+                setLocalError(err?.message || 'Biometric admin verification failed.');
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
+            disabled={isSubmitting || isLocked}
+            className="flex items-center justify-center gap-2.5 w-full rounded-xl border border-cyan-400/40 bg-cyan-950/40 py-3 px-4 text-xs font-bold uppercase tracking-wider text-cyan-300 transition-all hover:bg-cyan-900/50 hover:border-cyan-300 hover:text-white disabled:opacity-50"
+          >
+            <Fingerprint className="size-4 text-cyan-400" />
+            <span>Sign in with Admin Fingerprint</span>
+          </button>
+
+          <div className="relative my-1 flex items-center justify-center">
+            <div className="w-full border-t border-cyan-500/20" />
+            <span className="absolute bg-[#0a0f1d] px-2 font-mono text-[10px] text-slate-500 uppercase tracking-widest">
+              or enter code
+            </span>
+          </div>
+
           {/* 6-Digit Authentication Code (the only credential) */}
           <div className="space-y-2 text-left">
             <label htmlFor="admin-otp" className="block text-xs uppercase tracking-wider text-slate-300 font-semibold text-center">

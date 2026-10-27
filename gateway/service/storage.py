@@ -120,6 +120,21 @@ def init_db() -> None:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tb_expires ON trusted_browsers(expires_at);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tb_uid ON trusted_browsers(uid);")
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_passkeys (
+                credential_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                public_key_spki TEXT NOT NULL,
+                counter INTEGER NOT NULL DEFAULT 0,
+                device_name TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                last_used_at REAL NOT NULL,
+                revoked INTEGER NOT NULL DEFAULT 0
+            );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_passkeys_user ON user_passkeys(user_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_passkeys_role ON user_passkeys(role);")
         logger.info(f"Gateway SQLite storage initialized at {_DB_PATH}")
     except Exception as exc:
         logger.warning(f"Failed to initialize SQLite storage: {exc}. Using memory fallback.")
@@ -648,5 +663,131 @@ def save_user_preferences(user_id: str, patch_data: Dict[str, Any]) -> Dict[str,
     }
 
 
+# ── User Passkeys Persistence ─────────────────────────────────────────────
+
+def save_user_passkey(
+    credential_id: str,
+    user_id: str,
+    role: str,
+    public_key_spki: str,
+    device_name: str,
+    counter: int = 0,
+) -> Dict[str, Any]:
+    """Stores or updates a WebAuthn / Passkey credential."""
+    now = time.time()
+    with get_db() as conn:
+        if conn is not None:
+            conn.execute(
+                """
+                INSERT INTO user_passkeys (
+                    credential_id, user_id, role, public_key_spki, counter, device_name, created_at, last_used_at, revoked
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                ON CONFLICT(credential_id) DO UPDATE SET
+                    counter = excluded.counter,
+                    last_used_at = excluded.last_used_at,
+                    device_name = excluded.device_name;
+                """,
+                (credential_id, user_id, role, public_key_spki, counter, device_name, now, now),
+            )
+        else:
+            if "passkeys" not in _MEM_FALLBACK:
+                _MEM_FALLBACK["passkeys"] = {}
+            _MEM_FALLBACK["passkeys"][credential_id] = {
+                "credential_id": credential_id,
+                "user_id": user_id,
+                "role": role,
+                "public_key_spki": public_key_spki,
+                "counter": counter,
+                "device_name": device_name,
+                "created_at": now,
+                "last_used_at": now,
+                "revoked": 0,
+            }
+    return {
+        "credential_id": credential_id,
+        "user_id": user_id,
+        "role": role,
+        "device_name": device_name,
+        "created_at": now,
+    }
+
+
+def get_user_passkey(credential_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieves an active passkey record by credential_id."""
+    with get_db() as conn:
+        if conn is not None:
+            cur = conn.execute(
+                "SELECT * FROM user_passkeys WHERE credential_id = ? AND revoked = 0;",
+                (credential_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                return dict(row)
+        else:
+            passkeys = _MEM_FALLBACK.get("passkeys", {})
+            pk = passkeys.get(credential_id)
+            if pk and not pk.get("revoked"):
+                return dict(pk)
+    return None
+
+
+def update_passkey_usage(credential_id: str, new_counter: int) -> None:
+    """Updates sign counter and last_used_at timestamp."""
+    now = time.time()
+    with get_db() as conn:
+        if conn is not None:
+            conn.execute(
+                "UPDATE user_passkeys SET counter = ?, last_used_at = ? WHERE credential_id = ?;",
+                (new_counter, now, credential_id),
+            )
+        else:
+            if "passkeys" in _MEM_FALLBACK and credential_id in _MEM_FALLBACK["passkeys"]:
+                _MEM_FALLBACK["passkeys"][credential_id]["counter"] = new_counter
+                _MEM_FALLBACK["passkeys"][credential_id]["last_used_at"] = now
+
+
+def list_user_passkeys(user_id: str) -> List[Dict[str, Any]]:
+    """Lists all active registered passkeys for a user."""
+    with get_db() as conn:
+        if conn is not None:
+            cur = conn.execute(
+                "SELECT credential_id, user_id, role, device_name, created_at, last_used_at FROM user_passkeys WHERE user_id = ? AND revoked = 0 ORDER BY created_at DESC;",
+                (user_id,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+        else:
+            passkeys = _MEM_FALLBACK.get("passkeys", {})
+            return [
+                {
+                    "credential_id": p["credential_id"],
+                    "user_id": p["user_id"],
+                    "role": p["role"],
+                    "device_name": p["device_name"],
+                    "created_at": p["created_at"],
+                    "last_used_at": p["last_used_at"],
+                }
+                for p in passkeys.values()
+                if p["user_id"] == user_id and not p.get("revoked")
+            ]
+
+
+def revoke_user_passkey(credential_id: str, user_id: str) -> bool:
+    """Revokes a specific passkey belonging to a user."""
+    with get_db() as conn:
+        if conn is not None:
+            cur = conn.execute(
+                "UPDATE user_passkeys SET revoked = 1 WHERE credential_id = ? AND user_id = ?;",
+                (credential_id, user_id),
+            )
+            return cur.rowcount > 0
+        else:
+            passkeys = _MEM_FALLBACK.get("passkeys", {})
+            if credential_id in passkeys and passkeys[credential_id]["user_id"] == user_id:
+                passkeys[credential_id]["revoked"] = 1
+                return True
+    return False
+
+
 # Auto-run initialization on module load
 init_db()
+

@@ -274,6 +274,22 @@ except ImportError:
 if admin_auth_router is not None:
     app.include_router(admin_auth_router)
 
+# Native Passkey / WebAuthn Biometric Router (Fingerprint/TouchID/FaceID)
+try:
+    from service.passkey_auth import router as passkey_auth_router
+except ImportError:
+    try:
+        from gateway.service.passkey_auth import router as passkey_auth_router
+    except ImportError:
+        try:
+            from passkey_auth import router as passkey_auth_router
+        except ImportError:
+            passkey_auth_router = None
+
+if passkey_auth_router is not None:
+    app.include_router(passkey_auth_router)
+
+
 # Epistemic router (ChronoFact/SPINE patterns): tool pruning, memory gate, model horizon.
 try:
     from service.epistemic_router import router as epistemic_router
@@ -657,7 +673,7 @@ async def studio_auth_login(request: Request):
             from service.keygen import generate_key
             token = generate_key(client_name="studio-admin", quota="unlimited")
         except Exception:
-            token = "sk-supreme-studio-admin-live-session"
+            token = f"sess_{secrets.token_hex(16)}"
 
         user_id = "usr-admin-primary" if email == admin_email else f"usr-{int(time.time())}"
         role = "admin" if email == admin_email else "user"
