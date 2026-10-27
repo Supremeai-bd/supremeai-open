@@ -22,7 +22,7 @@ export const EditorTabs: React.FC = () => {
             key={path}
             onClick={() => setActiveFile(path)}
             className={`
-              flex items-center group cursor-pointer px-3 py-2 min-w-[120px] max-w-[200px] border-r border-[#1e1e1e]
+              flex items-center group cursor-pointer px-3 py-2 min-w-[90px] sm:min-w-[120px] max-w-[200px] border-r border-[#1e1e1e]
               ${isActive ? 'bg-[#1e1e1e] text-blue-400' : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#252526]'}
             `}
           >

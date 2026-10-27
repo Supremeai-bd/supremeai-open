@@ -107,7 +107,7 @@ export class TelemetryTracker {
       // eslint-disable-next-line no-console
       console.log(`[SupremeAI Telemetry] Sent: ${result.status} (Score: ${result.similarityScore.toFixed(2)})`);
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error('[SupremeAI Telemetry] Failed to send telemetry:', err);
     }
   }

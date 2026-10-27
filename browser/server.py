@@ -446,6 +446,155 @@ class GeminiCookieEngine:
 relay_engine = GeminiCookieEngine()
 
 
+class DuckAiEngine:
+    """Duck.ai (DuckDuckGo AI Chat) headless & API relay ($0 cost, no account cookies required).
+
+    Duck.ai supports models including:
+    - gpt-4o-mini
+    - claude-3-haiku-20240307
+    - meta-llama/Llama-3.3-70B-Instruct-Turbo
+    - mistralai/Mixtral-8x7B-Instruct-v0.1
+    """
+
+    MODEL_ALIASES: Dict[str, str] = {
+        "duck": "gpt-4o-mini",
+        "duck-ai": "gpt-4o-mini",
+        "duck-gpt": "gpt-4o-mini",
+        "duck-gpt-4o-mini": "gpt-4o-mini",
+        "duck-claude": "claude-3-haiku-20240307",
+        "duck-claude-haiku": "claude-3-haiku-20240307",
+        "duck-llama": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "duck-llama-70b": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "duck-mixtral": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    }
+
+    def __init__(self) -> None:
+        self._vqd_token: Optional[str] = None
+        self._vqd_expiry: float = 0.0
+
+    def resolve_model(self, model_name: Optional[str]) -> str:
+        if not model_name:
+            return "gpt-4o-mini"
+        cleaned = model_name.strip().lower()
+        return self.MODEL_ALIASES.get(cleaned, cleaned if "gpt-" in cleaned or "claude-" in cleaned or "llama" in cleaned or "mixtral" in cleaned else "gpt-4o-mini")
+
+    async def _fetch_vqd_token(self, client: httpx.AsyncClient) -> Optional[str]:
+        """Fetch fresh vqd session token from duckduckgo status endpoint."""
+        now = time.time()
+        if self._vqd_token and now < self._vqd_expiry:
+            return self._vqd_token
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "x-vqd-accept": "1",
+            "Referer": "https://duck.ai/",
+            "Origin": "https://duck.ai",
+        }
+        try:
+            resp = await client.get("https://duckduckgo.com/duckchat/v1/status", headers=headers)
+            token = resp.headers.get("x-vqd-4")
+            if token:
+                self._vqd_token = token
+                self._vqd_expiry = now + 600.0  # 10 min cache
+                return token
+        except Exception as exc:
+            logger.warning(f"[DuckAI] Failed to fetch vqd token via HTTP: {exc}")
+
+        return None
+
+    async def ask(self, prompt: str, model: Optional[str] = None) -> str:
+        """Query duck.ai directly. First tries lightweight HTTP with token, then falls back gracefully."""
+        target_model = self.resolve_model(model)
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "Referer": "https://duck.ai/",
+            "Origin": "https://duck.ai",
+        }
+
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            token = await self._fetch_vqd_token(client)
+            if token:
+                headers["x-vqd-4"] = token
+                payload = {
+                    "model": target_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                }
+                try:
+                    resp = await client.post("https://duckduckgo.com/duckchat/v1/chat", headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        # Update token if renewed
+                        new_token = resp.headers.get("x-vqd-4")
+                        if new_token:
+                            self._vqd_token = new_token
+                            self._vqd_expiry = time.time() + 600.0
+                        # Parse SSE stream text
+                        reply_parts: list[str] = []
+                        for line in resp.text.split("\n"):
+                            line = line.strip()
+                            if line.startswith("data:"):
+                                data_str = line[5:].strip()
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    parsed = json.loads(data_str)
+                                    msg = parsed.get("message")
+                                    if msg:
+                                        reply_parts.append(msg)
+                                except Exception:
+                                    continue
+                        if reply_parts:
+                            return "".join(reply_parts)
+                    else:
+                        logger.warning(f"[DuckAI] HTTP chat returned status {resp.status_code}")
+                except Exception as exc:
+                    logger.warning(f"[DuckAI] HTTP chat request failed: {exc}")
+
+        # If HTTP direct mode was blocked by bot check or challenge, try headless browser execution
+        try:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+                )
+                context = await browser.new_context(
+                    user_agent=headers["User-Agent"]
+                )
+                page = await context.new_page()
+                await page.goto("https://duck.ai/chat", wait_until="networkidle")
+                await page.wait_for_timeout(1000)
+                ta = page.locator("textarea")
+                if await ta.count() > 0:
+                    await ta.fill(prompt)
+                    ask = page.get_by_role("button", name="Ask")
+                    if await ask.count() > 0:
+                        await ask.first.click()
+                    else:
+                        await page.keyboard.press("Enter")
+                    await page.wait_for_timeout(4000)
+                    text = await page.evaluate("() => document.body.innerText")
+                    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+                    await browser.close()
+                    if lines:
+                        return lines[-1]
+                await browser.close()
+        except Exception as exc:
+            logger.warning(f"[DuckAI] Playwright fallback failed: {exc}")
+
+        raise HTTPException(status_code=502, detail="Duck.ai upstream challenge or rate-limit encountered")
+
+
+duck_engine = DuckAiEngine()
+
+
 @app.on_event("startup")
 async def on_startup():
     if os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET"):
@@ -499,10 +648,26 @@ async def api_chat(request: Request) -> Dict[str, Any]:
     if not prompt.strip():
         raise HTTPException(status_code=400, detail="Empty prompt or message")
 
-    reply = await relay_engine.ask(prompt.strip())
+    model = str(body.get("model") or "").strip().lower()
+    source = "gemini.google.com (Cookie Relay)"
+
+    if "duck" in model:
+        reply = await duck_engine.ask(prompt.strip(), model=model)
+        source = f"duck.ai ({duck_engine.resolve_model(model)})"
+    else:
+        try:
+            reply = await relay_engine.ask(prompt.strip())
+        except Exception as exc:
+            logger.warning(f"Gemini relay failed ({exc}); attempting Duck.ai fallback...")
+            try:
+                reply = await duck_engine.ask(prompt.strip(), model="gpt-4o-mini")
+                source = "duck.ai (gpt-4o-mini fallback)"
+            except Exception:
+                raise exc
+
     return {
         "reply": reply,
-        "source": "gemini.google.com (Cookie Relay)",
+        "source": source,
         "cost": "$0.00",
     }
 
@@ -514,19 +679,42 @@ async def chat_completions(req: ChatRequest, request: Request) -> JSONResponse:
     if not prompt.strip():
         raise HTTPException(status_code=400, detail="Missing user message in payload")
 
-    reply = await relay_engine.ask(prompt.strip())
+    req_model = str(req.model or "gemini-web").strip().lower()
+    served_model = "gemini-web"
+    engine_code = "ge"
+    engine_label = "SupremeAI w.ge Turbo"
+
+    if "duck" in req_model:
+        duck_target = duck_engine.resolve_model(req_model)
+        reply = await duck_engine.ask(prompt.strip(), model=req_model)
+        served_model = f"duck-{duck_target}"
+        engine_code = "dk"
+        engine_label = f"SupremeAI w.dk ({duck_target})"
+    else:
+        try:
+            reply = await relay_engine.ask(prompt.strip())
+        except Exception as exc:
+            logger.warning(f"Gemini relay failed ({exc}); falling back to Duck.ai...")
+            try:
+                reply = await duck_engine.ask(prompt.strip(), model="gpt-4o-mini")
+                served_model = "duck-gpt-4o-mini"
+                engine_code = "dk"
+                engine_label = "SupremeAI w.dk (gpt-4o-mini)"
+            except Exception:
+                raise exc
+
     return JSONResponse(
         {
-            "id": "chatcmpl-cookie-relay-" + os.urandom(6).hex(),
+            "id": "chatcmpl-stealth-relay-" + os.urandom(6).hex(),
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": "gemini-web",
-            "supremeai_engine": "ge",
+            "model": served_model,
+            "supremeai_engine": engine_code,
             "supremeai": {
                 "channel": "w",
-                "engine": "ge",
+                "engine": engine_code,
                 "tier": "Turbo",
-                "label": "SupremeAI w.ge Turbo",
+                "label": engine_label,
             },
             "choices": [
                 {
@@ -541,6 +729,7 @@ async def chat_completions(req: ChatRequest, request: Request) -> JSONResponse:
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         }
     )
+
 
 
 if __name__ == "__main__":

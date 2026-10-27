@@ -29,7 +29,7 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
            #1303): fixed 220px clip wrapper + transform slide from the left
            edge; scroll moves to the inner layer so the slide is compositor-
            only instead of animating the flex row's width. */
-        <div className="w-[220px] shrink-0 overflow-hidden bg-[#0d1117] border-r border-cyan-500/20">
+        <div className="hidden lg:block w-[220px] shrink-0 overflow-hidden bg-[#0d1117] border-r border-cyan-500/20">
           <motion.div
             initial={{ x: -220, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}

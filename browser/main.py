@@ -20,9 +20,9 @@ if _CURRENT_DIR not in sys.path:
 
 # Import primary application from server.py (Cookie Relay Engine)
 try:
-    from server import app, relay_engine, ChatRequest
+    from server import app, relay_engine, duck_engine, ChatRequest
 except ImportError:
-    from browser.server import app, relay_engine, ChatRequest  # type: ignore
+    from browser.server import app, relay_engine, duck_engine, ChatRequest  # type: ignore
 
 # Register optional browser scraper routes if dependencies are available
 try:

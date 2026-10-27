@@ -52,7 +52,7 @@ export class SupremeExtensionBridge {
     this.baseUrl = (configured || DEFAULT_BACKEND_URL).replace(/\/$/, '');
     if (!this.baseUrl) {
       // বাংলা মন্তব্য (#3078): backendUrl অনুপস্থিত — স্পষ্ট সতর্কতা (ফেক ডিফল্ট নয়)।
-      // eslint-disable-next-line no-console
+       
       console.warn(
         '[SupremeExtensionBridge] backendUrl কনফিগার করা হয়নি — SupremeAIConfig.backendUrl সেট করুন। পুরনো Cloud Run ডিফল্ট অবসরপ্রাপ্ত (503, #3078)。'
       );
@@ -92,7 +92,7 @@ export class SupremeExtensionBridge {
             'SupremeAI: Auth Token Expired. Please login again.'
           );
         }
-        // eslint-disable-next-line no-console
+         
         console.error('[SupremeAI Bridge] API Error:', error.message);
         return Promise.reject(error);
       }

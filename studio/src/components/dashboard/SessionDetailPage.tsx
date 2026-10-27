@@ -46,19 +46,21 @@ export function SessionDetailPage({ sessionId, onBack }: SessionDetailPageProps)
       </div>
 
       {/* 3-Pane Layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: File Tree Panel (approx 20%) */}
-        <div className="w-1/5 min-w-[200px] max-w-[300px] shrink-0 border-r border-gray-800">
+      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
+        {/* Left: File Tree Panel */}
+        <div className="w-full lg:w-1/5 lg:min-w-[200px] lg:max-w-[300px] shrink-0 border-b lg:border-b-0 lg:border-r border-gray-800 overflow-y-auto max-h-[40vh] lg:max-h-none">
           <FileTreePanel />
         </div>
 
-        {/* Center: Execution Shell (approx 55%) */}
-        <div className="flex-1 min-w-[400px]">
+        {/* Center: Execution Shell */}
+        <div className="flex-1 min-w-0">
           <ExecutionShell />
         </div>
 
-        {/* Right: Reasoning Log Panel (approx 25%) */}
-        <ReasoningLog />
+        {/* Right: Reasoning Log Panel */}
+        <div className="w-full lg:w-1/4 lg:min-w-[240px] lg:max-w-[320px] shrink-0 border-t lg:border-t-0 lg:border-l border-gray-800 overflow-y-auto max-h-[40vh] lg:max-h-none">
+          <ReasoningLog />
+        </div>
       </div>
 
       {/* Bottom Timeline Scrubber (Placeholder for future iteration) */}

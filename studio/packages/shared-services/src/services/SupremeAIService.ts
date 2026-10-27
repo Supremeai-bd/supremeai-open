@@ -111,7 +111,7 @@ export class SupremeAIService {
         request.headers.set('Authorization', `Bearer ${token}`);
       }
       if (this.isDebugEnabled()) {
-        // eslint-disable-next-line no-console
+         
         console.debug(`[SupremeAI] ${request.method?.toUpperCase()} ${request.url}`);
       }
       return request;
@@ -122,7 +122,7 @@ export class SupremeAIService {
       (response) => response,
       (error) => {
         const apiError = normalizeApiError(error, 'API request failed');
-        // eslint-disable-next-line no-console
+         
         console.error(`[SupremeAI] API Error ${apiError.code}: ${apiError.userMessage}`);
         return Promise.reject(apiError);
       }
@@ -201,7 +201,7 @@ export class SupremeAIService {
       return res.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Failed to send code edit');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] sendCodeEdit failed (${apiError.code}): ${apiError.userMessage}`);
       return { success: false, message: apiError.userMessage };
     }
@@ -217,7 +217,7 @@ export class SupremeAIService {
       return res.data;
     } catch (err: unknown) {
       const apiError = normalizeApiError(err, 'Failed to report error');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] reportError failed (${apiError.code}): ${apiError.userMessage}`);
       return { success: false, message: apiError.userMessage };
     }
@@ -234,7 +234,7 @@ export class SupremeAIService {
       return res.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Failed to send feedback');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] sendSuggestionFeedback failed (${apiError.code}): ${apiError.userMessage}`);
       return { success: false, message: apiError.userMessage };
     }
@@ -248,7 +248,7 @@ export class SupremeAIService {
       // Typed failure surfaced on the error channel instead of a silent empty
       // fallback (#1333). Shape stays backward-compatible for existing callers.
       const apiError = normalizeApiError(error, 'Failed to load learning stats');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] getLearningStats failed (${apiError.code}): ${apiError.userMessage}`);
       return { recentActivity: [] };
     }
@@ -268,7 +268,7 @@ export class SupremeAIService {
       return res.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Failed to analyze code');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] sendCodeAnalysis failed (${apiError.code}): ${apiError.userMessage}`);
       return { success: false, message: apiError.userMessage };
     }
@@ -303,7 +303,7 @@ export class SupremeAIService {
       return { suggestions };
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Inline completion failed');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] getInlineCompletions failed (${apiError.code}): ${apiError.userMessage}`);
       return { suggestions: [] };
     }
@@ -375,7 +375,7 @@ export class SupremeAIService {
       if (!resp.ok || !resp.body) {
         // Non-streaming failure — fall back to the retrying non-stream path so
         // callers always get a usable answer (e.g. proxy stripped SSE).
-        // eslint-disable-next-line no-console
+         
         console.error(`[SupremeAI] stream unavailable (HTTP ${resp.status}); falling back to buffered chat`);
         return this.sendChatMessage(request);
       }
@@ -430,7 +430,7 @@ export class SupremeAIService {
         throw new ApiError('ABORTED', 'Stream cancelled by caller');
       }
       const apiError = normalizeApiError(error, 'Streaming chat failed');
-      // eslint-disable-next-line no-console
+       
       console.error(
         `[SupremeAI] streamChatMessage failed after ${Date.now() - started}ms (${apiError.code}); falling back to buffered chat`
       );
@@ -470,7 +470,7 @@ export class SupremeAIService {
       return res.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'CodeFlow analysis failed');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] CodeFlow analysis failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
@@ -484,7 +484,7 @@ export class SupremeAIService {
       return res.data.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Failed to get codeflow analysis');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] getCodeFlowAnalysis failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
@@ -496,7 +496,7 @@ export class SupremeAIService {
       return res.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Error resolution failed');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] resolveError failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
@@ -512,7 +512,7 @@ export class SupremeAIService {
       return res.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Failed to get security issues');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] getRepositorySecurityIssues failed (${apiError.code}): ${apiError.userMessage}`);
       return [];
     }
@@ -526,7 +526,7 @@ export class SupremeAIService {
       return res.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Failed to get dependency graph');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] getDependencyGraph failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }
@@ -540,7 +540,7 @@ export class SupremeAIService {
       return res.data;
     } catch (error: unknown) {
       const apiError = normalizeApiError(error, 'Failed to get health score');
-      // eslint-disable-next-line no-console
+       
       console.error(`[SupremeAI] getHealthScore failed (${apiError.code}): ${apiError.userMessage}`);
       return null;
     }

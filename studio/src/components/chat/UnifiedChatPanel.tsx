@@ -746,7 +746,7 @@ export function UnifiedChatPanel({
   // HIGH DEMAND AUTO-RETRY countdown: ticks the surge screen every second and
   // fires the automatic retry at zero. send is a hoisted function declaration
   // in this component scope — stable identity, intentionally not a dep.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   React.useEffect(() => {
     if (!demandRetry) return;
     if (demandRetry.nextIn <= 0) {

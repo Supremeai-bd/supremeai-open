@@ -78,24 +78,6 @@ const SERVICE_REGISTRY: ServiceConfig[] = [
     icon: <Database size={16} />,
     category: 'database',
   },
-  {
-    name: 'firebase_auth',
-    displayName: 'Firebase Auth',
-    url: import.meta.env.VITE_FIREBASE_AUTH_URL || '',
-    description: 'Authentication Service',
-    critical: true,
-    icon: <Shield size={16} />,
-    category: 'auth',
-  },
-  {
-    name: 'firebase_firestore',
-    displayName: 'Firestore',
-    url: import.meta.env.VITE_FIRESTORE_URL || '',
-    description: 'NoSQL Document Store',
-    critical: true,
-    icon: <Database size={16} />,
-    category: 'database',
-  },
 
   // ─── EDGE & CDN ───────────────────────────────────────────────────────
   {
