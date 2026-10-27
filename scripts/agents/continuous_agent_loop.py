@@ -26,6 +26,25 @@ RULE_FRESHNESS_FILES = (
     "AGENTS.md",
     ".github/PULL_REQUEST_TEMPLATE.md",
 )
+
+# Single board-filter SSOT shared by pick_next_issue() and main() dispatch.
+# বাংলা: আগে দুই জায়গায় দুই ভিন্ন skip-set ছিল — main() mirror:private /
+# state:seq-hold / blocked-by-upstream ইস্যুতে solver পাঠাত (যেগুলো agent
+# দাবিই করতে পারে না) আর pick_next_issue() anchor-hub / admin-only বাদ দিত
+# না। এখন এক ফ্রোজেন সেট — দুই পাঠক, এক চুক্তি (drift অসম্ভব)।
+BOARD_EXCLUDED_LABELS = frozenset(
+    {
+        "status:claimed",
+        "status:in-progress",
+        "state:seq-hold",
+        "blocked-by-upstream",
+        "mirror:private",
+        "anchor-hub",
+        "admin-only",
+    }
+)
+
+FORBIDDEN_SCOPE_PATHS = (".env*", "secrets/**", "credentials/**", "vault/**")
 # বাংলা: AGENT_RULES.md আর নেই — PR #1526 নিজেই ফাইলটি মুছে দিয়েছে (Single Door
 # SSOT এখন AGENTS.md)। তালিকায় মুছে-যাওয়া ফাইল রাখলে step_2_rules()/run_cycle()
 # fresh main-এ সবসময় exit 1 দেয় (missing_local + rev-parse দুই জায়গাতেই fail) —
@@ -103,14 +122,6 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
     if not issues:
         return None
 
-    EXCLUDED_LABELS = {
-        "status:claimed",
-        "status:in-progress",
-        "state:seq-hold",
-        "blocked-by-upstream",
-        "mirror:private",
-    }
-
     def label_names(item: dict[str, Any]) -> list[str]:
         labels = item.get("labels")
         if not isinstance(labels, list):
@@ -119,7 +130,7 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
 
     def is_claimable(item: dict[str, Any]) -> bool:
         names = label_names(item)
-        return not (EXCLUDED_LABELS & set(names))
+        return not (BOARD_EXCLUDED_LABELS & set(names))
 
     PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
 
@@ -351,6 +362,106 @@ def classify_task_role(
         return "coder"
     return "coder"
 
+def build_task_envelope(issue: dict[str, Any], group: str = "") -> dict[str, Any]:
+    """Build the canonical task-envelope-v1 payload (AGENT_LOOP_SPEC.md §2).
+
+    Consumers (both fail-closed):
+      - core/runner/agent_runner.py  (load_envelope / validate_envelope)
+      - scripts/agents/execution_bridge.py (REQUIRED_TASK_KEYS)
+
+    বাংলা: #1526 রিরাইট এই পেলোডটাকে ৩-ফিল্ডের task_contract স্টাবে নামিয়ে
+    দিয়েছিল — ফলে loop→runner→bridge মেশিন-পথ পুরো বিচ্ছিন্ন হয়ে গিয়েছিল
+    (ভুল টপ-লেভেল কী, --issue পতাকা নীরবে গিলে ফেলা, specialist_prompt /
+    submission / scope কিছুই নেই)। এই ফাংশন SSOT আকৃতি ফিরিয়ে আনে।
+    """
+    labels_raw = issue.get("labels") or []
+    labels = [
+        str(l.get("name", "")) if isinstance(l, dict) else str(l)
+        for l in labels_raw
+    ]
+    num = int(issue.get("number", 0) or 0)
+    title = str(issue.get("title", "")) or (f"issue-{num}" if num else "adhoc-task")
+    body = str(issue.get("body", ""))
+    prio = "P2"
+    for p in ("p0", "p1", "p2", "p3"):
+        if any(n == p or n.startswith(p + "-") or n.startswith(p + " ") for n in (x.lower() for x in labels)):
+            prio = p.upper()
+            break
+    role = classify_task_role(title, labels, body)
+    task_id = f"task-{num}" if num else "task-adhoc"
+    contract = build_task_contract(
+        task_id=task_id,
+        issue=num or None,
+        group=group or DEFAULT_GROUP,
+        priority=prio,
+        objective=title,
+    )["task_contract"]
+    prompt = (
+        f"You are the {role} specialist for {task_id} (group: {contract['group']}, "
+        f"priority: {prio}). Objective: {title}. Work strictly inside the declared "
+        "scope, follow the 4 Universal Invariants (AGENTS.md), declare your "
+        "touching_files on claim, and submit via bridge_submit_patch or a linked PR."
+    )
+    return {
+        "task_envelope": {
+            "envelope_version": 1,
+            "output_format": "task-envelope-v1",
+            "task_id": task_id,
+            "issue": str(num) if num else None,
+            "task_type": contract["task_type"],
+            "group": contract["group"],
+            "priority": contract["priority"],
+            "objective": title,
+            "problem_statement": {
+                "id": num,
+                "title": title,
+                "body": body,
+                "labels": labels,
+                "state": str(issue.get("state", "open")),
+            },
+            "role": role,
+            "role_policy": "contributor",
+            "role_description": ROLE_RULES.get(
+                role, "Execute role objectives strictly."
+            ),
+            "scope": {
+                "touching_files": ["<declare-on-claim>"],
+                "forbidden_paths": list(FORBIDDEN_SCOPE_PATHS),
+            },
+            "acceptance": [],
+            "verification": [
+                "python scripts/agents/continuous_agent_loop.py --verify-only"
+            ],
+            "required_evidence": ["reflection", "boot_smoke", "tests"],
+            "stop_conditions": [
+                "scope boundary violation",
+                "verified non-reproducible on live main (U3)",
+            ],
+            "admin_gate": {"required": False, "status": "NOT_REQUIRED"},
+            "specialist_prompt": prompt,
+            "submission": {
+                "pathway": "bridge_submit_patch | pull_request",
+                "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
+                "base_branch": "main",
+                "pr_title_prefix": "fix(open):",
+                "issue_reference_required": bool(num),
+                "branch_convention": (
+                    "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|"
+                    "hotfix|release|agent)/<slug> — enforced by pipeline.yml"
+                ),
+                "pr_body_template": (
+                    f"### Summary\nCloses #{num} — {title}\n\n"
+                    f"### Linked Issue / Claim\nCloses #{num}\n\n"
+                    "### Key Changes\n- <change>\n\n"
+                    "## Reflection Evidence (why + alternatives_rejected)\n"
+                    "- **why:** <rationale>\n"
+                    "- **alternatives_rejected:**\n  - <alternative>: rejected — <reason>\n\n"
+                    "### Rollback Path\n- [x] `git revert`-safe"
+                ),
+            },
+        }
+    }
+
 def load_cadence_config(path: Path | None = None) -> dict[str, Any]:
     target = path or CADENCE_FILE
     try:
@@ -527,7 +638,8 @@ def run_verify() -> list[dict[str, Any]]:
 
     for ev in evidence:
         print(f"[{ev['tier']}/8] {ev['name']}: {'PASS' if ev['passed'] else 'FAIL'}")
-    print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
+    # বাংলা: CONTRACT_VERSION লাইনটি main() চূড়ান্ত stdout লাইন হিসেবে একবারই
+    # ছাপে (SPEC §4b) — run_verify() ভেতরে আরেকবার ছাপা ছিল ডুপ্লিকেট নয়েজ।
     return evidence
 
 def main() -> int:
@@ -537,6 +649,8 @@ def main() -> int:
     parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim")
     parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim")
     parser.add_argument("--group", type=str, default="", help="Group override")
+    parser.add_argument("--issue", type=str, default="", help="Issue number for --task-envelope")
+    parser.add_argument("--allow-adhoc", action="store_true", help="Allow adhoc envelope without --issue")
     parser.add_argument("--loop", action="store_true", help="Run continuous loop")
     parser.add_argument("--offline", action="store_true", help="Run offline")
     args, _ = parser.parse_known_args()
@@ -547,29 +661,79 @@ def main() -> int:
         return 0
 
     if args.task_envelope or args.emit_prompt or args.emit_contract:
-        print(json.dumps({"task_contract": {"version": 1, "task_type": "IMPLEMENT"}}, indent=2))
-        return 0
+        if args.emit_prompt or args.emit_contract:
+            print(
+                "[deprecated] --emit-prompt/--emit-contract are shims for --task-envelope",
+                file=sys.stderr,
+            )
+        # বাংলা: SPEC §4b — envelope JSON stdout-এ, banner stderr-এ; যাতে
+        # `--task-envelope > env.json` পাইপে JSON নষ্ট না হয়।
+        print(COMMON_RULES, file=sys.stderr)
+        print("=" * 52, file=sys.stderr)
+        if args.issue:
+            g_code, g_out, _ = run_cmd(
+                ["gh", "issue", "view", str(args.issue), "--repo", UPSTREAM_REPO,
+                 "--json", "number,title,body,labels,state"]
+            )
+            if g_code != 0:
+                log("❌", f"[Envelope] issue #{args.issue} fetch failed (gh exit {g_code}) — board unavailable or issue not found.")
+                return 1
+            try:
+                target = json.loads(g_out) if g_out.strip() else None
+            except Exception:
+                target = None
+            if not isinstance(target, dict) or not target.get("number"):
+                log("❌", f"[Envelope] issue #{args.issue} could not be parsed from board.")
+                return 1
+            try:
+                payload = build_task_envelope(target, group=args.group)
+            except ValueError as exc:
+                log("❌", f"[Envelope] {exc}")
+                return 2
+            print(json.dumps(payload, indent=2))
+            return 0
+        if args.allow_adhoc:
+            try:
+                payload = build_task_envelope(
+                    {"number": 0, "title": "adhoc-task", "body": "", "labels": [], "state": "open"},
+                    group=args.group,
+                )
+            except ValueError as exc:
+                log("❌", f"[Envelope] {exc}")
+                return 2
+            print(json.dumps(payload, indent=2))
+            return 0
+        log("❌", "[Envelope] --issue <N> required (or --allow-adhoc).")
+        return 2
 
     cmd = ["gh", "issue", "list", "--json", "number,labels", "--state", "open", "--limit", "100"]
-    # বাংলা: main() এখানে run_cmd() বাইপাস করে সরাসরি subprocess.run() ডাকছিল —
-    # gh CLI অনুপস্থিত মেশিনে FileNotFoundError ছুঁড়ে পুরো লুপ crash করত
-    # (স্ট্যাকট্রেস সহ)। এখন সৎভাবে জানায় বোর্ড জিজ্ঞেস করা যায়নি, solver
-    # dispatch বাদ দিয়ে cadence পাথ চলতে থাকে — নীরব মিথ্যা "clean" নয়।
-    board_unavailable = False
-    try:
-        p = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
-        raw = json.loads(p.stdout) if p.returncode == 0 and p.stdout.strip() else []
-    except FileNotFoundError:
-        board_unavailable = True
-        raw = []
-    skip = {"status:claimed", "status:in-progress", "anchor-hub", "admin-only"}
-    unclaimed = [i for i in raw if not any(l.get("name") in skip for l in i.get("labels", []))]
+    # বাংলা: বোর্ড পড়া এখন run_cmd() দিয়ে — gh অনুপস্থিত হলে exit 127,
+    # crash নয়; solver dispatch বাদ দিয়ে cadence পাথ সৎভাবে চলতে থাকে।
+    # ফিল্টার এখন pick_next_issue()-এর সাথে একই BOARD_EXCLUDED_LABELS SSOT —
+    # mirror:private / state:seq-hold / blocked-by-upstream ইস্যুতে আর solver
+    # যাবে না (আগে সেগুলোতে পাঠানো হতো — agent দাবিই করতে পারত না)।
+    b_code, b_out, _ = run_cmd(cmd)
+    board_unavailable = b_code != 0
+    raw = []
+    if not board_unavailable and b_out.strip():
+        try:
+            raw = json.loads(b_out)
+        except Exception:
+            raw = []
+    unclaimed = [
+        i for i in raw
+        if isinstance(i, dict) and not any(
+            str(l.get("name", "")).lower() in BOARD_EXCLUDED_LABELS
+            for l in (i.get("labels") or [])
+            if isinstance(l, dict)
+        )
+    ]
 
     print(COMMON_RULES)
     print("=" * 52)
 
     if board_unavailable:
-        log("!", "gh CLI unavailable — cannot query the issue board; skipping solver dispatch. Cadence roles still evaluated.")
+        log("!", f"gh CLI unavailable (exit {b_code}) — cannot query the issue board; skipping solver dispatch. Cadence roles still evaluated.")
     elif unclaimed:
         print(f"ASSIGNED ROLE: solver (Unlimited concurrency allowed)\nROLE MANDATE: {ROLE_RULES['solver']}")
         print("ACTION: Unclaimed issues found. Apply 'status:claimed' label, pick an issue, and solve it.")
