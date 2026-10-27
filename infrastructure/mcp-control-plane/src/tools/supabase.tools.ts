@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getHealth, getAuthUsers, readTable } from "../adapters/supabase/index.js";
+import { getHealth, getAuthUsers, readTable, getDatabaseSchema } from "../adapters/supabase/index.js";
 
 
 export async function registerSupabaseTools(server: McpServer): Promise<void> {
@@ -70,5 +70,31 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
       }
     }
   );
-}
+  // supabase.schema_inspect (safe/public) - read-only schema discovery
+  const registerSchemaInspect = (toolName: string) => {
+    server.tool(
+      toolName,
+      "Inspect Supabase database schema (tables and columns) read-only.",
+      {
+        accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
+        table: z.string().optional().describe("Optional table name; omit to list all tables"),
+      },
+      async ({ accountId, table }) => {
+        try {
+          const data = await getDatabaseSchema(accountId, table);
+          return {
+            content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+          };
+        } catch (err) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
+          };
+        }
+      }
+    );
+  };
 
+  registerSchemaInspect("supabase.schema_inspect");
+  registerSchemaInspect("db.schema_inspect");
+}

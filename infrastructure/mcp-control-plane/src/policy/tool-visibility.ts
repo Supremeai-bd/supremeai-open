@@ -95,6 +95,8 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
   // supabase (read)
   "supabase_read_table",
   "supabase_health",
+  "supabase_schema_inspect",
+  "db_schema_inspect",
   // redis (read)
   "redis_ping",
   "redis_read_key",
