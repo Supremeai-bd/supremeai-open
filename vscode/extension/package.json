@@ -4,7 +4,7 @@
   "description": "Developer workflow bridge and live federation runway telemetry for SupremeAI autonomous agents",
   "version": "0.1.0",
   "publisher": "supremeai",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/Supremeai-bd/supremeai-vscode.git"
