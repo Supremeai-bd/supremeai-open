@@ -26,8 +26,10 @@ _GATEWAY_DIR = next(
     None,
 )
 if _GATEWAY_DIR is not None:
-    if str(_GATEWAY_DIR) not in sys.path:
-        sys.path.insert(0, str(_GATEWAY_DIR))
+    # Repo root ONLY (tests/conftest.py also does this). Never insert the
+    # gateway/ package dir itself: it forks gateway.service.* into duplicate
+    # module objects (split-brain singletons — drift class F-K, order-dependent
+    # suite failures). The laddered imports below fall back to gateway.* forms.
     if str(_GATEWAY_DIR.parent) not in sys.path:
         sys.path.insert(0, str(_GATEWAY_DIR.parent))
 
