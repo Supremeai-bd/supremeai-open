@@ -4,9 +4,10 @@ Layer-2 unified provider gateway per api-schemas/gateway.openapi.yaml:
 - One SUPREMEAI_API_KEY consumer credential (X-SupremeAI-Key header);
   provider credentials never leave the server side (OpenAPI §security).
 - Routing policy is config-driven (``routing_policy.json``), validated
-  fail-closed at startup: closed provider enum (the 7-provider SSOT from
-  api-schemas/task-router.schema.json / provider-registry.schema.json),
-  non-empty ordered chains, positive rate-limit numbers. Unknown providers,
+  fail-closed at startup: closed provider enum (gateway-plane superset of
+  the agent router's task-router.schema.json enum — its 7 schema providers
+  plus the gateway-only ``web`` and ``perplexity`` drivers), non-empty
+  ordered chains, positive rate-limit numbers. Unknown providers,
   empty chains, or negative limits REJECT the config — the gateway refuses
   to boot on drift (fail-closed doctrine, mirrors #330's config gate).
 
@@ -38,8 +39,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# Provider SSOT — closed enum byte-matched to api-schemas/task-router.schema.json
-# (providerId pattern SSOT'd in provider-registry.schema.json).
+# Gateway-plane provider enum (fail-closed). SUPERSET of the agent router's
+# task-router.schema.json enum (the 7 schema providers also mirrored in
+# scripts/agents/dynamic_router.py): "web" and "perplexity" are gateway-only
+# providers with live drivers under gateway/service/providers/ (web_session.py,
+# adapters.py PROVIDER_CONFIGS/PROVIDER_MODEL_CASCADES) and hops in the shipped
+# routing_policy.json. When the runtime grows a driver, extend THIS enum in the
+# same change — a validator copy that lags the runtime makes load_config()
+# refuse the repo's own policy (drift class F-J: perplexity hop crashed the
+# gateway boot, caught by tests/test_gateway_foundation.py, fixed 2026-10-28).
 ALLOWED_PROVIDERS: frozenset[str] = frozenset(
     {
         "openai",
@@ -50,6 +58,7 @@ ALLOWED_PROVIDERS: frozenset[str] = frozenset(
         "mistral",
         "deepseek",
         "web",
+        "perplexity",
     }
 )
 
