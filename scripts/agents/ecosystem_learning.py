@@ -5,7 +5,7 @@ Ecosystem Learning Loop (#3187).
 Captures structured traces for agent runs, scores selected traces,
 and persists evidence/decision rationale for future improvement.
 
-Design (AGENT_RULES.md P1 — Simple + Effective):
+Design (Law of Minimal Elegance — FEDERATION_CHARTER.md):
   - Trace format: JSONL in docs/master_docs/AGENT_TRACES.jsonl
   - Each trace = agent_run, decision, tool_call, outcome
   - Evaluation: simple rubric (success/fail/partial + reason)
