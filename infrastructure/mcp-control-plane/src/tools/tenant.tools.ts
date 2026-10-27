@@ -162,4 +162,4 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
       }
     }
   );
-}
+}
