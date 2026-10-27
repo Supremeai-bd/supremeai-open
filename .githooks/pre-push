@@ -284,4 +284,18 @@ for line in $updates; do
 done
 IFS="$OIFS"
 
+# 6. Ruff strict name/syntax check (Federation CI Parity) on gateway/ and core/.
+if command -v ruff >/dev/null 2>&1; then
+    for d in gateway core; do
+        if [ -d "$d" ]; then
+            if ! ruff check "$d" --select=E9,F63,F7,F82; then
+                reject "ruff check failed on $d/ (Federation CI Parity)" \
+                    "Undefined names / syntax errors would break supremeai-api CI on dispatch." \
+                    "Fix the reported ruff errors before pushing." \
+                    "Deliberate admin bypass: git push --no-verify."
+            fi
+        fi
+    done
+fi
+
 exit 0

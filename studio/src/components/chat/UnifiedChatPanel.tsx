@@ -10,6 +10,7 @@ import { ChatDockBar, type DockAction, type DockApp } from './ChatDockBar';
 // SATISFACTION PULSE (P2, 2026-10-25 report §7/Table 8): opt-in one-question
 // CSAT micro-survey; admin embeds that omit the prop stay pixel-identical.
 import { SatisfactionPulse } from '../feedback/SatisfactionPulse';
+import { useSmartVoice } from '../../hooks/useSmartVoice';
 
 // UNIFIED CHAT (Phase 1, 2026-10-24): the chat core (engine + panel UI) was
 // extracted from src/pages/PublicPages.tsx so guest, user and admin
@@ -519,11 +520,28 @@ export function UnifiedChatPanel({
   const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
   const [busy, setBusy] = React.useState(false);
   const [awaitingFirst, setAwaitingFirst] = React.useState(false);
+  // CHAT MODE (2-type separation): 'standard' = plain AI chat (no Jarvis intents/avatar);
+  // 'jarvis' = system copilot with intent router + hologram avatar + voice-first UX.
+  const [chatMode, setChatMode] = React.useState<'standard' | 'jarvis'>('standard');
+  // SMART VOICE (unified chat & voice): Web Speech STT + browser TTS.
+  const voice = useSmartVoice((text) => {
+    voiceInitiatedRef.current = true;
+    setInput(text);
+    setTimeout(() => { void send(text); }, 50);
+  });
+
+  // Live STT: render spoken words into the composer while listening.
+  React.useEffect(() => {
+    if (voice.isListening && voice.transcript) {
+      setInput(voice.transcript);
+    }
+  }, [voice.isListening, voice.transcript]);
   // HIGH DEMAND AUTO-RETRY state: while set, the surge screen is visible and
   // the countdown effect owns the automatic retry. The ref mirrors the attempt
   // count for the failure path (the state is cleared while a retry runs).
   const [demandRetry, setDemandRetry] = React.useState<{ prompt: string; attempt: number; nextIn: number; windowSeconds: number } | null>(null);
   const demandRetryRef = React.useRef(0);
+  const voiceInitiatedRef = React.useRef(false);
   const [conversationId, setConversationId] = React.useState<string>(() => {
     if (initialConversationId) {
       if (typeof localStorage !== 'undefined') {
@@ -614,6 +632,8 @@ export function UnifiedChatPanel({
   async function send(overrideText?: string, isRetry = false) {
     const text = (overrideText ?? input).trim();
     if (!text || busy) return;
+    const wasVoice = voiceInitiatedRef.current;
+    voiceInitiatedRef.current = false;
     if (!isRetry) {
       // A fresh (human-initiated) send clears the composer; an automatic
       // high-demand retry must NOT wipe whatever the user is typing.
@@ -641,16 +661,19 @@ export function UnifiedChatPanel({
       // zero-quota commands (/help /status /remember /recall /forget /todo
       // /remind /search) resolve instantly without hitting the AI relay —
       // free-tier friendly and they work offline. Anything unmatched falls
-      // through to the normal relay path below.
-      try {
-        const jarvis = await tryHandleIntent(text);
-        if (jarvis) {
-          setAwaitingFirst(false);
-          dismissDemandScreen();
+      // through to the normal relay path below. Only active in JARVIS mode.
+      if (chatMode === 'jarvis') {
+        try {
+          const jarvis = await tryHandleIntent(text);
+          if (jarvis) {
+            setAwaitingFirst(false);
+            dismissDemandScreen();
           setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: jarvis.text, via: jarvis.via }]);
+          if (wasVoice && !voice.isMuted) voice.speak(jarvis.text);
           return;
-        }
-      } catch { /* a misfiring local command must never break the chat */ }
+          }
+        } catch { /* a misfiring local command must never break the chat */ }
+      }
       if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch (e) { void e; } }
       let activeConvId = conversationId;
       if (!activeConvId) {
@@ -691,6 +714,7 @@ export function UnifiedChatPanel({
       }
       dismissDemandScreen();
       setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
+      if (wasVoice && !voice.isMuted) voice.speak(reply.text);
     } catch {
       setAwaitingFirst(false);
       if (stopRequestedRef.current) {
@@ -775,6 +799,25 @@ export function UnifiedChatPanel({
 
   return <section className={`relative mx-auto flex w-full ${fit === 'fill' ? 'h-full min-h-0' : 'flex-1 min-h-0'} flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md overflow-hidden ${className}`}>
     <div className="mx-auto flex w-full max-w-[46rem] items-center gap-2">
+      {/* 2-TYPE CHAT SEPARATION (standard AI chat vs JARVIS system copilot) */}
+      <div className="flex shrink-0 items-center rounded-lg border border-white/10 bg-slate-900/60 p-0.5 text-xs font-mono">
+        <button
+          type="button"
+          onClick={() => setChatMode('standard')}
+          className={`rounded-md px-2.5 py-1.5 transition ${chatMode === 'standard' ? 'bg-white/10 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`}
+          title="Standard AI chat — content, coding, research"
+        >
+          💬 Chat
+        </button>
+        <button
+          type="button"
+          onClick={() => setChatMode('jarvis')}
+          className={`rounded-md px-2.5 py-1.5 transition ${chatMode === 'jarvis' ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-400 hover:text-slate-200'}`}
+          title="JARVIS copilot — system commands, voice, automation"
+        >
+          ⚡ JARVIS
+        </button>
+      </div>
       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
         {chatModels.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
       </select>
@@ -783,7 +826,7 @@ export function UnifiedChatPanel({
           male/female variant persisted per customer preference. Zero runtime AI cost.
           RC-3 (report §6.4): when the dock is shown, the orb lives in the dock's
           left slot instead of the model row (one Jarvis, in the docked bar). */}
-      {!showDock && <JarvisAvatar busy={busy} />}
+      {!showDock && chatMode === 'jarvis' && <JarvisAvatar busy={busy} />}
       {messages.length > 0 && (
         <button
           type="button"
@@ -851,11 +894,28 @@ export function UnifiedChatPanel({
         onChange={(e) => handleInputChange(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
         rows={2}
-        placeholder="Ask SupremeAI…"
+        placeholder={chatMode === 'jarvis' ? 'Command JARVIS…' : 'Ask SupremeAI…'}
         aria-label="Message SupremeAI"
         data-testid="chat-input"
         className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50"
       />
+      <button
+        type="button"
+        onClick={voice.toggleListening}
+        disabled={!voice.micAvailable}
+        aria-label={voice.isListening ? 'Stop listening' : 'Start voice input'}
+        className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${voice.isListening ? 'border-red-400/60 bg-red-500/20 text-red-200 animate-pulse' : 'border-white/10 bg-slate-900/80 text-slate-300 hover:border-cyan-400/40 hover:text-white'} disabled:opacity-40`}
+      >
+        {voice.isListening ? '🎙️' : '🎤'}
+      </button>
+      <button
+        type="button"
+        onClick={voice.toggleMute}
+        aria-label={voice.isMuted ? 'Unmute voice replies' : 'Mute voice replies'}
+        className="rounded-xl border border-white/10 bg-slate-900/80 px-2.5 py-2 text-sm text-slate-300 transition hover:text-white"
+      >
+        {voice.isMuted ? '🔇' : '🔊'}
+      </button>
       <button
         type="button"
         onClick={() => { void send(); }}
@@ -885,7 +945,7 @@ export function UnifiedChatPanel({
         moves and the dock can never cover it. */}
     {showDock && (
       <ChatDockBar
-        left={<JarvisAvatar busy={busy} compact />}
+        left={chatMode === 'jarvis' ? <JarvisAvatar busy={busy} compact /> : undefined}
         actions={dockActions}
         apps={dockApps}
       />

@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import py_compile
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
     if targets is None:
         scan_paths = [
             REPO_ROOT / "core",
+            REPO_ROOT / "gateway",
             REPO_ROOT / "api",
             REPO_ROOT / "agents",
             REPO_ROOT / "skills",
@@ -89,6 +91,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
     py_count = 0
     json_count = 0
     yaml_count = 0
+    python_files: list[Path] = []
 
     for file_path in files_to_check:
         ext = file_path.suffix.lower()
@@ -96,6 +99,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
         # 1. Python Syntax
         if ext == ".py":
             py_count += 1
+            python_files.append(file_path)
             try:
                 py_compile.compile(str(file_path), doraise=True)
             except py_compile.PyCompileError as e:
@@ -125,6 +129,20 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
                     f"YAML Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}"
                 )
 
+    # Ruff strict name/syntax check (mirrors satellite CI: E9,F63,F7,F82)
+    ruff_dirs = [d for d in (REPO_ROOT / "gateway", REPO_ROOT / "core") if d.is_dir()]
+    if ruff_dirs:
+        try:
+            result = subprocess.run(
+                ["ruff", "check", "--select=E9,F63,F7,F82"] + [str(d) for d in ruff_dirs],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                for line in (result.stdout + result.stderr).strip().splitlines()[:50]:
+                    errors.append(f"Ruff: {line}")
+        except FileNotFoundError as exc:
+            print(f"[Step 1: Syntax & Lint] INFO: ruff not installed ({exc!r}); skipping ruff check.")
     passed = len(errors) == 0
     print(
         f"[Step 1: Syntax & Lint] Checked: {py_count} Python, {json_count} JSON, {yaml_count} YAML files."
