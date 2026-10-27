@@ -14,7 +14,7 @@ walked end-to-end with nothing but a clone and Python 3.
 | File | Why |
 |------|-----|
 | [`AGENTS.md`](../AGENTS.md) | The three-pathway access model (MCP Tower / fork+PR / JIT lease) and the current board of open work |
-| [`AGENT_RULES.md`](../AGENT_RULES.md) | U-rules (evidence-first, reproduce-first, sibling sweeps) and P-rules (root-cause fixes, defect-class prevention) that govern every change |
+| [`docs/AGENT_LOOP_SPEC.md`](../docs/AGENT_LOOP_SPEC.md) | task-envelope-v1 contract, 8-tier verification, and the evidence-first doctrine that governs every change |
 
 Every reviewer — and every automated gate — assumes you have read them. The
 short version:
@@ -34,7 +34,7 @@ docs/                                     # Documentation (this file lives here)
 .github/actions/                          # Reusable composite actions (setup-node-tower, gitleaks-scan — #155)
 .github/workflows/pipeline.yml            # Unified validation: guards -> Python 3.10-3.13 matrix + Tower TS + secret scan + agent-loop cron
 .github/workflows/landing.yml             # Unified autonomous landing: auto-merge -> bridge dispatch in the same run
-AGENTS.md, AGENT_RULES.md                 # Governance contracts (see §1)
+AGENTS.md                                  # Governance contract — Single Door SSOT (see §1)
 README.md                                 # What this repo is and is not
 ```
 
@@ -177,7 +177,7 @@ packages. The boundary is machine-enforced: `boundary_sanitization_guard.py`
 (pipeline.yml guard job) fail-closes on proprietary paths/content, and gitleaks
 fail-closes on credentials.
 
-**Zero-duplicate rule (AGENT_RULES.md U4):** because your merged public PR
+**Zero-duplicate rule (federation doctrine — ECOSYSTEM_MAP.md):** because your merged public PR
 flows into the private repo automatically, **never open a duplicate manual PR
 on `Supremeai-bd/supremeai`** for work handled here. One issue = at most one
 open PR, anywhere in the federation.
