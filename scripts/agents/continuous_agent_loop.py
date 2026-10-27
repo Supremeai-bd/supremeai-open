@@ -9,8 +9,6 @@ Traffic-police logic:
 3. If no open issues exist -> Reset/zero cadence timers so scheduled roles can run immediately.
 4. Scheduled roles -> Exactly 1 agent at a time per role (active lock / immediate state advance).
 5. Problematic/stuck issues -> Agents autonomously decide and handle them.
-6. --loop: the wheel keeps turning in-process — after finishing one task the
-   dispatch cycle reruns (no sleep-until-cron; interval via --loop-interval).
 """
 from __future__ import annotations
 import argparse, json, os, re, subprocess, sys, time
@@ -694,17 +692,53 @@ def run_verify() -> list[dict[str, Any]]:
     print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
     return evidence
 
-def run_dispatch_cycle(args: argparse.Namespace) -> int:
-    """One dispatch cycle: board query → solver/envelope dispatch or cadence role.
+def main() -> int:
+    parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
+    parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
+    parser.add_argument("--task-envelope", action="store_true", help="Emit the canonical task-envelope-v1 JSON (SPEC §2)")
+    parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim for --task-envelope")
+    parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim for --task-envelope")
+    parser.add_argument("--group", type=str, default="", help="Group override (fail-closed against VALID_GROUPS, exit 2)")
+    parser.add_argument("--loop", action="store_true", help="Run continuous loop")
+    parser.add_argument("--offline", action="store_true", help="Run offline (board query honestly skipped)")
+    # বাংলা: SPEC §4b-র shared dispatch flags — pipeline.yml-এর agent-loop জব
+    # বাস্তবেই `--pick-next` (ও workflow_dispatch-এ `--auto-pr`) পাস করে, কিন্তু
+    # আগের argparse-এ ফ্ল্যাগগুলোই ছিল না; parse_known_args() সেগুলো নীরবে গিলে
+    # ফেলত — প্রোডাকশনের স্পষ্ট নির্দেশ অগণিত হয়ে যেত। এখন প্রতিটি শেয়ার্ড ফ্ল্যাগ
+    # সংজ্ঞায়িত ও সম্মানিত (U2: silent-ignore নয়)।
+    parser.add_argument("--pick-next", action="store_true", help="Shared flag (SPEC §4b): pick highest-priority claimable issue (default dispatch behavior)")
+    parser.add_argument("--issue", type=str, default="", help="Target a specific issue number for the task envelope")
+    parser.add_argument("--role", type=str, default="", help="Role override (validated against ROLE_RULES + specialist classes, honest fallback)")
+    parser.add_argument("--max-tasks", dest="max_tasks", type=int, default=1, help="Max tasks per invocation (minimal loop honors 1; >1 gets an honest stderr note)")
+    parser.add_argument("--allow-adhoc", dest="allow_adhoc", action="store_true", help="Emit an ad-hoc envelope when no claimable issue exists")
+    parser.add_argument("--auto-pr", action="store_true", help="Accepted for pipeline parity (#89); the minimal loop itself opens no PR")
+    args, _ = parser.parse_known_args()
 
-    বাংলা: এই বডিটি আগে main()-এর ছিল — হুবহু তোলা, তাই একক সাইকেলের
-    stdout/stderr আগের মতোই (zero dispatch change, #1530 শৃঙ্খলা)। পার্থক্য
-    দুটি: (১) পুরানো নীরব --loop no-op নোট বাদ — অপারেটরের সরাসরি নির্দেশে
-    (2026-10-28) --loop এখন run_continuous_loop()-এ সত্যিই ঘোরায়: একটি কাজ
-    শেষ হলে প্রসেস ঘুমিয়ে যায় না, নির্দিষ্ট বিরতিতে সাইকেল নতুন করে চলে;
-    (২) --max-tasks নোট দুটি main()-এ উঠে গেছে — লুপে প্রতি সাইকেলে
-    পুনরাবৃত্ত নয়, একবারই সৎ ঘোষণা।
-    """
+    # বাংলা: SPEC §3/§4 — --group ব্যর্থ-বদ্ধ (fail-closed): রেজিস্ট্রির বাইরের
+    # group মানে exit 2, অবৈধ কাজ কখনো private CI-তে পৌঁছাবে না। আগে মানটি
+    # গ্রহণ করেও কোথাও ব্যবহৃত হতই না — নীরব no-op ছিল।
+    if args.group and args.group not in VALID_GROUPS:
+        log("❌", f"--group '{args.group}' is not in the VALID_GROUPS registry {sorted(VALID_GROUPS)} (SPEC §3 fail-closed)")
+        return 2
+
+    if args.verify_only:
+        # বাংলা: run_verify()-এর ফল আগে ফেলে দেওয়া হত — টিয়ার FAIL হলেও
+        # exit 0 + মার্কার প্রিন্ট হত, অর্থাৎ যাচাই ছিল fail-open (U2 লঙ্ঘন;
+        # আগের r3.1 ফিক্সের রিগ্রেশন)। SPEC §4b অনুযায়ী মার্কার লাইনটি
+        # exit-code-independent — সেটি run_verify() নিজেই stdout-এর শেষ
+        # লাইনে এমিট করে, তাই main()-এর ডুপ্লিকেট প্রিন্ট বাদ। এখন সৎ exit
+        # কোড: যেকোনো টিয়ার ব্যর্থ হলে stderr-এ কারণসহ exit 1 (fail-closed)।
+        evidence = run_verify()
+        failed = [ev for ev in evidence if not ev.get("passed")]
+        if failed:
+            print(
+                "verification FAILED: "
+                + ", ".join(f"tier {ev['tier']} ({ev['name']})" for ev in failed),
+                file=sys.stderr,
+            )
+            return 1
+        return 0
+
     cmd = [
         "gh", "issue", "list",
         "--repo", UPSTREAM_REPO,
@@ -807,6 +841,18 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
     print(COMMON_RULES)
     print("=" * 52)
 
+    if args.loop:
+        # বাংলা: --loop flag টি SPEC §4b-র shared flag surface-এ আছে কিন্তু এই
+        # minimal লুপে এটি in-process লুপ চালায় না — invocation প্রতি এক সাইকেল।
+        # চাকাটি ঘোরায় বাইরের scheduler/workflow। আগে এটি নীরবে এক-cycle আচরণ
+        # করত — U2 সৎতায় এখন stderr-এ সেটা স্পষ্ট বলে দেয় (stdout অপরিবর্তিত,
+        # যাতে বিদ্যমান automation ভাঙে না)।
+        print(
+            "--loop: contract-parity flag — this minimal loop runs ONE dispatch "
+            "cycle per invocation; the calling scheduler/workflow is the outer "
+            "loop driver (SPEC §4b).",
+            file=sys.stderr,
+        )
     if args.auto_pr:
         # বাংলা: pipeline.yml workflow_dispatch --auto-pr পাঠায় (#89)। minimal
         # লুপ নিজে PR খোলে না — সৎ stderr নোট, stdout অপরিবর্তিত।
@@ -815,6 +861,16 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             "auto_bridge_pr_opener.py owns PR opening in the workflow.",
             file=sys.stderr,
         )
+    if args.max_tasks is not None and args.max_tasks <= 0:
+        print("--max-tasks <= 0: dispatch suppressed by caller.", file=sys.stderr)
+        return 0
+    if args.max_tasks is not None and args.max_tasks > 1:
+        print(
+            "--max-tasks > 1: this minimal loop dispatches exactly ONE task per "
+            "invocation (the scheduler is the outer loop); honoring 1.",
+            file=sys.stderr,
+        )
+
     if board_unavailable:
         log("!", f"issue board unavailable ({board_error}) — skipping solver dispatch. Cadence roles still evaluated.")
     else:
@@ -871,97 +927,6 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
 
     print("ACTION: System is clean and up to date.")
     return 0
-
-def run_continuous_loop(args: argparse.Namespace) -> int:
-    """বাংলা: --loop = চাকা ঘুমাবে না (অপারেটর নির্দেশ, 2026-10-28)।
-
-    আগে --loop ছিল নীরব no-op — এক সাইকেলেই প্রসেস exit করত, "বাইরের
-    scheduler-ই আসল লুপ" বলে। ফলে একটি কাজ শেষ করেই এজেন্ট ঘুমিয়ে
-    পড়ত। এখন: প্রতিটি সাইকেলে বোর্ড নতুন করে পড়ে — একটি কাজ শেষ হলে
-    --loop-interval সেকেন্ড পরে নতুন সাইকেল (ডিফল্ট ৩০০s, ন্যূনতম ১s —
-    busy-spin নিষেধ); বোর্ড খালি হলে cadence রোল স্বয়ংক্রিয় সক্রিয় (নিয়ম ৩),
-    তাই চাকা কখনো অলস থাকে না। --max-cycles N = N সাইকেল পরে সৎ বন্ধ
-    (CI/টেস্ট); Ctrl+C = পরিষ্কার বন্ধ (exit 0)। একটি সাইকেলের অপ্রত্যাশিত
-    ব্যর্থতা চাকা বন্ধ করে না — সৎ stderr লগের পর নির্দিষ্ট বিরতিতে পরের
-    সাইকেল চলে (crash-resilient wheel)।
-    """
-    interval = max(1, int(getattr(args, "loop_interval", 300) or 0))
-    max_cycles = max(0, int(getattr(args, "max_cycles", 0) or 0))
-    log("*", f"continuous loop engaged: dispatch cycle runs immediately, then reruns every {interval}s (max_cycles={'unlimited' if max_cycles == 0 else max_cycles}; Ctrl+C stops cleanly).")
-    cycles = 0
-    failed_cycles = 0
-    try:
-        while True:
-            cycles += 1
-            try:
-                run_dispatch_cycle(args)
-            except Exception as exc:
-                # বাংলা: একটি খারাপ সাইকেল পুরো চাকা মেরে দিতে পারে না —
-                # অপারেটরের নির্দেশ (2026-10-28): চাকা কখনো অলস থাকবে না।
-                # অপ্রত্যাশিত exception-এ সাইকেলটি সৎভাবে stderr-এ লগ হয় এবং
-                # নির্দিষ্ট বিরতি পরে পরের সাইকেল চলে। এটি নীরব গিলে-ফেলা নয়
-                # (U2): প্রতিটি ব্যর্থতা type+message সহ রিপোর্ট হয় এবং গণনা
-                # ধরে রাখা হয়, শেষ বন্ধ-বার্তায় জানানো হয়। KeyboardInterrupt
-                # Exception-এর বাইরে — সেটি ব্যবহারকারীর বন্ধ করার ইচ্ছা,
-                # নিচের হ্যান্ডলারেই পরিষ্কারভাবে যায়।
-                failed_cycles += 1
-                log("!", f"dispatch cycle {cycles} crashed: {type(exc).__name__}: {exc} — wheel keeps turning; next cycle after {interval}s.")
-            if max_cycles and cycles >= max_cycles:
-                log("*", f"continuous loop finished {cycles} cycle(s) (--max-cycles reached; {failed_cycles} crashed).")
-                return 0
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        log("*", f"continuous loop stopped cleanly after {cycles} cycle(s) ({failed_cycles} crashed) — restart anytime; the wheel never sleeps on its own.")
-        return 0
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
-    parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
-    parser.add_argument("--task-envelope", action="store_true", help="Emit the canonical task-envelope-v1 JSON (SPEC §2)")
-    parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim for --task-envelope")
-    parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim for --task-envelope")
-    parser.add_argument("--group", type=str, default="", help="Group override (fail-closed against VALID_GROUPS, exit 2)")
-    parser.add_argument("--loop", action="store_true", help="Run the dispatch cycle continuously in-process: after finishing one task the cycle reruns — no sleep-until-cron (interval --loop-interval, cap --max-cycles)")
-    parser.add_argument("--offline", action="store_true", help="Run offline (board query honestly skipped)")
-    parser.add_argument("--pick-next", action="store_true", help="Shared flag (SPEC §4b): pick highest-priority claimable issue (default dispatch behavior)")
-    parser.add_argument("--issue", type=str, default="", help="Target a specific issue number for the task envelope")
-    parser.add_argument("--role", type=str, default="", help="Role override (validated against ROLE_RULES + specialist classes, honest fallback)")
-    parser.add_argument("--max-tasks", dest="max_tasks", type=int, default=1, help="Max tasks per dispatch cycle (minimal loop honors 1; >1 gets an honest stderr note)")
-    parser.add_argument("--loop-interval", dest="loop_interval", type=int, default=300, help="Seconds between --loop dispatch cycles (default 300, minimum 1)")
-    parser.add_argument("--max-cycles", dest="max_cycles", type=int, default=0, help="Stop --loop after N cycles (0 = unlimited; CI/test-friendly cap)")
-    parser.add_argument("--allow-adhoc", dest="allow_adhoc", action="store_true", help="Emit an ad-hoc envelope when no claimable issue exists")
-    parser.add_argument("--auto-pr", action="store_true", help="Accepted for pipeline parity (#89); the minimal loop itself opens no PR")
-    args, _ = parser.parse_known_args()
-
-    if args.group and args.group not in VALID_GROUPS:
-        log("❌", f"--group '{args.group}' is not in the VALID_GROUPS registry {sorted(VALID_GROUPS)} (SPEC §3 fail-closed)")
-        return 2
-
-    if args.verify_only:
-        evidence = run_verify()
-        failed = [ev for ev in evidence if not ev.get("passed")]
-        if failed:
-            print(
-                "verification FAILED: "
-                + ", ".join(f"tier {ev['tier']} ({ev['name']})" for ev in failed),
-                file=sys.stderr,
-            )
-            return 1
-        return 0
-
-    if args.max_tasks is not None and args.max_tasks <= 0:
-        print("--max-tasks <= 0: dispatch suppressed by caller.", file=sys.stderr)
-        return 0
-    if args.max_tasks is not None and args.max_tasks > 1:
-        print(
-            "--max-tasks > 1: this loop dispatches exactly ONE task per cycle "
-            "(--loop reruns the whole cycle); honoring 1.",
-            file=sys.stderr,
-        )
-
-    if args.loop:
-        return run_continuous_loop(args)
-    return run_dispatch_cycle(args)
 
 if __name__ == "__main__":
     sys.exit(main())

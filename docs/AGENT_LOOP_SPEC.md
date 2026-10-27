@@ -27,11 +27,11 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
     "task_id":   "task-63",
     "issue":     "63",
     "task_type": "IMPLEMENT",          // VALID_TASK_TYPES
-    "group":     "core",               // VALID_GROUPS registry — fail-closed
+    "group":     "core",              // VALID_GROUPS registry (§3) — fail-closed (exit 2)
     "priority":  "P2",                 // P0..P3
     "objective": "…",
     "problem_statement": { "id", "title", "body", "labels", "state" },
-    "role": "coder",                   // one of the 7 specialist roles
+    "role": "coder",                   // role surface: coder/ci-fixer/task-auditor specialists + ROLE_RULES scheduled roles
     "role_policy": "contributor",
     "role_description": "…",
     "scope": {
@@ -60,40 +60,44 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
 ## 3. Group taxonomy — `VALID_GROUPS` (fail-closed)
 
 Agents **cannot** invent arbitrary group names. An unlisted group raises
-`ValueError` inside `build_task_contract()`, and an unregistered `--group`
-CLI flag exits 2 at the boundary before any dispatch — invalid work never
-reaches private CI. The registry below is byte-matched to the code's
-`VALID_GROUPS` frozenset (9 names).
+`ValueError` inside `build_task_contract()`, and the `--group` CLI flag fails
+closed with **exit 2** in `main()` (SPEC §3/§4b) — invalid work never reaches
+private CI. This table mirrors the code's `VALID_GROUPS` frozenset byte-for-byte;
+the code is the enforcement SSOT, so keep this table in sync when it changes.
 
-| Group | Domain (descriptive — code enforces membership only) |
-|-------|--------------------------------------------------------|
-| `browser` | browser automation surface, web-agent runtime, extensions |
-| `core` | core engine business logic, state machines, models (default group) |
-| `docs` | documentation, SPECs, work-order records |
-| `federation` | cross-tenant federation orchestration and protocols |
-| `gateway` | API gateway routing, ingress, rate limiting |
-| `infra` | CI actions, deployment configs, cloud runtime configurations |
-| `marketplace` | plugin registry, one-click BYO connect flow |
-| `studio` | Studio frontend, console UX, user pages |
-| `vscode` | VS Code extension surface |
+| Group | Domain |
+|-------|--------|
+| `core` | core federation business logic, state machines, models |
+| `gateway` | API endpoints, routing, provider failover |
+| `studio` | studio frontend pages, hooks, UI components |
+| `vscode` | vscode extension satellite |
+| `browser` | browser automation satellite |
+| `docs` | documentation, workorders, guides |
+| `infra` | deployment configs, CI actions, cloud runtime configurations |
+| `marketplace` | mcp_plugins registry, BYO connect flow |
+| `federation` | cross-repo/federation orchestration |
 
-**Resolution order (deterministic):**
-1. Explicit `--group <name>` CLI flag — fail-closed: unregistered name exits 2.
-2. `_detect_group()` sorted label scan — the first issue label that is a
-   registry member wins (labels only; the minimal loop does no body scan).
-3. Default: `DEFAULT_GROUP` = `core`.
+**Resolution order (deterministic, `_detect_group()` + `main()`):**
+1. `--group <name>` CLI flag (must be in registry, else exit 2)
+2. Issue label scan (first registry match in sorted label order; body is not scanned)
+3. Default: `core` (`DEFAULT_GROUP`)
 
-`.github/ISSUE_TEMPLATE/agent-task.yml` carries the `task_group` dropdown that
-must track this registry — keep the two in sync when the taxonomy changes.
+> Taxonomy note: `.github/ISSUE_TEMPLATE/agent-task.yml`'s `sub_group` dropdown
+> routes with a broader governance vocabulary (`agent-orchestration`,
+> `mcp-tower`, `core-engine`, `security`, `ci`, `governance`, `frontend-ui`,
+> `telemetry`) that predates the dispatch registry. Reconciling that dropdown
+> with `VALID_GROUPS` is an admin taxonomy decision (`.github/` is a protected
+> path); until then, only the registry above is accepted by `--group` and
+> `build_task_contract()`.
 
-**Relationship to `AGENTS.md` (Single Door SSOT):** the constitution is
-`AGENTS.md` — the Single Door SSOT (the former `AGENT_RULES.md` was deleted by
-#1526; citing it is a dangling reference). It defines the 4 Universal
-Invariants and the Single Door execution surface — it defines no group
-taxonomy. The execution registry below is the authoritative group surface for
-dispatch; no constitutional section substitutes for a registry group. Changing
-the taxonomy means changing the code's `VALID_GROUPS` first, then this table
-and the issue-template dropdown in the same change.
+**Relationship to the constitution (Single Door SSOT):** the universal rules live
+in `AGENTS.md` — the Single Door constitution since #1526 deleted
+`AGENT_RULES.md` (older revisions of this section pointed at the deleted file,
+which is the same dangling-SSOT defect class fixed for the freshness gate in
+#1530). Constitutional sections define governance; the execution registry above
+is the authoritative group surface for dispatch. Changing the registry is a code
+change to `VALID_GROUPS` in `scripts/agents/continuous_agent_loop.py` first,
+then ported to the private mirror via a bridge work order (§4b port rule).
 
 ## 4. CLI surface after #63
 
@@ -135,9 +139,9 @@ parity contract:
    |------|-------|-----------|
    | `--task-envelope` | shared (canonical) | unified envelope JSON on stdout, banner → stderr |
    | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
-   | `--auto-pr` | shared | accepted for pipeline parity (#89); honest stderr note; the minimal loop opens no PR itself |
    | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
-   | `--issue` / `--pick-next` / `--loop` / `--loop-interval` / `--max-cycles` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role; `--loop` reruns the dispatch cycle in-process after every task (interval seconds, default 300, minimum 1; `--max-cycles` N caps it, 0 = unlimited) |
+   | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role |
+   | `--auto-pr` | shared | accepted for pipeline parity (#89); the minimal loop opens no PR itself (honest stderr note) |
    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
     | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private agent-loop workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
 
@@ -167,8 +171,7 @@ tree for content inspection (stdlib-only, still minutes-bounded):
    (admin escape hatch: `guard-exempt` label).
 3. **Anti-Duplicate PR Guard** — whole-token `#N` comparison across other
    open PRs (titles, bodies, fork-branch names); a competing PR for the
-   same issue fails the gate (one active claim per issue —
-   `AGENTS.md` Single Door).
+   same issue fails the gate (AGENT_RULES U4).
 4. **Boundary Sanitization Guard (#107)** — guard self-test + PR
    changed-files scan + full-tree public/private boundary barrier.
 5. **Loop-Contract Parity Guard (#118)** — asserts the loop's contract
@@ -206,5 +209,5 @@ submit **without intermediate filesystem drafts**:
 git grep -n "VALID_GROUPS" scripts/agents/continuous_agent_loop.py
 python scripts/agents/continuous_agent_loop.py --verify-only
 python scripts/agents/continuous_agent_loop.py --issue 63 --task-envelope
-python scripts/agents/continuous_agent_loop.py --task-envelope --allow-adhoc --group agent-orchestration   # → exit 2 (fail-closed demo — the SPEC's own former stale name)
+python scripts/agents/continuous_agent_loop.py --task-envelope --allow-adhoc --group agent-orchestration   # → exit 2 (fail-closed demo — this was this SPEC's own stale vocabulary before the registry sync)
 ```
