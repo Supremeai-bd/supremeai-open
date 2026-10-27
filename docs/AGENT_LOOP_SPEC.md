@@ -169,8 +169,10 @@ Honest limitations, documented rather than hidden:
   other's lease entries; same-machine reruns are deduped, cross-machine dedup
   still depends on the `status:claimed` label path. Unifying the two protocols
   is an owner-level policy decision, not an agent patch.
-- **Unbounded store**: assignments accumulate until they expire semantically;
-  expired entries are never pruned from the file (bounded-growth slice pending).
+- **Store hygiene**: `mark_issue_leased` prunes expired entries on every write,
+  so the file holds at most the leases inside the 30-minute window (plus the
+  entry being written); the claimability check ignores expired entries either
+  way, so pruning is behavior-neutral file hygiene.
 - **No completion signal**: a task still running past 30 minutes re-becomes
   claimable — the window is a fixed guess, not lease renewal (the bridge's own
   lease allows renewal up to 180 minutes; the loop's local store cannot renew).

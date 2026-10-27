@@ -589,6 +589,10 @@ def mark_issue_leased(issue_number: str | int, now: float | None = None, path: P
     target = path or ISSUE_LEASE_FILE
     now_ts = now if now is not None else time.time()
     store = load_issue_lease_store(target)
+    # বাংলা: লেখার সময় মেয়াদোত্তীর্ণ entry প্রুন হয় — ফাইলে সর্বোচ্চ ৩০-মিনিট উইন্ডোর
+    # তরুণ লিজ + এই মুহূর্তে লেখা entry থাকে। claimability-চেক উইন্ডোর বাইরের entry
+    # যেকোনো অবস্থাতেই উপেক্ষা করে, তাই প্রুনিং আচরণ-নিরপেক্ষ — শুধু ফাইল সীমাবদ্ধ থাকে।
+    store = {k: v for k, v in store.items() if (now_ts - v) < ISSUE_LEASE_SECONDS}
     store[str(issue_number)] = now_ts
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
