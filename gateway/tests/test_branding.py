@@ -3,8 +3,14 @@ import importlib
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-branding = importlib.import_module("service.branding")
+# Repo root on sys.path, canonical module identity (drift class F-K: importing
+# the bare service.* form forks a second module object and splits singletons).
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+try:
+    branding = importlib.import_module("gateway.service.branding")
+except ImportError:  # satellite layout: repo root IS the gateway package dir
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    branding = importlib.import_module("service.branding")
 
 
 def test_webhook_gemini_is_turbo():
