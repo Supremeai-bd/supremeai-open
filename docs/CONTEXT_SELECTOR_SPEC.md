@@ -21,7 +21,7 @@ The output of the selector is a **ContextAssembly payload** — not prose. Downs
 
 | # | Name | Sources | Rationale |
 |---|------|---------|-----------|
-| 1 | `constitution` | `AGENTS.md`, `AGENT_RULES.md` | The baseline every other document defers to. **Never clipped.** |
+| 1 | `constitution` | `AGENTS.md` | The baseline every other document defers to. **Never clipped.** |
 | 2 | `task-contract` | Task issue: mission, acceptance criteria, Touching Files | Defines "done" for this run. |
 | 3 | `file-scope` | Declared Touching Files + adjacent tests/guards | The code surface this task may mutate. |
 | 4 | `memory-sidecar` | Semantic memory hits (`memory-search.schema.json`, issue #36) | Prior episodes, resolved pitfalls, namespace-scoped facts. |
@@ -135,7 +135,7 @@ Canonical example for task #29 with budget 6000, `base_priority = 1.0`, `decay_f
           },
           {
             "kind": "constitution-doc",
-            "label": "AGENT_RULES.md — behavior rules",
+            "label": "docs/AGENT_LOOP_SPEC.md — loop contract",
             "tokens": 300,
             "included": true,
             "inclusion_reason": "constitution_never_clipped",
