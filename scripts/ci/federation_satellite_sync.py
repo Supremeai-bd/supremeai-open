@@ -312,7 +312,7 @@ def sync_satellite(
             cwd=str(tmp_repo),
         )
         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
-        msg = f"sync(open->{slug}): {commit_msg}"
+        msg = f"sync(open->{slug}): {commit_msg} [skip ci]"
         res = subprocess.run(
             ["git", "commit", "--no-verify", "-m", msg],
             cwd=str(tmp_repo),
