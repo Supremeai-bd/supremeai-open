@@ -79,7 +79,7 @@ export async function registerPasskey(params: RegisterPasskeyParams): Promise<{ 
   const publicKeyCreationOptions: CredentialCreationOptions = {
     publicKey: {
       ...options,
-      challenge: bufferFromBase64Url(options.challenge),
+      challenge: bufferFromBase64Url(options.challenge).buffer as ArrayBuffer,
       user: {
         ...options.user,
         id: bufferFromBase64Url(options.user.id),
@@ -137,7 +137,7 @@ export async function loginWithPasskey(role: 'user' | 'admin' = 'user'): Promise
   // 2. Prepare credential request options
   const publicKeyRequestOptions: CredentialRequestOptions = {
     publicKey: {
-      challenge: bufferFromBase64Url(options.challenge),
+      challenge: bufferFromBase64Url(options.challenge).buffer as ArrayBuffer,
       timeout: options.timeout,
       rpId: options.rpId,
       userVerification: options.userVerification || 'required',

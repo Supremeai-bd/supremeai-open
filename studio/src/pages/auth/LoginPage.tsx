@@ -6,6 +6,10 @@ import { AuthShell } from '../../components/auth/AuthShell';
 import { apiClient } from '../../services/apiClient';
 import { Fingerprint } from 'lucide-react';
 import { loginWithPasskey, isPasskeySupported } from '../../services/passkeyService';
+import { isRole } from '../../config/permissions';
+import type { Role } from '../../config/permissions';
+import { setUserToken } from '../../services/tokenStorage';
+import { updateTokenCache } from '../../services/apiClient';
 
 // ROOT-CAUSE UNIFY (Refs #890 funnel / owner request "2 rokom na ase"):
 // বাংলা মন্তব্য: লগইন পেজের সব shell (header, hero, health bar, card, footer)
@@ -132,15 +136,17 @@ export const LoginPage: React.FC = () => {
     setError('');
     setIsLoading(true);
     try {
-      const res = await loginWithPasskey('user');
+const res = await loginWithPasskey('user');
       if (res && res.access_token) {
+        setUserToken(res.access_token);
+        updateTokenCache(res.access_token);
         useAuthStore.setState({
-          token: res.access_token,
           user: {
             id: res.user_id,
             email: `${res.user_id}@supremeai.local`,
-            role: res.role,
+            name: res.device_name || res.user_id,
           },
+          role: isRole(res.role) ? (res.role as Role) : 'user',
           status: AuthStatus.LOGGED_IN,
         });
         navigate('/workspace');
