@@ -25,6 +25,18 @@ const ProfilePage = lazy(() => import('../pages/ProfilePage'));
 const WorkspaceSettingsPage = lazy(
   () => import('../pages/user/WorkspaceSettingsPage'),
 );
+// FIX(#1521 Phase 0 last-mile 2026-10-28): DeepResearchPanel/ScheduledTasksPanel
+// were backend-wired (api/routers.py: deep_research, scheduled_tasks) and nav-
+// advertised (/research, /scheduled-tasks) but never registered here — every
+// nav/dashboard link 404'd into the guest landing. Neither panel self-wraps
+// WorkspaceLayout (same adapter situation as WorkspaceSettingsPage), so both
+// are wrapped below.
+const DeepResearchPanel = lazy(
+  () => import('../components/research/DeepResearchPanel'),
+);
+const ScheduledTasksPanel = lazy(
+  () => import('../components/schedule/ScheduledTasksPanel'),
+);
 
 // ─── Route definitions ───────────────────────────────────────────────────
 
@@ -102,6 +114,28 @@ export const workspaceFeatureRoutes: RouteObject[] = [
       'settings',
       <WorkspaceLayout>
         <WorkspaceSettingsPage />
+      </WorkspaceLayout>,
+    ),
+  },
+  // FIX(#1521 Phase 0 last-mile 2026-10-28): backend-ready engines finally
+  // reachable in the UI — guest visitors are redirected to /login by
+  // ProtectedRoute (roadmap security matrix: authenticated user context),
+  // matching navigationRegistry's user-context entries for these paths.
+  {
+    path: '/research',
+    element: protectedPage(
+      'research',
+      <WorkspaceLayout>
+        <DeepResearchPanel />
+      </WorkspaceLayout>,
+    ),
+  },
+  {
+    path: '/scheduled-tasks',
+    element: protectedPage(
+      'scheduled tasks',
+      <WorkspaceLayout>
+        <ScheduledTasksPanel />
       </WorkspaceLayout>,
     ),
   },
