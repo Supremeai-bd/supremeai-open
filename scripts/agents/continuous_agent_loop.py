@@ -193,7 +193,7 @@ DEFAULT_MERGED_ROLES: dict[str, str] = {
 
 ROLE_RULES: dict[str, str] = {
     "solver": "Unlimited concurrent solvers allowed. Mandatory rule: Label 'status:claimed' on the issue before branching. Solve root cause, verify boundary, submit PR.",
-    "ecosystem-scout": "Scan federation for new expansion opportunities and file sub-issues under 8 Anchor Hubs (no code edits).",
+    "ecosystem-scout": "Scan federation for new expansion opportunities and file sub-issues under 8 Anchor Hubs (no code edits). Issue creation rules: format title as 'type(scope): description', attach priority ('P0-critical'/'P1-high'), status ('status:unclaimed'), and repo label ('repo:<domain>').",
     "auditor": "Audit codebase for dead code, compliance drifts, and propose automated CI gates.",
     "human-eye": "Inspect user-facing public funnel speed (FCP < 1.0s) and responsive UI performance.",
     "rules-breaker": "Probe security boundaries, enforce zero-leak invariant, and report vulnerabilities.",
@@ -880,6 +880,8 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
         print(f"ASSIGNED ROLE: {role} (Single-runner role lock)\nROLE MANDATE: {mandate}")
         print(f"ACTION: Time expired for {role}. Act as {role} now.")
+        if role == "ecosystem-scout":
+            print("ISSUE CREATION STANDARD: Format title as 'type(scope): description', attach priority ('P0-critical'/'P1-high'), status ('status:unclaimed'), and repo label ('repo:<domain>').")
         print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
         return 0
 
