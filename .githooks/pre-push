@@ -280,13 +280,28 @@ for line in $updates; do
         done
     fi
 
-    # 8. MCP Tower & Studio TypeScript Typecheck
+    # 8. MCP Tower & Studio TypeScript Typecheck + Lockfile check
     if command -v npm >/dev/null 2>&1; then
         if [ -d "infrastructure/mcp-control-plane" ]; then
             if ! npm --prefix infrastructure/mcp-control-plane run typecheck >/dev/null 2>&1; then
                 reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
                     "Run 'npm --prefix infrastructure/mcp-control-plane run typecheck' to inspect errors." \
                     "Ensure all exported tools and adapters have strict TypeScript types." \
+                    "Deliberate admin bypass: git push --no-verify."
+            fi
+        fi
+    fi
+    if [ -f "studio/package.json" ] && [ -f "studio/pnpm-lock.yaml" ]; then
+        if ZERO_TEST "$remote_sha"; then
+            pkg_diff=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" -- studio/ 2>/dev/null || git diff --name-only "origin/main...$local_sha" -- studio/ 2>/dev/null || true)
+        else
+            pkg_diff=$(git diff --name-only "$remote_sha..$local_sha" -- studio/ 2>/dev/null || true)
+        fi
+        if echo "$pkg_diff" | grep -q 'studio/package\.json'; then
+            if ! echo "$pkg_diff" | grep -q 'studio/pnpm-lock\.yaml'; then
+                reject "STUDIO LOCKFILE OUTDATED: studio/package.json modified without studio/pnpm-lock.yaml" \
+                    "CI runs pnpm install with --frozen-lockfile and will fail (ERR_PNPM_OUTDATED_LOCKFILE)." \
+                    "Run 'cd studio && pnpm install --lockfile-only' and commit studio/pnpm-lock.yaml before pushing." \
                     "Deliberate admin bypass: git push --no-verify."
             fi
         fi
