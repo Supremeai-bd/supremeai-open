@@ -1,9 +1,9 @@
 # SupremeAI Federation Transit Routing, Multi-Target Slicing & Governance SSOT
 
 > **Canonical Specification & Audit Baseline**  
-> **Host Repository:** [`Supremeai-bd/supremeai-open`](file:///f:/supremeai-open)  
+> **Host Repository:** [`Supremeai-bd/supremeai-open`](https://github.com/Supremeai-bd/supremeai-open)  
 > **Work Order Reference:** Federation Dispatch, Multi-Domain Slicing & Board Audit  
-> **Related SSOTs:** [`docs/FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md) · [`docs/FEDERATION_TAXONOMY_AND_LICENSING.md`](file:///f:/supremeai-open/docs/FEDERATION_TAXONOMY_AND_LICENSING.md) · [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml)
+> **Related SSOTs:** [`docs/FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md) · [`docs/FEDERATION_TAXONOMY_AND_LICENSING.md`](./FEDERATION_TAXONOMY_AND_LICENSING.md) · [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml)
 
 ---
 
@@ -12,16 +12,16 @@
 The SupremeAI federation consists of **14 interconnected repositories** operating as a single unified autonomous ecosystem. To maintain absolute architectural boundaries, security moats, and pristine task tracking, work ingestion and code transit follow strict, machine-enforced governance:
 
 1. **Single Public Ingress:** All tasks, community PRs, and AI agent work enter exclusively through **`Supremeai-bd/supremeai-open`**.
-2. **Multi-Target Slice Dispatching:** When a landed PR touches multiple domain directories, [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml) automatically isolates target changes into dedicated per-satellite slice branches (`bridge/{task_id}-{slug}`), preventing cross-domain pollution.
+2. **Multi-Target Slice Dispatching:** When a landed PR touches multiple domain directories, the `satellite-dispatch-and-sync` job of [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) automatically isolates target changes into dedicated per-satellite slice branches (`bridge/{task_id}-{slug}`), preventing cross-domain pollution.
 3. **Passive Umbrella Monorepo:** The central monorepo (**`Supremeai-bd/supremeai`**) receives the entire panoramic commit, while satellites receive only their scoped slices.
-4. **Zero-Issue / Zero-PR Satellite Mandate:** All active satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md)).
-5. **Auditing & The Zero-Credential Blind Spot:** Explains the unauthenticated `UNREACHABLE` status in [`scripts/ci/satellite_board_guard.py`](file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py) and provides the authenticated verification procedure that confirms 100% clean compliance.
+4. **Zero-Issue / Zero-PR Satellite Mandate:** All active satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md)).
+5. **Auditing & The Zero-Credential Blind Spot:** Explains the unauthenticated `UNREACHABLE` status in [`scripts/ci/satellite_board_guard.py`](../scripts/ci/satellite_board_guard.py) and provides the authenticated verification procedure that confirms 100% clean compliance.
 
 ---
 
 ## 2. Multi-Target Slice Branch Transit Architecture
 
-When an autonomous agent or human contributor merges a PR touching multiple federation directories into `supremeai-open:main`, the automated transit engine in [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml#L591-L632) executes isolated slice routing:
+When an autonomous agent or human contributor merges a PR touching multiple federation directories into `supremeai-open:main`, the automated transit engine — the `satellite-dispatch-and-sync` job of [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) (the private-side `landing.yml` duties run here on the public boundary, per the ECOSYSTEM_MAP drift note #1618) — executes isolated slice routing:
 
 ```mermaid
 flowchart TD
@@ -96,7 +96,7 @@ Out of the 14 repositories, two anchor the system, while specific satellites enf
 ## 5. Satellite Board Guard: Unauthenticated Blind Spot & Solution
 
 ### 5.1 Root Cause of the Blind Spot
-The central board guard [`scripts/ci/satellite_board_guard.py`](file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py) was built following the **zero-credential** principle to allow external contributors and bots to verify compliance without secrets.
+The central board guard [`scripts/ci/satellite_board_guard.py`](../scripts/ci/satellite_board_guard.py) was built following the **zero-credential** principle to allow external contributors and bots to verify compliance without secrets.
 
 However:
 1. **GitHub Security Cloaking:** GitHub REST API returns `HTTP 404` when an unauthenticated caller requests any private repository.

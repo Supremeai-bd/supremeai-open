@@ -90,7 +90,7 @@ SupremeAI আর্কিটেকচারে `supremeai-open` হলো সম
 
 ### 3.2. `Supremeai-bd/supremeai-archive`
 
-* **মিসিং ADR:** [`docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md`](file:///f:/supremeai-open/docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md) ওপেন ও মোনোরিপোতে আছে, কিন্তু স্যাটেলাইট `supremeai-archive/adrs/`-এ নেই (সেখানে শুধু ADR-001 থেকে 007 ভিন্ন টপিকের ওপর সংরক্ষিত)।
+* **মিসিং ADR:** [`docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md`](./adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md) ওপেন ও মোনোরিপোতে আছে, কিন্তু স্যাটেলাইট `supremeai-archive/adrs/`-এ নেই (সেখানে শুধু ADR-001 থেকে 007 ভিন্ন টপিকের ওপর সংরক্ষিত)।
 * **সিআই গেট:** আর্কাইভের অখণ্ডতা, লিংক চেকিং ও মার্কডাউন লিন্টিংয়ের জন্য কোনো গভার্নেন্স সিআই পাইপলাইন নেই।
 
 ---
