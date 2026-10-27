@@ -52,6 +52,33 @@ export async function getAuthUsers(accountId: string): Promise<unknown> {
   }
 }
 
+export async function getDatabaseSchema(accountId: string, table?: string): Promise<unknown> {
+  const { url, apiKey } = getSupabaseConfig(accountId);
+  const res = await httpRequest(`${url}/rest/v1/`, {
+    headers: supabaseHeaders(apiKey),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch schema: ${JSON.stringify(res.data)}`);
+  }
+  const spec = (res.data ?? {}) as any;
+  const definitions = spec.definitions ?? spec.components?.schemas ?? {};
+  const tableNames = Object.keys(definitions).filter((k) => !k.startsWith("_"));
+  if (!table) {
+    return { tables: tableNames };
+  }
+  const def = definitions[table];
+  if (!def) {
+    throw new Error(`Table not found in schema: ${table}`);
+  }
+  const props = def.properties ?? {};
+  const columns = Object.keys(props).map((name) => ({
+    name,
+    type: props[name]?.type ?? "unknown",
+    format: props[name]?.format,
+    nullable: !(Array.isArray(def.required) && def.required.includes(name)),
+  }));
+  return { table, columns };
+}
 export async function readTable(
   accountId: string,
   table: string,
