@@ -283,7 +283,7 @@ def classify_findings(
             if "mit license" in head:
                 add(
                     "MODEL_CONTRADICTION",
-                    str(license_file.relative_to(repo_root)),
+                    license_file.relative_to(repo_root).as_posix(),
                     f"{repo} is declared PROPRIETARY in §2.3 but its mirror LICENSE is the MIT text (the #1690 class)",
                 )
 
