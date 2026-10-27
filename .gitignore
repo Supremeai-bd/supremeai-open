@@ -42,3 +42,7 @@ core/.secrets/
 
 # Runtime health-report outputs
 reports/
+
+# Agent continuous loop runtime state
+scripts/agents/agent_cadence_state.json
+scripts/agents/dispatched_issues_state.json
