@@ -58,6 +58,42 @@ except ImportError:
     load_render_env = None
 
 
+def _script_index_freshness() -> list[str]:
+    """#1630: fail-closed freshness gate for scripts/ops/_INDEX.md.
+
+    The index advertises a --check CI gate that was never wired anywhere, so
+    it drifted 47 days unchecked (269->253 scripts). This sub-check runs the
+    generator's own --check (regenerate in memory, compare) so a PR that
+    adds/renames/deletes a script without regenerating the index fails Step 1.
+    Only invoked in full-repo mode (targets=None); the offline self-test path
+    passes explicit targets and stays deterministic/fast.
+    """
+    errors: list[str] = []
+    gen = REPO_ROOT / "scripts" / "ops" / "generate_script_index.py"
+    index = REPO_ROOT / "scripts" / "ops" / "_INDEX.md"
+    if not gen.is_file() or not index.is_file():
+        # Mirror layouts without the ops index tree: nothing to guard here.
+        return errors
+    try:
+        result = subprocess.run(
+            [sys.executable, str(gen), "--check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            errors.append(
+                "scripts/ops/_INDEX.md is STALE — regenerate: "
+                "python3 scripts/ops/generate_script_index.py"
+            )
+            for line in (result.stdout + result.stderr).strip().splitlines()[:3]:
+                errors.append(f"  index: {line}")
+    except subprocess.TimeoutExpired:
+        errors.append("scripts/ops/generate_script_index.py --check timed out (60s)")
+    return errors
+
+
 def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]]:
     """Step 1 (< 10s): Fast lint and syntax compilation across all target code."""
     errors: list[str] = []
@@ -87,6 +123,11 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
                         files_to_check.append(f)
     else:
         files_to_check = targets
+
+    # #1630: index freshness rides the full-repo scan (CI Step 1); skipped for
+    # explicit-target invocations (offline self-test keeps its fixtures).
+    if targets is None:
+        errors.extend(_script_index_freshness())
 
     py_count = 0
     json_count = 0

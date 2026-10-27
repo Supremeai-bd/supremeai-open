@@ -19,6 +19,7 @@ GUARDS: list[list[str]] = [
     ["python", "scripts/ci/issue_template_guard.py", "--self-test"],
     ["python", "scripts/agents/check_loop_contract_parity.py"],
     ["python", "scripts/ci/test_parity_guard.py"],
+    ["python", "scripts/ops/generate_script_index.py", "--check"],
 ]
 
 

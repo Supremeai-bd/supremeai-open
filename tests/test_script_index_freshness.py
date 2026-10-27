@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""tests/test_script_index_freshness.py — #1630 CI gate for scripts/ops/_INDEX.md.
+
+Background (issue #1630): the ops script index advertises a ``--check`` CI
+gate that was never wired into any workflow, so the index drifted 47 days
+(2026-09-10 -> 2026-10-27; 269 -> 253 scripts, 34 -> 36 groups) while
+documenting scripts that no longer exist and hiding new ones from agents.
+
+Landed contract (this suite pins it):
+  1. ``scripts/ops/generate_script_index.py --check`` exits 0 on a fresh repo
+     (the index is derived and regenerated, hand sections preserved).
+  2. The generator's self-referenced paths point at the REAL location
+     (``scripts/ops/generate_script_index.py``) — the pre-#1630 docstring and
+     generated header pointed at ``scripts/generate_script_index.py`` which
+     does not exist (agents following the hint hit FileNotFoundError).
+  3. The freshness gate is actually WIRED: ``scripts/ci/run_all_guards.py``
+     roster carries the ``--check`` invocation, and
+     ``scripts/ci/deploy_preflight_guard.py --step1-syntax`` (CI Step 1, run
+     on every PR and push-to-main by pipeline.yml) fails closed when the
+     index is stale — enforced in full-repo mode only, never in the offline
+     self-test fixture path.
+
+Offline, stdlib-only. CI rides the existing test-matrix/preflight plumbing —
+no .github/ edits (admin-owned path).
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+GENERATOR = REPO_ROOT / "scripts" / "ops" / "generate_script_index.py"
+INDEX = REPO_ROOT / "scripts" / "ops" / "_INDEX.md"
+ROSTER = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
+PREFLIGHT = REPO_ROOT / "scripts" / "ci" / "deploy_preflight_guard.py"
+
+STALE_PATH_REF = "scripts/generate_script_index.py"
+CANONICAL_PATH_REF = "scripts/ops/generate_script_index.py"
+
+
+@unittest.skipUnless(
+    GENERATOR.is_file() and INDEX.is_file(),
+    "ops index tree absent in this mirror layout",
+)
+class TestScriptIndexFreshness(unittest.TestCase):
+    def test_check_gate_passes_on_fresh_repo(self):
+        """--check exits 0 when the committed index matches the live tree."""
+        r = subprocess.run(
+            [sys.executable, str(GENERATOR), "--check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(
+            r.returncode, 0, f"index stale — regenerate it:\n{r.stdout}\n{r.stderr}"
+        )
+
+    def test_generator_self_references_real_path(self):
+        """The generator's own docs/header must point at its real location."""
+        src = GENERATOR.read_text(encoding="utf-8")
+        self.assertNotIn(
+            STALE_PATH_REF,
+            src,
+            "generator still self-references the non-existent "
+            f"'{STALE_PATH_REF}' (pre-#1630 defect)",
+        )
+        header = INDEX.read_text(encoding="utf-8")
+        self.assertIn(CANONICAL_PATH_REF, header)
+
+    def test_freshness_gate_is_wired_into_guards(self):
+        """The gate must be reachable from the guard roster AND CI Step 1."""
+        roster = ROSTER.read_text(encoding="utf-8")
+        self.assertIn(
+            'generate_script_index.py", "--check',
+            roster,
+            "run_all_guards.py roster lost the index freshness entry",
+        )
+        preflight = PREFLIGHT.read_text(encoding="utf-8")
+        self.assertIn(
+            "_script_index_freshness",
+            preflight,
+            "deploy_preflight_guard.py --step1-syntax lost the #1630 sub-check",
+        )
+
+    def test_step1_syntax_fails_closed_on_stale_index(self):
+        """Full-repo Step 1 must FAIL when the index is stale (fail-closed)."""
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
+        try:
+            import deploy_preflight_guard as dpg
+        finally:
+            sys.path.pop(0)
+        original = INDEX.read_text(encoding="utf-8")
+        try:
+            INDEX.write_text(
+                original + "\n<!-- #1630 test tamper: stale marker -->\n",
+                encoding="utf-8",
+            )
+            ok, errs = dpg.run_step1_syntax(None)
+            self.assertFalse(ok, "Step 1 passed despite a tampered (stale) index")
+            self.assertTrue(
+                any("STALE" in e for e in errs),
+                f"expected a STALE diagnostic, got: {errs[:5]}",
+            )
+        finally:
+            INDEX.write_text(original, encoding="utf-8")
+
+    def test_step1_syntax_self_test_ignores_index(self):
+        """Explicit-target mode (self-test fixtures) must NOT consult the index."""
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
+        try:
+            import deploy_preflight_guard as dpg
+        finally:
+            sys.path.pop(0)
+        ok, errs = dpg.run_step1_syntax([PREFLIGHT])
+        self.assertTrue(ok, f"self-test fixture path must stay deterministic: {errs[:5]}")
+
+
+if __name__ == "__main__":
+    unittest.main()
