@@ -52,7 +52,7 @@ Usage
 
 Fail-closed doctrine: unknown keyword -> error, unresolved $ref -> error,
 unknown $schema draft -> error. Skipped checks do not exist — a file that
-cannot be read is an error, never a silent pass (AGENT_RULES.md §13).
+cannot be read is an error, never a silent pass (zero-dependency house doctrine — AGENTS.md).
 """
 
 from __future__ import annotations
