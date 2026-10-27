@@ -38,11 +38,11 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed 
   }, [isMobileNavOpen, setMobileNavOpen]);
 
   return (
-    <div className="dashboard-live-shell surface-0 h-screen w-full flex flex-col overflow-hidden text-text font-sans">
+    <div className="dashboard-live-shell surface-0 h-screen h-dvh w-full max-w-full flex flex-col overflow-hidden text-text font-sans">
       <div className="dashboard-live-orb dashboard-live-orb-one" aria-hidden="true" />
       <div className="dashboard-live-orb dashboard-live-orb-two" aria-hidden="true" />
       {header && (
-        <header className="surface-1 z-shell shrink-0">
+        <header className="surface-1 z-shell shrink-0 w-full max-w-full">
           {header}
         </header>
       )}

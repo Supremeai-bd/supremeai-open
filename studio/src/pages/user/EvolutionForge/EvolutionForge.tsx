@@ -362,11 +362,13 @@ const EvolutionForgeCanvas = () => {
   };
 
   return (
-    <div className="flex h-[calc(100vh-64px)] w-full bg-background relative" ref={reactFlowWrapper}>
-      <ForgeSidebar />
+    <div className="flex flex-col md:flex-row h-full w-full bg-background relative overflow-hidden" ref={reactFlowWrapper}>
+      <div className="hidden md:block shrink-0 h-full">
+        <ForgeSidebar />
+      </div>
       <DebateOverlay isOpen={isDebateOpen} logs={debateLogs} />
 
-      <div className="flex-grow h-full relative">
+      <div className="flex-1 min-w-0 h-full relative">
         <div className="absolute top-4 right-4 z-10 flex gap-3">
           <button
             onClick={handleExecuteSwarm}
