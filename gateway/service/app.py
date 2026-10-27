@@ -256,6 +256,13 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-SupremeAI-Key", "X-Guest-Mode", "X-Forwarded-For", "Accept", "Origin", "Referer", "X-Correlation-ID"],
 )
 
+# Issue #1728: baseline security headers (HSTS/XCTO/XFO/CSP-report-only) on every
+# response. Added LAST so it mounts OUTERMOST (Starlette add_middleware prepends):
+# request flow Sec -> CORS -> Corr -> routes, so every response — CORS preflight
+# included — gets stamped. Pure-ASGI header injection never touches the SSE body.
+from gateway.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
+app.add_middleware(SecurityHeadersMiddleware)
+
 # Telegram Inbound Webhook Listener
 if telegram_router is not None:
     app.include_router(telegram_router)
@@ -507,7 +514,7 @@ async def _stealth_dns_snapshot(force: bool = False) -> dict:
     return dict(_stealth_dns_state)
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 @app.get("/health")
 @app.get("/healthz")
 @app.get("/api/health")
