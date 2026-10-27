@@ -4,11 +4,13 @@
 Covers the agent-loop slice of the 3-tier enforcement:
 
   * Tier 1 — `scripts/agents/continuous_agent_loop.py` step_2_rules():
-    - RULE_FRESHNESS_FILES SSOT (AGENTS.md, AGENT_RULES.md,
-      .github/PULL_REQUEST_TEMPLATE.md);
+    - RULE_FRESHNESS_FILES SSOT (AGENTS.md,
+      .github/PULL_REQUEST_TEMPLATE.md — AGENT_RULES.md was deleted by #1526);
     - pure divergence classifier `diff_rule_freshness()`;
     - fail-closed matrix: git missing (rc 127), fetch failure (network down),
-      origin-side constitution deletion, unverifiable worktree blob;
+      unverifiable worktree blob; upstream-side constitution deletion is an
+      honest skip for the run (#1539 landed semantics) and is NEVER
+      auto-synced via checkout;
     - auto-sync: divergence triggers 'git checkout origin/main -- <files>',
       checkout failure fail-closes, all-fresh runs NO checkout;
     - report-only mode (--verify-only boot smoke): drift is reported, the
@@ -29,8 +31,11 @@ Run: python3 -m unittest tests.test_constitution_freshness -v
 
 from __future__ import annotations
 
+import contextlib
 import inspect
+import io
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -241,7 +246,12 @@ class Step2FailClosed(_GateHarness):
         )
         self.assertFalse(cal.step_2_rules())
 
-    def test_17_origin_constitution_deletion_fails_closed(self):
+    def test_17_origin_constitution_deletion_skipped_honestly(self):
+        # #1539 landed semantics: an upstream-deleted freshness file is a
+        # honest skip for THIS run (fail-closed-forever was the exact
+        # self-defeat that froze the loop when #1526 deleted AGENT_RULES.md).
+        # Invariants kept: the deletion is never auto-synced via checkout,
+        # and the skip is announced, not silent.
         self.seed_repo()
         shas = {p: _blob_sha(p) for p in cal.RULE_FRESHNESS_FILES}
         script: list[tuple[str, tuple[int, str, str]]] = [("git fetch", (0, "", ""))]
@@ -260,10 +270,18 @@ class Step2FailClosed(_GateHarness):
                     )
                 )
         self.script(script)
-        self.assertFalse(cal.step_2_rules())
+        logs: list[str] = []
+        cal.log = lambda *a, **k: logs.append(" ".join(str(x) for x in a))
+        # The remaining surface (AGENTS.md) still verifies — gate passes for
+        # this run instead of failing closed on every future run.
+        self.assertTrue(cal.step_2_rules())
         self.assertFalse(
             any("git checkout" in t for t in self.seen),
             "deletion must never be auto-synced via checkout",
+        )
+        self.assertTrue(
+            any("deleted upstream" in m for m in logs),
+            f"honest skip must be announced, got: {logs}",
         )
 
 
@@ -378,6 +396,83 @@ class TaskCycleWiring(unittest.TestCase):
         source = inspect.getsource(cal.main)
         self.assertIn('"--offline"', source)
         self.assertIn("SUPREMEAI_OFFLINE", inspect.getsource(cal))
+
+
+class VerifyOnlyContract(unittest.TestCase):
+    """--verify-only stdout contract + honest exit codes (2026-10-28 audit).
+
+    Regression guards for the overlapping-PR drift class: PR #1535 fixed the
+    duplicate CONTRACT_VERSION emission (F4) and PR #1541 added exit-1-on-FAIL;
+    later rebased PR batches (#1544) silently reverted both. These guards pin
+    the landed behavior so the next overlapping batch cannot lose it again.
+    """
+
+    MARKER = "CONTRACT_VERSION=agent-loop-contract/1"
+
+    def test_26_verify_only_marker_emitted_once_and_is_final_line(self):
+        # SPEC §4b: the marker is the FINAL stdout line of --verify-only.
+        # Behavioral guard: exactly ONE emission (run_verify() must not also
+        # print it — that made it twice after the #1544 rebase).
+        proc = subprocess.run(
+            [sys.executable, str(Path(inspect.getsourcefile(cal))), "--verify-only"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr[-500:])
+        emitted = [ln for ln in proc.stdout.splitlines() if ln.strip() == self.MARKER]
+        self.assertEqual(
+            len(emitted), 1,
+            f"marker must be emitted exactly once, got {len(emitted)}:\n{proc.stdout[-300:]}",
+        )
+        self.assertEqual(proc.stdout.splitlines()[-1].strip(), self.MARKER)
+
+    def test_27_verify_only_source_has_single_marker_print(self):
+        # Static twin of test_26: exactly one marker print in the module —
+        # cheap to run, catches the dup before any subprocess is needed.
+        source = inspect.getsource(cal)
+        self.assertEqual(
+            source.count('print(f"CONTRACT_VERSION={CONTRACT_VERSION}")'), 1
+        )
+
+    def test_28_verify_only_exit_1_on_failed_tier(self):
+        # #1541 landed exit-1-on-FAIL; the #1544 rebase silently lost it
+        # (fail-open: automation saw exit 0 on failing tiers — U2 violation).
+        evidence = [
+            {"tier": 1, "name": "ok_tier", "passed": True},
+            {"tier": 2, "name": "broken_tier", "passed": False},
+        ]
+        orig_run_verify = cal.run_verify
+        orig_argv = sys.argv
+        cal.run_verify = lambda: evidence
+        sys.argv = ["continuous_agent_loop.py", "--verify-only"]
+        buf_out, buf_err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+                rc = cal.main()
+        finally:
+            cal.run_verify = orig_run_verify
+            sys.argv = orig_argv
+        self.assertEqual(rc, 1)
+        # stdout stays clean: marker is still the final stdout line.
+        self.assertEqual(buf_out.getvalue().splitlines()[-1].strip(), self.MARKER)
+        self.assertIn("broken_tier", buf_err.getvalue())
+
+    def test_29_verify_only_exit_0_on_all_pass(self):
+        evidence = [{"tier": 1, "name": "ok_tier", "passed": True}]
+        orig_run_verify = cal.run_verify
+        orig_argv = sys.argv
+        cal.run_verify = lambda: evidence
+        sys.argv = ["continuous_agent_loop.py", "--verify-only"]
+        buf_out, buf_err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+                rc = cal.main()
+        finally:
+            cal.run_verify = orig_run_verify
+            sys.argv = orig_argv
+        self.assertEqual(rc, 0)
+        self.assertEqual(buf_err.getvalue(), "")
 
 
 if __name__ == "__main__":
