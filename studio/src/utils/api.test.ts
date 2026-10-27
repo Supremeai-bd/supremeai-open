@@ -220,3 +220,54 @@ describe('api.ts — runtime context-based backend resolution', () => {
     });
   });
 });
+
+// supremeai-studio#1 (CORS residual): fetchWithRetry must not amplify
+// deterministic network-layer failures (CORS/origin-policy TypeError) —
+// re-firing them up to 3 more times only multiplies the browser's
+// un-suppressable console errors. Retryable HTTP statuses keep retrying.
+describe('fetchWithRetry — network-level failure retry policy (supremeai-studio#1)', () => {
+  beforeEach(() => {
+    delete env.VITE_MAX_RETRIES;
+    delete env.VITE_CIRCUIT_FAILURE_THRESHOLD;
+    delete env.VITE_CIRCUIT_RECOVERY_MS;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('does not retry a deterministic network-layer failure (CORS TypeError)', async () => {
+    const { fetchWithRetry } = await loadApi();
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    await expect(fetchWithRetry('https://backend.example.com/api/config/public'))
+      .rejects.toThrow('Failed to fetch');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('still retries retryable HTTP statuses up to maxRetries (default 3)', async () => {
+    vi.useFakeTimers();
+    const { fetchWithRetry } = await loadApi();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    const pending = fetchWithRetry('https://backend.example.com/api/v1/health').catch((e: unknown) => e);
+    // Backoff with jitter: ~500ms → ~1s → ~2s (+≤200ms jitter each).
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(4_000);
+    const result = await pending;
+    expect(String(result)).toContain('503');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('returns the response untouched for non-retryable statuses', async () => {
+    const { fetchWithRetry } = await loadApi();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    const res = await fetchWithRetry('https://backend.example.com/api/none');
+    expect(res.status).toBe(404);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
