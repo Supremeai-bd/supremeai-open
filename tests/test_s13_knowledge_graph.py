@@ -26,7 +26,7 @@ import context_graph_resolver as kg
 
 def sources() -> dict[str, str]:
     return {
-        "docs/AGENT_RULES.md": "# Rules\n\nU4 hold doctrine. See GATEWAY.md#auth for keys\n",
+        "docs/AGENT_LOOP_SPEC.md": "# Rules\n\nU4 hold doctrine. See GATEWAY.md#auth for keys\n",
         "docs/GATEWAY.md": "# Gateway SSOT\nBearer + key auth\n",
         "scripts/agents/loop.py": '"""Agent loop."""\nimport json\n\n'
         'def run():\n    """Run the loop."""\n'
@@ -123,7 +123,7 @@ class StdlibExtraction(unittest.TestCase):
 
     def test_06_markdown_refs_resolved(self):
         g = graph()
-        edge = next(e for e in g.edges if e.source == "file:docs/AGENT_RULES.md")
+        edge = next(e for e in g.edges if e.source == "file:docs/AGENT_LOOP_SPEC.md")
         self.assertEqual(edge.relation, "enforces")
         self.assertEqual(edge.confidence, "explicit")
         self.assertEqual(edge.target, "file:docs/GATEWAY.md")
@@ -154,12 +154,12 @@ class StdlibExtraction(unittest.TestCase):
 class OneHopResolution(unittest.TestCase):
     def test_11_budget_contract(self):
         self.assertEqual(kg.TOKEN_BUDGET_PER_QUERY, 500)
-        r = graph().resolve_context("file:docs/AGENT_RULES.md")
+        r = graph().resolve_context("file:docs/AGENT_LOOP_SPEC.md")
         self.assertTrue(r.budget_ok)
         self.assertLessEqual(r.tokens_estimate, kg.TOKEN_BUDGET_PER_QUERY)
 
     def test_12_neighbors_via_edges(self):
-        r = graph().resolve_context("file:docs/AGENT_RULES.md")
+        r = graph().resolve_context("file:docs/AGENT_LOOP_SPEC.md")
         self.assertIn("file:docs/GATEWAY.md", {n.id for n in r.neighbors})
 
     def test_13_unknown_node_fail_closed(self):
@@ -169,18 +169,18 @@ class OneHopResolution(unittest.TestCase):
     def test_14_bidirectional_hop(self):
         # Resolving the TARGET also sees the incoming edge.
         r = graph().resolve_context("file:docs/GATEWAY.md")
-        self.assertTrue(any(e.source == "file:docs/AGENT_RULES.md" for e in r.edges))
+        self.assertTrue(any(e.source == "file:docs/AGENT_LOOP_SPEC.md" for e in r.edges))
 
 
 class TokenDietBenchmark(unittest.TestCase):
     def test_15_ratio_gate(self):
         self.assertGreaterEqual(kg.MIN_TOKEN_SAVINGS_RATIO, 50.0)
         big = "word " * 4000
-        raw = {"docs/AGENT_RULES.md": big, "docs/GATEWAY.md": big}
+        raw = {"docs/AGENT_LOOP_SPEC.md": big, "docs/GATEWAY.md": big}
         slim = kg.KnowledgeGraph(
             nodes=(
                 kg.KnowledgeNode(
-                    "file:docs/AGENT_RULES.md", "policy", "one line", "a" * 64
+                    "file:docs/AGENT_LOOP_SPEC.md", "policy", "one line", "a" * 64
                 ),
                 kg.KnowledgeNode(
                     "file:docs/GATEWAY.md", "contract", "one line", "b" * 64
@@ -188,7 +188,7 @@ class TokenDietBenchmark(unittest.TestCase):
             ),
             edges=(
                 kg.KnowledgeEdge(
-                    "file:docs/AGENT_RULES.md",
+                    "file:docs/AGENT_LOOP_SPEC.md",
                     "file:docs/GATEWAY.md",
                     "enforces",
                     "explicit",
@@ -196,7 +196,7 @@ class TokenDietBenchmark(unittest.TestCase):
             ),
         )
         ratio = kg.benchmark_savings(
-            raw, slim.resolve_context("file:docs/AGENT_RULES.md")
+            raw, slim.resolve_context("file:docs/AGENT_LOOP_SPEC.md")
         )
         self.assertGreater(ratio, kg.MIN_TOKEN_SAVINGS_RATIO)
 
