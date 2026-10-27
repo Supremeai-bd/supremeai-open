@@ -21,11 +21,8 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
-import sys
 import time
 from pathlib import Path
-from typing import Optional
 from collections import Counter, defaultdict
 
 ROOT_DIR = Path(__file__).resolve().parents[1]

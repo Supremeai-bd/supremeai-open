@@ -12,7 +12,7 @@ Traffic-police logic:
 6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
 """
 from __future__ import annotations
-import argparse, json, os, re, subprocess, sys, time
+import argparse, json, os, subprocess, sys, time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any

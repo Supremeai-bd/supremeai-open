@@ -21,10 +21,8 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 PRESENCE_FILE = ROOT_DIR / "docs" / "master_docs" / "MCP_PRESENCE_LEDGER.json"
