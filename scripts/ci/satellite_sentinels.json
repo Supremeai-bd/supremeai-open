@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "description": "Mirror<->satellite sentinel pairs that federation_satellite_sync.py --verify-only checks byte-identical after every sync (#1689). Each pair maps an open-repo path to the satellite-repo surface the sync contract maintains. Extend this manifest to grow the sweep; no code edit needed.",
+  "provenance": {
+    "issue": 1689,
+    "auditorSweep": "7-point parity sweep, 2026-10-27T21:04Z (SupremeAI Federation Auditor, Job 478524)",
+    "liveVerification": "2026-10-28T05:30+08:00 by zai-mcp-tower-agent run 7: 6/7 pairs byte-identical by git blob SHA; gateway/main.py<->supremeai-api:main.py confirmed drifted (satellite root main.py = 956-line unsanitized revision vs 1046-line hardened mirror)"
+  },
+  "pairs": [
+    {
+      "open": "gateway/main.py",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "main.py",
+      "note": "satellite root entrypoint artifact - drift source of #1689; sync now maps gateway/main.py to root (admin_auth.py precedent)"
+    },
+    {
+      "open": "core/main.py",
+      "satellite": "Supremeai-bd/supremeai-core",
+      "path": "main.py"
+    },
+    {
+      "open": "browser/main.py",
+      "satellite": "Supremeai-bd/supremeai-browser",
+      "path": "main.py"
+    },
+    {
+      "open": "studio/package.json",
+      "satellite": "Supremeai-bd/supremeai-studio",
+      "path": "package.json"
+    },
+    {
+      "open": "vscode/package.json",
+      "satellite": "Supremeai-bd/supremeai-vscode",
+      "path": "package.json"
+    },
+    {
+      "open": "api-schemas/gateway.openapi.yaml",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/openapi.yaml"
+    },
+    {
+      "open": "examples/gateway_client.py",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "scripts/clients/gateway_client.py"
+    }
+  ]
+}
