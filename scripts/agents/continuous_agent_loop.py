@@ -34,6 +34,55 @@ OFFLINE_ENV_VARS = (
     "CI_OFFLINE",
 )
 
+DEFAULT_GROUP = "core"
+VALID_TASK_TYPES = frozenset({"FEAT", "FIX", "DOCS", "STYLE", "REFACTOR", "TEST", "CHORE", "PERF", "OPS", "AUDIT", "SCOUT", "IMPLEMENT"})
+VALID_PRIORITIES = frozenset({"P0", "P1", "P2", "P3", "P4"})
+VALID_ADMIN_GATE_STATUSES = frozenset({"NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"})
+VALID_GROUPS = frozenset({"core", "gateway", "studio", "vscode", "browser", "docs", "infra", "marketplace", "federation"})
+
+def build_task_contract(
+    task_id: str,
+    issue: str | int | None = None,
+    task_type: str = "IMPLEMENT",
+    group: str = DEFAULT_GROUP,
+    priority: str = "P2",
+    objective: str = "",
+    touching_files: list[str] | None = None,
+    forbidden_paths: list[str] | None = None,
+    dependencies: list[str] | None = None,
+    predecessor: str | int | None = None,
+    admin_gate_required: bool = False,
+    admin_gate_status: str = "NOT_REQUIRED",
+    role_policy: str = "contributor",
+    required_evidence: list[str] | None = None,
+    verification: list[str] | None = None,
+    acceptance: list[str] | None = None,
+    stop_conditions: list[str] | None = None,
+    output_format: str = "structured",
+) -> dict[str, Any]:
+    task_type_upper = task_type.upper()
+    if task_type_upper not in VALID_TASK_TYPES:
+        raise ValueError(f"Invalid task_type: '{task_type}'")
+    priority_upper = priority.upper()
+    if priority_upper not in VALID_PRIORITIES:
+        raise ValueError(f"Invalid priority: '{priority}'")
+    gate_status_upper = admin_gate_status.upper()
+    if gate_status_upper not in VALID_ADMIN_GATE_STATUSES:
+        raise ValueError(f"Invalid admin_gate_status: '{admin_gate_status}'")
+    if group not in VALID_GROUPS:
+        raise ValueError(f"Invalid group: '{group}'")
+    return {
+        "task_contract": {
+            "version": 1,
+            "task_id": str(task_id),
+            "issue": issue,
+            "task_type": task_type_upper,
+            "group": group,
+            "priority": priority_upper,
+            "objective": objective,
+        }
+    }
+
 DEFAULT_CADENCE_HOURS: dict[str, int] = {
     "ecosystem-scout": 12,
     "auditor": 12,
