@@ -468,6 +468,7 @@ def build_task_envelope(
             f"ROLE: {role}",
             f"MANDATE: {role_description}",
             "CLAIM RULE: Atomic-claim the issue FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch.",
+            "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge.",
             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
             "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.",
         ]
@@ -843,7 +844,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             concurrency = "Unlimited concurrency allowed" if dispatch_role in ("solver", "coder") else "Single-runner role lock"
             suffix = f" (classified specialist: {classified})" if classified not in ("coder", "solver") and dispatch_role in ("solver", "coder") else ""
             print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
-            print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Atomic-claim it FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch. Then solve root cause and submit.")
+            print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Atomic-claim it FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch. Then solve root cause, submit PR with 'Closes #{picked}' in PR description to close it on merge.")
             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
             print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
             return 0
