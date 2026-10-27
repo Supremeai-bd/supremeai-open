@@ -33,6 +33,67 @@ _EPISODES: List[Dict[str, Any]] = []
 # in-memory episode store. Configurable via MEMORY_EPISODE_TTL_MS (<=0 disables).
 _EPISODE_TTL_MS = int(os.environ.get("MEMORY_EPISODE_TTL_MS", "0") or 0)
 
+# ── bridge-20261028-memory-graph-persistence (#1359) ──────────────────────
+# P0: graph entities/relations were process-global only — every restart reset
+# graph_nodes to 0 (AIQ-057/062/098). This wires a stdlib-SQLite write-through
+# store: hydrate once at boot, persist on every mutation, degrade to the
+# legacy in-memory graph if storage is unavailable (fail-open).
+from graph_store import GraphStore, resolve_db_path  # noqa: E402
+
+# Transient-entity TTL for the knowledge graph (task/topic nodes only; user
+# created durable entities are never expired). <=0 disables (default).
+_GRAPH_TTL_MS = int(os.environ.get("MEMORY_GRAPH_TTL_MS", "0") or 0)
+
+_STORE = GraphStore(resolve_db_path())
+try:
+    _loaded_nodes, _loaded_edges = _STORE.load()
+    if _loaded_nodes:
+        _GRAPH_NODES.update(_loaded_nodes)
+    if _loaded_edges:
+        _GRAPH_EDGES.extend(_loaded_edges)
+    if _loaded_nodes or _loaded_edges:
+        sys.stderr.write(
+            f"[MemorySidecar] graph hydrated from storage: "
+            f"{len(_loaded_nodes)} entities, {len(_loaded_edges)} relations "
+            f"({_STORE.db_path})\n"
+        )
+except Exception as _hydration_err:  # hydration must never kill the sidecar
+    sys.stderr.write(f"[MemorySidecar] graph hydration skipped: {_hydration_err}\n")
+
+
+def _node_ts_ms(node: Dict[str, Any]) -> float:
+    _ts = str(node.get("created_at", ""))
+    try:
+        from datetime import datetime
+
+        return datetime.fromisoformat(_ts.replace("Z", "+00:00")).timestamp() * 1000.0
+    except Exception:
+        return 0.0
+
+
+def _prune_expired_graph(now_ms: Optional[float] = None) -> int:
+    """Drop transient (task/topic) graph entities past MEMORY_GRAPH_TTL_MS.
+
+    Durable entities (any entityType other than task/topic) are never
+    auto-expired — only machine-generated working-set nodes age out.
+    Mirrors the delete path so the persistent store stays in sync.
+    """
+    if _GRAPH_TTL_MS <= 0:
+        return 0
+    cutoff = (now_ms if now_ms is not None else time.time() * 1000.0) - _GRAPH_TTL_MS
+    stale = [
+        n
+        for n, node in _GRAPH_NODES.items()
+        if node.get("entityType") in ("task", "topic") and _node_ts_ms(node) < cutoff
+    ]
+    if not stale:
+        return 0
+    for n in stale:
+        _GRAPH_NODES.pop(n, None)
+    _GRAPH_EDGES[:] = [e for e in _GRAPH_EDGES if e.get("from") not in stale and e.get("to") not in stale]
+    _STORE.delete_entities(stale)
+    return len(stale)
+
 
 def _episode_ts_ms(episode: Dict[str, Any]) -> float:
     _ts = str(episode.get("created_at", ""))
@@ -374,6 +435,21 @@ TOOLS_SCHEMA = [
             "required": ["query"],
         },
     },
+    {
+        "name": "export_memory",
+        "description": "Export all stored memory for a user (knowledge-graph entities + relations, episodes, documents, learned facts) as JSON — GDPR data-portability surface (AIQ-062/098).",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "wipe_memory",
+        "description": "GDPR-compliant hard wipe: deletes graph entities + relations (persistent store included) and, with scope=all, clears episodes, documents and learned facts (AIQ-098).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "scope": {"type": "string", "enum": ["all", "graph"], "description": "graph = knowledge graph only; all (default) = every memory lane"},
+            },
+        },
+    },
 ]
 
 
@@ -394,6 +470,8 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
                     "created_at": now,
                 }
                 created.append(_GRAPH_NODES[ename])
+                # (#1359) write-through: durable entity row (upsert)
+                _STORE.upsert_entity(ename, _GRAPH_NODES[ename]["entityType"], _GRAPH_NODES[ename]["observations"], now)
         return {"created": created, "count": len(created)}
 
     elif name == "create_relations":
@@ -408,6 +486,8 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
             if rel["from"] and rel["to"]:
                 _GRAPH_EDGES.append(rel)
                 created.append(rel)
+                # (#1359) write-through: durable relation row (UNIQUE-deduped)
+                _STORE.insert_relation(rel["from"], rel["to"], rel["relationType"], now)
         return {"created": created, "count": len(created)}
 
     elif name == "add_observations":
@@ -418,6 +498,8 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
             if ename in _GRAPH_NODES:
                 _GRAPH_NODES[ename].setdefault("observations", []).extend(contents)
                 updated.append(_GRAPH_NODES[ename])
+                # (#1359) write-through: keep the stored observation list in sync
+                _STORE.update_observations(ename, _GRAPH_NODES[ename].get("observations", []))
         return {"updated": updated, "count": len(updated)}
 
     elif name == "delete_entities":
@@ -425,6 +507,8 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
         for n in names:
             _GRAPH_NODES.pop(n, None)
         _GRAPH_EDGES = [e for e in _GRAPH_EDGES if e.get("from") not in names and e.get("to") not in names]
+        # (#1359) write-through: cascade removal in the persistent store too
+        _STORE.delete_entities(sorted(names))
         return {"deleted": list(names)}
 
     elif name == "delete_observations":
@@ -433,11 +517,15 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
             obs = set(d.get("observations", []))
             if ename in _GRAPH_NODES:
                 _GRAPH_NODES[ename]["observations"] = [o for o in _GRAPH_NODES[ename].get("observations", []) if o not in obs]
+                # (#1359) write-through: persist the filtered observation list
+                _STORE.delete_observations(ename, _GRAPH_NODES[ename]["observations"])
         return {"status": "ok"}
 
     elif name == "delete_relations":
         to_del = {(r.get("from"), r.get("to"), r.get("relationType")) for r in args.get("relations", [])}
         _GRAPH_EDGES = [e for e in _GRAPH_EDGES if (e.get("from"), e.get("to"), e.get("relationType")) not in to_del]
+        # (#1359) write-through: exact-tuple removal in the persistent store
+        _STORE.delete_relations(sorted(to_del))
         return {"status": "ok"}
 
     elif name == "read_graph":
@@ -516,7 +604,10 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
                 f"result: {str(episode.get('result', ''))[:300]}",
                 f"at: {now}",
             ],
+            "created_at": now,
         }
+        # (#1359) write-through: task entities survive restarts too
+        _STORE.upsert_entity(_task_name, "task", _GRAPH_NODES[_task_name]["observations"], now)
         _topic_pool = _re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", f"{episode.get('description', '')} {episode.get('result', '')}")
         _topics: List[str] = []
         for _raw in _topic_pool:
@@ -531,8 +622,12 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
                     "name": _t,
                     "entityType": "topic",
                     "observations": [f"mentioned by task {tid} at {now}"],
+                    "created_at": now,
                 }
-            _GRAPH_EDGES.append({"from": _task_name, "to": _t, "relationType": "mentions"})
+                # (#1359) write-through: topic entities survive restarts too
+                _STORE.upsert_entity(_t, "topic", _GRAPH_NODES[_t]["observations"], now)
+            _GRAPH_EDGES.append({"from": _task_name, "to": _t, "relationType": "mentions", "created_at": now})
+            _STORE.insert_relation(_task_name, _t, "mentions", now)
 
         return {"task_id": tid, "status": "recorded", "graph_nodes_written": 1 + len(_topics)}
 
@@ -556,8 +651,47 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
 
     elif name == "get_session_stats":
         sid = args.get("session_id", "default")
-        _prune_expired(now)
+        # Latent-bug fix (#1359): _prune_expired expects epoch-ms; the ISO
+        # string `now` only worked because TTL defaulted to 0 (early return).
+        # Any operator setting MEMORY_EPISODE_TTL_MS>0 hit a TypeError here.
+        _prune_expired()
+        _prune_expired_graph()
         return {"session_id": sid, "active_episodes": len(_EPISODES), "graph_nodes": len(_GRAPH_NODES)}
+
+    elif name == "export_memory":
+        # (#1359, AIQ-062/098) GDPR data portability: one call returns every
+        # stored lane. Graph comes straight from the persistent store when
+        # available (independent of the hydrated cache) so the export is the
+        # honest durable state, not a process-local view.
+        _prune_expired()
+        _prune_expired_graph()
+        if _STORE.available:
+            graph = _STORE.export_all()
+        else:
+            graph = {"entities": list(_GRAPH_NODES.values()), "relations": list(_GRAPH_EDGES)}
+        return {
+            "exported_at": now,
+            "graph": graph,
+            "episodes": list(_EPISODES),
+            "documents": list(_DOCUMENTS),
+            "learned_facts": list(_LEARNED_FACTS),
+        }
+
+    elif name == "wipe_memory":
+        # (#1359, AIQ-098) GDPR hard wipe. Persistent store first (fail-open
+        # inside), then the in-process mirrors — so a wiped graph cannot
+        # resurrect via hydration on the next boot.
+        scope = str(args.get("scope", "all"))
+        _STORE.wipe()
+        _GRAPH_NODES.clear()
+        _GRAPH_EDGES.clear()
+        cleared = {"graph": True}
+        if scope != "graph":
+            _EPISODES.clear()
+            _DOCUMENTS.clear()
+            _LEARNED_FACTS.clear()
+            cleared.update(episodes=True, documents=True, learned_facts=True)
+        return {"status": "wiped", "scope": scope, "cleared": cleared}
 
     elif name == "clear_session":
         sid = args.get("session_id", "default")
