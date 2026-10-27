@@ -11,7 +11,7 @@ import { eventBus, Events } from '../../lib/componentEventBus';
 import { getApiBaseUrl } from '../../utils/api';
 import { getAdminToken, getUserToken } from '../../services/tokenStorage';
 import { AudioPlaybackService } from '../../services/audio/AudioPlaybackService';
-import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2, Languages, Sparkles } from 'lucide-react';
+import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2, Languages, Sparkles, X } from 'lucide-react';
 
 import { ShareDialog } from '../share/ShareDialog';
 import { ImageUploadButton } from './ImageUploadButton';
@@ -57,6 +57,30 @@ function isWorkspaceArtifact(value: unknown): value is WorkspaceArtifact {
   );
 }
 
+// M7 (issue #1518) বাংলা: ImageUploadButton.onUpload যে শেপ দেয় তার লোকাল
+// কন্ট্র্যাক্ট (ওই ফাইলের ChatAttachment এক্সপোর্ট করা নেই) — structural typing.
+interface UploadedImage {
+  id: string;
+  url: string;
+  name: string;
+  size: number;
+  mime_type: string;
+}
+
+// M7 (issue #1518) বাংলা: আপলোড শেপ → shared-types Attachment চুক্তি
+// (packages/shared-types/src/chat.ts)। message metadata ও orchestration
+// metadata দুই জায়গাতেই একই ম্যাপিং — এক জায়গায় সংজ্ঞায়িত (DRY)।
+function toAttachments(imgs: UploadedImage[]) {
+  return imgs.map((img) => ({
+    id: img.id,
+    type: 'image' as const,
+    name: img.name,
+    url: img.url,
+    size: img.size,
+    mimeType: img.mime_type,
+  }));
+}
+
 export const ChatInterface: React.FC = () => {
   const { chatHistory, addMessage, isOrchestrating, triggerOrchestration } = useStore();
   const {
@@ -71,6 +95,11 @@ export const ChatInterface: React.FC = () => {
   } = useTierSStore();
 
   const [input, setInput] = useState('');
+  // M7 (issue #1518) বাংলা: আপলোড হওয়া ইমেজ composer-এ pending থাকে;
+  // পাঠানোর সময় ইউজার-মেসেজ metadata ও orchestration payload উভয়ে যায়
+  // (backend ConversationCommand.metadata হুবহু pass-through), তাই আপলোড
+  // আর নীরবে হারায় না।
+  const [pendingImages, setPendingImages] = useState<UploadedImage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   // Issue #1457/#1486 (HIGH): chat failure affordances — offline banner,
@@ -236,19 +265,43 @@ export const ChatInterface: React.FC = () => {
   // threw — button-clicked messages never sent at all (Enter still worked).
   // The parameter is now type-guarded: a real string retry prompt is honored,
   // any non-string (event object) falls back to the composer input.
+  // M7 (issue #1518) বাংলা: আপলোড কলব্যাক আর no-op নয় — pending তালিকায় যোগ;
+  // chips থেকে আলাদাভাবে সরানোও যায়।
+  const handleImageUpload = (attachment: UploadedImage) => {
+    setPendingImages((prev) => [...prev, attachment]);
+  };
+  const removePendingImage = (id: string) => {
+    setPendingImages((prev) => prev.filter((img) => img.id !== id));
+  };
+
   const handleSend = async (retryPrompt?: unknown) => {
     const retryText = typeof retryPrompt === 'string' ? retryPrompt : undefined;
     const userMessage = (retryText ?? input).trim();
     if (!userMessage) return;
-    if (!retryText) setInput('');
+    // M7 (issue #1518) বাংলা: retry পাথে শুধু টেক্সট যায় (pending আপলোড
+    // আগের পাঠানোতেই পরিষ্কার হয়ে গেছে)।
+    const sentImages = retryText ? [] : pendingImages;
+    if (!retryText) {
+      setInput('');
+      setPendingImages([]);
+    }
 
     // M10 বাংলা: প্রথম মেসেজেই স্থায়ী conversation identity তৈরি হয় এবং
     // পরের প্রতিটি কলে একই id বজায় থাকে।
     const activeConversationId = conversationId ?? crypto.randomUUID();
     if (!conversationId) setConversationId(activeConversationId);
 
-    // Add user message
-    addMessage({ role: 'user', content: userMessage });
+    // Add user message — M7 (issue #1518): সংযুক্ত ইমেজ shared-types
+    // Attachment চুক্তিতে message metadata-তে থাকে (hasAttachments() দিয়ে
+    // বাবল-রেন্ডারার পথ খোলা থাকে)।
+    addMessage({
+      role: 'user',
+      content: userMessage,
+      metadata: {
+        source: 'chat',
+        ...(sentImages.length > 0 && { attachments: toAttachments(sentImages) }),
+      },
+    });
 
     // Emit message sent event (for billing, cost tracking, etc.)
     eventBus.emit(Events.CHAT_MESSAGE_SENT, {
@@ -256,6 +309,7 @@ export const ChatInterface: React.FC = () => {
       content: userMessage,
       timestamp: Date.now(),
       estimatedTokens: Math.ceil(userMessage.length / 4),
+      attachmentCount: sentImages.length,
       source: 'chat_interface',
     });
 
@@ -269,7 +323,13 @@ export const ChatInterface: React.FC = () => {
         payload: {
           prompt: userMessage,
           conversation_id: activeConversationId,
-          metadata: { idempotency_key: crypto.randomUUID() },
+          metadata: {
+            idempotency_key: crypto.randomUUID(),
+            // M7 (issue #1518) বাংলা: capability_gateway._chat_orchestrate
+            // metadata dict হুবহু ConversationCommand.metadata-এ পাস করে —
+            // আপলোড করা ইমেজ এখন orchestration-এ পৌঁছায়, নীরবে বাদ পড়ে না।
+            ...(sentImages.length > 0 && { attachments: toAttachments(sentImages) }),
+          },
         },
       });
 
@@ -551,11 +611,33 @@ export const ChatInterface: React.FC = () => {
             textarea, and Send button fought for one row and the composer
             overflowed horizontally. flex-wrap + min-w-0 lets the composer
             reflow; the textarea keeps priority via flex growth. */}
+        {/* M7 (issue #1518): pending আপলোড chips — থাম্বনেইল + নাম + রিমুভ। */}
+        {pendingImages.length > 0 && (
+          <div className="flex flex-wrap gap-2" role="list" aria-label="Attached images">
+            {pendingImages.map((img) => (
+              <div key={img.id} className="relative group" role="listitem">
+                <img
+                  src={img.url}
+                  alt={img.name}
+                  className="w-14 h-14 rounded-lg object-cover border border-slate-700"
+                />
+                <button
+                  type="button"
+                  onClick={() => removePendingImage(img.id)}
+                  aria-label={`Remove ${img.name}`}
+                  className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-end gap-2">
-          {/* S4: Image Upload */}
-          <ImageUploadButton
-            onUpload={(attachment) => { void attachment; }}
-          />
+          {/* S4: Image Upload — M7: কলব্যাক এখন pending তালিকায় যোগ করে;
+              orchestration চলাকালীন নতুন আপলোড বন্ধ (কম্পোজারের বাকি অংশের মতো)। */}
+          <ImageUploadButton onUpload={handleImageUpload} disabled={isOrchestrating} />
 
           <textarea
             value={input}
