@@ -112,12 +112,16 @@ export const NAVIGATION_REGISTRY: NavGroup[] = [
       { id: 'nav-activity', label: 'Activity', icon: Activity, kind: 'route', path: '/activity', contexts: ['user'], status: 'implemented', priority: 50 },
       // Parity-audit fixes: Tier-S প্যানেলগুলো রাউটেড ছিল কিন্তু nav rail-এ ছিল না —
       // ইউজার শুধু সরাসরি URL দিয়ে পৌঁছাতে পারত। এখন implemented status-এ exposed।
-      // FIX(nav-truth 2026-10-24): no route for /research in App.tsx or
-      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
-      { id: 'nav-research', label: 'Deep Research', icon: Search, kind: 'route', path: '/research', contexts: ['user'], status: 'planned', priority: 60 },
-      // FIX(nav-truth 2026-10-24): no route for /scheduled-tasks in App.tsx or
-      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
-      { id: 'nav-scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, kind: 'route', path: '/scheduled-tasks', contexts: ['user'], status: 'planned', priority: 70 },
+      // FIX(nav-truth 2026-10-28 #1521): the promised route landed — /research
+      // is now registered in workspaceFeatureRoutes (DeepResearchPanel inside
+      // WorkspaceLayout, ProtectedRoute). Status flipped to 'implemented' per
+      // this registry's own dead-link contract ('planned' only until a real
+      // route lands); routeParity.test enforces the pairing from here on.
+      { id: 'nav-research', label: 'Deep Research', icon: Search, kind: 'route', path: '/research', contexts: ['user'], status: 'implemented', priority: 60 },
+      // FIX(nav-truth 2026-10-28 #1521): same landing as /research above —
+      // /scheduled-tasks registered (ScheduledTasksPanel inside WorkspaceLayout,
+      // ProtectedRoute); 'planned' → 'implemented'.
+      { id: 'nav-scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, kind: 'route', path: '/scheduled-tasks', contexts: ['user'], status: 'implemented', priority: 70 },
       // বাংলা মন্তব্য: Task-12 ghost activation — KnowledgePage আগে dead ছিল; এখন
       // /knowledge route + backend POST /api/knowledge/search|seed দুটিই real, তাই
       // implemented স্ট্যাটাসে registry-তে exposed করা হলো (dead-link prevention মেনে)।
