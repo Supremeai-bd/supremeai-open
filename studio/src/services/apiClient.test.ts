@@ -185,4 +185,77 @@ describe('apiClient', () => {
       expect(headers).not.toHaveProperty('Idempotency-Key');
     });
   });
+
+  // supremeai-studio#1 (CORS residual): the backend rejects the
+  // supremeai-studio-live origin (fix tracked in the monorepo, supremeai#205).
+  // A CORS/origin-policy rejection surfaces as TypeError from fetch and is
+  // DETERMINISTIC — the queue interceptor must NOT amplify it 4× over ~30s of
+  // backoff (each re-fire adds two un-suppressable browser console errors).
+  describe('network-level failure retry policy (supremeai-studio#1)', () => {
+    it('does not retry a deterministic network-layer failure (CORS TypeError)', async () => {
+      (global.fetch as any).mockRejectedValue(new TypeError('Failed to fetch'));
+
+      await expect(apiClient.get('/api/config/public')).rejects.toThrow('Failed to fetch');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('still retries cold-start style failures (constructed Error) up to MAX_ATTEMPTS', async () => {
+      vi.useFakeTimers();
+      try {
+        (global.fetch as any).mockRejectedValue(
+          new Error('Request timed out after 60000ms: /api/v1/health'),
+        );
+
+        const pending = apiClient.get('/api/v1/health').catch((e: unknown) => e);
+        // Backoffs: ~4-5s → ~8-9s → ~16-17s (exponential + jitter, #1679).
+        await vi.advanceTimersByTimeAsync(5_100);
+        await vi.advanceTimersByTimeAsync(10_100);
+        await vi.advanceTimersByTimeAsync(20_100);
+        await pending;
+
+        expect(global.fetch).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('still retries a 50x cold-start response up to MAX_ATTEMPTS', async () => {
+      vi.useFakeTimers();
+      try {
+        (global.fetch as any).mockResolvedValue({ ok: false, status: 503 });
+
+        const pending = apiClient.get('/api/v1/health').catch((e: unknown) => e);
+        await vi.advanceTimersByTimeAsync(5_100);
+        await vi.advanceTimersByTimeAsync(10_100);
+        await vi.advanceTimersByTimeAsync(20_100);
+        await pending;
+
+        expect(global.fetch).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not retry an aborted request (caller cancel, pre-existing #2522 behavior)', async () => {
+      vi.useFakeTimers();
+      try {
+        const controller = new AbortController();
+        (global.fetch as any).mockRejectedValue(
+          Object.assign(new TypeError('The operation was aborted'), { name: 'AbortError' }),
+        );
+
+        const pending = apiClient.get('/api/v1/health', { signal: controller.signal }).catch((e: unknown) => e);
+        // fetchWithTimeout strips the caller signal in the test environment
+        // (isTest), so the aborted short-circuit is driven by fetchOptions.signal
+        // being absent — the TypeError rule governs instead. Either way: no retry.
+        controller.abort();
+        await vi.advanceTimersByTimeAsync(20_100);
+        await pending;
+
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });
