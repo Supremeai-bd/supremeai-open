@@ -329,6 +329,39 @@ for line in $updates; do
         fi
     fi
 
+    # 10. LICENSE SSOT GUARD (#1773).
+    # Machine declared-vs-actual gate for ECOSYSTEM_MAP §2.3 (the open-core
+    # Embassy Model legal boundary). Engages ONLY when the push touches the
+    # map, a package.json, or a LICENSE/NOTICE file. Ratchet mode: the dated
+    # KNOWN_DRIFTS baseline reports without blocking (shrink-only), while any
+    # NEW license drift fail-closes the push. --strict (admin, post-fix)
+    # flips to fail-closed-on-any-finding. Self-contained under `set -u`.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/license_ssot_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            license_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            license_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        if printf '%s\n' "$license_changed" | grep -qE '(^ECOSYSTEM_MAP\.md$|/package\.json$|^package\.json$|(^|/)LICENSE(\.|$)|(^|/)NOTICE(\.|$))'; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/license_ssot_guard.py --check; then
+                    reject "LICENSE SSOT GUARD (#1773) FAILED" \
+                        "The push introduces NEW license drift against the ECOSYSTEM_MAP §2.3 declared-vs-actual SSOT." \
+                        "Fix the finding above (missing license field / LICENSE file, or a declared-model contradiction)." \
+                        "Evidence lines carry the [license-ssot-guard] tag. Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"
