@@ -1,5 +1,2 @@
-"""Compatibility bridge: re-export router from dock_integrations.py."""
-
-from api.routes.dock_integrations import router  # noqa: F401
-
-__all__ = ["router"]
+"""Canonical re-export from core.api.routes.dock_actions (SSOT #751)."""
+from core.api.routes.dock_actions import *  # noqa: F401, F403
