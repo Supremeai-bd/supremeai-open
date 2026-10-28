@@ -45,13 +45,7 @@ OFFLINE_ENV_VARS = (
 # অন্য সেট (anchor-hub, admin-only আছে, state:seq-hold/mirror:private নেই)
 # ছিল — একই ধারণার দুই SSOT drift করে এক পথে claimable, অন্য পথে নয়।
 EXCLUDED_LABELS = frozenset({
-    "status:claimed",
-    "status:in-progress",
-    "state:seq-hold",
-    "blocked-by-upstream",
-    "mirror:private",
     "anchor-hub",
-    "admin-only",
 })
 
 DEFAULT_GROUP = "core"
