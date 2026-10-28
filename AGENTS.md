@@ -21,6 +21,11 @@ All agents live, enter, and execute through exactly two unified pillars:
 
 ---
 
+> **Operating System (the two-sided guarantee in action):** the step-by-step
+> verification ladder, the harm-containment map, and the self-healing /
+> self-evolving flywheel that keep this constitution alive:
+> [`docs/AGENT_OPERATING_SYSTEM.md`](docs/AGENT_OPERATING_SYSTEM.md)
+
 ## 📜 The 5 Universal Invariants (Must Follow vs Must Avoid)
 
 - **MUST FOLLOW:**
