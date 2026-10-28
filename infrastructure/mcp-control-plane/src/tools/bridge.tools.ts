@@ -668,6 +668,48 @@ function isOpenIssue(raw: RawIssue): boolean {
   return typeof raw.state !== "string" || raw.state.toLowerCase() === "open";
 }
 
+/**
+ * Queue fetch paging contract (#2115/#2123): the board must be enumerated
+ * completely, not sampled from one page. A single fetch of the newest
+ * creations (issues + PRs mixed) makes the queue a creation-rank window
+ * that silently drops open work as traffic flows (observed window shrank
+ * to ~2.5h during fleet storms and read 20–35 rows vs 98 open issues).
+ */
+export const QUEUE_PAGE_SIZE = 100;
+export const QUEUE_MAX_PAGES = 5;
+export const QUEUE_LIMIT_MAX = 200;
+
+/** Pure URL builder for one queue page (label optional, page is 1-based). */
+export function buildQueueQueryUrl(repo: string, label: string | null, page: number): string {
+  const params = new URLSearchParams({
+    state: "open",
+    per_page: String(QUEUE_PAGE_SIZE),
+    sort: "created",
+    direction: "desc",
+    page: String(Math.max(1, page)),
+  });
+  if (label) params.set("labels", label);
+  return `https://api.github.com/repos/${repo}/issues?${params.toString()}`;
+}
+
+/** Pure page merge: flatten + dedupe by issue number (first occurrence wins). */
+export function mergeIssuePages(pages: RawIssue[][]): RawIssue[] {
+  const seen = new Set<number>();
+  const out: RawIssue[] = [];
+  for (const page of Array.isArray(pages) ? pages : []) {
+    for (const item of Array.isArray(page) ? page : []) {
+      if (!item || typeof item !== "object") continue;
+      const num = (item as { number?: unknown }).number;
+      if (typeof num === "number" && Number.isFinite(num)) {
+        if (seen.has(num)) continue;
+        seen.add(num);
+      }
+      out.push(item as RawIssue);
+    }
+  }
+  return out;
+}
+
 /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
 export function queueFromIssues(rawIssues: unknown, limit = 20) {
   const items = Array.isArray(rawIssues) ? rawIssues : [];
@@ -679,7 +721,7 @@ export function queueFromIssues(rawIssues: unknown, limit = 20) {
     .filter((item) => !isRejectedOrLanded(item))
     .map(normalizeQueueItem)
     .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
-    .slice(0, Math.min(Math.max(1, limit), 50));
+    .slice(0, Math.min(Math.max(1, limit), QUEUE_LIMIT_MAX));
 }
 
 async function githubHeaders(withAuth = true): Promise<Record<string, string>> {
@@ -714,36 +756,46 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     "bridge.work_queue",
     "List OPEN work-order issues awaiting an agent in the public open-source repo (defaults to all open issues, or filter by optional label). Read-only, public data only.",
     {
-      limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return (default 20)"),
+      limit: z.number().int().min(1).max(QUEUE_LIMIT_MAX).optional().describe("Max work orders to return (default 20; up to 200 for full-board reconciliation)"),
       label: z.string().optional().describe("Optional label filter; omit or empty = all open issues"),
     },
     async ({ limit, label }) => {
       const repo = bridgeOpenRepo();
       const appliedLabel = typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
-      const queryParams = new URLSearchParams({ state: "open", per_page: "50", sort: "created", direction: "desc" });
-      if (appliedLabel) {
-        queryParams.set("labels", appliedLabel);
-      }
       try {
-        let res = await httpRequest<RawIssue[]>(
-          `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
-          { headers: await githubHeaders(true), timeoutMs: 15_000 }
-        );
-        // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
-        if (!res.ok && (res.status === 401 || res.status === 403)) {
-          res = await httpRequest<RawIssue[]>(
-            `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
-            { headers: await githubHeaders(false), timeoutMs: 15_000 }
+        // Complete enumeration: walk pages until a short page (or cap).
+        // Fixes #2115/#2123 — a single per_page=50 fetch turned the queue
+        // into a creation-rank window that dropped open work (98 open
+        // issues read as 20–35 rows) while bridge_read_feedback still
+        // resolved the dropped rows.
+        const pages: RawIssue[][] = [];
+        let page = 1;
+        while (page <= QUEUE_MAX_PAGES) {
+          const url = buildQueueQueryUrl(repo, appliedLabel, page);
+          let res = await httpRequest<RawIssue[]>(
+            url,
+            { headers: await githubHeaders(true), timeoutMs: 15_000 }
           );
+          // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
+          if (!res.ok && (res.status === 401 || res.status === 403)) {
+            res = await httpRequest<RawIssue[]>(
+              url,
+              { headers: await githubHeaders(false), timeoutMs: 15_000 }
+            );
+          }
+          if (!res.ok) {
+            const message = (res.data as { message?: unknown })?.message ?? res.status;
+            return {
+              isError: true,
+              content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}: ${String(message)}). Retry shortly; the queue is public and needs no credentials.` }],
+            };
+          }
+          const rows = Array.isArray(res.data) ? res.data : [];
+          pages.push(rows);
+          if (rows.length < QUEUE_PAGE_SIZE) break;
+          page += 1;
         }
-        if (!res.ok) {
-          const message = (res.data as { message?: unknown })?.message ?? res.status;
-          return {
-            isError: true,
-            content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}: ${String(message)}). Retry shortly; the queue is public and needs no credentials.` }],
-          };
-        }
-        const queued = queueFromIssues(res.data, limit ?? 20);
+        const queued = queueFromIssues(mergeIssuePages(pages), limit ?? 20);
         // Expose all active open issues so agents discover claimable federation work
         const anonymous = RequestContextStore.get()?.authenticated !== true;
         const workOrders = queued;
