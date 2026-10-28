@@ -83,7 +83,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404 — live-mode IO wrappers shell out to git via list-argv only (#2081 audit)
 import sys
 import time
 import urllib.error
@@ -134,7 +135,7 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
         req = urllib.request.Request(TOWER, data=json.dumps(payload).encode(),
                                      headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            with urllib.request.urlopen(req, timeout=45) as resp:  # nosec B310 — tower URL is a pinned https module constant; audited #2081
                 sid = resp.headers.get("Mcp-Session-Id")
                 body = resp.read().decode("utf-8", errors="replace")
                 ctype = resp.headers.get("Content-Type") or ""
@@ -149,7 +150,7 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
             if line.startswith("data:"):
                 try:
                     return json.loads(line[5:].strip()), sid
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001  # nosec B112 — SSE lines are individually skippable by design; continue IS the contract (#2081 audit)
                     continue
     if not body.strip():
         return {"accepted": True}, sid
@@ -277,8 +278,9 @@ def run_verdicts(work_orders: list[dict], main_subjects: list[str],
 # ── IO wrappers (live mode) ──────────────────────────────────────────────────
 
 def _main_subjects(depth: int = LOG_DEPTH) -> list[str]:
-    out = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
+    git_bin = shutil.which("git") or "git"  # B607: resolve to absolute path when available
+    out = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git read-only command (#2081 audit)
+        [git_bin, "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
         capture_output=True, text=True, timeout=60,
     )
     if out.returncode != 0:
