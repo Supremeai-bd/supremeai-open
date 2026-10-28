@@ -1,0 +1,78 @@
+{
+  "schema": "docs-link-integrity-baseline/1",
+  "generatedAt": "2026-10-28",
+  "headAtGeneration": "post-#1938-fixes (R42 landing)",
+  "probe": "scripts/ci/docs_link_integrity_guard.py",
+  "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow.",
+  "ratchetedFloor": [],
+  "knownReportOnly": [
+    {
+      "file": ".agents/skills/developing-genkit-python/references/agents-http.md",
+      "target": "agents.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": ".agents/skills/developing-genkit-python/references/dev-workflow.md",
+      "target": "agents.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": ".agents/skills/github-actions-debugger/SKILL.md",
+      "target": "file:///f:/supremeai%20backup/docs/devops/CI_DEBUGGING_ROADMAP.md",
+      "reason": "file-uri"
+    }
+  ],
+  "knownExcluded": [
+    {
+      "file": "docs/AUDIT_2026-10-15.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/AUDIT_2026-10-16-external-audit.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/AUTONOMY_LOOP_CONTRACT.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/CI_MINIMUM_PIPELINE_STANDARD.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/CONTRIBUTING_BN.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/FAQ.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/GUARDIAN_EVALUATION.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/INGRESS_SECURITY_POLICY.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/ZERO_ADMIN_GUIDE.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/adrs/README.md",
+      "target": "../../AGENT_RULES.md",
+      "reason": "missing-file"
+    }
+  ],
+  "checkedAtGeneration": 268
+}
