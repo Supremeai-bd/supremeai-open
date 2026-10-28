@@ -3,15 +3,8 @@
   "generatedAt": "2026-10-28",
   "headAtGeneration": "R42 re-land r3 (post-#1980-routing-rejection) at open main f3f22a9 — monorepo lanes only; satellite fix in flight",
   "probe": "scripts/ci/docs_link_integrity_guard.py",
-  "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (dated 2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): the single MANIFEST.md entry is satellite-lane debt — core/** routes to the satellite repo (bridge v2 routing law, the #1980 rejection), so its fix ships as a separate satellite order (bridge-20261028-r42-manifest-satellite-fix). SHRINK TO 0 once the mirror syncs: delete the entry, re-run --check.",
-  "ratchetedFloor": [
-    {
-      "file": "core/_archive/MANIFEST.md",
-      "target": "../../docs/plan-network/MAINTAINABILITY_PLAN.md",
-      "reason": "missing-file",
-      "allowed": 1
-    }
-  ],
+  "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): pinned core/_archive/MANIFEST.md as satellite-lane debt while its fix shipped via bridge-20261028-r42-manifest-satellite-fix. SHRUNK TO 0 same day: the satellite fix landed as bc810e7 (PR #2028) and mirrored to this tree before the r3 landing CI window closed — floor is EMPTY, the original r3 empty-floor endgame reached by the routing-legal route.",
+  "ratchetedFloor": [],
   "knownReportOnly": [
     {
       "file": ".agents/skills/developing-genkit-python/references/agents-http.md",
