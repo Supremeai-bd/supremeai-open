@@ -16,6 +16,7 @@ test_boundary_contract_sentinel.py.
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 import time
@@ -285,6 +286,79 @@ def test_live_mode_honest_skip_on_unreachable():
         # In-repo the git plane works; the Tower plane is exercised by the
         # report-only live mode elsewhere. Nothing to assert here.
         pass
+
+
+def test_fetch_work_orders_r2_tower_serves_full_ladder_top():
+    """r2 tower (#2115/#2123): limit=200 accepted, rows returned, lower rungs
+    never dialed (no wasted round-trips, no silent cap at 50 after deploy)."""
+    mod = _load_watchdog_module()
+    calls = []
+
+    def r2_tower(name, arguments):
+        calls.append(dict(arguments))
+        assert arguments.get("limit") == 200
+        return json.dumps({"workOrders": [{"number": 1}, {"number": 2}]})
+
+    rows, rung = mod._fetch_work_orders(fetch_text=r2_tower)
+    assert rows == [{"number": 1}, {"number": 2}] and rung == 200
+    assert calls == [{"limit": 200}], calls
+
+
+def test_fetch_work_orders_pre_r2_validation_fallback():
+    """Pre-r2 deployed tower: limit=200 is a -32602 validation rejection
+    (non-JSON error text) -> falls to 50 (pre-r2 cap; live receipt 35 rows);
+    default rung never dialed. Rank-window visibility widens 20 -> 35."""
+    mod = _load_watchdog_module()
+    calls = []
+
+    def prer2_tower(name, arguments):
+        calls.append(dict(arguments))
+        if arguments.get("limit") == 200:
+            return ("MCP error -32602: Input validation error: Invalid "
+                    "arguments for tool bridge_work_queue: Too big: expected "
+                    "number to be <=50")
+        assert arguments.get("limit") == 50, arguments
+        return json.dumps({"workOrders": [{"number": n} for n in range(35)]})
+
+    rows, rung = mod._fetch_work_orders(fetch_text=prer2_tower)
+    assert len(rows) == 35 and rung == 50
+    assert calls == [{"limit": 200}, {"limit": 50}], calls
+
+
+def test_fetch_work_orders_default_rung_last_resort():
+    """Both explicit rungs rejected -> tower default (exact pre-ladder
+    behavior); the ladder never invents an empty board."""
+    mod = _load_watchdog_module()
+    calls = []
+
+    def legacy_tower(name, arguments):
+        calls.append(dict(arguments))
+        if "limit" in arguments:
+            return "MCP error -32602: Input validation error: unexpected argument"
+        return json.dumps({"workOrders": [{"number": 7}]})
+
+    rows, rung = mod._fetch_work_orders(fetch_text=legacy_tower)
+    assert rows == [{"number": 7}] and rung is None
+    assert calls == [{"limit": 200}, {"limit": 50}, {}], calls
+
+
+def test_fetch_work_orders_network_failure_fail_close():
+    """Only argument-validation rejections fall through; a transport failure
+    propagates so main() keeps its honest SKIP (exit 2, never 0/1)."""
+    mod = _load_watchdog_module()
+    calls = []
+
+    def dead_tower(name, arguments):
+        calls.append(dict(arguments))
+        raise ConnectionError("unreachable")
+
+    try:
+        mod._fetch_work_orders(fetch_text=dead_tower)
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("transport failure must propagate, not fall through")
+    assert calls == [{"limit": 200}], calls
 
 
 if __name__ == "__main__":
