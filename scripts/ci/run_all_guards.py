@@ -25,6 +25,7 @@ GUARDS: list[list[str]] = [
     ["python", "scripts/ci/contract_fuzz_guard.py", "--self-test"],
     ["python", "scripts/ci/boundary_contract_sentinel.py", "--self-test"],
     ["python", "scripts/ci/fleet_contract_probe.py", "--self-test"],
+    ["python", "scripts/ci/bridge_landing_watchdog.py", "--self-test"],
     ["python", "scripts/ci/license_ssot_guard.py", "--check"],
     ["python", "scripts/ci/contract_codegen_guard.py", "--check"],
     ["python", "scripts/ci/bandit_sast_guard.py", "--check"],
