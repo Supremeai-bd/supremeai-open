@@ -4,16 +4,7 @@
   "headAtGeneration": "post-#2114 (aa9de7b)",
   "probe": "scripts/ci/radar_index_freshness_guard.py",
   "note": "shrink-only floor over the citation-ghost class only; key = [kind, file, base]. A/B invariant violations are NEVER floorable — they are structural and always fail.",
-  "floor": [
-    {
-      "key": [
-        "citation-ghost",
-        "docs/SCOUT_RADAR_2026-10-28-XIV.md",
-        51
-      ],
-      "allowed": 1
-    }
-  ],
-  "pointerAtGeneration": 51,
+  "floor": [],
+  "pointerAtGeneration": 52,
   "registryRowsAtGeneration": "R1-R50"
 }
