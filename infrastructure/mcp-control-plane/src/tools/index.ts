@@ -33,6 +33,7 @@ import { registerIntelligenceTools } from "./intelligence.tools.js";
 import type { MemorySubAdapter } from "../adapters/memory/index.js";
 
 import { registerUnifiedStatusTool } from "./unified.status.tools.js";
+import { registerParityTools } from "./parity.tools.js";
 
 /**
  * Registers all MCP tools with the server.
@@ -102,4 +103,7 @@ export async function registerAllTools(
 
   // ── Intelligence & Diagnostics (Graphify Codebase AST & DevTools Audit)
   await registerIntelligenceTools(server);
+
+  // ── Multi-Platform Parity & Drift Sentinel
+  await registerParityTools(server);
 }
