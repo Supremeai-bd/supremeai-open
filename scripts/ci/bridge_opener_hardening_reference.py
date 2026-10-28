@@ -32,7 +32,7 @@ FRESH_COMPARE_STATUSES = ("ahead", "identical")
 MAX_ACTIVE_CLAIMS = 1  # task #479 normative; detector cross-check
 
 
-def has_reflection_evidence(wo_body: str) -> bool:
+def has_reflection_evidence(wo_body: str | None) -> bool:
     """Robust typography parser (#485 fix 2): colon, em/en-dash, hyphen.
 
     Case-insensitive; empty/None body -> False (fail-closed, unchanged).
@@ -40,7 +40,7 @@ def has_reflection_evidence(wo_body: str) -> bool:
     return bool(REFLECTION_RE.search(wo_body or ""))
 
 
-def extract_evidence_sections(wo_body: str) -> str:
+def extract_evidence_sections(wo_body: str | None) -> str:
     """Lossless evidence transfer (#485 fix 3).
 
     Returns the verbatim "## Test Evidence" and "## Reflection Evidence"
