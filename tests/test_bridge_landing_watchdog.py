@@ -408,15 +408,32 @@ def test_join_rejected_plane_queue_rows_win_on_collision():
 
 
 def test_load_rejected_plane_fail_open():
-    """An unreachable GitHub plane degrades the rejected plane only: honest
+    """Both transports down degrade the rejected plane only: honest dual-cause
     'unreachable' note, empty rows — the queue plane stays authoritative."""
     mod = _load_watchdog_module()
 
     def boom():
         raise ConnectionError("down")
 
-    rows, note = mod._load_rejected_plane(fetch_rows=boom)
-    assert rows == [] and "unreachable" in note and "ConnectionError" in note
+    rows, note = mod._load_rejected_plane(fetch_rows=boom, tower_rows=boom)
+    assert rows == [] and "unreachable" in note
+    assert "github ConnectionError" in note and "tower ConnectionError" in note
+
+
+def test_fetch_rejected_rows_tower_shape():
+    """The tower fallback parses the label-filtered bridge_work_queue payload
+    (#2251 fixed the self-defeating filter) and fails loud on drift."""
+    mod = _load_watchdog_module()
+
+    ok = mod._fetch_rejected_rows_tower(fetch_text=lambda n, a: json.dumps({"count": 1, "workOrders": [
+            {"number": 2056, "title": "x", "labels": ["bridge:rejected"]}]}))
+    assert len(ok) == 1 and ok[0]["number"] == 2056
+
+    try:
+        mod._fetch_rejected_rows_tower(fetch_text=lambda n, a: '{"repo": "x"}')
+        raise AssertionError("expected TypeError for missing workOrders")
+    except TypeError:
+        pass
 
 
 def test_enrich_tower_verdicts_blank_stamp_shapes():
@@ -444,9 +461,11 @@ def test_enrich_tower_verdicts_blank_stamp_shapes():
     assert plain["tower_unstamped"] is False and plain["tower_verdict"] == "MERGED_ON_MAIN"
 
 
-def test_load_rejected_plane_403_discloses_rate_limit():
+def test_load_rejected_plane_403_falls_back_to_tower():
     """A 403 is transient (per-IP unauthenticated budget, resets hourly) and
-    must be reported by cause — not folded into a generic outage note."""
+    must be reported by cause whether the tower fallback covers it (#2251
+    fixed the tower-side label filter; live 2026-10-29: github 403 from a
+    shared egress while the tower plane served 20 rows) or both planes fail."""
     import urllib.error
 
     mod = _load_watchdog_module()
@@ -455,14 +474,27 @@ def test_load_rejected_plane_403_discloses_rate_limit():
         raise urllib.error.HTTPError("https://api.github.com/x", 403,
                                      "rate limit exceeded", None, None)
 
-    rows, note = mod._load_rejected_plane(fetch_rows=ratelimited)
-    assert rows == [] and "rate limit" in note and "resets hourly" in note
+    def boom():
+        raise RuntimeError("down")
+
+    rows, note = mod._load_rejected_plane(
+        fetch_rows=ratelimited, tower_rows=lambda: [{"number": 2056}])
+    assert rows == [{"number": 2056}]
+    assert "tower-plane fallback" in note
+    assert "rate limit" in note and "resets hourly" in note
+
+    rows, note = mod._load_rejected_plane(
+        fetch_rows=ratelimited, tower_rows=boom)
+    assert rows == [] and "unreachable" in note
+    assert "rate limit" in note and "resets hourly" in note
+    assert "tower RuntimeError" in note
 
     def server_error():
         raise urllib.error.HTTPError("https://api.github.com/x", 500,
                                      "boom", None, None)
 
-    rows, note = mod._load_rejected_plane(fetch_rows=server_error)
+    rows, note = mod._load_rejected_plane(fetch_rows=server_error,
+                                          tower_rows=boom)
     assert rows == [] and "HTTP 500" in note
 
 
