@@ -221,6 +221,9 @@ def test_self_test_passes() -> None:
 def test_live_repo_sweep_passes() -> None:
     r = guard.sweep(REPO_ROOT)
     assert "fatal" not in r
+    # Pointer pin regenerated per the R48 gate's own instruction after #2145
+    # (R51 registration) legitimately advanced the index next-free R51 -> R52.
+    # Bump this literal ONLY together with a landed index-pointer advance.
     assert r["pointer"] == 52, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
