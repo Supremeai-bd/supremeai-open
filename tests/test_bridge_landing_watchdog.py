@@ -419,6 +419,31 @@ def test_load_rejected_plane_fail_open():
     assert rows == [] and "unreachable" in note and "ConnectionError" in note
 
 
+def test_enrich_tower_verdicts_blank_stamp_shapes():
+    """The stamp plane migrated live within hours (cbb9ab2 plane watch):
+    latestVerdict went null -> strings -> objects carrying EMPTY verdict
+    strings. A blank stamp is a blackout (unstamped), never a stamp; a real
+    object stamp must surface its verdict token, not a dict repr."""
+    mod = _load_watchdog_module()
+    row = {"number": 70, "verdict": "MERGED_ON_MAIN",
+           "slug": "(bridge-20261028-a)", "age_hours": 1.0}
+
+    def run(latest):
+        return mod.enrich_tower_verdicts(
+            [dict(row)],
+            fetch_feedback=lambda n: {"issueNumber": n, "latestVerdict": latest})[0]
+
+    blank = run({"verdict": "", "at": "x"})
+    assert blank["tower_unstamped"] is True and blank["tower_verdict"] == "none"
+    ws = run("   ")
+    assert ws["tower_unstamped"] is True and ws["tower_verdict"] == "none"
+    stamped = run({"verdict": "MERGED_ON_MAIN", "at": "x"})
+    assert (stamped["tower_unstamped"] is False
+            and stamped["tower_verdict"] == "MERGED_ON_MAIN")
+    plain = run("MERGED_ON_MAIN")
+    assert plain["tower_unstamped"] is False and plain["tower_verdict"] == "MERGED_ON_MAIN"
+
+
 def test_load_rejected_plane_403_discloses_rate_limit():
     """A 403 is transient (per-IP unauthenticated budget, resets hourly) and
     must be reported by cause — not folded into a generic outage note."""
