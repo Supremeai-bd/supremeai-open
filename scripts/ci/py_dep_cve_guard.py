@@ -426,6 +426,22 @@ def self_test() -> bool:
             encoding="utf-8",
         )
         saved_audit = g.audit_manifest
+        # Hermetic invariant: the sandbox cases below assert SPECIFIC routing
+        # outcomes, but evaluate() short-circuits on its pip-audit presence
+        # check (shutil.which) BEFORE reaching the patched audit_manifest. On
+        # hosts without pip-audit installed every decision-tree case came back
+        # EXIT_PASS "not installed" and the whole --self-test went red (live:
+        # 4 decision-tree cases + the pytest self-test probe on a bare venv),
+        # while runners that happen to carry pip-audit stayed green — an
+        # environment-coupled suite, not a hermetic one. Force the binary
+        # "present" for the entire block; the dedicated "missing" case
+        # re-patches which->None inside and restores to THIS patch.
+        real_which = g.shutil.which
+        g.shutil.which = (
+            lambda name, _bin=PIP_AUDIT_BIN, _real=real_which: (
+                "/usr/local/bin/" + _bin if name == _bin else _real(name)
+            )
+        )
         try:
             g.audit_manifest = lambda p: {
                 "pytest@8.4.2": ["PYSEC-old"],
@@ -496,6 +512,7 @@ def self_test() -> bool:
             assert code == EXIT_PASS and not drift
             print("  PASS | --files mode: off-surface skip, on-surface full check")
         finally:
+            g.shutil.which = real_which
             g.audit_manifest = saved_audit
     # 4. Live wiring: roster + pre-push carry the guard (when run inside the repo).
     roster = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"

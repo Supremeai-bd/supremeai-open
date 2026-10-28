@@ -30,9 +30,16 @@ Design (zero-dependency doctrine, dual mode — pytest + stdlib runners):
   - stdlib:  python3 tests/test_py_dep_cve_guard.py   (plain runner)
 
 Network-dependent paths are hermetic: audit_manifest is monkeypatched with
-fixture findings, so every structural test is offline and deterministic —
-the same pattern as the guard's own --self-test and the #1913 suite. The
-single live --check probe degrades to a skip when pip-audit/PyPI is absent.
+fixture findings AND the pip-audit presence check (shutil.which) is pinned
+to "present" (or deliberately None for the missing-binary case), so every
+structural test is offline and deterministic on ANY host — the same pattern
+as the guard's own --self-test and the #1913 suite. The original suite
+patched only audit_manifest, so on hosts without pip-audit installed the
+decision-tree cases short-circuited on the presence check and went red
+(observed live: 5 failures on a bare venv, green only on runners that
+carry pip-audit) — an environment-coupled suite, fixed here and in the
+guard's self-test symmetrically. The single live --check probe degrades
+to a skip when pip-audit/PyPI is absent.
 """
 
 from __future__ import annotations
@@ -41,6 +48,7 @@ import json
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +58,27 @@ TAG = "[py-dep-cve-guard]"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 import py_dep_cve_guard as guard
+
+
+@contextmanager
+def _pip_audit_present():
+    """Pin the pip-audit presence check to "present" for the block.
+
+    evaluate() short-circuits on shutil.which(PIP_AUDIT_BIN) BEFORE the
+    monkeypatched audit_manifest is ever consulted, so decision-tree tests
+    must pin the binary present (or None) or they implicitly depend on the
+    host environment — the opposite of hermetic.
+    """
+    real_which = guard.shutil.which
+    guard.shutil.which = (
+        lambda name, _bin=guard.PIP_AUDIT_BIN, _real=real_which: (
+            "/usr/local/bin/" + _bin if name == _bin else _real(name)
+        )
+    )
+    try:
+        yield
+    finally:
+        guard.shutil.which = real_which
 
 
 def _sandbox(tmp: Path, findings: dict[str, list[str]]) -> Path:
@@ -192,7 +221,8 @@ def test_decision_tree_new_advisory_fail_closes() -> None:
             "fastapi@0.162.0": ["PYSEC-fresh"],
         }
         try:
-            code, drift, _imp, _notes = guard.evaluate(root)
+            with _pip_audit_present():
+                code, drift, _imp, _notes = guard.evaluate(root)
             assert code == guard.EXIT_DRIFT, "new advisory pair must fail-close"
             assert drift[0]["pair"] == "gateway/requirements.txt:fastapi@0.162.0"
             assert drift[0]["kind"] == "new-pair"
@@ -210,7 +240,8 @@ def test_decision_tree_pip_audit_failure_skips_with_evidence() -> None:
 
         guard.audit_manifest = _boom
         try:
-            code, drift, _imp, notes = guard.evaluate(root)
+            with _pip_audit_present():
+                code, drift, _imp, notes = guard.evaluate(root)
             assert code == guard.EXIT_PASS and not drift
             assert any("pip-audit unreachable" in n for n in notes), notes
         finally:
@@ -235,7 +266,8 @@ def test_decision_tree_unreadable_manifest_fail_closes() -> None:
         root = _sandbox(Path(td), {"gateway/services/x/requirements.txt:pytest@8.4.2": ["PYSEC-old"]})
         (root / "gateway" / "requirements.txt").chmod(0)
         try:
-            code, drift, _imp, _notes = guard.evaluate(root)
+            with _pip_audit_present():
+                code, drift, _imp, _notes = guard.evaluate(root)
             assert code == guard.EXIT_DRIFT and drift[0]["kind"] == "unreadable-manifest"
         finally:
             (root / "gateway" / "requirements.txt").chmod(0o644)
@@ -245,7 +277,8 @@ def test_decision_tree_malformed_baseline_fail_closes() -> None:
     with tempfile.TemporaryDirectory(prefix="pydep-base-") as td:
         root = _sandbox(Path(td), {"gateway/services/x/requirements.txt:pytest@8.4.2": ["PYSEC-old"]})
         (root / guard.BASELINE_PATH).write_text("{not json", encoding="utf-8")
-        code, drift, _imp, _notes = guard.evaluate(root)
+        with _pip_audit_present():
+            code, drift, _imp, _notes = guard.evaluate(root)
         assert code == guard.EXIT_DRIFT and drift[0]["ids"] == ["BASELINE"]
 
 
