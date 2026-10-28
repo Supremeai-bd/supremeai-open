@@ -377,6 +377,19 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
             )
             if c_code != 0:
                 return False
+    elif diverged:
+        # বাংলা: report-only মোডে (auto_sync=False) ড্রিফট নীরবে গিলে ফেলা যায় না —
+        # চুক্তি: "drift is reported, the result stays True, and the tree is NEVER
+        # mutated" (tests/test_constitution_freshness.py মডিউল-ডকস্ট্রিং, #567
+        # Tier-1)। আগে diverged তালিকা কোথাও ছাপা হত না — report-only মোডের
+        # "reported" প্রতিশ্রুতি অন্ধ ছিল (test_21 শুধু no-mutation pin করত,
+        # রিপোর্ট লাইন কখনো assert করত না কারণ লাইনটাই ছিল না)। stdout লাইন
+        # #1551/#67 চুক্তি-নিরাপদ: --verify-only-এর শেষ stdout লাইন (মার্কার) ও
+        # marker-count অপরিবর্তিত; টিয়ার-এভিডেন্সের সাথে ড্রিফট-রিপোর্টও artifact-এ থাকবে।
+        log(
+            "!",
+            "[Rules] constitution drift (report-only, not synced): " + ", ".join(diverged),
+        )
 
     _print_rule_version_and_checklist()
     return True
@@ -1028,6 +1041,43 @@ def main() -> int:
         return 2
 
     if args.verify_only:
+        # বাংলা: #567-এর Tier-1 fresh-গেট step_2_rules() সম্পূর্ণ নির্মিত ও
+        # ২৬-অফলাইন-টেস্টে যাচাইকৃত, অথচ #1551-এর dead-cluster removal-এর পর
+        # একে কোনো কলার ডাকে না (git grep প্রমাণিত) — freshনেস যাচাই নীরবে শূন্য:
+        # ড্রিফটেড AGENTS.md-সহ --verify-only নিঁখোচ পাস করে (live main-এ প্রমাণিত)।
+        # tests/test_constitution_freshness.py-র মডিউল-ডকস্ট্রিং এই আচরণটাকেই চুক্তি
+        # হিসেবে বর্ণনা করে: "report-only mode (--verify-only boot smoke): drift is
+        # reported, the result stays True, and the tree is NEVER mutated"। এই
+        # বুট-স্মোক সেই চুক্তি ফেরত বসায় — report-only: auto_sync=False (গাছ
+        # কখনো মিউটেট হয় না — governance PR-এর constitution পরিবর্তন অক্ষত),
+        # ফলাফল stderr-এ সৎ রিপোর্ট; exit-code ও stdout টিয়ার-এভিডেন্স
+        # অপরিবর্তিত (--verify-only-র fail-closed চুক্তি #1551 অক্ষত; মার্কার
+        # exactly-once অক্ষত; §4b-1 cross-repo check 2>/dev/null pipe করে)।
+        # ডিসপ্যাচ-পথের fresh-গেটিং owner-level সিদ্ধান্ত (#1551 TaskCycleWiring
+        # docstring) — এখানে স্পর্শ করা হয়নি।
+        try:
+            if _offline_requested(getattr(args, "offline", False)):
+                print(
+                    "[Rules] offline: constitution-freshness boot smoke honestly skipped",
+                    file=sys.stderr,
+                )
+            elif step_2_rules(auto_sync=False):
+                print(
+                    "[Rules] constitution freshness gate: PASS (report-only boot smoke; "
+                    "drift, if any, is reported on stdout above)",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "[Rules] constitution freshness gate: UNVERIFIED (report-only boot "
+                    "smoke, non-blocking by contract)",
+                    file=sys.stderr,
+                )
+        except Exception as exc:  # বাংলা: বুট-স্মোক কখনো --verify-only ফেল করাবে না
+            print(
+                f"[Rules] boot smoke error (report-only, non-blocking): {exc}",
+                file=sys.stderr,
+            )
         evidence = run_verify()
         failed = [ev for ev in evidence if not ev.get("passed")]
         if failed:
