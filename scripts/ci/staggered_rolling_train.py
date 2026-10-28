@@ -194,7 +194,7 @@ def plan_consolidation(
     last_synced: str | None,
     target_head: str | None,
     parents: Mapping[str, str] | None = None,
-    commit_files: Mapping[str,] | None = None,
+    commit_files: Mapping[str, tuple[str, ...]] | None = None,
 ) -> ConsolidationPlan:
     """Build the atomic consolidation plan for one satellite's slot.
 
