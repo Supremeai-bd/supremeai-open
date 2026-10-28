@@ -32,6 +32,8 @@ the same pattern as the guard's own --self-test.
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -200,7 +202,11 @@ def test_missing_or_malformed_baseline_fails_closed() -> None:
 def test_live_baseline_provenance_and_empty_floor() -> None:
     data = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     assert data["schema"] == "docs-link-integrity-baseline/1"
-    assert "2026-10-28" in data["generatedAt"], "baseline must be dated"
+    # #2180: the date is now stamped live at regen time — assert the FORMAT
+    # ("baseline must be dated"), not a frozen literal that would red on the
+    # first future regen (the literal itself was the same freeze class).
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(data["generatedAt"])), (
+        "baseline must be dated (YYYY-MM-DD)")
     # r3 re-land then same-day shrink: the genesis ratchet pinned the ONE
     # satellite-lane entry (core/** routes satellite — the #1980 rejection law)
     # while its fix shipped via bridge-20261028-r42-manifest-satellite-fix; the
@@ -215,6 +221,35 @@ def test_live_baseline_provenance_and_empty_floor() -> None:
         assert token in data["note"], f"shrink history must cite {token}"
     assert len(data["knownReportOnly"]) == 3, "3 vendored findings stay pinned report-only (#1725 lane)"
     assert len(data["knownExcluded"]) == 10, "10 AGENT_RULES ghosts stay pinned excluded (#1642->#1708 debt)"
+
+
+# --------------------------------------------------------------------------- #
+# #2180 — regen provenance is live; the file-owned narrative note survives     #
+# --------------------------------------------------------------------------- #
+
+def test_regen_note_preserved_and_provenance_live() -> None:
+    # The canonical regen path (main --baseline) stamps LIVE provenance and
+    # carries the file-owned narrative note forward — the genesis/shrink
+    # history pinned by test_live_baseline_provenance_and_empty_floor must
+    # never be clobbered by a regen. Exercises main(), not just the builder.
+    out = subprocess.run([sys.executable, str(GUARD), "--baseline"], cwd=str(REPO_ROOT),
+                         capture_output=True, text=True)
+    assert out.returncode == 0, f"--baseline must exit 0: {out.stderr[-300:]}"
+    regen = json.loads(out.stdout)
+    live = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+    assert regen["note"] == live["note"], "regen must carry the file-owned narrative note forward"
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(REPO_ROOT),
+                          capture_output=True, text=True)
+    assert head.returncode == 0
+    assert regen["headAtGeneration"].startswith(head.stdout.strip()), (
+        "regen provenance must pin the actual HEAD at generation time (#2180)")
+
+
+def test_git_provenance_fallback_hermetic() -> None:
+    # A git-less directory gets the honest fallback — never a crash, never a
+    # stale literal carried forward as if it were fresh provenance.
+    tmp = Path(tempfile.mkdtemp(prefix="dlig-nogit-"))
+    assert guard._git_head_provenance(tmp) == "unknown (git unavailable at generation)"
 
 
 def test_live_repo_ratchet_holds() -> None:

@@ -36,6 +36,8 @@ the same pattern as the guard's own --self-test.
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -237,6 +239,33 @@ def test_wiring_roster_and_pre_push() -> None:
     hook = (REPO_ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
     assert "RADAR INDEX FRESHNESS GUARD (#2091)" in hook, "guard missing from the live pre-push hook"
     assert guard.GUARD_TAG in hook, "hook must invoke the guard's evidence tag"
+
+
+# --------------------------------------------------------------------------- #
+# #2180 — baseline provenance is live, never a frozen literal                  #
+# --------------------------------------------------------------------------- #
+
+def test_build_baseline_provenance_is_live() -> None:
+    data = guard.build_baseline(REPO_ROOT)
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(REPO_ROOT),
+                          capture_output=True, text=True)
+    if head.returncode == 0:
+        assert data["headAtGeneration"].startswith(head.stdout.strip()), (
+            "headAtGeneration must pin the actual HEAD at generation time (#2180)")
+    else:
+        assert data["headAtGeneration"] == "unknown (git unavailable at generation)"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", data["generatedAt"]), (
+        "generatedAt must be a live UTC date (#2180)")
+    text = (REPO_ROOT / guard.INDEX_REL).read_text(encoding="utf-8")
+    _tokens, bases = guard.parse_registry(text)
+    expect = f"R{min(bases)}-R{max(bases)}" if bases else "unknown (empty registry at generation)"
+    assert data["registryRowsAtGeneration"] == expect, (
+        "registryRowsAtGeneration must derive from the live registry (#2180)")
+
+
+def test_git_provenance_fallback_hermetic() -> None:
+    tmp = Path(tempfile.mkdtemp(prefix="rifg-nogit-"))
+    assert guard._git_head_provenance(tmp) == "unknown (git unavailable at generation)"
 
 
 # --------------------------------------------------------------------------- #

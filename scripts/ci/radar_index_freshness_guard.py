@@ -56,9 +56,11 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -338,7 +340,9 @@ def sweep(
     a = invariant_a(text, tokens)
     b = invariant_b(text, root, tokens, bases, pointer)
     cits, report_only = invariant_c(root, bases, pointer, only_files)
-    return {"pointer": pointer, "a": a, "b": b, "cits": cits, "report_only": report_only}
+    rows_range = (min(bases), max(bases)) if bases else None
+    return {"pointer": pointer, "a": a, "b": b, "cits": cits,
+            "report_only": report_only, "rows": rows_range}
 
 
 def self_test() -> bool:
@@ -481,19 +485,49 @@ def self_test() -> bool:
     return ok
 
 
+def _git_head_provenance(root: Path) -> str:
+    """Live generation provenance for baseline stamps (#2180).
+
+    Returns "<short-hash> (<subject>)" for the repo at `root`; on any failure
+    (hermetic sandboxes without git) returns an honest fallback instead of a
+    frozen literal. Best-effort by design: provenance is informational — the
+    gate's load-bearing fields are floor/pointer only.
+    """
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=str(root),
+            capture_output=True, text=True, timeout=10,
+        )
+        subj = subprocess.run(
+            ["git", "log", "-1", "--format=%s"], cwd=str(root),
+            capture_output=True, text=True, timeout=10,
+        )
+        if head.returncode == 0 and subj.returncode == 0:
+            h = head.stdout.strip()
+            s = " ".join(subj.stdout.split())[:96]
+            if h:
+                return f"{h} ({s})" if s else h
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "unknown (git unavailable at generation)"
+
+
 def build_baseline(root: Path) -> dict:
     r = sweep(root)
     counts = counts_of(r["cits"])
+    rows = r.get("rows")
     return {
         "schema": "radar-index-freshness-baseline/1",
-        "generatedAt": "2026-10-28",
-        "headAtGeneration": "post-#2114 (aa9de7b)",
+        "generatedAt": datetime.now(timezone.utc).date().isoformat(),
+        "headAtGeneration": _git_head_provenance(root),
         "probe": "scripts/ci/radar_index_freshness_guard.py",
         "note": "shrink-only floor over the citation-ghost class only; key = [kind, file, base]. "
                 "A/B invariant violations are NEVER floorable — they are structural and always fail.",
         "floor": [{"key": list(k), "allowed": v} for k, v in sorted(counts.items(), key=lambda kv: repr(kv[0]))],
         "pointerAtGeneration": r["pointer"],
-        "registryRowsAtGeneration": "R1-R50",
+        "registryRowsAtGeneration": (
+            f"R{rows[0]}-R{rows[1]}" if rows else "unknown (empty registry at generation)"
+        ),
     }
 
 
@@ -511,7 +545,21 @@ def main() -> int:
 
     root = REPO_ROOT
     if args.baseline:
-        print(json.dumps(build_baseline(root), indent=2, ensure_ascii=False))
+        data = build_baseline(root)
+        # #2180: the note is FILE-OWNED narrative history; a canonical regen
+        # must carry it forward instead of clobbering it with the builder's
+        # template (the docs_link guard demonstrated this hazard live). Today
+        # the two notes match, so this is a no-op — until a lane hand-extends
+        # the note, exactly as the R42 genesis/shrink history did.
+        p = root / BASELINE_PATH
+        if p.is_file():
+            try:
+                prev = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(prev.get("note"), str) and prev["note"].strip():
+                    data["note"] = prev["note"]
+            except (OSError, json.JSONDecodeError):
+                pass
+        print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
 
     only = None
