@@ -1278,6 +1278,12 @@
   "scripts/ci/issue_template_guard.py": {
    "B101": 13
   },
+  "scripts/ci/js_dep_cve_guard.py": {
+   "B101": 25,
+   "B310": 1,
+   "B404": 1,
+   "B603": 1
+  },
   "scripts/ci/kaggle_learning_bridge.py": {
    "B101": 8,
    "B310": 4
@@ -1912,9 +1918,9 @@
   "tool": "bandit",
   "tool_version": "1.9.4",
   "totals": {
-   "files": 487,
-   "findings_in_baseline": 2338,
-   "pairs": 923
+   "files": 488,
+   "findings_in_baseline": 2366,
+   "pairs": 927
   }
  }
 }
