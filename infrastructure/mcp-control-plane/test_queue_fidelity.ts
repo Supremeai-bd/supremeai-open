@@ -4,6 +4,7 @@ import {
   QUEUE_MAX_PAGES,
   QUEUE_PAGE_SIZE,
   buildQueueQueryUrl,
+  filterQueueItems,
   mergeIssuePages,
   normalizeQueueItem,
   queueFromIssues,
@@ -181,6 +182,33 @@ function issue(n: number, opts: { pr?: boolean; state?: string; labels?: unknown
   );
 
   console.log("  ✓ R7 label-filtered bridge-state queries survive (#2163 arc)");
+}
+
+// ─── R8: window-contract echo fields (#2286 option B) ────────────────────────
+{
+  // The filter stage exposes the un-sliced open set so the tool handler can
+  // echo totalOpen + windowTruncated; queueFromIssues keeps its slice cap.
+  // Live shape this fixes: a default-depth scan (limit unset -> 20) read 20 of
+  // 87 live open rows (77% dark) with zero signal; every fleet snapshot that
+  // day scanned at depth <= 50 while the shadow tail held a live P1.
+  const rows = Array.from({ length: 30 }, (_, i) => issue(2600 - i));
+  const filtered = filterQueueItems(mergeIssuePages([rows]));
+  assert.equal(filtered.length, 30, "filter stage returns the full filtered set, un-sliced");
+  assert.equal(filtered[0].number, 2600, "filter stage keeps the newest-first rank");
+
+  const q = queueFromIssues(mergeIssuePages([rows]), 20);
+  assert.equal(q.length, 20, "slice contract unchanged at default depth");
+  assert.ok(filtered.length > q.length, "default window is a minority slice here");
+
+  // Handler-side derivation contract: totalOpen = filtered.length;
+  // windowTruncated = count < totalOpen. Pinned so the echo cannot drift.
+  const totalOpen = filtered.length;
+  const windowTruncated = q.length < totalOpen;
+  assert.equal(windowTruncated, true, "default-depth window must be flagged truncated");
+  const qFull = queueFromIssues(mergeIssuePages([rows]), QUEUE_LIMIT_MAX);
+  assert.equal(qFull.length < totalOpen, false, "full-board scan must NOT be flagged truncated");
+
+  console.log("  ✓ R8 window-contract echo (totalOpen + windowTruncated) derivable from the filter stage (#2286)");
 }
 
 console.log("Queue-fidelity contract tests passed (#2115/#2123)");
