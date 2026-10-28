@@ -5,7 +5,6 @@ set -euo pipefail
 # Executes isolated tasks within a worktree context
 
 WORKTREES_DIR="$(cd "$(dirname "$0")/.." && pwd)/.worktrees"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 run_task() {
     local task_name="$1"
