@@ -6,7 +6,7 @@ import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
 import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
-import { isWorkOrderForTaskId, taskIdSearchQuery } from "../lib/bridge_dedup.js";
+import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
 import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
 import { RequestContextStore } from "../policy/auth.context.js";
 
@@ -1099,23 +1099,41 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         const existing = searchRes.ok
           ? (searchRes.data?.items ?? []).find((it) => isWorkOrderForTaskId(it.title ?? "", it.body, taskId))
           : undefined;
+        // #2227: a verified active WO is no longer a whole-run stop. The
+        // zero-duplicate invariant guards duplicate WO GENERATION and competing
+        // landings, not the FIRST legitimate landing against a pre-existing WO
+        // (manually-filed WOs, or prior rounds that stranded before Step B —
+        // the #2195 stranded-branch class). Branch-aware resolution restores
+        // the #2112 semantics: noop only when the patch branch is already in
+        // flight/landed on the remote; otherwise pair with the existing WO and
+        // land (Step D skips duplicate generation for the same taskId).
+        let pairedWorkOrder: { number: number; html_url: string } | undefined;
         if (existing) {
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                ok: true,
-                taskId,
-                targetRepo: targetRepoResolution.repo,
-                targetAnchor: targetRepoResolution.anchor,
-                targetMode: targetRepoResolution.mode,
-                issueNumber: existing.number,
-                issueUrl: existing.html_url,
-                status: "bridge:idempotent-noop",
-                message: `Work order for task '${taskId}' is already active (#${existing.number}). Duplicate generation prevented.`,
-              }, null, 2),
-            }],
-          };
+          const branchProbeRes = await httpRequest<{ ref?: string }>(
+            `https://api.github.com/repos/${repo}/git/ref/heads/bridge/${taskId}`,
+            { headers, timeoutMs: 15_000 }
+          );
+          const ingress = resolveIngressAction(!!(branchProbeRes.ok && branchProbeRes.data?.ref));
+          if (ingress.action === "idempotent-noop") {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  ok: true,
+                  taskId,
+                  targetRepo: targetRepoResolution.repo,
+                  targetAnchor: targetRepoResolution.anchor,
+                  targetMode: targetRepoResolution.mode,
+                  issueNumber: existing.number,
+                  issueUrl: existing.html_url,
+                  status: "bridge:idempotent-noop",
+                  branchExists: true,
+                  message: `Work order for task '${taskId}' is already active (#${existing.number}) and its patch branch is already in flight. Duplicate generation prevented.`,
+                }, null, 2),
+              }],
+            };
+          }
+          pairedWorkOrder = { number: existing.number, html_url: existing.html_url };
         }
 
         // Step A: Get main branch SHA
@@ -1209,7 +1227,16 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           }
         }
 
-        // Step D: Create Bridge Work Order Issue
+        // Step D: Create Bridge Work Order Issue — SKIPPED when pairing with an
+        // existing active WO (#2227): the zero-duplicate invariant guards WO
+        // generation, so the paired PR closes/ref's the EXISTING work order
+        // instead of spawning a duplicate issue for the same taskId.
+        let issueNumber: number | undefined;
+        let issueUrl: string | undefined;
+        if (pairedWorkOrder) {
+          issueNumber = pairedWorkOrder.number;
+          issueUrl = pairedWorkOrder.html_url;
+        } else {
         const issueBody = [
           "### Task ID",
           taskId,
@@ -1261,12 +1288,15 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}${msg}` }],
           };
         }
+        issueNumber = issueRes.data?.number;
+        issueUrl = issueRes.data?.html_url;
+        }
 
         // Step E: Atomic PR Pairing (Invariant #514 — Zero Stranded Branches)
         const prBody = buildBridgePrBody({
           taskId,
           summary,
-          issueNumber: issueRes.data?.number,
+          issueNumber,
           originalIssueNumber: detectedIssueNum,
           scopePaths,
           testsEvidence,
@@ -1328,14 +1358,17 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               files: fileResults,
               branch: branchName,
               branchUrl: `https://github.com/${repo}/tree/${branchName}`,
-              issueNumber: issueRes.data?.number,
-              issueUrl: issueRes.data?.html_url,
+              issueNumber,
+              issueUrl,
               prNumber,
               prUrl,
               prError,
+              pairedWithExistingWorkOrder: pairedWorkOrder ? pairedWorkOrder.number : undefined,
               status: prNumber ? "bridge:pr-opened" : "bridge:queued",
               message: prNumber
-                ? `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
+                ? pairedWorkOrder
+                  ? `Work submitted and PR #${prNumber} opened atomically, paired with existing work order #${pairedWorkOrder.number} (no duplicate generated)! CI Guardian will evaluate and land via constitutional gates.`
+                  : `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
                 : prError
                   ? `Branch + work order created, but PR creation FAILED (${prError.status}: ${prError.message}) — branch stranded pending admin pairing or a resubmit; do NOT treat this round as landed.`
                   : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
