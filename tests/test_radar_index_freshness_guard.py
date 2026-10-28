@@ -239,9 +239,17 @@ def test_live_repo_sweep_passes() -> None:
     # advertises the next fully-clean number instead), and after #2300
     # (R60 client-plane lane, filer same-cycle registration per pass 20)
     # advanced it R60 -> R61, and after #2318 (R61 client-dispatch lane,
-    # filer same-cycle registration per pass 21) advanced it R61 -> R62.
+    # filer same-cycle registration per pass 21) advanced it R61 -> R62,
+    # and after #2314 (R62 registration, its own pass 21 at 93aa098)
+    # advanced it R61 -> R63 — then #2322's stale-branch overwrite landed
+    # after #2314 and evicted the R62 row, regressing the pointer to 62
+    # (the pass-9 cell-clobber class, witnessed live by this gate's own
+    # invariant-D subject ghost); the pass-23 re-head restored the union
+    # state (pointer R63, R62 row verbatim from 93aa098) and this pin
+    # follows the restored pointer per the pass-9 re-head precedent (the
+    # pin moves with the pointer on a landed re-head).
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 62, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 63, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
