@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { UnifiedChatPanel, listStoredConversations, type DockAction, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
-import { Bot, Code, Globe, MessageSquarePlus, Smartphone } from 'lucide-react';
+import { Bot, Code, Globe, MessageSquarePlus, Smartphone, Sparkles } from 'lucide-react';
+import { JarvisLivingHologram } from '../../components/jarvis/JarvisLivingHologram';
 import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
 import { MobileSimulator } from '../../components/customer/MobileSimulator';
 import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/BrowserPreview';
@@ -202,6 +203,8 @@ export const AIStudio: React.FC = () => {
     document.querySelector<HTMLInputElement>('[data-testid="chat-input"]')?.focus();
   }, [searchParams, setSearchParams]);
 
+  const [isHoloOpen, setIsHoloOpen] = useState(false);
+
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[var(--sa-canvas)] text-[var(--sa-ink)]">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.12),transparent_64%)]" aria-hidden="true" />
@@ -228,6 +231,17 @@ export const AIStudio: React.FC = () => {
             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'mobile' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
           >
             <Smartphone size={14} /> Mobile Simulator
+          </button>
+
+          {/* 3D Sci-Fi Hologram Video Call Button */}
+          <button
+            type="button"
+            onClick={() => setIsHoloOpen(true)}
+            className="flex items-center gap-2 rounded-full border border-cyan-500/40 bg-gradient-to-r from-cyan-950/70 to-indigo-950/70 px-3.5 py-1.5 text-xs font-semibold text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition hover:border-cyan-400 hover:shadow-[0_0_20px_rgba(6,182,212,0.45)]"
+          >
+            <Sparkles size={13} className="text-cyan-400 animate-pulse" />
+            <span>3D Living Holo-Call</span>
+            <span className="size-1.5 rounded-full bg-cyan-400 animate-ping" />
           </button>
         </div>
         
@@ -353,6 +367,18 @@ export const AIStudio: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 3D Holographic Living Video Call Modal */}
+      <JarvisLivingHologram
+        isOpen={isHoloOpen}
+        onClose={() => setIsHoloOpen(false)}
+        language="bn"
+        personaName="Jarvis Living Holo-Core"
+        onJumpToPreview={() => {
+          setIsHoloOpen(false);
+          setActiveTab('preview');
+        }}
+      />
     </div>
   );
 };

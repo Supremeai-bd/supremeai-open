@@ -147,7 +147,6 @@ from core import service_container as services
 
 service_container = services
 from core.config import settings
-from core.firebase_auth import get_firebase_auth
 from models.admin import (
     AdminFirebaseLoginRequest,
     AdminFirebaseTotpSetupRequest,
@@ -167,7 +166,7 @@ def get_current_admin(payload: dict = Depends(get_current_user_token)) -> dict:
     return payload
 
 
-auth = get_firebase_auth()
+auth = None  # Firebase Auth removed (Zero-Firebase Native Auth)
 
 
 # ERR-S01 FIX (2026-09-15): single shared, ALLOW-LIST gate for every `mock-`
