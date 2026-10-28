@@ -7,6 +7,14 @@ then automatically:
 
 Usage:
   python scripts/security/auto_repair_cloudflare_vault.py
+
+Fail-closed secret resolution (issue #1820):
+  Every fleet identifier (role email + Cloudflare account_id) MUST resolve
+  from the live Infisical vault. No identifier fallback is baked into source:
+  a missing/empty Infisical value aborts the run BEFORE any Cloudflare call
+  (naming the role and the missing Infisical key, never any value), so a
+  partial vault outage can never silently aim automated vault-repair actions
+  at a hardcoded account.
 """
 
 import json
@@ -60,6 +68,30 @@ def infisical_update_secret(token: str, key: str, value: str) -> bool:
         return False
 
 
+class MissingInfisicalSecret(RuntimeError):
+    """A required Infisical secret resolved absent/empty (fail-closed abort)."""
+
+
+def require_secret(secrets: dict[str, str], role: str, key_name: str) -> str:
+    """Fail-closed Infisical lookup (issue #1820).
+
+    Returns the resolved value, or raises MissingInfisicalSecret after
+    printing WHICH role and WHICH Infisical key were absent. Never prints,
+    logs, or returns any secret value in the error path, and never falls back
+    to a baked-in identifier: an empty vault answer must stop the run, not
+    silently redirect automated repairs to a hardcoded account.
+    """
+    value = (secrets.get(key_name) or "").strip()
+    if not value:
+        print(
+            f"[FAIL-CLOSED] {role}: required Infisical secret '{key_name}' is "
+            f"missing or empty — aborting before any Cloudflare call "
+            f"(no identifier fallback is baked into source, issue #1820)."
+        )
+        raise MissingInfisicalSecret(f"{role}: missing Infisical key {key_name}")
+    return value
+
+
 def cf_request(url: str, email: str, global_key: str, method: str = "GET", payload: dict | None = None) -> dict:
     headers = {
         "X-Auth-Email": email,
@@ -85,38 +117,45 @@ def main():
         print(f"Failed to load secrets: {exc}")
         sys.exit(1)
 
-    accounts = [
-        {
-            "role": "primary",
-            "email": secrets.get("CLOUDFLARE_EMAIL", "paykaribazaronline@gmail.com"),
-            "key": secrets.get("CLOUDFLARE_GLOBAL_API_KEY") or secrets.get("CLOUDFLARE_API_KEY"),
-            "account_id": secrets.get("CLOUDFLARE_ACCOUNT_ID", "9d13b8641979b09a7b9bc0195aefea42"),
-        },
-        {
-            "role": "secondary",
-            "email": secrets.get("CLOUDFLARE_SECONDARY_EMAIL", "niloyjoy7@gmail.com"),
-            "key": secrets.get("CLOUDFLARE_SECONDARY_GLOBAL_API_KEY"),
-            "account_id": secrets.get("CLOUDFLARE_SECONDARY_ACCOUNT_ID", "f8642291583d73b0a7aa5fa9917d23f3"),
-        },
-        {
-            "role": "tertiary",
-            "email": secrets.get("CLOUDFLARE_TERTIARY_EMAIL", "ziaulhaquezia01@gmail.com"),
-            "key": secrets.get("CLOUDFLARE_TERTIARY_GLOBAL_API_KEY"),
-            "account_id": secrets.get("CLOUDFLARE_TERTIARY_ACCOUNT_ID", "029a3e00b3e54beeaebff34d6beeaef7"),
-        },
-        {
-            "role": "quaternary",
-            "email": secrets.get("CLOUDFLARE_QUATERNARY_EMAIL", "njelmedia@gmail.com"),
-            "key": secrets.get("CLOUDFLARE_QUATERNARY_GLOBAL_API_KEY"),
-            "account_id": secrets.get("CLOUDFLARE_QUATERNARY_ACCOUNT_ID", "b5012cbdcd57c2c8f654b0fa288c3a17"),
-        },
-        {
-            "role": "quinary",
-            "email": secrets.get("CLOUDFLARE_QUINARY_EMAIL", "itnjel@gmail.com"),
-            "key": secrets.get("CLOUDFLARE_QUINARY_GLOBAL_API_KEY"),
-            "account_id": secrets.get("CLOUDFLARE_QUINARY_ACCOUNT_ID", "40f6e78a632e92cbbdcf3a8f906e0018"),
-        },
-    ]
+    # Fail-closed resolution (issue #1820): email + account_id REQUIRE a live
+    # Infisical value (require_secret raises before any Cloudflare call);
+    # the Global/API key keeps its no-fallback resolution and its explicit
+    # loud skip below. Zero behavior change when the vault is healthy.
+    try:
+        accounts = [
+            {
+                "role": "primary",
+                "email": require_secret(secrets, "primary", "CLOUDFLARE_EMAIL"),
+                "key": secrets.get("CLOUDFLARE_GLOBAL_API_KEY") or secrets.get("CLOUDFLARE_API_KEY"),
+                "account_id": require_secret(secrets, "primary", "CLOUDFLARE_ACCOUNT_ID"),
+            },
+            {
+                "role": "secondary",
+                "email": require_secret(secrets, "secondary", "CLOUDFLARE_SECONDARY_EMAIL"),
+                "key": secrets.get("CLOUDFLARE_SECONDARY_GLOBAL_API_KEY"),
+                "account_id": require_secret(secrets, "secondary", "CLOUDFLARE_SECONDARY_ACCOUNT_ID"),
+            },
+            {
+                "role": "tertiary",
+                "email": require_secret(secrets, "tertiary", "CLOUDFLARE_TERTIARY_EMAIL"),
+                "key": secrets.get("CLOUDFLARE_TERTIARY_GLOBAL_API_KEY"),
+                "account_id": require_secret(secrets, "tertiary", "CLOUDFLARE_TERTIARY_ACCOUNT_ID"),
+            },
+            {
+                "role": "quaternary",
+                "email": require_secret(secrets, "quaternary", "CLOUDFLARE_QUATERNARY_EMAIL"),
+                "key": secrets.get("CLOUDFLARE_QUATERNARY_GLOBAL_API_KEY"),
+                "account_id": require_secret(secrets, "quaternary", "CLOUDFLARE_QUATERNARY_ACCOUNT_ID"),
+            },
+            {
+                "role": "quinary",
+                "email": require_secret(secrets, "quinary", "CLOUDFLARE_QUINARY_EMAIL"),
+                "key": secrets.get("CLOUDFLARE_QUINARY_GLOBAL_API_KEY"),
+                "account_id": require_secret(secrets, "quinary", "CLOUDFLARE_QUINARY_ACCOUNT_ID"),
+            },
+        ]
+    except MissingInfisicalSecret:
+        sys.exit(1)
 
     primary_deploy_token = None
 
@@ -128,7 +167,15 @@ def main():
         print(f"\nProcessing {role.upper()} ({email})...")
 
         if not key or not account_id:
-            print(f"  Missing key or account ID, skipping.")
+            missing = [
+                label
+                for label, val in (("Global/API key", key), ("account_id", account_id))
+                if not val
+            ]
+            print(
+                f"  [SKIP] {role}: no {' / '.join(missing)} resolved from Infisical "
+                f"— account not processed (fail-closed: no fallback in source, issue #1820)."
+            )
             continue
 
         # 1. Check or Create KV
