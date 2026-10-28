@@ -238,9 +238,10 @@ def test_live_repo_sweep_passes() -> None:
     # number fails the freeness-verification standard, so the pointer
     # advertises the next fully-clean number instead), and after #2300
     # (R60 client-plane lane, filer same-cycle registration per pass 20)
-    # advanced it R60 -> R61.
+    # advanced it R60 -> R61, and after #2318 (R61 client-dispatch lane,
+    # filer same-cycle registration per pass 21) advanced it R61 -> R62.
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 63, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 62, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
