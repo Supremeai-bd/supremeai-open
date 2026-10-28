@@ -331,6 +331,40 @@ def _offline_requested(flag: bool) -> bool:
         for var in OFFLINE_ENV_VARS
     )
 
+def _hooks_path_boot_advisory() -> None:
+    """R63 start-of-run advisory (#2343): the shipped .githooks/ suite never auto-activates.
+
+    Git honors a repo-shipped hooks directory only through the client-side
+    core.hooksPath config (githooks(1): default is $GIT_DIR/hooks); a clone
+    without it pushes with the Board-Freshness pre-push gate (#4177 —
+    Universal Invariant 1's local layer) silently dark. Report-only under
+    the same contract as the constitution boot smoke (#1551): stderr
+    advisory, never an exit-code or stdout-evidence change, never mutates
+    config — warn-and-instruct preserves operator consent (the #2343
+    option-D boundary: no installer silently rewrites user git config).
+    """
+    try:
+        code, out, _ = run_cmd(["git", "config", "--get", "core.hooksPath"], cwd=REPO_ROOT)
+        if code == 0 and out.strip():
+            return  # activated — nothing to report
+        if not (REPO_ROOT / ".githooks").is_dir():
+            return  # suite not shipped on this tree (stripped/non-repo copy) — silent
+        if code == 0:  # set but empty
+            print(
+                "[Hooks] core.hooksPath set but empty — Board-Freshness pre-push gate (#4177) dark; "
+                "fix: git config core.hooksPath .githooks (or bash scripts/setup_git_hooks.sh)",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "[Hooks] core.hooksPath unset on this clone — the shipped .githooks/ suite is inactive "
+                "(Board-Freshness gate #4177 dark, Universal Invariant 1 local layer); "
+                "fix: git config core.hooksPath .githooks (or bash scripts/setup_git_hooks.sh)",
+                file=sys.stderr,
+            )
+    except Exception as exc:  # advisory must never break a run
+        print(f"[Hooks] boot advisory error (report-only, non-blocking): {exc}", file=sys.stderr)
+
 def _print_rule_version_and_checklist() -> None:
     pass
 
@@ -1065,6 +1099,11 @@ def main() -> int:
     if args.group and args.group not in VALID_GROUPS:
         log("❌", f"--group '{args.group}' is not in the VALID_GROUPS registry {sorted(VALID_GROUPS)} (SPEC §3 fail-closed)")
         return 2
+
+    # R63 (#2343): start-of-run hooks advisory — report-only, stderr, both
+    # --verify-only and dispatch paths; the #1551 stdout-marker contract is
+    # untouched (advisory prints before any tier evidence, never to stdout).
+    _hooks_path_boot_advisory()
 
     if args.verify_only:
         # বাংলা: #567-এর Tier-1 fresh-গেট step_2_rules() সম্পূর্ণ নির্মিত ও
