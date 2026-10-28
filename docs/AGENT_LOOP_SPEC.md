@@ -88,7 +88,7 @@ must track this registry — keep the two in sync when the taxonomy changes.
 
 **Relationship to `AGENTS.md` (Single Door SSOT):** the constitution is
 `AGENTS.md` — the Single Door SSOT (the former `AGENT_RULES.md` was deleted by
-#1526; citing it is a dangling reference). It defines the 4 Universal
+#1526; citing it is a dangling reference). It defines the 5 Universal
 Invariants and the Single Door execution surface — it defines no group
 taxonomy. The execution registry below is the authoritative group surface for
 dispatch; no constitutional section substitutes for a registry group. Changing
@@ -176,6 +176,22 @@ Honest limitations, documented rather than hidden:
 - **No completion signal**: a task still running past 30 minutes re-becomes
   claimable — the window is a fixed guess, not lease renewal (the bridge's own
   lease allows renewal up to 180 minutes; the loop's local store cannot renew).
+
+**P0 Drainage gate (Universal Invariant 5, AGENTS.md):** the cadence path is
+not free-running. After a successful board query and before the due-role loop,
+`has_open_p0_blocker` scans the raw board items: any open item whose lowercased
+labels include `p0`, `p0-*`, or `p0 ` holds every routine cadence role (warning
+log + early return). Held roles never reach `mark_role_run`, so they do not
+consume their cadence window — once the board drains, the due role dispatches
+immediately. The gate is board-availability-gated (skipped when the query
+failed — fail-open to the pre-Rule-5 cadence path) and sits below the
+issue-solver path, which runs earlier in the cycle. `COMMON_RULES` injects the
+invariant text into every dispatched mandate; the invariant's
+idempotency/anti-stampede half is enforced by the §5 Anti-Duplicate PR Guard
+and Claim Gate Guard. Honest caveat: stale `P0-critical` labels on
+already-resolved incidents keep the gate closed indefinitely (live:
+#1788/#1772 held while main CI was green — #1804/#1840 document the hygiene
+closure); label hygiene is an admin action outside the agent surface.
 
 ## 5. Open Guards — shift-left on free public runtime
 
