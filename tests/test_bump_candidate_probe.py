@@ -207,6 +207,74 @@ class TestNeverDoContracts(unittest.TestCase):
             'GUARD_REL = Path("scripts/ci/npm_dep_cve_guard.py")', ""))
 
 
+class TestPoetryPlaneParsing(TmpCase):
+    """R51/#2122: the probe's py side imports the guard's OWN synthesizer —
+    the poetry plane (pyproject.toml [tool.poetry.dependencies] main group)
+    must yield honest fix-side freshness pairs, never a silent blind spot."""
+
+    def _poetry_fixture(self) -> Path:
+        pyproject = self.tmp / "pyproject.toml"
+        pyproject.write_text("\n".join([
+            "[tool.poetry.dependencies]",
+            'python = "^3.11"',
+            'fastapi = "^0.136.0"',
+            'requests = "2.31.0"',
+            'httpx = { version = "^0.28.0", extras = ["http2"] }',
+            'pillow = { version = "^11.0", optional = true }',
+            'mypkg = { path = "../mypkg" }',
+            'starlette = "*"',
+            'cachetools = ">=5.0.0"',
+            "",
+        ]), encoding="utf-8")
+        return pyproject
+
+    def test_poetry_forms_to_freshness_pairs(self):
+        pairs, skips = P.parse_poetry_pyproject(
+            self._poetry_fixture(), synth=P._load_py_guard().synthesize_poetry_requirements)
+        got = {(p["name"], p["version"], p["upper"], p["open_floor"]) for p in pairs}
+        self.assertEqual(got, {
+            ("fastapi", "0.136.0", "0.137.0", False),   # caret -> ranged floor/upper
+            ("requests", "2.31.0", None, False),        # exact pin
+            ("httpx", "0.28.0", "0.29.0", False),       # dict form, extras stripped
+            ("cachetools", "5.0.0", None, True),        # open floor, unbounded above
+        })
+        self.assertTrue(any("optional" in s for s in skips))       # pillow skipped WITH note
+        self.assertTrue(any("path" in s for s in skips))           # local source skipped WITH note
+        self.assertTrue(any("wildcard-any" in s for s in skips))   # `*` skipped WITH note
+        self.assertEqual([p for p in pairs if p["name"] == "python"], [])  # python key excluded
+
+    def test_pep621_only_pyproject_is_empty_not_error(self):
+        pyproject = self.tmp / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8")
+        pairs, skips = P.parse_poetry_pyproject(
+            pyproject, synth=P._load_py_guard().synthesize_poetry_requirements)
+        self.assertEqual(pairs, [])
+        self.assertEqual(skips, [])
+
+    def test_py_guard_ssot_surface_exposes_both_planes(self):
+        g = P._load_py_guard()
+        self.assertIn("pyproject.toml", g.MANIFEST_SURFACE)
+        self.assertIn("requirements", g.MANIFEST_SURFACE)
+
+    def test_collect_surfaces_enumerates_live_poetry_plane(self):
+        rows = P.collect_surfaces(REPO_ROOT)
+        pyproj = [r for r in rows if str(r[1]).endswith("pyproject.toml")]
+        self.assertTrue(any(r[2] for r in pyproj),
+                        f"poetry plane blind spot regressed: {pyproj}")
+
+
+class TestPoetryVerdict(unittest.TestCase):
+    """Range-aware freshness semantics (R51/#2122): BUMP means the pin
+    itself needs an edit, never merely that a newer release exists."""
+
+    def test_range_aware_matrix(self):
+        self.assertEqual(P.freshness_verdict("0.136.0", "0.136.9", "0.137.0"), "fresh")   # in-range
+        self.assertEqual(P.freshness_verdict("0.136.0", "0.137.0", "0.137.0"), "BUMP")    # boundary
+        self.assertEqual(P.freshness_verdict("0.136.0", "0.140.1", "0.137.0"), "BUMP")    # outside
+        self.assertEqual(P.freshness_verdict("5.0.0", "9.9.9", None, True), "fresh")      # open floor
+        self.assertEqual(P.freshness_verdict("1.0.0", "1.1.0", "garbage"), "unknown")     # bad upper
+
+
 class TestCliContract(unittest.TestCase):
 
     def test_selftest_hermetic_exit_0(self):
