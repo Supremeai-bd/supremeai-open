@@ -53,3 +53,35 @@ export function isWorkOrderForTaskId(
 export function taskIdSearchQuery(repo: string, taskId: string): string {
   return `repo:${repo}+is:issue+is:open+%22${encodeURIComponent(taskId)}%22`;
 }
+
+/**
+ * #2227 — branch-aware ingress resolution (restores the #2112 semantics).
+ *
+ * Failure being fixed (live evidence 2026-10-28 ~18:05-18:16Z, post-#2217
+ * redeploy): once a verified work order exists for the taskId, Step 0 hard-noop'd
+ * the WHOLE submission — no branch, no commit, no PR — even when that WO was the
+ * very target the solver was solving (manually-filed WOs, or prior rounds that
+ * stranded before Step B). The solver's completed work was stranded locally with
+ * nothing reaching origin, so Invariant #514 could not even see it. The old
+ * (#2112) semantics keyed dedup on BRANCH STATE — "a same-taskId resubmit is
+ * impossible: the remote branch already sits at final state" — i.e. the
+ * zero-duplicate invariant guards duplicate WO GENERATION and competing
+ * landings, never the FIRST legitimate landing against a pre-existing WO.
+ *
+ * Contract (pure decision, wiring in bridge.tools.ts Step 0):
+ * - work order active + patch branch EXISTS on the remote -> idempotent-noop
+ *   (work already in flight or landed; a resubmit would clobber a live branch).
+ * - work order active + patch branch MISSING (GitHub /git/ref 404, the same
+ *   "non-ok = missing" semantics Step B already relies on to create the ref)
+ *   -> pair-and-land: proceed with the landing, pair the PR with the EXISTING
+ *   work order, and skip duplicate WO generation in Step D.
+ */
+export type Step0IngressAction =
+  | { action: "idempotent-noop"; branchExists: true; reason: "wo-active-branch-in-flight" }
+  | { action: "pair-and-land"; branchExists: false; reason: "wo-active-branch-missing" };
+
+export function resolveIngressAction(branchExists: boolean): Step0IngressAction {
+  return branchExists
+    ? { action: "idempotent-noop", branchExists: true, reason: "wo-active-branch-in-flight" }
+    : { action: "pair-and-land", branchExists: false, reason: "wo-active-branch-missing" };
+}
