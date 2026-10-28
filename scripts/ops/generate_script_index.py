@@ -11,14 +11,15 @@ reflected the next time the index is regenerated (and `--check` fails CI when
 somebody forgets).
 
 What it does
-    1. Discovers every script under scripts/ via the shared auto_discovery
+    1. Discovers every script under scripts/ (SCAN_ROOT — the full tree, fixed
+       by #1812 which caught ops-only discovery) via the shared auto_discovery
        lib: *.py through discover_py_files (git-aware, respects .gitignore),
        plus *.sh / *.mjs / *.js / *.dart through discover_files.
     2. Extracts a one-line purpose per script WITHOUT importing anything:
        module docstring first line (AST) -> argparse description (AST) ->
        leading comment block (shell/js/dart).  Files with nothing get an
        explicit "(no docstring ...)" marker so the gap is visible, not silent.
-    3. Groups by top-level subdirectory (scripts/ai, scripts/ci, ...) and
+    3. Groups by top-level subdirectory (scripts/agents, scripts/ci, ...) and
        emits one Markdown table per group.
     4. Preserves hand-curated knowledge: any section wrapped in
        ``<!-- hand:Name --> ... <!-- /hand:Name -->`` in the target file is
@@ -53,6 +54,19 @@ from typing import Dict, List, Optional, Tuple
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))  # so `lib.auto_discovery` resolves from any cwd
+
+# #1812 ROOT CAUSE: discovery used to pass base=SCRIPTS_DIR (= scripts/ops, the
+# generator's own directory) so "every script under scripts/" was a false claim
+# — scripts/{agents,bridge,ci,knowledge,tower} and the root validate_schemas.py
+# were invisible to the index (live repro 2026-10-28: 265 rows, zero hits for
+# security_gate.py / continuous_agent_loop.py despite 20+ live CI guards), and
+# the #1630 freshness gate kept passing because it checks staleness, not
+# coverage. SCAN_ROOT decouples the scan base (scripts/) from the import/output
+# anchor (SCRIPTS_DIR stays for the lib.auto_discovery import, DEFAULT_OUTPUT
+# and ops-relative hand-ref resolution). With this fix the generated rows are
+# truly relative to scripts/ — the header's "Paths are relative to `scripts/`"
+# line becomes true instead of aspirational.
+SCAN_ROOT = SCRIPTS_DIR.parent
 
 try:
     from lib.auto_discovery import (  # type: ignore
@@ -213,8 +227,9 @@ def purpose_for_comment_file(path: Path) -> Tuple[str, str]:
 
 def discover_scripts() -> Tuple[List[Tuple[Path, str]], int]:
     """[(absolute_path, scripts_relative_posix_path)], plus empty-file count."""
-    py_files = discover_py_files(base=SCRIPTS_DIR, env="")  # git-aware, untracked included
-    other_files = discover_files(SCRIPTS_DIR, NONPY_PATTERNS)
+    # #1812: scan the WHOLE scripts/ tree (SCAN_ROOT), not just scripts/ops.
+    py_files = discover_py_files(base=SCAN_ROOT, env="")  # git-aware, untracked included
+    other_files = discover_files(SCAN_ROOT, NONPY_PATTERNS)
 
     entries: List[Tuple[Path, str]] = []
     skipped_empty = 0
@@ -229,7 +244,7 @@ def discover_scripts() -> Tuple[List[Tuple[Path, str]], int]:
                 continue
         except OSError:
             continue
-        rel = p.relative_to(SCRIPTS_DIR).as_posix()
+        rel = p.relative_to(SCAN_ROOT).as_posix()
         entries.append((p, rel))
     return entries, skipped_empty
 
@@ -327,6 +342,8 @@ def warn_stale_hand_refs(hand_blocks: List[Tuple[str, str]], target: Path) -> Li
         stale = []
         for ref in refs:
             if ref.startswith("scripts/") and (REPO_ROOT / ref).exists():
+                continue
+            if (SCAN_ROOT / ref).exists():
                 continue
             if (SCRIPTS_DIR / ref).exists():
                 continue
