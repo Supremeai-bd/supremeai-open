@@ -5,6 +5,7 @@ import {
   QUEUE_PAGE_SIZE,
   buildQueueQueryUrl,
   mergeIssuePages,
+  normalizeQueueItem,
   queueFromIssues,
 } from "./src/tools/bridge.tools.js";
 
@@ -25,6 +26,9 @@ import {
  *   R4: limit slice caps at QUEUE_LIMIT_MAX (200), not the old 50.
  *   R5: short page terminates pagination (caller-side contract, mirrored
  *       by the Python reference self-test).
+ *   R6: state_reason passthrough (#2218) — closed-as-completed vs
+ *       closed-as-not_planned machine-readable Tower-only; absent or
+ *       non-string upstream values normalize to null.
  */
 
 const REPO = "Supremeai-bd/supremeai-open";
@@ -110,6 +114,48 @@ function issue(n: number, opts: { pr?: boolean; state?: string; labels?: unknown
   assert.ok(QUEUE_MAX_PAGES >= 2, "cap must allow at least 2 pages");
   assert.equal(QUEUE_LIMIT_MAX, 200);
   console.log("  ✓ R5 paging constants pinned for parity with the reference");
+}
+
+// ─── R6: state_reason passthrough (#2218) ───────────────────────────────────
+{
+  const done = normalizeQueueItem({ number: 2187, state: "closed", state_reason: "completed" } as never);
+  assert.equal(done.stateReason, "completed");
+  assert.equal(done.state, "closed");
+  assert.equal(
+    normalizeQueueItem({ state: "closed", state_reason: "not_planned" } as never).stateReason,
+    "not_planned",
+  );
+  assert.equal(
+    normalizeQueueItem({ state: "open", state_reason: "reopened" } as never).stateReason,
+    "reopened",
+  );
+  assert.equal(
+    normalizeQueueItem({ state: "open" } as never).stateReason,
+    null,
+    "absent state_reason normalizes to null",
+  );
+  assert.equal(
+    normalizeQueueItem({ state: "open", state_reason: 42 } as never).stateReason,
+    null,
+    "non-string state_reason normalizes to null",
+  );
+  const withReason = (n: number, reason: unknown) =>
+    ({
+      number: n,
+      title: `row-${n}`,
+      state: "open",
+      labels: [],
+      html_url: `https://example.test/${n}`,
+      created_at: "2026-10-28T00:00:00Z",
+      updated_at: "2026-10-28T00:00:00Z",
+      comments: 0,
+      state_reason: reason,
+    }) as never;
+  const q = queueFromIssues([withReason(2218, "reopened"), withReason(2219, null)], 10);
+  const row = q.find((w) => w.number === 2218);
+  assert.ok(row, "open row with state_reason survives the queue filters");
+  assert.equal(row?.stateReason, "reopened", "queue rows carry stateReason through");
+  console.log("  ✓ R6 stateReason passthrough (#2218): completed/not_planned/reopened/null/junk");
 }
 
 console.log("Queue-fidelity contract tests passed (#2115/#2123)");
