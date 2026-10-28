@@ -10,7 +10,9 @@ reconciles the two planes. This is the watchdog mirror the triage asked for.
 
 Reconciliation model (three planes, one join key):
   - board plane   : open WOs labeled `bridge:queued` (Tower bridge_work_queue,
-                    zero-credential) — each title carries the lane slug
+                    zero-credential; limit ladder 200->50->default crosses the
+                    queue-fidelity deploy window #2115/#2123) — each title
+                    carries the lane slug
                     `(bridge-YYYYMMDD-<slug>)`. Open WOs labeled
                     `bridge:rejected` are ALSO read, but solely to detect
                     FALSE_REJECTION (below) — a rejection is presumed
@@ -168,6 +170,43 @@ def _tower_text(name: str, arguments: dict) -> str:
     _rpc("notifications/initialized", {}, session_id=sid, notify=True)
     res, _ = _rpc("tools/call", {"name": name, "arguments": arguments}, session_id=sid)
     return _text_of(res)
+
+
+# ── queue fetch: limit ladder across the fidelity deploy window (#2115/#2123) ──
+
+QUEUE_LIMIT_LADDER: tuple = (200, 50, None)
+
+
+def _fetch_work_orders(fetch_text=_tower_text) -> tuple:
+    """Fetch open work orders across the queue-fidelity deploy window.
+
+    r2 (#2115/#2123) makes bridge_work_queue paginate (short-page-stop,
+    number-dedupe merge) and raises its limit cap 50 -> 200, but the
+    DEPLOYED tower can keep running the pre-r2 single-page handler while
+    the redeploy lags — and a single-page window is a creation-rank
+    window: rows drop as traffic flows (#2115: 98 open issues read as
+    20-35 rows; the default window observed at ~20 rows). Ladder: ask for
+    200 first (an r2 tower answers with full pagination); only an
+    argument-validation rejection (non-JSON error text, or an isError
+    envelope) falls through to 50 (the pre-r2 cap), then to the tower
+    default — exact pre-ladder behavior as the last rung. Transport
+    failures propagate so main() keeps its fail-close SKIP. A rung that
+    answers is served as-is (never retried). Returns (workOrders,
+    serving_limit); serving_limit is None for the tower-default rung.
+    """
+    last_err: Exception = RuntimeError("queue ladder exhausted")
+    for limit in QUEUE_LIMIT_LADDER:
+        arguments = {} if limit is None else {"limit": limit}
+        try:
+            payload = json.loads(fetch_text("bridge_work_queue", arguments))
+        except json.JSONDecodeError as err:  # error-envelope text, not JSON
+            last_err = err
+            continue
+        if not isinstance(payload, dict) or payload.get("isError"):
+            last_err = TypeError(f"queue rung {limit} answered a non-payload")
+            continue
+        return (payload.get("workOrders", []) or [], limit)
+    raise last_err
 
 
 # ── pure verdict core (hermetically testable) ────────────────────────────────
@@ -581,6 +620,33 @@ def self_test() -> list[tuple[str, bool, str]]:
     enrich_tower_verdicts([dict(risk_v)], fetch_feedback=_fb_spy)
     cases.append(("non-merged rows cost zero feedback probes", probed == [], str(probed)))
 
+    # queue limit ladder (deploy-window consumer, #2115/#2123)
+    def _r2(name, arguments):
+        assert arguments.get("limit") == 200, arguments
+        return json.dumps({"workOrders": [{"number": 1}]})
+
+    def _prer2(name, arguments):
+        if arguments.get("limit") == 200:
+            return "MCP error -32602: Too big: expected number to be <=50"
+        assert arguments.get("limit") == 50, arguments
+        return json.dumps({"workOrders": [{"number": 1}, {"number": 2}]})
+
+    def _dead(name, arguments):
+        raise ConnectionError("unreachable")
+
+    rows, rung = _fetch_work_orders(fetch_text=_r2)
+    cases.append(("ladder r2 serves rung 200",
+                  rows == [{"number": 1}] and rung == 200, f"rung={rung}"))
+    rows, rung = _fetch_work_orders(fetch_text=_prer2)
+    cases.append(("ladder pre-r2 falls 200->50",
+                  len(rows) == 2 and rung == 50, f"rung={rung}"))
+    try:
+        _fetch_work_orders(fetch_text=_dead)
+        cases.append(("ladder transport failure fail-close", False, "no raise"))
+    except ConnectionError:
+        cases.append(("ladder transport failure fail-close", True, ""))
+    except Exception as e:  # noqa: BLE001 — wrong failure class is a FAIL
+        cases.append(("ladder transport failure fail-close", False, type(e).__name__))
     return cases
 
 
@@ -603,14 +669,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if failed else 0
 
     try:
-        queue_txt = _tower_text("bridge_work_queue", {})
-        wos = json.loads(queue_txt).get("workOrders", [])
+        wos, queue_rung = _fetch_work_orders()
         subjects = _main_subjects()
         pr_titles = _open_pr_titles()
     except Exception as e:  # noqa: BLE001 - unreachable planes are a skip, never a pass
         print(f"SKIP: board/history unreachable ({e.__class__.__name__}: {e})")
         return 2
 
+    rung_s = "default" if queue_rung is None else str(queue_rung)
+    print(f"QUEUE PLANE: {len(wos)} rows (limit rung {rung_s})")
     now = time.mktime(time.gmtime())
     verdicts = run_verdicts(wos, subjects, pr_titles, now, args.at_risk_hours)
     verdicts = refine_satellites(verdicts)
