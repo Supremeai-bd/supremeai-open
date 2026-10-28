@@ -660,11 +660,17 @@ export function isAnchorHubOrGovernance(raw: RawIssue): boolean {
   return labels.some((l) => l.toLowerCase() === "area:governance");
 }
 
+/** Bridge-state labels mark settled work: excluded from the default board. */
+export function isBridgeStateLabel(label: string): boolean {
+  const l = label.toLowerCase();
+  return l === "bridge:rejected" || l === "bridge:landed";
+}
+
 export function isRejectedOrLanded(raw: RawIssue): boolean {
   const labels = Array.isArray(raw.labels)
     ? raw.labels.map((l) => (typeof l === "string" ? l : (l as { name?: string })?.name || ""))
     : [];
-  return labels.some((l) => l.toLowerCase() === "bridge:rejected" || l.toLowerCase() === "bridge:landed");
+  return labels.some((l) => isBridgeStateLabel(l));
 }
 
 /** Open issues only (defense in depth: the API query filters, we verify). */
@@ -715,14 +721,20 @@ export function mergeIssuePages(pages: RawIssue[][]): RawIssue[] {
 }
 
 /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
-export function queueFromIssues(rawIssues: unknown, limit = 20) {
+export function queueFromIssues(rawIssues: unknown, limit = 20,
+                                opts: { keepBridgeStateRows?: boolean } = {}) {
   const items = Array.isArray(rawIssues) ? rawIssues : [];
   return items
     .filter((item): item is RawIssue => Boolean(item) && typeof item === "object")
     .filter(isIssueNotPullRequest)
     .filter(isOpenIssue)
     .filter((item) => !isAnchorHubOrGovernance(item))
-    .filter((item) => !isRejectedOrLanded(item))
+    // A label-filtered query that ASKS for a bridge-state label must not
+    // have that same label filtered out: the universal filter serves the
+    // default claimable board, not targeted reconciliation queries (#2163
+    // arc: label=bridge:rejected returned 0 rows for 2 confirmed open rows,
+    // live-proven across the redeploy boundary).
+    .filter((item) => opts.keepBridgeStateRows || !isRejectedOrLanded(item))
     .map(normalizeQueueItem)
     .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
     .slice(0, Math.min(Math.max(1, limit), QUEUE_LIMIT_MAX));
@@ -799,7 +811,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           if (rows.length < QUEUE_PAGE_SIZE) break;
           page += 1;
         }
-        const queued = queueFromIssues(mergeIssuePages(pages), limit ?? 20);
+        const queued = queueFromIssues(mergeIssuePages(pages), limit ?? 20,
+          { keepBridgeStateRows: appliedLabel !== null && isBridgeStateLabel(appliedLabel) });
         // Expose all active open issues so agents discover claimable federation work
         const anonymous = RequestContextStore.get()?.authenticated !== true;
         const workOrders = queued;
@@ -946,7 +959,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         if (!res.ok) {
           return { isError: true, content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}).` }] };
         }
-        const queued = queueFromIssues(res.data, limit ?? 20);
+        const queued = queueFromIssues(res.data, limit ?? 20,
+          { keepBridgeStateRows: appliedLabel !== null && isBridgeStateLabel(appliedLabel) });
         return {
           content: [{
             type: "text",
