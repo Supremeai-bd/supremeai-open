@@ -532,6 +532,13 @@ def build_task_envelope(
             "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge.",
             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
             "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.",
+            # বাংলা: কিউ-স্তরের claim লেবেল tower-এর লাইভ claim-কে পিছিয়ে থাকে (live
+            # 2026-10-28: ৩ সারি >=১৯ মিনিট ধরে status:unclaimed দেখিয়েছে যদিও claim
+            # স্ট্যাম্প হয়ে গিয়েছিল — #2111, #2123, #2102; স্থায়ী প্রোব
+            # scripts/queue_consistency_probe.py R2)। ভুল লেবেল-ডেটা লুপের কোডে ঠিক হয়
+            # না (b3dfbbe ব্রিজ-স্টেট বাদ দেয়, ভুল ডেটা নয়) — তাই সৎ প্রতিকার:
+            # এজেন্টকে claim-এর আগে feedback-plane যাচাইয়ের নির্দেশ।
+            "STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge.read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.",
         ]
     )
 
@@ -985,6 +992,12 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Solve root cause and submit PR with 'Closes #{picked}' in PR description to close it on merge.")
             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
             print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
+            # বাংলা: STALE-CLAIM GUARD — envelope-এর specialist_prompt-এর সাথে সমান্তরাল
+            # (U3-র দুই-স্তর প্যাটার্ন)। কিউ-লেবেল লাইভ claim-কে পিছিয়ে থাকায়
+            # status:unclaimed পরামর্শ মাত্র, সত্য নয়; work_claim-এর আগে
+            # bridge.read_feedback দিয়ে latestClaim যাচাই বাধ্যতামূলক, আর
+            # atomic-claim rejection হলে একই সারি রিট্রাই নয় — পরের প্রার্থী।
+            print("STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge.read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.")
             return 0
 
     cfg = load_cadence_config()
