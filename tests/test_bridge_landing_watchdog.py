@@ -466,6 +466,56 @@ def test_load_rejected_plane_403_discloses_rate_limit():
     assert rows == [] and "HTTP 500" in note
 
 
+def test_queue_integrity_both_directions():
+    """missing = queued-on-GitHub absent from listing (#2173 class);
+    phantom = listed but absent from the label plane."""
+    mod = _load_watchdog_module()
+    missing, phantom = mod._check_queue_integrity({5}, {5, 9, 11})
+    assert missing == [9, 11] and phantom == []
+    missing, phantom = mod._check_queue_integrity({5, 7}, {5})
+    assert missing == [] and phantom == [7]
+
+
+def test_fetch_label_rows_parameterizes_label():
+    """The shared core must carry the requested label into the query URL."""
+    page = [{"number": 9, "title": "queued", "state": "open",
+             "labels": ["bridge:queued"]}]
+
+    def fake(url):
+        assert "labels=bridge%3Aqueued" in url, url
+        return page
+
+    mod = _load_watchdog_module()
+    rows = mod._fetch_label_rows(mod.QUEUED_LABEL, fetch_json=fake)
+    assert len(rows) == 1 and rows[0]["number"] == 9
+
+
+def test_load_queue_integrity_ok_and_fail_open():
+    """OK path diffs both directions; 403 is by-cause; other failures
+    degrade this disclosure only (per-plane fail-open)."""
+    import urllib.error
+
+    mod = _load_watchdog_module()
+    page = [{"number": 9, "title": "queued", "state": "open",
+             "labels": ["bridge:queued"]}]
+    (n, missing, phantom), note = mod._load_queue_integrity(
+        {5, 9}, fetch_rows=lambda label: page)
+    assert note == "ok" and n == 1 and missing == [] and phantom == [5]
+
+    def ratelimited(label):
+        raise urllib.error.HTTPError("https://api.github.com/x", 403,
+                                     "rate limit exceeded", None, None)
+
+    res, note = mod._load_queue_integrity({5}, fetch_rows=ratelimited)
+    assert res is None and "rate limit" in note and "resets hourly" in note
+
+    def down(label):
+        raise ConnectionError("nope")
+
+    res, note = mod._load_queue_integrity({5}, fetch_rows=down)
+    assert res is None and "unreachable" in note
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):
