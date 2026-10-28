@@ -6,8 +6,11 @@ these tests deliberately do NOT touch the network: they run the guard's own
 --self-test (hermetic pre-fix/post-fix fixture servers, miss=0 +
 false-positive=0 proof), pin the roster wiring, the wolf-proof methodology
 constants (CSP Report-Only acceptance, allowlisted preflight origin), the
-SSOT operator-field import, and the honest-skip exit code. Dual-mode
-(pytest + stdlib runner), mirroring test_contract_fuzz_guard.py.
+SSOT operator-field import, and the honest-skip exit code. The probe table
+covers the full redaction class end-to-end: the original 10-probe #1819
+boundary table plus the #1901 docs-lockdown and #1902 readiness-redaction
+probes (12/12 live-verified against the edge serving the #1904/#1908 build).
+Dual-mode (pytest + stdlib runner), mirroring test_contract_fuzz_guard.py.
 """
 
 from __future__ import annotations
@@ -42,12 +45,15 @@ def test_roster_wiring():
 
 def test_probe_table_and_wolfproof_constants():
     mod = _load_sentinel_module()
-    # 10 probes: the exact #1819/#1874 table.
+    # 12 probes: the exact #1819/#1874 table + the #1901/#1902 redaction-class
+    # extension (live-verified 12/12 against the edge serving #1904/#1908).
     src = SENTINEL.read_text(encoding="utf-8")
     for needle in ('"GET / 4-field root"', '"HEAD / 200"',
                    '"OPTIONS / preflight (allowlisted origin)"',
                    '"security headers on /"', '"security headers on 404"',
-                   '"/internal/status"', '"/webhook/scout/status"'):
+                   '"/internal/status"', '"/webhook/scout/status"',
+                   '"GET /openapi.json inventory not served unauth"',
+                   '"GET /readyz redacted readiness"'):
         assert needle in src, f"probe pin missing: {needle}"
     # Wolf-proof lesson (a): CSP accepted in both names, lookup case-insensitive.
     assert "content-security-policy-report-only" in src
@@ -55,9 +61,14 @@ def test_probe_table_and_wolfproof_constants():
     # Wolf-proof lesson (b): preflight-shaped from the allowlisted origin only.
     assert mod.ALLOWLISTED_ORIGIN == "https://supremeai-studio.pages.dev"
     assert mod.FOREIGN_ORIGIN != mod.ALLOWLISTED_ORIGIN
-    # Root/liveness field SSOTs mirror the merged contract.
+    # Root/liveness/readiness field SSOTs mirror the merged contract.
     assert mod.ROOT_FIELDS == {"status", "service_name", "version", "chat_ready"}
     assert mod.LIVENESS_FIELDS >= {"status", "chat_ready", "timestamp"}
+    assert mod.READINESS_FIELDS == {"status", "chat_ready", "timestamp"}
+    # #1902 leak-class markers: the reason string must not carry the posture
+    # vocabulary either (env-var names contain "stealth"; store names "infisical").
+    assert "stealth" in mod.READINESS_LEAK_MARKERS
+    assert "infisical" in mod.READINESS_LEAK_MARKERS
     assert len(mod.OPERATOR_ONLY_FIELDS) >= 9, "operator-field SSOT lost"
 
 
