@@ -201,19 +201,18 @@ def test_live_baseline_provenance_and_empty_floor() -> None:
     data = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     assert data["schema"] == "docs-link-integrity-baseline/1"
     assert "2026-10-28" in data["generatedAt"], "baseline must be dated"
-    # r3 re-land: the floor is NOT empty by design. The original single-order
-    # landing assumed all 8 fixes ship together; the bridge v2 one-target-per-order
-    # routing law (the #1980 rejection) splits core/_archive/MANIFEST.md onto the
-    # satellite repo. The genesis ratchet pins exactly that ONE satellite-lane
-    # entry with a dated shrink path; every other writable lane ships at zero.
+    # r3 re-land then same-day shrink: the genesis ratchet pinned the ONE
+    # satellite-lane entry (core/** routes satellite — the #1980 rejection law)
+    # while its fix shipped via bridge-20261028-r42-manifest-satellite-fix; the
+    # fix landed as bc810e7 (PR #2028) and mirrored BEFORE the shrink order, so
+    # the floor is now EMPTY — the original r3 empty-floor endgame, reached by
+    # the routing-legal route. The note must keep the full dated history.
     floor = data["ratchetedFloor"]
-    assert len(floor) == 1, f"genesis floor must pin exactly the 1 satellite-lane entry, got {floor}"
-    entry = floor[0]
-    assert entry["file"] == "core/_archive/MANIFEST.md" and entry["allowed"] == 1, (
-        "the only floor entry must be the satellite-lane MANIFEST finding at allowed=1"
-    )
-    assert "SHRINK TO 0" in data["note"], "the dated shrink path must be documented in the baseline note"
-    assert "bridge-20261028-r42-manifest-satellite-fix" in data["note"], "the in-flight satellite order must be cited"
+    assert floor == [], f"floor must be empty post-shrink (endgame), got {floor}"
+    assert "SHRUNK TO 0" in data["note"], "the dated shrink stamp must be kept in the baseline note"
+    for token in ("bridge-20261028-r42-docs-link-integrity-r3",
+                  "bridge-20261028-r42-manifest-satellite-fix", "bc810e7"):
+        assert token in data["note"], f"shrink history must cite {token}"
     assert len(data["knownReportOnly"]) == 3, "3 vendored findings stay pinned report-only (#1725 lane)"
     assert len(data["knownExcluded"]) == 10, "10 AGENT_RULES ghosts stay pinned excluded (#1642->#1708 debt)"
 
