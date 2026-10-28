@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { UnifiedChatPanel, listStoredConversations, type DockAction, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
-import { Bot, Code, Globe, MessageSquarePlus, Smartphone, Sparkles } from 'lucide-react';
+import { Bot, Code, Columns, Globe, MessageSquarePlus, Smartphone, Sparkles } from 'lucide-react';
 import { JarvisLivingHologram } from '../../components/jarvis/JarvisLivingHologram';
+import { SplitStudioView } from '../../components/studio/SplitStudioView';
 import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
 import { MobileSimulator } from '../../components/customer/MobileSimulator';
 import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/BrowserPreview';
@@ -145,7 +146,7 @@ const MobileEmptyState: React.FC<{
 export const AIStudio: React.FC = () => {
   const [input, setInput] = useState('');
   const [resumeConvId, setResumeConvId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'chat' | 'preview' | 'mobile'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'split' | 'preview' | 'mobile'>('split');
   // CHAT LANDING (owner decision 2026-10-24): Chat is the landing tab with a
   // local history sidebar (mainstream-AI pattern). Home and Prompt Library
   // left the rail; users enable features from Settings/Profile.
@@ -213,10 +214,17 @@ export const AIStudio: React.FC = () => {
         <div className="flex items-center gap-4 text-xs font-medium">
           <button 
             type="button"
+            onClick={() => setActiveTab('split')}
+            className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'split' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)] font-semibold' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
+          >
+            <Columns size={14} /> Split Cockpit (45/55)
+          </button>
+          <button 
+            type="button"
             onClick={() => setActiveTab('chat')}
             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'chat' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
           >
-            <Bot size={14} /> Conversation
+            <Bot size={14} /> Chat Focused
           </button>
           <button 
             type="button"
@@ -253,6 +261,12 @@ export const AIStudio: React.FC = () => {
       </div>
 
       <div className="flex-1 min-h-0 relative">
+        {activeTab === 'split' && (
+          <div className="absolute inset-0">
+            <SplitStudioView language="bn" />
+          </div>
+        )}
+
         {activeTab === 'chat' && (
           <div className="absolute inset-0 flex gap-4 p-4">
             {/* Unified Chat Phase 2: uses the canonical UnifiedChatPanel with live streaming,
