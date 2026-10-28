@@ -29,6 +29,9 @@ import {
  *   R6: state_reason passthrough (#2218) — closed-as-completed vs
  *       closed-as-not_planned machine-readable Tower-only; absent or
  *       non-string upstream values normalize to null.
+ *   R7: label-filtered bridge-state queries are not self-defeating
+ *       (#2163 arc) — asking for bridge:rejected/bridge:landed returns
+ *       those rows; the default board keeps filtering them.
  */
 
 const REPO = "Supremeai-bd/supremeai-open";
@@ -156,6 +159,28 @@ function issue(n: number, opts: { pr?: boolean; state?: string; labels?: unknown
   assert.ok(row, "open row with state_reason survives the queue filters");
   assert.equal(row?.stateReason, "reopened", "queue rows carry stateReason through");
   console.log("  ✓ R6 stateReason passthrough (#2218): completed/not_planned/reopened/null/junk");
+}
+
+// ─── R7: label-filtered bridge-state queries (#2163 arc) ────────────────────
+{
+  const rejRow = issue(2020, { labels: ["bridge:rejected"] });
+  const landedRow = issue(2021, { labels: [{ name: "bridge:landed" }] });
+  const plain = issue(2022);
+
+  const board = queueFromIssues([rejRow, landedRow, plain], 10);
+  assert.ok(
+    !board.some((w) => w.number === 2020 || w.number === 2021),
+    "default board keeps filtering bridge-state rows (unchanged contract)",
+  );
+
+  const targeted = queueFromIssues([rejRow, landedRow, plain], 10, { keepBridgeStateRows: true });
+  assert.deepEqual(
+    targeted.map((w) => w.number),
+    [2022, 2021, 2020],
+    "targeted bridge-state query returns exactly the asked-for rows",
+  );
+
+  console.log("  ✓ R7 label-filtered bridge-state queries survive (#2163 arc)");
 }
 
 console.log("Queue-fidelity contract tests passed (#2115/#2123)");
