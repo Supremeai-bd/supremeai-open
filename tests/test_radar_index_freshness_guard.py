@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -266,6 +267,93 @@ def test_build_baseline_provenance_is_live() -> None:
 def test_git_provenance_fallback_hermetic() -> None:
     tmp = Path(tempfile.mkdtemp(prefix="rifg-nogit-"))
     assert guard._git_head_provenance(tmp) == "unknown (git unavailable at generation)"
+
+
+
+# --------------------------------------------------------------------------- #
+# #2187 — invariant D: commit-plane ghost scan (offline, first-run-clean)      #
+# --------------------------------------------------------------------------- #
+
+def test_hyphenated_pointer_form_is_stripped() -> None:
+    # Finding 3: "next-free R53" (real landed subjects #2172/#2178) used to
+    # escape the stripper; the widened `next[-\s]free` gap cleans it, while a
+    # non-pointer R53 mention still ghosts.
+    assert guard.scan_subjects(
+        ["guard(docs): register R52 row + next-free R53 (#2172)"], {52}) == []
+    assert guard.scan_subjects(
+        ["pass 11 — moves next free to **R53** (verified free repo-wide)"], set()) == []
+    ghosts = guard.scan_subjects(["radar R53 filed from the advertised slot"], set())
+    assert any(f["base"] == 53 and f["kind"] == "commit-subject-ghost" for f in ghosts)
+
+
+def test_real_subject_corpus_resolves_floor_born_empty() -> None:
+    corpus = [
+        "guard(docs): R51 registration per #2137 (#2145)",
+        "feat(docs): scout(R52 option A) — register the lane (#2165)",
+        "guard(docs): register R52 row + next-free R53 (#2172)",
+        "fix(ci): #2180 - baseline provenance were frozen literals (#2184)",
+        "a10: receipt eleven (run 5077) - standing trip-wire repeat fire",
+    ]
+    assert guard.scan_subjects(corpus, set(range(1, 53))) == []
+
+
+def test_commit_subject_ghost_named() -> None:
+    ghosts = guard.scan_subjects(["feat: unregistered R97 lane landing"], {1})
+    assert len(ghosts) == 1
+    assert ghosts[0]["base"] == 97 and ghosts[0]["token"] == "R97"
+    assert guard.key_of(ghosts[0]) == ("commit-subject-ghost", 97,
+                                       "feat: unregistered R97 lane landing")
+
+
+def test_invariant_d_end_to_end_on_throwaway_git_history() -> None:
+    if not shutil.which("git"):
+        return  # honest-skip mirrors the guard's own git-less doctrine
+    root = make_tree({guard.INDEX_REL: index_doc(53, [1, 52])})
+
+    def git(*a: str) -> None:
+        subprocess.run(["git", *a], cwd=str(root), capture_output=True, text=True, check=False)
+
+    git("init", "-q")
+    git("config", "user.email", "hermetic@example")
+    git("config", "user.name", "hermetic")
+    (root / "seed.txt").write_text("one\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "guard(docs): register R52 row + next-free R53 (#2172)")
+    (root / "seed.txt").write_text("two\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "feat: unregistered R97 lane landing")
+    ghosts, ran = guard.invariant_d(root, {1, 52})
+    assert ran
+    assert any(f["base"] == 97 for f in ghosts)
+    assert not any(f["base"] == 53 for f in ghosts)  # hyphenated pointer stays clean
+
+
+def test_invariant_d_honest_skip_without_git() -> None:
+    tmp = Path(tempfile.mkdtemp(prefix="rifg-nogit-"))
+    ghosts, ran = guard.invariant_d(tmp, {1})
+    # In a git-less dir the subprocess fails -> honest-skip, never a fake PASS.
+    if ran:  # sandbox has git but the dir is not a repo — skip is still honest
+        assert ghosts == [] or all(f["base"] not in {1} for f in ghosts)
+    else:
+        assert ghosts == []
+
+
+def test_invariant_d_joins_ratchet_as_fresh_drift() -> None:
+    ghosts = [guard_scan := {"kind": "commit-subject-ghost", "subject": "feat: R97 lane",
+                             "token": "R97", "base": 97}]
+    baseline = {"schema": "radar-index-freshness-baseline/1", "floor": []}
+    drift, _ = guard.compare(baseline, ghosts)
+    assert len(drift) == 1 and drift[0]["kind"] == "new"
+    # Registering the row makes the base resolve — the finding vanishes and
+    # the floor entry (never written) stays unborn: first-run-clean holds.
+    assert guard.scan_subjects(["feat: R97 lane"], {97}) == []
+
+
+def test_sweep_carries_commit_plane_fields() -> None:
+    root = make_tree({guard.INDEX_REL: index_doc(4, [1])})
+    r = guard.sweep(root)
+    assert "d" in r and "d_ran" in r
+    assert isinstance(r["d"], list)
 
 
 # --------------------------------------------------------------------------- #
