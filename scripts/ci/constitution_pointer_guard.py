@@ -155,6 +155,10 @@ ALLOWLIST: dict[str, tuple[str, str]] = {
     ),
     "docs/AUDIT_2026-10-27.md": ("historical", "audit record — never rewritten"),
     "docs/AUDIT_2026-10-28.md": ("historical", "audit record — never rewritten"),
+    "docs/reports/CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md": (
+        "historical",
+        "case file quotes the duplicate-pr-guard's verbatim error line — which still cites the deleted path (pipeline.yml L362 drift, receipt 6g footnote); citation is the evidence record, never rewritten",
+    ),
     "docs/adrs/README.md": ("historical", "ADR index — decision records"),
     "docs/PROJECT_FULL_AUDIT_BN.md": ("historical", "audit snapshot (BN)"),
     # -- protected: admin-owned .github/ ------------------------------------
