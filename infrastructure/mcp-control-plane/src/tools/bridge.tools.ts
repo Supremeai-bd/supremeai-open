@@ -7,6 +7,7 @@ import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
 import { isWorkOrderForTaskId, taskIdSearchQuery } from "../lib/bridge_dedup.js";
+import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
 import { RequestContextStore } from "../policy/auth.context.js";
 
 export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
@@ -1239,7 +1240,11 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             method: "POST",
             headers,
             body: {
-              title: `🌉 Bridge Work Order — ${summary} (${taskId})`,
+              // #2195 Failure 1: GitHub now caps issue titles at ~256 chars;
+              // an unclamped 980-char summary 422'd deterministically and
+              // stranded the pushed branch. Clamp preserves the (taskId) tail
+              // (authoritative for #2136 dedup).
+              title: issueTitleFor(summary, taskId),
               labels: [BRIDGE_QUEUE_LABEL],
               body: issueBody,
             },
@@ -1270,25 +1275,43 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
 
         let prNumber: number | undefined;
         let prUrl: string | undefined;
-
-        const prRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
-          `https://api.github.com/repos/${repo}/pulls`,
-          {
-            method: "POST",
-            headers,
-            body: {
-              title: `feat(bridge): ${summary} (${taskId})`,
-              head: branchName,
-              base: "main",
-              body: prBody,
-            },
-            timeoutMs: 15_000,
+        // #2195 Failure 2/3: the deployed plane ran `if (prRes.ok && prRes.data)`
+        // with NO else — a failed PR creation (validation, head-not-found, the
+        // new ~256-char title cap) was silently swallowed and the round returned
+        // ok:true/bridge:queued with prNumber undefined, stranding branches with
+        // zero diagnostics (contra Invariant #514). Surface the failure as
+        // prError while keeping the bridge:queued state machine unchanged: the
+        // branch and work-order issue already exist, so the round is still a
+        // recoverable queued state — but now the agent and the admin can see WHY.
+        let prError: PrFailure | undefined;
+        try {
+          const prRes = await httpRequest<{ number?: number; html_url?: string; message?: string; errors?: Array<{ message?: string }> }>(
+            `https://api.github.com/repos/${repo}/pulls`,
+            {
+              method: "POST",
+              headers,
+              body: {
+                // #2195 Failure 1 twin: same GitHub ~256-char cap applies to PR
+                // titles; clamp with the (taskId) tail preserved.
+                title: prTitleFor(summary, taskId),
+                head: branchName,
+                base: "main",
+                body: prBody,
+              },
+              timeoutMs: 15_000,
+            }
+          );
+          if (prRes.ok && prRes.data) {
+            prNumber = prRes.data.number;
+            prUrl = prRes.data.html_url;
+          } else if (!prRes.ok) {
+            prError = prFailureFromHttp(prRes.status, prRes.data);
           }
-        );
-
-        if (prRes.ok && prRes.data) {
-          prNumber = prRes.data.number;
-          prUrl = prRes.data.html_url;
+        } catch (prErr) {
+          // Transport-level throw (timeout/DNS): keep the round's existing
+          // artifacts visible instead of letting the outer catch discard
+          // fileResults + issueNumber behind a generic isError.
+          prError = { status: 0, message: (prErr as Error).message };
         }
 
         return {
@@ -1307,10 +1330,13 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               issueUrl: issueRes.data?.html_url,
               prNumber,
               prUrl,
+              prError,
               status: prNumber ? "bridge:pr-opened" : "bridge:queued",
               message: prNumber
                 ? `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
-                : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
+                : prError
+                  ? `Branch + work order created, but PR creation FAILED (${prError.status}: ${prError.message}) — branch stranded pending admin pairing or a resubmit; do NOT treat this round as landed.`
+                  : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
             }, null, 2),
           }],
         };
