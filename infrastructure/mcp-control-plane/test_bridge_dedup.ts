@@ -10,7 +10,7 @@
  * The fix: quoted-phrase full-text query + authoritative-position verification
  * (title tail `(${taskId})` or body `### Task ID` field equality).
  */
-import { isWorkOrderForTaskId, taskIdSearchQuery } from "./src/lib/bridge_dedup.js";
+import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "./src/lib/bridge_dedup.js";
 
 let failures = 0;
 function check(name: string, cond: boolean, detail?: string): void {
@@ -84,11 +84,29 @@ check("taskId is phrase-quoted", q.includes(`%22${encodeURIComponent(NOVEL_R2)}%
 check("no in:title (body Task ID field is authoritative)", !q.includes("in:title"), q);
 check("hyphen-split token-AND form is gone", !q.includes("+bridge-20261028"), q);
 
+// ─── 6. #2227 branch-aware ingress resolution ───────────────────────────────
+section("6. #2227 branch-aware ingress resolution (restores #2112 semantics)");
+// Live repro shape (WO #2205 casualty): manually-filed WO active, patch branch
+// never landed (bridge/bridge-20261029-health-staleness-guard = 404). The old
+// whole-run noop stranded the solver's completed work with nothing on origin.
+const pairAndLand = resolveIngressAction(false);
+check("WO active + branch MISSING -> pair-and-land (the #2227 fix)", pairAndLand.action === "pair-and-land");
+check("pair-and-land carries the wo-active-branch-missing reason", pairAndLand.reason === "wo-active-branch-missing");
+check("pair-and-land records branchExists=false", pairAndLand.branchExists === false);
+const inFlight = resolveIngressAction(true);
+check("WO active + branch EXISTS -> idempotent-noop (resubmit protection kept)", inFlight.action === "idempotent-noop");
+check("noop carries the wo-active-branch-in-flight reason", inFlight.reason === "wo-active-branch-in-flight");
+check("noop records branchExists=true", inFlight.branchExists === true);
+check("decisions are discriminated on action (exhaustive switch shape)", pairAndLand.action !== inFlight.action);
+// The #2136 precision layer still gates entry into the branch-aware decision:
+// a WO for a DIFFERENT taskId must never reach it (verified in sections 1-3);
+// resolveIngressAction only decides WHAT to do once authority is established.
+
 // ─── Verdict ────────────────────────────────────────────────────────────────
 console.log("\n=============================================");
 if (failures === 0) {
-  console.log("ALL BRIDGE DEDUP TESTS PASSED (#2136)");
+  console.log("ALL BRIDGE DEDUP TESTS PASSED (#2136+#2227)");
 } else {
-  console.error(`${failures} TEST(S) FAILED (#2136)`);
+  console.error(`${failures} TEST(S) FAILED (#2136+#2227)`);
 }
 process.exit(failures === 0 ? 0 : 1);
