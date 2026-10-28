@@ -401,6 +401,197 @@ def test_dockerfile_scan_mode_is_non_blocking() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Poetry runtime plane (#2101, radar R49)                                      #
+# --------------------------------------------------------------------------- #
+
+def test_poetry_caret_semantics_are_poetry_not_npm() -> None:
+    # poetry caret bumps the LEFTMOST NON-ZERO specified component
+    assert guard._poetry_caret_upper("12.3.0") == "13.0.0"
+    assert guard._poetry_caret_upper("0.65b0") == "0.66.0"   # NOT npm's <1.0.0
+    assert guard._poetry_caret_upper("0.0.3") == "0.0.4"
+    # all-specified-zero: the LAST specified component is the bump slot
+    assert guard._poetry_caret_upper("0") == "1.0.0"
+    assert guard._poetry_caret_upper("0.0") == "0.1.0"
+    assert guard._poetry_caret_upper("0.0.0") == "0.0.1"
+    assert guard._poetry_caret_upper("garbage!!") == ""
+
+
+def test_poetry_constraint_forms_to_pip() -> None:
+    assert guard.poetry_constraint_to_pip("p", "^12.3.0") == ("p>=12.3.0,<13.0.0", None)
+    assert guard.poetry_constraint_to_pip("p", "^0.136.0") == ("p>=0.136.0,<0.137.0", None)
+    assert guard.poetry_constraint_to_pip("p", "2.3.5") == ("p==2.3.5", None)
+    assert guard.poetry_constraint_to_pip("p", ">=8.3.3") == ("p>=8.3.3", None)
+    assert guard.poetry_constraint_to_pip("p", "~1.2.3") == ("p>=1.2.3,<1.3.0", None)
+    assert guard.poetry_constraint_to_pip("p", "~1.2") == ("p>=1.2,<2.0", None)
+    assert guard.poetry_constraint_to_pip("p", "~=1.2.3") == ("p~=1.2.3", None)
+    spec, why = guard.poetry_constraint_to_pip("p", "*")
+    assert spec is None and why == "wildcard-any"
+    # comma composites pass through verbatim (AND in both ecosystems)
+    assert guard.poetry_constraint_to_pip("p", ">=1.0,<2.0") == ("p>=1.0,<2.0", None)
+
+
+def test_poetry_synthesis_fixture_and_skip_classes() -> None:
+    with tempfile.TemporaryDirectory(prefix="pydep-poetry-") as td:
+        proj = Path(td) / "pyproject.toml"
+        proj.write_text(
+            "[tool.poetry.dependencies]\n"
+            'python = "^3.11"\n'
+            'pillow = "^12.3.0"\n'
+            'infisical-python = "2.3.5"\n'
+            'redis = { version = "^5.2.1", extras = ["redis"] }\n'
+            'litellm = { path = "../local" }\n'
+            'otel-extra = { version = "^1.0.0", optional = true }\n'
+            'loose = "*"\n'
+            "\n"
+            "[tool.poetry.group.dev.dependencies]\n"
+            'pytest = "^8.0.0"\n',
+            encoding="utf-8",
+        )
+        text, skips, stats = guard.synthesize_poetry_requirements(proj)
+        assert {ln for ln in text.splitlines() if ln.strip()} == {
+            "pillow>=12.3.0,<13.0.0",
+            "infisical-python==2.3.5",
+            "redis[redis]>=5.2.1,<6.0.0",
+        }
+        joined = "; ".join(skips)
+        assert "litellm: path" in joined
+        assert "otel-extra: optional" in joined
+        assert "loose: wildcard-any" in joined
+        assert stats["python_key_excluded"] == 1
+        assert stats["groups_out_of_scope"] == ["dev"]
+
+
+def test_poetry_pep621_pyproject_is_off_plane() -> None:
+    with tempfile.TemporaryDirectory(prefix="pydep-pep621-") as td:
+        proj = Path(td) / "pyproject.toml"
+        proj.write_text(
+            '[project]\nname = "x"\ndependencies = ["requests"]\n', encoding="utf-8"
+        )
+        text, skips, stats = guard.synthesize_poetry_requirements(proj)
+        assert text.strip() == ""
+        assert stats["main_keys"] == 0
+
+
+def test_discover_py_surface_includes_both_planes() -> None:
+    with tempfile.TemporaryDirectory(prefix="pydep-surface-") as td:
+        root = Path(td)
+        (root / "core").mkdir()
+        (root / "core" / "pyproject.toml").write_text(
+            '[tool.poetry.dependencies]\npython = "^3.11"\nrequests = "^2.28.0"\n',
+            encoding="utf-8",
+        )
+        (root / "core" / "requirements.txt").write_text("requests>=2.28.0\n", encoding="utf-8")
+        assert guard.discover_py_surface(root) == [
+            "core/pyproject.toml",
+            "core/requirements.txt",
+        ]
+
+
+def test_evaluate_dispatches_poetry_plane_hermetically() -> None:
+    """Full decision tree over a synthetic poetry plane, audit monkeypatched."""
+    with tempfile.TemporaryDirectory(prefix="pydep-eval-") as td:
+        tmp = Path(td)
+        (tmp / "scripts" / "ci").mkdir(parents=True)
+        (tmp / "core").mkdir()
+        (tmp / "core" / "pyproject.toml").write_text(
+            '[tool.poetry.dependencies]\npython = "^3.11"\nrequests = "^2.28.0"\n',
+            encoding="utf-8",
+        )
+        (tmp / guard.BASELINE_PATH).write_text(
+            json.dumps({"meta": {"issue": "2101"}, "findings": {
+                "core/pyproject.toml:requests@2.32.3": ["PYSEC-9"],
+            }}),
+            encoding="utf-8",
+        )
+        real_audit = guard.audit_manifest
+
+        def fake_audit(path: Path) -> dict[str, list[str]]:
+            assert path.suffix == ".txt" and "poetry-synth" in path.name, (
+                f"poetry plane must be audited via the synthesized tmp file, got {path}"
+            )
+            body = path.read_text(encoding="utf-8")
+            assert body.strip() == "requests>=2.28.0,<3.0.0"
+            return {"requests@2.32.3": ["PYSEC-9"]}
+
+        guard.audit_manifest = fake_audit
+        try:
+            with _pip_audit_present():
+                code, drift, improvements, notes = guard.evaluate(tmp)
+        finally:
+            guard.audit_manifest = real_audit
+        assert code == guard.EXIT_PASS, (code, drift, notes)
+        assert any("core/pyproject.toml (synthesized" in n for n in notes), notes
+        # a NEW id inside the baselined pair still fail-closes through the poetry plane
+        def fake_audit2(path: Path) -> dict[str, list[str]]:
+            return {"requests@2.32.3": ["PYSEC-9", "PYSEC-NEW"]}
+
+        guard.audit_manifest = fake_audit2
+        try:
+            with _pip_audit_present():
+                code2, drift2, _, _ = guard.evaluate(tmp)
+        finally:
+            guard.audit_manifest = real_audit
+        assert code2 == guard.EXIT_DRIFT
+        assert drift2 and drift2[0]["pair"] == "core/pyproject.toml:requests@2.32.3"
+        assert drift2[0]["kind"] == "new-id"
+
+
+def test_evaluate_malformed_poetry_toml_fail_closes() -> None:
+    with tempfile.TemporaryDirectory(prefix="pydep-badtoml-") as td:
+        tmp = Path(td)
+        (tmp / "scripts" / "ci").mkdir(parents=True)
+        (tmp / "core").mkdir()
+        (tmp / "core" / "pyproject.toml").write_text(
+            "[tool.poetry.dependencies\npython = oops", encoding="utf-8"
+        )
+        (tmp / guard.BASELINE_PATH).write_text(
+            json.dumps({"meta": {}, "findings": {}}), encoding="utf-8"
+        )
+        with _pip_audit_present():
+            code, drift, _, notes = guard.evaluate(tmp)
+        assert code == guard.EXIT_DRIFT
+        assert drift and drift[0]["kind"] == "malformed-poetry-manifest"
+        assert drift[0]["ids"] == ["POETRY-MANIFEST"]
+
+
+def test_files_mode_triggers_on_pyproject_touch() -> None:
+    """--files with a pyproject.toml in the changed set is ON-surface."""
+    with tempfile.TemporaryDirectory(prefix="pydep-files-") as td:
+        tmp = Path(td)
+        (tmp / "scripts" / "ci").mkdir(parents=True)
+        (tmp / "core").mkdir()
+        (tmp / "core" / "pyproject.toml").write_text(
+            '[tool.poetry.dependencies]\npython = "^3.11"\nrequests = "^2.28.0"\n',
+            encoding="utf-8",
+        )
+        (tmp / guard.BASELINE_PATH).write_text(
+            json.dumps({"meta": {}, "findings": {}}), encoding="utf-8"
+        )
+        real_audit = guard.audit_manifest
+        calls: list[Path] = []
+
+        def fake_audit(path: Path) -> dict[str, list[str]]:
+            calls.append(path)
+            return {}
+
+        guard.audit_manifest = fake_audit
+        try:
+            with _pip_audit_present():
+                code, _, _, notes = guard.evaluate(tmp, files=["core/pyproject.toml"])
+        finally:
+            guard.audit_manifest = real_audit
+        assert code == guard.EXIT_PASS
+        assert calls, "pyproject touch must reach the auditor (not an off-surface skip)"
+
+
+def test_pre_push_engages_on_pyproject_paths() -> None:
+    hook = (REPO_ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
+    assert "pyproject\\.toml$" in hook, (
+        "pre-push py_dep surface grep must include pyproject.toml (#2101)"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Live baseline pin (landing state; honest-skip when pip-audit is absent)      #
 # --------------------------------------------------------------------------- #
 
@@ -411,7 +602,12 @@ def test_live_baseline_provenance() -> None:
     meta = data["meta"]
     assert "pip-audit" in str(meta.get("tool", "")), "baseline must record the pip-audit SSOT"
     assert meta.get("doctrine", "").startswith("shrink-only"), "ratchet doctrine required"
-    assert meta.get("issue") == 1969
+    issue = str(meta.get("issue", ""))
+    assert "1969" in issue, "initial floor issue must stay recorded"
+    assert "2101" in issue, "poetry-plane widening issue must stay recorded"
+    assert "pyproject.toml" in str(meta.get("surface", "")), (
+        "the widened poetry surface must be recorded in the baseline meta"
+    )
     assert isinstance(data["findings"], dict) and data["findings"], "floor records live truth"
     for pair, ids in data["findings"].items():
         assert ":" in pair and "@" in pair, f"pair key must be manifest:name@version: {pair}"
