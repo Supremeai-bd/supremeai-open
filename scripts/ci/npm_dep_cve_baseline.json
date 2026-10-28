@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "issue": 2059,
+    "tool": "osv-querybatch (api.osv.dev/v1/querybatch, zero-credential)",
+    "lockfiles": [
+      "infrastructure/mcp-control-plane/package-lock.json",
+      ".agents/skills/devtools-audit/package-lock.json"
+    ],
+    "ecosystem": "npm",
+    "dev_entries_skipped": true,
+    "head": "bab42ec 2026-10-28",
+    "dated": "2026-10-28",
+    "totals": {
+      "pairs_scanned": 122,
+      "skipped_dev": 52,
+      "skipped_non_registry": 2,
+      "vulnerable_pairs": 8,
+      "vuln_ids": 19
+    },
+    "per_lock": {
+      "infrastructure/mcp-control-plane/package-lock.json": {
+        "pairs_scanned": 101,
+        "vulnerable_pairs": 8
+      },
+      ".agents/skills/devtools-audit/package-lock.json": {
+        "pairs_scanned": 21,
+        "vulnerable_pairs": 0
+      }
+    },
+    "doctrine": "shrink-only ratchet: entries and ids may only be REMOVED (in the same change that resolves them \u2014 a maintainer pin bump or an upstream fix absorbed by a floor reset). A new pair or a new advisory id is drift; the baseline may never grow. Seeded floor is the LIVE 2026-10-28 audit result (the #2033 lesson), not an assumed-empty one."
+  },
+  "findings": {
+    "infrastructure/mcp-control-plane/package-lock.json:@modelcontextprotocol/sdk@1.30.0": [
+      "GHSA-22jm-h49p-29qw",
+      "GHSA-46jr-4wx8-v453",
+      "GHSA-6prh-2h8m-c8cw",
+      "GHSA-6qxp-vccf-f47h",
+      "GHSA-f897-62hf-6gxq",
+      "GHSA-rvq5-wwqv-78pq"
+    ],
+    "infrastructure/mcp-control-plane/package-lock.json:body-parser@2.3.0": [
+      "GHSA-27r3-jxmh-p828"
+    ],
+    "infrastructure/mcp-control-plane/package-lock.json:fast-uri@3.1.7": [
+      "GHSA-333x-w4r6-6crp",
+      "GHSA-hrr3-gc8f-f4qj",
+      "GHSA-w74x-v6f9-j3xg",
+      "GHSA-wjr9-j795-jxcr",
+      "GHSA-xhq7-xmqj-769h"
+    ],
+    "infrastructure/mcp-control-plane/package-lock.json:hono@4.13.7": [
+      "GHSA-5r4p-p66f-jhc7"
+    ],
+    "infrastructure/mcp-control-plane/package-lock.json:ip-address@10.7.0": [
+      "GHSA-h3mg-xc3c-68pw",
+      "GHSA-j6r3-76f7-8jcv",
+      "GHSA-rxp7-6hxx-x8q5"
+    ],
+    "infrastructure/mcp-control-plane/package-lock.json:proxy-addr@2.0.7": [
+      "GHSA-jqcg-44mw-7w3h"
+    ],
+    "infrastructure/mcp-control-plane/package-lock.json:qs@6.16.0": [
+      "GHSA-6pq8-jhm2-2vcw"
+    ],
+    "infrastructure/mcp-control-plane/package-lock.json:zod@4.6.4": [
+      "GHSA-mrhx-c7xc-m3w5"
+    ]
+  }
+}
