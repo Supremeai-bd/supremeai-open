@@ -65,7 +65,6 @@ Exit codes: 0 = clean or fully covered by the shrink-only baseline;
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 import tempfile
