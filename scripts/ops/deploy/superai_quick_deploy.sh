@@ -42,7 +42,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
@@ -66,7 +65,8 @@ DEPLOY_ENV="production"
 log() {
     local level=$1; shift
     local message=$*
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
     echo -e "[$timestamp] [$level] $message" | tee -a "$DEPLOY_LOG"
     
@@ -125,7 +125,8 @@ preflight_checks() {
     
     for cmd in "${required_commands[@]}"; do
         if check_command "$cmd"; then
-            local version=$($cmd --version 2>/dev/null | head -1)
+            local version
+            version=$($cmd --version 2>/dev/null | head -1)
             log INFO "✓ $cmd: $version"
         else
             ((errors++))
@@ -133,8 +134,10 @@ preflight_checks() {
     done
     
     # Check Node.js version (need 18+)
-    local node_version=$(node -v | sed 's/v//')
-    local node_major=$(echo $node_version | cut -d. -f1)
+    local node_version
+    node_version=$(node -v | sed 's/v//')
+    local node_major
+    node_major=$(echo "$node_version" | cut -d. -f1)
     
     if [ "$node_major" -lt 18 ]; then
         log ERROR "Node.js version must be >= 18 (found: $node_version)"
@@ -142,9 +145,12 @@ preflight_checks() {
     fi
     
     # Check Python version (need 3.9+)
-    local python_version=$(python3 --version 2>/dev/null | awk '{print $2}')
-    local python_major=$(echo $python_version | cut -d. -f1)
-    local python_minor=$(echo $python_version | cut -d. -f2)
+    local python_version
+    python_version=$(python3 --version 2>/dev/null | awk '{print $2}')
+    local python_major
+    python_major=$(echo "$python_version" | cut -d. -f1)
+    local python_minor
+    python_minor=$(echo "$python_version" | cut -d. -f2)
     
     if [ "$python_major" -lt 3 ] || ([ "$python_major" -eq 3 ] && [ "$python_minor" -lt 9 ]); then
         log ERROR "Python version must be >= 3.9 (found: $python_version)"
@@ -152,7 +158,8 @@ preflight_checks() {
     fi
     
     # Check disk space (need at least 2GB free)
-    local free_space=$(df -BG "$PROJECT_ROOT" | tail -1 | awk '{print $4}' | sed 's/G//')
+    local free_space
+    free_space=$(df -BG "$PROJECT_ROOT" | tail -1 | awk '{print $4}' | sed 's/G//')
     if [ "$free_space" -lt 2 ]; then
         log ERROR "Insufficient disk space (need 2GB+, have ${free_space}GB)"
         ((errors++))
@@ -161,7 +168,8 @@ preflight_checks() {
     fi
     
     # Check memory (need at least 2GB)
-    local total_mem=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "unknown")
+    local total_mem
+    total_mem=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "unknown")
     if [ "$total_mem" != "unknown" ] && [ "$total_mem" -lt 2 ]; then
         log WARN "Low memory detected (${total_mem}GB). Build may fail."
     fi
@@ -183,7 +191,8 @@ preflight_checks() {
     
     # Check git status (warn if uncommitted changes)
     if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
-        local changes=$(git -C "$PROJECT_ROOT" status --porcelain 2>/dev/null | wc -l)
+        local changes
+        changes=$(git -C "$PROJECT_ROOT" status --porcelain 2>/dev/null | wc -l)
         if [ "$changes" -gt 0 ]; then
             log WARN "$changes uncommitted change(s) in repository"
         else
@@ -403,7 +412,8 @@ create_backup() {
     
     log ACTION "Creating pre-deployment backup..."
     
-    local backup_name="pre_deploy_$(date +%Y%m%d_%H%M%S)"
+    local backup_name
+    backup_name="pre_deploy_$(date +%Y%m%d_%H%M%S)"
     local backup_path="$BACKUP_DIR/$backup_name"
     
     mkdir -p "$backup_path"
@@ -450,7 +460,8 @@ rollback_deployment() {
     log ACTION "Rolling back deployment..."
     
     # Find latest backup
-    local latest_backup=$(ls -dt "$BACKUP_DIR"/pre_deploy_* 2>/dev/null | head -1)
+    local latest_backup
+    latest_backup=$(ls -dt "$BACKUP_DIR"/pre_deploy_* 2>/dev/null | head -1)
     
     if [ -z "$latest_backup" ]; then
         log ERROR "No backup found for rollback"
@@ -463,10 +474,11 @@ rollback_deployment() {
     
     # Restore backed up items
     for item in "$latest_backup"/*; do
-        local basename=$(basename "$item")
+        local basename
+        basename=$(basename "$item")
         
         if [ "$basename" != "manifest.json" ] && [ "$basename" != "git_commit.txt" ]; then
-            rm -rf "$PROJECT_ROOT/$basename" 2>/dev/null
+            rm -rf "${PROJECT_ROOT:?}/$basename" 2>/dev/null
             cp -r "$item" "$PROJECT_ROOT/" 
             log INFO "Restored: $basename"
         fi
@@ -614,7 +626,8 @@ show_status() {
     
     echo ""
     echo "--- Backups ---"
-    local backup_count=$(ls -d "$BACKUP_DIR"/pre_deploy_* 2>/dev/null | wc -l)
+    local backup_count
+    backup_count=$(ls -d "$BACKUP_DIR"/pre_deploy_* 2>/dev/null | wc -l)
     echo "Available backups: $backup_count"
     
     if [ $backup_count -gt 0 ]; then
