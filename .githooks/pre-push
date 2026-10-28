@@ -616,6 +616,49 @@ for line in $updates; do
         fi
     fi
 
+    # 16. RADAR INDEX FRESHNESS GUARD (#2091).
+    # Mechanical backstop for the R-number allocation contract whose SSOT is
+    # docs/SCOUT_RADAR_INDEX.md (rule 7: "the index is the only counter").
+    # Three same-day collision-imminent drifts (index passes 3/4/6) showed the
+    # self-policing contract fails structurally: a scout taking the advertised
+    # next-free number would double-allocate. Engages ONLY when the push
+    # touches the index or a radar doc; runs the guard's invariant battery
+    # (A registry-completeness, B pointer-truth incl. the pass-3/4/6
+    # pointer-taken collision class, C docs/** citation existence) with
+    # content scans scoped to the changed radar surfaces; pointer and
+    # tracked-filename scans stay global (cheap). Ghost-citation debt is
+    # pinned shrink-only via scripts/ci/radar_index_freshness_baseline.json
+    # (the floor may never grow); A/B violations are never floorable.
+    # Wired additively after the docs-link guard (#1938) — no existing
+    # section is renumbered (the #2044 section-trail rule).
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/radar_index_freshness_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            radar_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            radar_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        radar_surface=$(printf '%s\n' "$radar_changed" | grep -E '^docs/SCOUT_RADAR_2026-10-28.*\.md$' || true)
+        if [ -n "$radar_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/radar_index_freshness_guard.py --files $radar_surface; then
+                    reject "RADAR INDEX FRESHNESS GUARD (#2091) FAILED" \
+                        "The push breaks the R-number allocation contract (docs/SCOUT_RADAR_INDEX.md is the only counter)." \
+                        "Fix the invariant violation named in the [radar-index-freshness-guard] evidence lines above — the advertised next-free number must never collide with a registry row." \
+                        "Ghost-citation debt is pinned shrink-only; the baseline may never grow." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"
