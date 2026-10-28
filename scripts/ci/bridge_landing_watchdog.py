@@ -298,22 +298,51 @@ def _fetch_rejected_rows(fetch_json=_github_get_json,
                              max_pages=max_pages)
 
 
-def _load_rejected_plane(fetch_rows=_fetch_rejected_rows) -> tuple:
-    """Per-plane fail-open: an unreachable GitHub plane degrades THIS plane
-    only (honest note), never the queue plane, never a fake empty truth.
-    A 403 is called out by cause: the unauthenticated API budget is per-IP
-    and shared by everything egressing the same address — rate-limited is
-    transient (resets hourly), unlike a genuine outage."""
+def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
+    """Tower-plane enumeration of open `bridge:rejected` via the
+    label-filtered bridge_work_queue query — the disclosed fallback when the
+    unauthenticated GitHub budget is exhausted (per-IP, shared egress).
+
+    #2251 un-self-defeated the tower-side label filter: queueFromIssues had
+    applied the universal !isRejectedOrLanded board filter to EVERY path
+    including label-filtered ones (live pre-fix: confirmed open+rejected
+    #2020/#2056 enumerated 0 rows; live post-fix 2026-10-29, zero-credential
+    vantage: 20 rows). Rows carry number/title/labels/createdAt in the same
+    normalize shape as the github plane (no body — run_verdicts needs none
+    and refine_satellites fetches bodies itself)."""
+    data = json.loads(fetch_text("bridge_work_queue", {"label": REJECTED_LABEL}))
+    if not isinstance(data, dict) or not isinstance(data.get("workOrders"), list):
+        raise TypeError("bridge_work_queue: expected {workOrders: [...]}, got "
+                        f"{type(data).__name__}")
+    return data["workOrders"]
+
+
+def _load_rejected_plane(fetch_rows=_fetch_rejected_rows,
+                         tower_rows=_fetch_rejected_rows_tower) -> tuple:
+    """Dual-transport rejected plane, per-plane fail-open: a down plane
+    degrades THIS plane only (honest note), never the queue plane, never a
+    fake empty truth. GitHub direct stays primary (independent transport of
+    the same S05 build_queue_query contract); the tower label-filtered
+    queue is the fallback for the per-IP unauthenticated GitHub budget —
+    shared by everything egressing the same address (live 2026-10-29:
+    github 403 from this egress while the tower plane served 20 rows).
+    The 403 cause is disclosed verbatim whether the fallback covers it or
+    both planes fail — rate-limited is transient (resets hourly), unlike a
+    genuine outage."""
     try:
         return fetch_rows(), "ok"
     except urllib.error.HTTPError as err:
-        if err.code == 403:
-            return [], ("unreachable (HTTP 403 — unauthenticated GitHub API "
-                        "rate limit for this egress IP (shared egress may "
-                        "exhaust it continuously); budget resets hourly)")
-        return [], f"unreachable (HTTP {err.code})"
+        gh_note = ("HTTP 403 — unauthenticated GitHub API rate limit for "
+                   "this egress IP (shared egress may exhaust it "
+                   "continuously); budget resets hourly" if err.code == 403
+                   else f"HTTP {err.code}")
     except Exception as err:  # noqa: BLE001 — one plane down is a disclosed skip
-        return [], f"unreachable ({err.__class__.__name__})"
+        gh_note = err.__class__.__name__
+    try:
+        return tower_rows(), f"tower-plane fallback (github: {gh_note})"
+    except Exception as err:  # noqa: BLE001 — both planes down: dual-cause note
+        return [], (f"unreachable (github {gh_note}; "
+                    f"tower {err.__class__.__name__})")
 
 
 def _join_rejected_plane(work_orders: list[dict], rejected_rows: list[dict]) -> tuple:
@@ -865,18 +894,36 @@ def self_test() -> list[tuple[str, bool, str]]:
     def _boom():
         raise RuntimeError("down")
 
-    gone, note = _load_rejected_plane(fetch_rows=_boom)
-    cases.append(("rejected plane per-plane fail-open",
-                  gone == [] and "unreachable" in note, f"note={note}"))
+    gone, note = _load_rejected_plane(fetch_rows=_boom, tower_rows=_boom)
+    cases.append(("rejected plane per-plane fail-open (both down, dual cause)",
+                  gone == [] and "unreachable" in note
+                  and "github RuntimeError" in note and "tower RuntimeError" in note,
+                  f"note={note}"))
 
     def _ratelimited():
         raise urllib.error.HTTPError("https://api.github.com/x", 403,
                                      "rate limit exceeded", None, None)
 
-    gone, note = _load_rejected_plane(fetch_rows=_ratelimited)
-    cases.append(("rejected plane 403 discloses rate-limit cause",
-                  gone == [] and "rate limit" in note and "resets hourly" in note,
+    gone, note = _load_rejected_plane(fetch_rows=_ratelimited,
+                                      tower_rows=lambda: [{"number": 2056}])
+    cases.append(("rejected plane 403 falls back to tower, cause disclosed",
+                  gone == [{"number": 2056}] and "rate limit" in note
+                  and "resets hourly" in note and "tower-plane fallback" in note,
                   f"note={note}"))
+
+    tower_rows = _fetch_rejected_rows_tower(fetch_text=lambda n, a: json.dumps(
+        {"count": 1, "workOrders": [{"number": 2056, "title": "x",
+                                     "labels": ["bridge:rejected"]}]}))
+    cases.append(("tower rejected plane parses workOrders",
+                  len(tower_rows) == 1 and tower_rows[0]["number"] == 2056,
+                  f"rows={len(tower_rows)}"))
+    try:
+        _fetch_rejected_rows_tower(fetch_text=lambda n, a: '{"repo": "x"}')
+        cases.append(("tower rejected plane missing workOrders fails loud",
+                      False, "no raise"))
+    except TypeError:
+        cases.append(("tower rejected plane missing workOrders fails loud",
+                      True, ""))
     joined, joined_n = _join_rejected_plane([{"number": 5, "title": "q"}], rows)
     cases.append(("rejected plane queue rows win on collision",
                   joined_n == 100 and joined[0]["title"] == "q"
