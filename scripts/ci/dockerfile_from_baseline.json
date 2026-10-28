@@ -1,0 +1,45 @@
+{
+  "_comment": "R47 FROM-pin baseline (shrink-only ratchet, #2084). Known unpinned base-image refs per production Dockerfile. Never grows automatically: new unpinned refs fail --from-strict. Shrink entries in the same change that pins the FROM. Non-prod surfaces (docs/devcontainer/, core/ecosystem/Dockerfile.test) are allowlisted, never audited.",
+  "unpinned_froms": {
+    "browser/Dockerfile": [
+      "python:3.11-slim"
+    ],
+    "core/Dockerfile": [
+      "python:3.11-slim"
+    ],
+    "core/Dockerfile.ci": [
+      "python:3.11-slim"
+    ],
+    "core/docker/swarm-worker.Dockerfile": [
+      "python:3.11-slim"
+    ],
+    "core/services/browser/Dockerfile": [
+      "python:3.12-slim"
+    ],
+    "core/services/scraper/Dockerfile": [
+      "python:3.11-slim"
+    ],
+    "core/services/worker/Dockerfile": [
+      "python:3.11-slim"
+    ],
+    "gateway/Dockerfile": [
+      "python:3.11-slim"
+    ],
+    "gateway/services/browser/Dockerfile": [
+      "python:3.12-slim"
+    ],
+    "gateway/services/scraper/Dockerfile": [
+      "python:3.11-slim"
+    ],
+    "gateway/services/worker/Dockerfile": [
+      "python:3.11-slim"
+    ],
+    "infrastructure/mcp-control-plane/Dockerfile": [
+      "node:24-alpine"
+    ],
+    "studio/Dockerfile": [
+      "nginx:1.27-alpine",
+      "node:24-alpine"
+    ]
+  }
+}
