@@ -2,7 +2,7 @@
 """Convert the Banglish/Bangla intent curriculum (sonet.json) into JSONL datasets.
 
 Usage:
-    python scripts/brain/convert_curriculum_to_jsonl.py \
+    python scripts/knowledge/convert_curriculum_to_jsonl.py \
         --input knowledge/sonet.json \
         --output-dir data/brain \
         --format sharegpt
