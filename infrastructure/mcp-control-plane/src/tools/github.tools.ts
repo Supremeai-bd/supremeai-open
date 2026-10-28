@@ -128,6 +128,42 @@ export function repoUrlFor(accountId?: string, repo?: string): string {
 }
 
 export async function registerGitHubTools(server: McpServer): Promise<void> {
+  // ── Unified GitHub Actions Tool ──
+  (server as any).tool(
+    "github.actions_op",
+    "Unified GitHub Actions diagnostic tool (list workflow runs or fetch failed job logs).",
+    {
+      action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
+      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+      repo: z.string().optional().describe("Target repository name"),
+      limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+      runId: z.string().optional().describe("Run ID (required for get_failed_logs)"),
+    },
+    async ({ action, accountId, repo, limit, runId }: { action: string; accountId?: string; repo?: string; limit?: number; runId?: string }) => {
+      const target = repo || accountId || "github-primary";
+      const targetUrl = repoUrlFor(accountId, repo);
+      const deny = assertRepoReadAccess("github.actions_op", target, targetUrl);
+      if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+
+      try {
+        if (action === "list_runs") {
+          const runs = await getWorkflowRuns(target, limit || 5);
+          return { content: [{ type: "text", text: JSON.stringify(runs, null, 2) }] };
+        }
+        if (action === "get_failed_logs") {
+          if (!runId) {
+            return { isError: true, content: [{ type: "text", text: "Error: 'runId' is required for get_failed_logs" }] };
+          }
+          const logs = await getFailedLogs(target, runId);
+          return { content: [{ type: "text", text: JSON.stringify(logs, null, 2) }] };
+        }
+        return { isError: true, content: [{ type: "text", text: `Unknown action: ${action}` }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+      }
+    }
+  );
+
   server.tool(
     "github.workflow_runs",
     "List recent GitHub Actions workflow runs for any repository across Supremeai-bd.",
