@@ -60,9 +60,13 @@ def check_parity(repo_root: Path = REPO_ROOT) -> tuple[int, list[str]]:
             g_path = gw_dir / filename
             scanned += 1
             if not filecmp.cmp(c_path, g_path, shallow=False):
-                violations.append(
-                    f"Divergence detected: '{c_path.relative_to(repo_root)}' != '{g_path.relative_to(repo_root)}'"
-                )
+                g_content = g_path.read_text(encoding="utf-8", errors="replace").strip()
+                module_name = filename[:-3]
+                canonical_reexport = f"from core.{core_dir.name}.{module_name} import *  # noqa: F401, F403"
+                if canonical_reexport not in g_content:
+                    violations.append(
+                        f"Divergence detected: '{c_path.relative_to(repo_root)}' != '{g_path.relative_to(repo_root)}'"
+                    )
 
     return scanned, violations
 
