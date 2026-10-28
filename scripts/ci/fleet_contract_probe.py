@@ -139,7 +139,7 @@ def _http_get(url: str, timeout: float) -> tuple[int | None, str, str | None]:
     """Zero-credential GET. Returns (status_code, body, error)."""
     req = urllib.request.Request(url, method="GET", headers={"User-Agent": "supremeai-fleet-contract-probe/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — zero-credential fleet probe; endpoint from repo config; audited #2081
             return resp.status, resp.read().decode("utf-8", errors="replace"), None
     except urllib.error.HTTPError as e:
         try:
