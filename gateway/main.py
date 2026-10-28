@@ -393,7 +393,11 @@ def create_app(
             return await _fwd(url, secret, body, timeout)
 
     app = FastAPI(
-        title="SupremeAI API", version=GATEWAY_VERSION, docs_url=None, redoc_url=None
+        title="SupremeAI API",
+        version=GATEWAY_VERSION,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,  # docs lockdown completion: /openapi.json served the full 70-path route inventory (incl. admin route names) to unauthenticated callers.
     )
 
     import os as _cors_os
