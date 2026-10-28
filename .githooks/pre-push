@@ -659,6 +659,47 @@ for line in $updates; do
         fi
     fi
 
+    # 17. AGENT SKILLS CONFORMANCE GUARD (#1672).
+    # Mechanical backstop for the file plane of the Agent Skills open standard
+    # (.agents/skills/*/SKILL.md): name==directory, required frontmatter,
+    # description 1-1024, and the discovery entry's existence (E1 — a skill
+    # folder without SKILL.md is invisible to every client; the seed instance
+    # developing-genkit-python is pinned shrink-only in
+    # scripts/ci/skill_conformance_baseline.json, the #2081 floors-are-real
+    # lesson). Warnings are inventory, never failures. Mapping contract for
+    # the registry plane (skills/schema.py SkillMetadata) lives in
+    # docs/AGENT_SKILLS_CONFORMANCE.md. Engages ONLY when the push touches
+    # .agents/skills/; runs in CI for every push via the run_all_guards
+    # roster. Wired additively after section 16 — no existing section is
+    # renumbered (the #2044 section-trail rule).
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/skill_conformance_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            skills_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            skills_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        skills_surface=$(printf '%s\n' "$skills_changed" | grep -E '^\.agents/skills/' || true)
+        if [ -n "$skills_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/skill_conformance_guard.py; then
+                    reject "SKILL CONFORMANCE GUARD (#1672) FAILED" \
+                        "The push breaks the Agent Skills file-plane contract (.agents/skills/*/SKILL.md)." \
+                        "Fix the structural error named in the [skill-conformance-guard] evidence lines above — a skill folder without a discoverable SKILL.md, name/directory drift, or an over-cap description." \
+                        "Pre-existing floors are pinned shrink-only in scripts/ci/skill_conformance_baseline.json; the baseline may never grow by hand." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"
