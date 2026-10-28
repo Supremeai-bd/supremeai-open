@@ -721,8 +721,11 @@ export function mergeIssuePages(pages: RawIssue[][]): RawIssue[] {
 }
 
 /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
-export function queueFromIssues(rawIssues: unknown, limit = 20,
-                                opts: { keepBridgeStateRows?: boolean } = {}) {
+/** Shared filter+rank stage (#2286 option B): the queue semantics WITHOUT the
+ *  window slice, so callers can echo the true open total alongside the window.
+ *  queueFromIssues keeps its slice contract on top of this stage. */
+export function filterQueueItems(rawIssues: unknown,
+                                 opts: { keepBridgeStateRows?: boolean } = {}) {
   const items = Array.isArray(rawIssues) ? rawIssues : [];
   return items
     .filter((item): item is RawIssue => Boolean(item) && typeof item === "object")
@@ -736,7 +739,12 @@ export function queueFromIssues(rawIssues: unknown, limit = 20,
     // live-proven across the redeploy boundary).
     .filter((item) => opts.keepBridgeStateRows || !isRejectedOrLanded(item))
     .map(normalizeQueueItem)
-    .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
+    .sort((a, b) => (b.number ?? 0) - (a.number ?? 0));
+}
+
+export function queueFromIssues(rawIssues: unknown, limit = 20,
+                                opts: { keepBridgeStateRows?: boolean } = {}) {
+  return filterQueueItems(rawIssues, opts)
     .slice(0, Math.min(Math.max(1, limit), QUEUE_LIMIT_MAX));
 }
 
@@ -811,11 +819,19 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           if (rows.length < QUEUE_PAGE_SIZE) break;
           page += 1;
         }
-        const queued = queueFromIssues(mergeIssuePages(pages), limit ?? 20,
+        const filtered = filterQueueItems(mergeIssuePages(pages),
           { keepBridgeStateRows: appliedLabel !== null && isBridgeStateLabel(appliedLabel) });
         // Expose all active open issues so agents discover claimable federation work
         const anonymous = RequestContextStore.get()?.authenticated !== true;
-        const workOrders = queued;
+        const workOrders = filtered.slice(0, Math.min(Math.max(1, limit ?? 20), QUEUE_LIMIT_MAX));
+        // Window-contract echo (#2286 option B): count alone mirrors the window,
+        // not the board — a default-depth scan read 20 of 87 live open rows
+        // (77% dark) with zero signal, and every fleet snapshot that day scanned
+        // at depth <= 50. The enumeration pass already walked all pages, so the
+        // exact open total is free here; echo it with a truncation flag so the
+        // window contract is observable instead of silent. Additive fields,
+        // mirrors the R54 stateReason passthrough shape.
+        const totalOpen = filtered.length;
         return {
           content: [{
             type: "text",
@@ -826,6 +842,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
               callerAuthenticated: !anonymous,
               count: workOrders.length,
+              totalOpen,
+              windowTruncated: workOrders.length < totalOpen,
               workOrders,
               nextStep: "Call bridge.work_order with a number, then follow bridge.guide.",
             }, null, 2),
