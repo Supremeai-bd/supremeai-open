@@ -620,6 +620,7 @@ interface RawIssue {
   body?: unknown;
   pull_request?: unknown;
   comments?: unknown;
+  state_reason?: unknown;
 }
 
 /** Sanitized queue entry — public content only, no credentials, no raw trust. */
@@ -637,6 +638,7 @@ export function normalizeQueueItem(raw: RawIssue) {
     number: typeof raw.number === "number" ? raw.number : null,
     title: typeof raw.title === "string" ? raw.title : "",
     state: typeof raw.state === "string" ? raw.state : "",
+    stateReason: typeof raw.state_reason === "string" ? raw.state_reason : null,
     url: typeof raw.html_url === "string" ? raw.html_url : "",
     createdAt: typeof raw.created_at === "string" ? raw.created_at : "",
     updatedAt: typeof raw.updated_at === "string" ? raw.updated_at : "",
