@@ -22,6 +22,22 @@ Behavior contract (the #1796/#1829/#1913 shrink-only ratchet):
        skipped) and runs `pip-audit -r <manifest> --format json` per file.
        pip-audit resolves range pins against PyPI itself — the guard never
        reimplements a resolver (alternative 1 in #1969, rejected).
+    1b. Poetry runtime plane (#2101, radar R49): every tracked
+       `pyproject.toml` with a `[tool.poetry.dependencies]` main group is
+       ALSO on the surface — that plane is what `scripts/ci/run_tests.sh`
+       actually executes against (`poetry run ruff/mypy/pytest`), while the
+       requirements fragments the guard previously saw are 2-line test
+       stubs with zero consumers. Poetry constraints are synthesized to
+       pip specifier form (caret/tilde expanded per poetry's OWN
+       documented semantics — caret bumps the leftmost NON-ZERO component,
+       which differs from npm's caret) and handed to the same pip-audit
+       requirements mode, so the resolver stays pip-audit's, never ours.
+       The main group only is the deploy surface (mirrors the npm guard's
+       dev:true skip); dev/custom groups, optional extras, and local/vcs
+       sources are skipped WITH NOTES, never guessed. A PEP-621 pyproject
+       without a poetry section is off-plane (skipped with a note).
+       Malformed TOML on the poetry plane is fail-closed (the #1913
+       unreadable-lockfile analog).
     2. Aggregates findings to
        "<manifest>:<name>@<version>" -> sorted advisory-id set, where the id
        set is the union of the advisory's primary id and its aliases
@@ -96,6 +112,7 @@ import shutil
 import subprocess  # nosec B404 — the guard runs pip-audit and git via list-argv only (#2081 audit)
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -106,7 +123,10 @@ if hasattr(sys.stdout, "reconfigure"):
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD_TAG = "[py-dep-cve-guard]"
 BASELINE_PATH = Path("scripts/ci/py_dep_cve_baseline.json")
-MANIFEST_SURFACE = "requirements*.txt (any tracked depth)"
+MANIFEST_SURFACE = (
+    "requirements*.txt (any tracked depth) + pyproject.toml "
+    "[tool.poetry.dependencies] main group (any tracked depth)"
+)
 
 EXIT_PASS = 0
 EXIT_DRIFT = 1
@@ -156,6 +176,164 @@ def discover_manifests(repo_root: Path) -> list[str]:
             if fn.startswith("requirements") and fn.endswith(".txt"):
                 found.append((Path(dirpath) / fn).relative_to(repo_root).as_posix())
     return sorted(found)
+
+
+# --- poetry runtime plane (#2101, radar R49) -------------------------------
+
+POETRY_SKIP_KEYS = frozenset({"python"})
+_LOCAL_VCS_KEYS = ("path", "git", "url", "file")
+_EXACT_VERSION_RE = re.compile(r"^v?\d+(?:\.\d+)*(?:(?:[ab]|rc|\.dev)\d+)?$")
+_OPEN_SPEC_RE = re.compile(r"^(?:>=|<=|!=|>|<)\s*v?\d")
+
+
+def discover_py_surface(repo_root: Path) -> list[str]:
+    """Sorted repo-relative paths of the full Python audit surface:
+    every tracked requirements*.txt PLUS every tracked pyproject.toml
+    (poetry-plane membership is decided at audit time, so a PEP-621-only
+    pyproject gets an honest skip note instead of silent divergence
+    between the discovery and audit surfaces)."""
+    found: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(repo_root, topdown=True):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for fn in filenames:
+            is_req = fn.startswith("requirements") and fn.endswith(".txt")
+            if is_req or fn == "pyproject.toml":
+                found.append((Path(dirpath) / fn).relative_to(repo_root).as_posix())
+    return sorted(found)
+
+
+def _poetry_caret_upper(version: str) -> str:
+    """Poetry caret upper bound: bump the leftmost NON-ZERO component.
+
+    Poetry's own documented semantics (NOT npm's): ^12.3.0 -> <13.0.0,
+    ^0.65b0 -> <0.66.0 (major is zero -> the MINOR is the bump slot),
+    ^0.0.3 -> <0.0.4. When every SPECIFIED component is zero, the LAST
+    specified component is the bump slot: ^0 -> <1.0.0, ^0.0 -> <0.1.0,
+    ^0.0.0 -> <0.0.1. Returns "" for an unparseable version.
+    """
+    m = re.match(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", version)
+    if not m:
+        return ""
+    major = int(m.group(1))
+    minor = int(m.group(2)) if m.group(2) is not None else None
+    patch = int(m.group(3)) if m.group(3) is not None else None
+    if major > 0:
+        return f"{major + 1}.0.0"
+    if minor is not None and minor > 0:
+        return f"0.{minor + 1}.0"
+    if patch is not None and patch > 0:
+        return f"0.0.{patch + 1}"
+    if patch is not None:  # ^0.0.0
+        return "0.0.1"
+    if minor is not None:  # ^0.0
+        return "0.1.0"
+    return "1.0.0"  # ^0
+
+
+def poetry_constraint_to_pip(name: str, constraint: str) -> tuple[str | None, str | None]:
+    """One poetry constraint -> one pip specifier (or a skip reason).
+
+    Caret/tilde expand per poetry's documented semantics; exact pins become
+    ==; single comparison operators and comma composites pass through (pip
+    is a superset for the forms this repo uses). `*` and anything
+    unrecognised return a skip reason — the synthesizer never guesses.
+    """
+    c = constraint.strip()
+    if c in ("", "*"):
+        return None, "wildcard-any"
+    if c.startswith("^"):
+        hi = _poetry_caret_upper(c[1:])
+        if not hi:
+            return None, f"unparseable:{c}"
+        return f"{name}>={c[1:]},<{hi}", None
+    if c.startswith("~="):
+        return f"{name}{c}", None  # PEP 440 compatible-release is pip-native
+    if c.startswith("~"):
+        m = re.match(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", c[1:])
+        if not m:
+            return None, f"unparseable:{c}"
+        if m.group(3) is not None:
+            hi = f"{m.group(1)}.{int(m.group(2)) + 1}.0"
+        else:
+            hi = f"{int(m.group(1)) + 1}.0"
+        return f"{name}>={c[1:]},<{hi}", None
+    if _EXACT_VERSION_RE.match(c):
+        return f"{name}=={c}", None
+    if _OPEN_SPEC_RE.match(c) or "," in c:
+        # comma composites are AND in both ecosystems — pass through verbatim
+        return f"{name}{c}", None
+    return None, f"unrecognised:{c}"
+
+
+def synthesize_poetry_requirements(pyproject: Path) -> tuple[str, list[str], dict]:
+    """[tool.poetry.dependencies] main group -> pip requirements text.
+
+    Returns (text, skip_notes, stats). The python key is excluded; dev and
+    custom poetry groups are out of scope (deploy-surface doctrine, the
+    npm guard's dev:true analog) and recorded in stats; local/vcs sources,
+    optional extras, wildcard and dict-without-version constraints are
+    skipped with notes — never guessed. Malformed TOML raises
+    tomllib.TOMLDecodeError; evaluate() fail-closes on it.
+    """
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    poetry = (data.get("tool", {}) or {}).get("poetry", {}) or {}
+    deps = poetry.get("dependencies", {}) or {}
+    specs: list[str] = []
+    skips: list[str] = []
+    stats = {
+        "main_keys": len(deps),
+        "python_key_excluded": 0,
+        "dict_form": 0,
+        "groups_out_of_scope": sorted((poetry.get("group", {}) or {}).keys()),
+    }
+    for name, con in sorted(deps.items()):
+        if name in POETRY_SKIP_KEYS:
+            stats["python_key_excluded"] += 1
+            continue
+        pip_name = name
+        if isinstance(con, dict):
+            stats["dict_form"] += 1
+            extras = con.get("extras")
+            if isinstance(extras, list) and extras:
+                pip_name = f"{name}[{','.join(str(e) for e in extras)}]"
+            if con.get("optional"):
+                skips.append(f"{name}: optional extra (not on the default install path)")
+                continue
+            local = [k for k in _LOCAL_VCS_KEYS if k in con]
+            if local:
+                skips.append(
+                    f"{name}: {'/'.join(local)} source — unresolvable offline, "
+                    "maintainer lane to pin or manifest it"
+                )
+                continue
+            if "version" not in con:
+                skips.append(f"{name}: dict without version ({','.join(sorted(con))})")
+                continue
+            con = con["version"]
+            if not isinstance(con, str):
+                skips.append(f"{name}: non-string version ({con!r})")
+                continue
+        spec, why = poetry_constraint_to_pip(pip_name, str(con))
+        if spec:
+            specs.append(spec)
+        elif why:
+            skips.append(f"{name}: {why}")
+    return "\n".join(specs) + ("\n" if specs else ""), skips, stats
+
+
+def synth_poetry_plane(rel: str, repo_root: Path) -> tuple[Path | None, list[str]]:
+    """pyproject.toml -> synthesized requirements temp file (caller unlinks),
+    or (None, skips) when nothing is pip-synthesizable. Malformed TOML
+    raises tomllib.TOMLDecodeError — the caller fail-closes."""
+    text, skips, _stats = synthesize_poetry_requirements(repo_root / rel)
+    if not text.strip():
+        return None, skips
+    fh = tempfile.NamedTemporaryFile(
+        "w", suffix="-poetry-synth.txt", delete=False, encoding="utf-8"
+    )
+    with fh:
+        fh.write(text)
+    return Path(fh.name), skips
 
 
 def parse_pip_audit_json(doc: dict) -> dict[str, list[str]]:
@@ -269,18 +447,29 @@ def load_baseline(repo_root: Path) -> tuple[dict[str, list[str]], dict]:
 
 
 def build_baseline_report(repo_root: Path) -> dict:
-    """Live manifests + pip-audit sweep -> the versioned baseline document."""
-    manifests = discover_manifests(repo_root)
+    """Live surface + pip-audit sweep -> the versioned baseline document."""
+    manifests = discover_py_surface(repo_root)
     findings: dict[str, list[str]] = {}
     pairs_total = 0
     for rel in manifests:
-        per_manifest = audit_manifest(repo_root / rel)
+        path = repo_root / rel
+        tmp: Path | None = None
+        if path.name == "pyproject.toml":
+            # admin flow: malformed poetry TOML fails the baseline loudly
+            tmp, skips = synth_poetry_plane(rel, repo_root)
+            if tmp is None:
+                continue
+        try:
+            per_manifest = audit_manifest(tmp if tmp is not None else path)
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
         pairs_total += len(per_manifest)
         for key, ids in per_manifest.items():
             findings[f"{rel}:{key}"] = ids
     return {
         "meta": {
-            "issue": 1969,
+            "issue": "1969 (initial floor), 2101 (poetry-plane widening)",
             "tool": (
                 "pip-audit (PyPA, Apache-2.0) requirements mode --format json; "
                 "PyPI Advisory DB / OSV SSOT, zero-credential"
@@ -312,8 +501,12 @@ def evaluate(
 ) -> tuple[int, list[dict], list[dict], list[str]]:
     """Single decision tree. Returns (exit, drift, improvements, notes)."""
     notes: list[str] = []
-    manifests = discover_manifests(repo_root)
-    notes.append(f"surface: {len(manifests)} tracked requirements manifest(s)")
+    manifests = discover_py_surface(repo_root)
+    poetry_on_surface = sum(1 for m in manifests if m.endswith("pyproject.toml"))
+    notes.append(
+        f"surface: {len(manifests)} tracked manifest(s) "
+        f"({len(manifests) - poetry_on_surface} requirements + {poetry_on_surface} pyproject)"
+    )
 
     if files is not None:
         touched = sorted(set(files) & set(manifests))
@@ -357,15 +550,45 @@ def evaluate(
                 [],
                 notes,
             )
+        tmp: Path | None = None
+        audit_label = rel
+        if path.name == "pyproject.toml":
+            try:
+                tmp, synth_skips = synth_poetry_plane(rel, repo_root)
+            except tomllib.TOMLDecodeError as exc:
+                # malformed poetry manifest = surface defect, fail-closed
+                # (the #1913 unreadable-lockfile analog)
+                return (
+                    EXIT_DRIFT,
+                    [{"pair": rel, "ids": ["POETRY-MANIFEST"],
+                      "kind": "malformed-poetry-manifest", "detail": str(exc)}],
+                    [],
+                    notes,
+                )
+            if tmp is None:
+                notes.append(
+                    f"{rel}: nothing pip-synthesizable from "
+                    f"[tool.poetry.dependencies] — skipped "
+                    f"({'; '.join(synth_skips) or 'empty main group'})"
+                )
+                continue
+            for s in synth_skips:
+                notes.append(f"{rel}: skip | {s}")
+            audit_label = f"{rel} (synthesized from [tool.poetry.dependencies])"
+            notes.append(f"{rel}: audited as {audit_label}")
         try:
-            per_manifest = audit_manifest(path)
-        except (RuntimeError, ValueError, subprocess.SubprocessError) as exc:
-            notes.append(
-                f"pip-audit unreachable/failed on {rel} — skipped with evidence "
-                f"(honest degradation, #1760 pattern; never a fabricated PASS): "
-                f"{exc}"
-            )
-            return EXIT_PASS, [], [], notes
+            try:
+                per_manifest = audit_manifest(tmp if tmp is not None else path)
+            except (RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+                notes.append(
+                    f"pip-audit unreachable/failed on {audit_label} — skipped with "
+                    f"evidence (honest degradation, #1760 pattern; never a "
+                    f"fabricated PASS): {exc}"
+                )
+                return EXIT_PASS, [], [], notes
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
         for key, ids in per_manifest.items():
             current[f"{rel}:{key}"] = ids
 
@@ -898,6 +1121,111 @@ def self_test() -> bool:
     print("  PASS | report-only scan: SKIP_DIRS pruned, blindspots surfaced, "
           "unreadable -> recorded anomaly (never raises)")
 
+    # 10. Poetry-plane synthesis (#2101): caret semantics, tilde, exact,
+    #     dict-form handling, python-key exclusion, skip classes, discovery.
+    if g._poetry_caret_upper("12.3.0") != "13.0.0":
+        raise AssertionError("caret ^12.3.0 must bump major")
+    if g._poetry_caret_upper("0.65b0") != "0.66.0":
+        raise AssertionError("caret ^0.65b0 must bump minor (poetry, NOT npm)")
+    if g._poetry_caret_upper("0.0.3") != "0.0.4":
+        raise AssertionError("caret ^0.0.3 must bump patch")
+    if g._poetry_caret_upper("0") != "1.0.0":
+        raise AssertionError("caret ^0 -> <1.0")
+    if g._poetry_caret_upper("garbage!!") != "":
+        raise AssertionError("unparseable caret version must return empty")
+    spec, why = g.poetry_constraint_to_pip("infisical-python", "2.3.5")
+    if not (spec == "infisical-python==2.3.5" and why is None):
+        raise AssertionError((spec, why))
+    spec, why = g.poetry_constraint_to_pip("click", ">=8.3.3")
+    if not (spec == "click>=8.3.3" and why is None):
+        raise AssertionError((spec, why))
+    spec, why = g.poetry_constraint_to_pip("x", "~1.2.3")
+    if not (spec == "x>=1.2.3,<1.3.0" and why is None):
+        raise AssertionError((spec, why))
+    spec, why = g.poetry_constraint_to_pip("x", "~1.2")
+    if not (spec == "x>=1.2,<2.0" and why is None):
+        raise AssertionError((spec, why))
+    spec, why = g.poetry_constraint_to_pip("x", "*")
+    if not (spec is None and why == "wildcard-any"):
+        raise AssertionError((spec, why))
+    print("  PASS | poetry synthesis: caret/tilde/exact/open/wildcard semantics")
+
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as td:
+        proj = Path(td) / "pyproject.toml"
+        proj.write_text(
+            '[tool.poetry.dependencies]\n'
+            'python = "^3.11"\n'
+            'pillow = "^12.3.0"\n'
+            'fastapi = "^0.136.0"\n'
+            'infisical-python = "2.3.5"\n'
+            'redis = { version = "^5.2.1", extras = ["redis"] }\n'
+            'litellm = { path = "../local" }\n'
+            'otel-extra = { version = "^1.0.0", optional = true }\n'
+            'loose = "*"\n'
+            '\n'
+            '[tool.poetry.group.dev.dependencies]\n'
+            'pytest = "^8.0.0"\n',
+            encoding="utf-8",
+        )
+        text, skips, stats = g.synthesize_poetry_requirements(proj)
+        want = {
+            "fastapi>=0.136.0,<0.137.0",
+            "infisical-python==2.3.5",
+            "pillow>=12.3.0,<13.0.0",
+            "redis[redis]>=5.2.1,<6.0.0",
+        }
+        got = {ln for ln in text.splitlines() if ln.strip()}
+        if got != want:
+            raise AssertionError(f"synthesis mismatch: {sorted(got)} != {sorted(want)}")
+        joined = "; ".join(skips)
+        for marker in ("litellm: path", "otel-extra: optional", "loose: wildcard-any"):
+            if marker not in joined:
+                raise AssertionError(f"missing skip note: {marker} in {joined}")
+        if stats["python_key_excluded"] != 1 or stats["dict_form"] != 3:
+            raise AssertionError(stats)
+        if stats["groups_out_of_scope"] != ["dev"]:
+            raise AssertionError(stats)
+        # PEP-621-only pyproject -> honest empty plane, no specs
+        pep621 = Path(td) / "other" / "pyproject.toml"
+        pep621.parent.mkdir()
+        pep621.write_text('[project]\nname = "x"\ndependencies = ["requests"]\n', encoding="utf-8")
+        text2, skips2, stats2 = g.synthesize_poetry_requirements(pep621)
+        if text2.strip() != "":
+            raise AssertionError(f"PEP-621 pyproject must synthesize empty: {text2!r}")
+    print("  PASS | poetry synthesis: fixture text, extras, skips, groups, PEP-621 off-plane")
+
+    with _tf.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "core").mkdir()
+        (root / "core" / "pyproject.toml").write_text(
+            '[tool.poetry.dependencies]\npython = "^3.11"\nrequests = "^2.28.0"\n',
+            encoding="utf-8",
+        )
+        (root / "core" / "requirements.txt").write_text("requests>=2.28.0\n", encoding="utf-8")
+        surface = g.discover_py_surface(root)
+        if surface != ["core/pyproject.toml", "core/requirements.txt"]:
+            raise AssertionError(surface)
+        tmp, skips3 = g.synth_poetry_plane("core/pyproject.toml", root)
+        try:
+            if tmp is None or "requests>=2.28.0,<3.0.0" not in tmp.read_text(encoding="utf-8"):
+                raise AssertionError(tmp)
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
+        (root / "core" / "broken.toml").unlink(missing_ok=True)
+        bad = root / "core" / "pyproject.toml"
+        good = bad.read_text(encoding="utf-8")
+        bad.write_text("[tool.poetry.dependencies\npython = oops", encoding="utf-8")
+        try:
+            g.synth_poetry_plane("core/pyproject.toml", root)
+            raise SystemExit("malformed TOML must raise")
+        except tomllib.TOMLDecodeError:
+            pass
+        bad.write_text(good, encoding="utf-8")
+    print("  PASS | poetry plane: discovery includes pyproject, synth tmp file, "
+          "malformed TOML raises (fail-closed path)")
+
     # 9. Live wiring: roster + pre-push carry the guard (when run inside the repo).
     roster = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
     if roster.is_file():
@@ -916,7 +1244,7 @@ def self_test() -> bool:
             raise AssertionError("baseline must record the pip-audit SSOT")
         if not (meta.get("doctrine", "").startswith("shrink-only")):
             raise AssertionError()
-    print("[self-test] Python dependency CVE guard self-tests PASSED (9 test cases)!")
+    print("[self-test] Python dependency CVE guard self-tests PASSED (12 test cases)!")
     return True
 
 

@@ -493,7 +493,8 @@ for line in $updates; do
     # Python dependency vulnerability ratchet over every tracked
     # requirements*.txt manifest (pip-audit requirements mode, PyPA
     # zero-credential SSOT). Engages ONLY when the push touches a
-    # requirements manifest. Shrink-only baseline
+    # requirements manifest OR a pyproject.toml (poetry runtime plane,
+    # #2101). Shrink-only baseline
     # (scripts/ci/py_dep_cve_baseline.json): a NEW advisory pair or a NEW
     # advisory id fail-closes the push; resolved ids route to baseline-shrink
     # hints. Skips-with-evidence when pip-audit is not installed or PyPI is
@@ -505,7 +506,7 @@ for line in $updates; do
         else
             pydep_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
         fi
-        pydep_surface=$(printf '%s\n' "$pydep_changed" | grep -E 'requirements[^/]*\.txt$' || true)
+        pydep_surface=$(printf '%s\n' "$pydep_changed" | grep -E 'requirements[^/]*\.txt$|pyproject\.toml$' || true)
         if [ -n "$pydep_surface" ]; then
             hook_py=""
             if python3 -c "import sys" >/dev/null 2>&1; then
@@ -517,8 +518,8 @@ for line in $updates; do
             fi
             if [ -n "$hook_py" ]; then
                 if ! $hook_py scripts/ci/py_dep_cve_guard.py --files $pydep_surface; then
-                    reject "PY-DEP CVE GUARD (#1969) FAILED" \
-                        "The push introduces NEW Python dependency advisories on a requirements plane." \
+                    reject "PY-DEP CVE GUARD (#1969/#2101) FAILED" \
+                        "The push introduces NEW Python dependency advisories on a requirements or poetry runtime plane." \
                         "Resolve it (pin/range bumps are maintainer decisions) or re-floor the baseline deliberately — the baseline may never grow." \
                         "See the [py-dep-cve-guard] evidence lines above; pip-audit-absent or offline runs skip with evidence." \
                         "Deliberate admin bypass: git push --no-verify."
