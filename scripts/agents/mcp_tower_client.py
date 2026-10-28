@@ -83,6 +83,11 @@ def resolve_mcp_server_url() -> str:
 
 MCP_SERVER_URL = resolve_mcp_server_url()
 MCP_SSE_PATH = "/sse"
+MCP_STREAMABLE_PATH = "/mcp"
+# Protocol revisions: 2025-03-26 introduced Streamable HTTP; the legacy SSE
+# transport keeps negotiating the revision the old path always used.
+PROTOCOL_VERSION_STREAMABLE = "2025-03-26"
+PROTOCOL_VERSION_SSE = "2024-11-05"
 REQUEST_TIMEOUT = 30
 SSE_READ_TIMEOUT = 600
 RESPONSE_WAIT = 15
@@ -104,6 +109,12 @@ class McpTowerConnectionError(McpTowerError):
 
 class McpTowerTimeoutError(McpTowerError):
     pass
+
+
+class _LegacyFallback(Exception):
+    """Internal signal: the Streamable HTTP attempt failed in a way the spec's
+    transition algorithm answers with the legacy GET+SSE transport (#2307).
+    Never escapes connect() — callers only ever see McpTowerError."""
 
 
 # ── Identity management ────────────────────────────────────────────────────
@@ -141,7 +152,13 @@ def resolve_name(preferred: str | None = None) -> str:
 
 
 class McpTowerClient:
-    """Synchronous MCP client over SSE transport (no auth)."""
+    """Synchronous MCP client (no auth) — Streamable HTTP first, SSE fallback.
+
+    Transport selection follows the MCP spec 2025-06-18 client transition
+    algorithm (#2307): POST-first to the server's single endpoint; the legacy
+    GET+SSE transport is the automatic fallback so no working configuration
+    breaks during the fleet transition.
+    """
 
     def __init__(
         self,
@@ -153,6 +170,7 @@ class McpTowerClient:
         self.sse_path = sse_path if sse_path.startswith("/") else "/" + sse_path
         self.verbose = verbose
         self._session_id: str | None = None
+        self._transport: str | None = None  # "streamable" | "sse" once connected
         self._message_endpoint: str | None = None
         self._sse_thread: threading.Thread | None = None
         self._sse_stop = threading.Event()
@@ -168,8 +186,69 @@ class McpTowerClient:
             print(f"[mcp] {msg}", file=sys.stderr, flush=True)
 
     def connect(self) -> None:
+        """Connect using the MCP spec 2025-06-18 client transition algorithm.
+
+        #2307 (R61 lane, R60 option A): POST the InitializeRequest to the
+        server URL first; only when that attempt fails (HTTP >= 400 or the
+        request cannot be delivered) fall back to the legacy GET+SSE
+        transport. A server that already speaks Streamable HTTP is used via
+        its single endpoint; every configuration that works today keeps
+        working through the fallback — the old transport is spec-blessed
+        for exactly this transition posture.
+        """
         if self._initialized:
             return
+        try:
+            self._connect_streamable()
+        except _LegacyFallback as e:
+            self._log(f"streamable unsupported ({e}); falling back to SSE")
+            self._connect_sse()
+        self._initialized = True
+
+    def _connect_streamable(self) -> None:
+        url = self.server_url + MCP_STREAMABLE_PATH
+        init_id = str(uuid.uuid4())
+        payload = {
+            "jsonrpc": "2.0",
+            "id": init_id,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": PROTOCOL_VERSION_STREAMABLE,
+                "capabilities": {},
+                "clientInfo": {"name": "supremeai-agent", "version": "1.0.0"},
+            },
+        }
+        self._log(f"POST initialize (streamable): {url}")
+        try:
+            resp = self._http.post(
+                url,
+                json=payload,
+                timeout=REQUEST_TIMEOUT,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+        except requests.RequestException as e:
+            raise _LegacyFallback(str(e)) from e
+        if not (200 <= resp.status_code < 300):
+            # Spec: HTTP 4xx → legacy transport. >=400 also covers 5xx here on
+            # purpose: the fallback preserves every currently-working setup.
+            raise _LegacyFallback(f"HTTP {resp.status_code}")
+        sid = resp.headers.get("mcp-session-id")
+        if sid:
+            self._session_id = sid
+        self._transport = "streamable"
+        try:
+            result = self._parse_streamable_response(resp, expect_id=init_id)
+        except Exception:
+            self._transport = None
+            self._session_id = None
+            raise
+        self._log(f"Server: {result.get('serverInfo', {})}" if isinstance(result, dict) else "Server: <streamable>")
+        self._send_notification("notifications/initialized", {})
+
+    def _connect_sse(self) -> None:
         sse_url = self.server_url + self.sse_path
         self._log(f"Opening SSE: {sse_url}")
         resp = self._http.get(
@@ -193,14 +272,43 @@ class McpTowerClient:
         init = self._send_request(
             "initialize",
             {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": PROTOCOL_VERSION_SSE,
                 "capabilities": {},
                 "clientInfo": {"name": "supremeai-agent", "version": "1.0.0"},
             },
         )
         self._log(f"Server: {init.get('serverInfo', {})}")
         self._send_notification("notifications/initialized", {})
-        self._initialized = True
+        self._transport = "sse"
+
+    def _parse_streamable_response(self, resp: requests.Response, expect_id: str | None) -> Any:
+        """Parse a Streamable HTTP response body: JSON object or SSE stream."""
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        if "text/event-stream" in ctype:
+            for raw in resp.iter_lines(decode_unicode=True):
+                line = (raw or "").rstrip("\r")
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].lstrip()
+                try:
+                    obj = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict) or obj.get("id") != expect_id:
+                    continue
+                if "error" in obj:
+                    err = obj["error"]
+                    raise McpTowerError(f"RPC error {err.get('code')}: {err.get('message')}")
+                return obj.get("result")
+            raise McpTowerTimeoutError("streamable SSE body carried no matching response")
+        try:
+            obj = resp.json()
+        except ValueError:
+            return None  # empty body (e.g. bare 202) — nothing to parse
+        if isinstance(obj, dict) and obj.get("id") == expect_id and "error" in obj:
+            err = obj["error"]
+            raise McpTowerError(f"RPC error {err.get('code')}: {err.get('message')}")
+        return obj.get("result") if isinstance(obj, dict) else None
 
     def list_tools(self) -> list[dict[str, Any]]:
         return self._send_request("tools/list", {}).get("tools", [])
@@ -238,6 +346,7 @@ class McpTowerClient:
         self.stop_heartbeat()
         self._sse_stop.set()
         self._initialized = False
+        self._transport = None
         try:
             self._http.close()
         except Exception:
@@ -296,7 +405,35 @@ class McpTowerClient:
             if q:
                 q.put(payload)
 
+    def _post_streamable(self, method: str, params: dict[str, Any], expect_response: bool) -> Any:
+        url = self.server_url + MCP_STREAMABLE_PATH
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": PROTOCOL_VERSION_STREAMABLE,
+        }
+        if self._session_id:
+            headers["mcp-session-id"] = self._session_id
+        if expect_response:
+            mid = str(uuid.uuid4())
+            payload = {"jsonrpc": "2.0", "id": mid, "method": method, "params": params}
+        else:
+            mid = None
+            payload = {"jsonrpc": "2.0", "method": method, "params": params}
+        self._log(f"-> {method} (streamable)")
+        try:
+            resp = self._http.post(url, json=payload, timeout=REQUEST_TIMEOUT, headers=headers)
+        except requests.RequestException as e:
+            raise McpTowerConnectionError(str(e)) from e
+        if resp.status_code not in (200, 202):
+            raise McpTowerConnectionError(f"HTTP {resp.status_code}")
+        if not expect_response:
+            return None
+        return self._parse_streamable_response(resp, expect_id=mid)
+
     def _send_request(self, method: str, params: dict[str, Any]) -> Any:
+        if self._transport == "streamable":
+            return self._post_streamable(method, params, expect_response=True)
         if not self._message_endpoint:
             raise McpTowerConnectionError("Not connected")
         mid = str(uuid.uuid4())
@@ -316,7 +453,7 @@ class McpTowerClient:
                 with self._response_lock:
                     self._response_queues.pop(mid, None)
                 raise McpTowerConnectionError(f"HTTP {r.status_code}")
-        except requests.RequestError as e:
+        except requests.RequestException as e:
             with self._response_lock:
                 self._response_queues.pop(mid, None)
             raise McpTowerConnectionError(str(e))
@@ -335,6 +472,9 @@ class McpTowerClient:
         return rpc.get("result")
 
     def _send_notification(self, method: str, params: dict[str, Any]) -> None:
+        if self._transport == "streamable":
+            self._post_streamable(method, params, expect_response=False)
+            return
         if not self._message_endpoint:
             return
         payload = {"jsonrpc": "2.0", "method": method, "params": params}
