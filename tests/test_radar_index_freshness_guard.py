@@ -247,9 +247,11 @@ def test_live_repo_sweep_passes() -> None:
     # invariant-D subject ghost); the pass-23 re-head restored the union
     # state (pointer R63, R62 row verbatim from 93aa098) and this pin
     # follows the restored pointer per the pass-9 re-head precedent (the
-    # pin moves with the pointer on a landed re-head).
+    # pin moves with the pointer on a landed re-head), and after #2343
+    # (R63 hooks-activation lane, adopter same-cycle registration per
+    # pass 24) advanced it R63 -> R64.
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 63, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 64, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
