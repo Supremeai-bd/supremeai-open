@@ -897,7 +897,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                         "--json", "number,title,labels,state,body",
                     ]
                     try:
-                        hp = subprocess.run(h_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
+                        hp = subprocess.run(h_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")  # nosec B603 — list-argv repo-pinned verifier command, same class as the 3 baseline-absorbed sites (#2081 audit)
                         if hp.returncode == 0 and hp.stdout.strip():
                             target_issue = json.loads(hp.stdout)
                         else:

@@ -78,7 +78,7 @@ FIXTURES: list[dict[str, Any]] = [
     },
     {
         "lane": "evidence dict with proper secret keys (control: current redact works)",
-        "dict": {"api_key": SK_FIXTURE, "token": "tok_9x8y7z", "count": 3},
+        "dict": {"api_key": SK_FIXTURE, "token": "tok_9x8y7z", "count": 3},  # nosec B105 — deliberately-fake fixture values for the redaction probe, never real credentials (#2081 audit)
         "expect_pii": [],
     },
     {
@@ -181,10 +181,13 @@ def presidio_report() -> dict[str, Any]:
 def self_test() -> bool:
     print("[self-test] PII gap pilot fixture assertions...")
     # 1. Current redact() MUST redact proper secret keys (control lane stays green).
-    node = {"api_key": SK_FIXTURE, "token": "tok_9x8y7z", "count": 3}
-    assert redact(node)["api_key"] == "[REDACTED]"
-    assert redact(node)["token"] == "[REDACTED]"
-    assert redact(node)["count"] == 3
+    node = {"api_key": SK_FIXTURE, "token": "tok_9x8y7z", "count": 3}  # nosec B105 — deliberately-fake fixture values for the redaction probe, never real credentials (#2081 audit)
+    if not (redact(node)["api_key"] == "[REDACTED]"):
+        raise AssertionError()
+    if not (redact(node)["token"] == "[REDACTED]"):
+        raise AssertionError()
+    if not (redact(node)["count"] == 3):
+        raise AssertionError()
     print("  PASS | control lane: dict-key regex redacts proper secret keys")
 
     # 2. The gap MUST be real on pristine main: free-text PII (person, email,
@@ -193,11 +196,11 @@ def self_test() -> bool:
     #    (If this assert fails, the gap is closed — a GOOD failure; update #1784.)
     rep = gap_report()
     text_lane = next(l for l in rep["per_lane"] if "web-research" in l["lane"])
-    assert text_lane["survived"] == text_lane["planted"] == 5, (
-        "free-text PII now redacted — gap closed, update #1784"
-    )
+    if not (text_lane["survived"] == text_lane["planted"] == 5):
+        raise AssertionError("free-text PII now redacted — gap closed, update #1784")
     dom_lane = next(l for l in rep["per_lane"] if "browser DOM" in l["lane"])
-    assert dom_lane["survived"] == 2, "DOM free-text PII now redacted — update #1784"
+    if not (dom_lane["survived"] == 2):
+        raise AssertionError("DOM free-text PII now redacted — update #1784")
     print(f"  PASS | free-text gap is real: {text_lane['survived'] + dom_lane['survived']}/7 entity PII survived redact()")
 
     # 3. Value-side secret: measured via runtime-computed token (hook-immune).
@@ -205,14 +208,14 @@ def self_test() -> bool:
     #    innocent key ('note') MUST survive. (If this fails, value-side
     #    redaction landed — update #1784.)
     token_lane = next(l for l in rep["per_lane"] if "value-side" in l["lane"])
-    assert token_lane["survived"] == 1, (
-        "value-side secret now redacted by the contract — gap closed, update #1784"
-    )
+    if not (token_lane["survived"] == 1):
+        raise AssertionError("value-side secret now redacted by the contract — gap closed, update #1784")
     print("  PASS | value-side gap is real: ghp_ token under key 'note' survived (runtime-built, hook-immune)")
 
     # 3. Benign lane must have zero planted PII by construction.
     benign = next(l for l in rep["per_lane"] if "benign" in l["lane"])
-    assert benign["planted"] == 0
+    if not (benign["planted"] == 0):
+        raise AssertionError()
     print("  PASS | benign control lane well-formed")
     print("[self-test] PII gap pilot PASSED (4 cases)!")
     return True

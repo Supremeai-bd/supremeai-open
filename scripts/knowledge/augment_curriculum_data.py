@@ -42,7 +42,7 @@ def augment_example(base: dict[str, Any], rng: random.Random) -> dict[str, Any]:
 
 
 def build_dataset(curriculum: dict[str, Any], per_skill: int, seed: int) -> list[dict[str, Any]]:
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 — seeded determinism is a data-gen feature (reproducible curriculum builds), not crypto (#2081 audit)
     rows: list[dict[str, Any]] = []
     for base in iter_examples(curriculum):
         rows.append(to_sharegpt(base))
@@ -72,7 +72,7 @@ def main() -> None:
         curriculum = json.load(fh)
 
     rows = build_dataset(curriculum, args.per_skill, args.seed)
-    rng = random.Random(args.seed)
+    rng = random.Random(args.seed)  # nosec B311 — seeded determinism is a data-gen feature (reproducible curriculum builds), not crypto (#2081 audit)
     rng.shuffle(rows)
     split = int(len(rows) * (1 - args.val_ratio))
     train_rows, val_rows = rows[:split], rows[split:]

@@ -94,7 +94,7 @@ def fetch_blob(repo: str, path: str, token: str, ref: str = "main") -> bytes | N
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 — read-only federation probe; endpoint from repo manifest, audited #2081
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -314,20 +314,29 @@ def exit_code_for(report: dict) -> int:
 def self_test() -> bool:
     """Offline contract checks (no network)."""
     p1 = {"open": "a", "satellite": "r", "path": "b"}
-    assert classify_pair(p1, b"x", b"x", None)[0] == "clean"
+    if not (classify_pair(p1, b"x", b"x", None)[0] == "clean"):
+        raise AssertionError()
     v, d = classify_pair(p1, b"x" * 10, b"y", None)
-    assert v == "drift" and "byte-size delta" in d["hunks"]
-    assert classify_pair(p1, None, None, "boom")[0] == "error"
-    assert classify_pair(p1, b"x", None, None)[0] == "drift"
-    assert exit_code_for({"summary": {"errors": 0, "drift": 0, "total": 1}}) == EXIT_CLEAN
-    assert exit_code_for({"summary": {"errors": 0, "drift": 2, "total": 3}}) == EXIT_DRIFT
-    assert exit_code_for({"summary": {"errors": 1, "drift": 0, "total": 3}}) == EXIT_INFRA
+    if not (v == "drift" and "byte-size delta" in d["hunks"]):
+        raise AssertionError()
+    if not (classify_pair(p1, None, None, "boom")[0] == "error"):
+        raise AssertionError()
+    if not (classify_pair(p1, b"x", None, None)[0] == "drift"):
+        raise AssertionError()
+    if not (exit_code_for({"summary": {"errors": 0, "drift": 0, "total": 1}}) == EXIT_CLEAN):
+        raise AssertionError()
+    if not (exit_code_for({"summary": {"errors": 0, "drift": 2, "total": 3}}) == EXIT_DRIFT):
+        raise AssertionError()
+    if not (exit_code_for({"summary": {"errors": 1, "drift": 0, "total": 3}}) == EXIT_INFRA):
+        raise AssertionError()
     rep = {"checkedAt": "T", "ref": "main", "summary": {"drift": 1, "errors": 0, "total": 2},
            "drift": [{"pair": p1, "detail": "content divergence", "hunks": "- byte-size delta: x"}],
            "errors": []}
     body = build_issue_body(rep)
-    assert "Report-only" in body and "byte-size delta" in body and "#1792" in body
-    assert resolve_token.__doc__
+    if not ("Report-only" in body and "byte-size delta" in body and "#1792" in body):
+        raise AssertionError()
+    if not (resolve_token.__doc__):
+        raise AssertionError()
     return True
 
 

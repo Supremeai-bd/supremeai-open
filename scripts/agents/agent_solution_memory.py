@@ -95,7 +95,7 @@ def _tower_post(session_id: str | None, payload: dict[str, Any]) -> tuple[str, s
         headers=headers, method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=TOWER_TIMEOUT_SECS) as resp:
+        with urllib.request.urlopen(req, timeout=TOWER_TIMEOUT_SECS) as resp:  # nosec B310 — tower MCP endpoint, env-overridable with pinned https default; audited #2081
             return (resp.read().decode("utf-8", errors="replace"),
                     resp.headers.get("mcp-session-id") or session_id or "")
     except urllib.error.HTTPError as err:  # honest failure class (4xx/5xx)
