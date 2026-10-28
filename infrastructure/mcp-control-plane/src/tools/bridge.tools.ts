@@ -7,6 +7,7 @@ import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
 import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
+import { evaluateBaseStaleness, staleBaseErrorText, type MainBlobState } from "../lib/bridge_staleness.js";
 import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
 import { RequestContextStore } from "../policy/auth.context.js";
 
@@ -1008,7 +1009,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     originalIssueNumber?: number;
     scopePaths: string[];
     testsEvidence: string;
-    files: Array<{ path: string; content?: string; mode?: "full_file" | "unified_diff"; diff?: string }>;
+    files: Array<{ path: string; content?: string; mode?: "full_file" | "unified_diff"; diff?: string; baseSha?: string }>;
     rollbackPath?: string;
     agentIdentity?: string;
     reflectionWhy?: string;
@@ -1205,7 +1206,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         }
 
         // Step C: Commit files to the branch (dual-mode ingress, #539)
-        const fileResults: Array<{ path: string; mode: string; hunksApplied?: number; offsets?: number[] }> = [];
+        const fileResults: Array<{ path: string; mode: string; hunksApplied?: number; offsets?: number[]; stalenessCheck?: string }> = [];
         for (const file of files) {
           const ingressMode = file.mode ?? "full_file";
           const getFileRes = await httpRequest<{ sha?: string; content?: string; encoding?: string }>(
@@ -1236,7 +1237,41 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             }
           } else {
             finalContent = file.content ?? "";
-            fileResults.push({ path: file.path, mode: ingressMode });
+            // #2333 staleness checkpoint (full_file only): when the filer
+            // declares the blob sha the file had on main at branch-cut time,
+            // re-read main now and fail closed on any drift — a stale
+            // full_file overwrite silently reverts main's increment (the R62
+            // eviction class: #2322's whole-file landing deleted #2314's
+            // landed registration). Opt-in per file, so legacy filers and
+            // brand-new files are untouched (no declared base -> no check,
+            // zero behavior change). API failure other than 404 fails open
+            // with a per-file disclosure (stalenessCheck) instead of blocking
+            // legitimate submissions on Tower-side API health.
+            let stalenessCheck: string | undefined;
+            if (file.baseSha) {
+              const mainBlobRes = await httpRequest<{ sha?: string; message?: string }>(
+                `https://api.github.com/repos/${repo}/contents/${file.path}?ref=main`,
+                { headers, timeoutMs: 15_000 }
+              );
+              // 200 -> compare against main's blob; 404 -> file absent on main
+              // (deleted since the cut); any other status -> Tower-side API
+              // health problem, fail open with a per-file disclosure.
+              const mainBlob: MainBlobState | undefined = mainBlobRes.ok
+                ? { exists: true, sha: mainBlobRes.data?.sha }
+                : mainBlobRes.status === 404
+                  ? { exists: false }
+                  : undefined;
+              if (mainBlob) {
+                const verdict = evaluateBaseStaleness(file.baseSha, mainBlob);
+                if (verdict.verdict === "stale") {
+                  return { isError: true, content: [{ type: "text", text: staleBaseErrorText(file.path, verdict) }] };
+                }
+                stalenessCheck = "checked-fresh";
+              } else {
+                stalenessCheck = "skipped-api-error";
+              }
+            }
+            fileResults.push({ path: file.path, mode: ingressMode, stalenessCheck });
           }
 
           const putFileRes = await httpRequest<{ message?: string }>(
@@ -1426,7 +1461,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
       mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
       diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
-    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
+      baseSha: z.string().regex(/^[0-9a-f]{40}$/).optional().describe("#2333 staleness checkpoint: blob sha of this file as read from main at branch-cut time. Before landing, the Tower re-reads main and rejects with STALE_BASE_ERROR when the blob moved (main-advanced or file-deleted), preventing a stale full_file overwrite from silently reverting main. Omit for brand-new files (nothing to compare) or legacy unchecked submissions."),
+    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539; optional per-file baseSha staleness checkpoint per #2333)"),
     rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
     agentIdentity: z.string().optional().describe("Agent name / session attribution"),
     reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
