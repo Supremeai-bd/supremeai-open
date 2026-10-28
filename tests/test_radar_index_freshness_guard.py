@@ -230,9 +230,11 @@ def test_live_repo_sweep_passes() -> None:
     # (R53 registration) advanced it R53 -> R54, after #2230 (R54
     # registration) advanced it R54 -> R55, after #2249 (R55 adoption
     # + same-cycle registration) advanced it R55 -> R56, and after #2265
-    # (R56 same-cycle filer registration) advanced it R56 -> R57.
+    # (R56 same-cycle filer registration) advanced it R56 -> R57, and after
+    # #2262 (R57 vault lane, re-slotted from R56 per pass 18) advanced it
+    # R57 -> R58.
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 57, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 58, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
