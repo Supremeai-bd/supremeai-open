@@ -18,6 +18,12 @@ Verifies the Python dependency CVE ratchet gate delivered by #1969 (R37):
     --files mode with an off-surface changed set is an honest skip;
   - manifest discovery: deterministic sorted walk, vendored/venv trees
     pruned;
+  - inline-install blindspot scan (#2064 R43 option D, report-only): spec
+    classification vocabulary (pinned / unpinned / direct / dynamic /
+    local), the gateway `||` gate-defeat shape, backslash continuations,
+    mixed-pin sites, quoted+extras pins, comment-line immunity, manifest
+    `-r` targets, non-blocking exit semantics, unreadable-Dockerfile
+    anomaly (recorded, never raised);
   - live baseline pin: on the real repo the dated floor passes --check
     (the landing state, network permitting — skipped with evidence when
     pip-audit or PyPI is unreachable), and its meta provenance is intact;
@@ -293,6 +299,105 @@ def test_files_mode_off_surface_is_honest_skip() -> None:
             assert any("nothing to check" in n for n in notes), notes
         finally:
             guard.audit_manifest = saved
+
+
+# --------------------------------------------------------------------------- #
+# Inline-install blindspot scan (#2064 R43 option D — report-only plane)        #
+# --------------------------------------------------------------------------- #
+
+def test_spec_classification_vocabulary() -> None:
+    assert guard._classify_spec("torch==2.4.1") == "pinned"
+    assert guard._classify_spec('"uvicorn[standard]==0.34.0"') == "pinned"
+    assert guard._classify_spec("wheel") == "unpinned"
+    assert guard._classify_spec("nats-py") == "unpinned"
+    assert guard._classify_spec("git+https://x/y.git") == "direct"
+    assert guard._classify_spec("https://x/y.whl") == "direct"
+    assert guard._classify_spec("${PIP_EXTRAS}") == "dynamic"
+    assert guard._classify_spec("./local") == "local"
+
+
+def test_parser_gateway_fallback_and_gate_defeat() -> None:
+    gw = guard.parse_pip_install_sites(
+        "FROM python:3.11-slim\n"
+        "# RUN pip install commented-out must not parse\n"
+        "RUN pip install --no-cache-dir -r requirements.txt || "
+        "pip install --no-cache-dir fastapi uvicorn httpx pydantic pyyaml\n"
+    )
+    assert len(gw) == 2, gw
+    assert gw[0]["class"] == "manifest-backed" and gw[0]["manifest_refs"]
+    assert gw[0]["gate_defeat_shape"] is True, "first branch sits on a || line"
+    assert gw[1]["class"] == "inline-unpinned"
+    assert [sp["spec"] for sp in gw[1]["specs"]] == [
+        "fastapi", "uvicorn", "httpx", "pydantic", "pyyaml"]
+    assert gw[1]["gate_defeat_shape"] is True
+
+
+def test_parser_continuations_mixed_and_quoted_pins() -> None:
+    swarm = guard.parse_pip_install_sites(
+        "RUN pip install --upgrade pip && \\\n"
+        "    pip install --no-cache-dir nats-py pydantic litellm langchain\n"
+    )
+    assert len(swarm) == 2, swarm
+    assert all(s["class"] == "inline-unpinned" for s in swarm)
+    ci = guard.parse_pip_install_sites(
+        "RUN pip install --no-cache-dir setuptools==68.0.0 wheel\n"
+    )
+    assert len(ci) == 1 and ci[0]["class"] == "inline-mixed", ci
+    assert [sp["class"] for sp in ci[0]["specs"]] == ["pinned", "unpinned"]
+    eco = guard.parse_pip_install_sites(
+        'RUN pip install --no-cache-dir fastapi==0.115.6 '
+        '"uvicorn[standard]==0.34.0"\n'
+    )
+    assert len(eco) == 1 and eco[0]["class"] == "inline-pinned", eco
+
+
+def test_scan_report_only_semantics() -> None:
+    with tempfile.TemporaryDirectory(prefix="pydep-df-scan-") as td:
+        root = Path(td)
+        (root / "gateway").mkdir()
+        (root / "gateway" / "Dockerfile").write_text(
+            "RUN pip install -r requirements.txt || pip install fastapi uvicorn\n",
+            encoding="utf-8",
+        )
+        (root / "core" / "docker").mkdir(parents=True)
+        (root / "core" / "docker" / "swarm-worker.Dockerfile").write_text(
+            "RUN pip install --upgrade pip && \\\n"
+            "    pip install --no-cache-dir nats-py pydantic litellm langchain\n",
+            encoding="utf-8",
+        )
+        (root / "node_modules" / "x").mkdir(parents=True)
+        (root / "node_modules" / "x" / "Dockerfile").write_text(
+            "RUN pip install nodejunk\n", encoding="utf-8")
+        doc = guard.scan_inline_pip_installs(root)
+        assert doc["dockerfiles_scanned"] == 2, doc["dockerfiles_scanned"]
+        assert doc["summary"]["pip_install_sites"] == 4, doc["summary"]
+        assert doc["summary"]["manifest_backed_sites"] == 1
+        assert doc["summary"]["inline_unpinned_sites"] == 3
+        assert doc["summary"]["gate_defeat_sites"] == 2
+        blind = {(s["file"], s["line"]) for s in doc["sites"]
+                 if s["class"] == "inline-unpinned"}
+        assert blind == {("gateway/Dockerfile", 1),
+                         ("core/docker/swarm-worker.Dockerfile", 1)}, blind
+        (root / "gateway" / "Dockerfile").chmod(0)
+        try:
+            doc2 = guard.scan_inline_pip_installs(root)
+            assert doc2["anomalies"] and doc2["anomalies"][0]["kind"] == "unreadable"
+            assert doc2["dockerfiles_scanned"] == 2
+        finally:
+            (root / "gateway" / "Dockerfile").chmod(0o644)
+
+
+def test_dockerfile_scan_mode_is_non_blocking() -> None:
+    probe = subprocess.run(
+        [sys.executable, str(GUARD), "--dockerfile-scan", "--json"],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert probe.returncode == guard.EXIT_PASS, (
+        f"report-only scan must never block\n{probe.stdout[:800]}\n{probe.stderr[:800]}"
+    )
+    doc = json.loads(probe.stdout)
+    assert doc["dockerfiles_scanned"] >= 1, "the live repo carries dockerfiles"
+    assert "contract_note" in doc and "report-only" in doc["contract_note"]
 
 
 # --------------------------------------------------------------------------- #
