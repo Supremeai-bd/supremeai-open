@@ -201,6 +201,10 @@ export const env = {
     get httpSessionIdleMs(): number { return nonNegativeInt("MCP_HTTP_SESSION_IDLE_MS", 3_600_000); },
     get maxSseSessions(): number { return nonNegativeInt("MCP_MAX_SSE_SESSIONS", 100); },
     get maxHttpSessions(): number { return nonNegativeInt("MCP_MAX_HTTP_SESSIONS", 100); },
+    /** Pressure-admission floor (#1886): min idle age before a FULL /mcp table
+     *  may evict its least-recently-active session to admit a fresh
+     *  initialize. 0 = refuse-only (historical behavior preserved). */
+    get sessionAdmissionIdleFloorMs(): number { return nonNegativeInt("MCP_SESSION_ADMISSION_IDLE_FLOOR_MS", 60_000); },
   },
 
   // ── Memory sidecar flags (#109 — moved out of index.ts inline reads)
@@ -338,6 +342,7 @@ export function validateRuntimeKnobs(): void {
   void env.runtime.httpSessionIdleMs;
   void env.runtime.maxSseSessions;
   void env.runtime.maxHttpSessions;
+  void env.runtime.sessionAdmissionIdleFloorMs;
 }
 
 

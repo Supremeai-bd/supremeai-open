@@ -41,6 +41,7 @@ import {
   resolveSlotSession,
 } from "./policy/slot-verification.js";
 import { attachDiscoveryFilter, isValidToolProfile } from "./policy/tool-visibility.js";
+import { pickPressureEvictionSessionId } from "./lib/session_admission.js";
 import { verifyApprovalLink } from "./policy/approvals/signing.js";
 import { hasWebhookSignature } from "./lib/webhook_signature.js";
 import { registerBridgeIntake } from "./events/bridge_intake.js";
@@ -1064,8 +1065,38 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
         reapIdleHttpSessions();
         const maxHttpSessions = env.runtime.maxHttpSessions;
         if (httpSessions.size >= maxHttpSessions) {
-          writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "Too many concurrent MCP sessions", activeSessions: httpSessions.size }, id: null });
-          return;
+          // #1886: pressure-eviction admission. Under sustained short-lived
+          // client churn (cron fleet reconnecting per dispatch, tokenless AI
+          // crawlers) the reaper's 1 h idle TTL cannot free slots fast enough
+          // and the full table refuses EVERY fresh initialize — a steady-state
+          // fleet-door lockout (live incident 2026-10-28, /mcp 503
+          // activeSessions:100 while /sse stayed open). Admit by evicting the
+          // single least-recently-active occupant IF it has been idle ≥
+          // sessionAdmissionIdleFloorMs; the victim gets the table's existing
+          // structured recovery path (404/-32001 send-initialize, same as
+          // redeploys/spin-downs), so no new client-visible failure mode.
+          // floor=0 keeps the historical refuse-only behavior.
+          const evictId = pickPressureEvictionSessionId(
+            Array.from(httpSessions.entries(), ([sessionId, e]) => ({ sessionId, lastActivityMs: e.lastActivityMs })),
+            Date.now(),
+            env.runtime.sessionAdmissionIdleFloorMs,
+          );
+          if (evictId !== null) {
+            const victim = httpSessions.get(evictId);
+            if (victim) {
+              // Same release mechanics as reapIdleHttpSessions(): transport
+              // close fires onclose → map delete + per-session server close;
+              // the catch branch releases manually if onclose never fires.
+              try { victim.transport.close(); } catch {
+                httpSessions.delete(evictId);
+                void Promise.resolve().then(() => victim.server.close()).catch(() => undefined);
+              }
+            }
+          }
+          if (httpSessions.size >= maxHttpSessions) {
+            writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "Too many concurrent MCP sessions", activeSessions: httpSessions.size }, id: null });
+            return;
+          }
         }
 
         // Zero-manual-registration hook (#2588): a tokenless client — Gemini
