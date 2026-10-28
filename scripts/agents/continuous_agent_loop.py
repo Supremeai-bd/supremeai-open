@@ -44,6 +44,14 @@ OFFLINE_ENV_VARS = (
 # (state:seq-hold, mirror:private আছে, anchor-hub/admin-only নেই) আর main()-এ
 # অন্য সেট (anchor-hub, admin-only আছে, state:seq-hold/mirror:private নেই)
 # ছিল — একই ধারণার দুই SSOT drift করে এক পথে claimable, অন্য পথে নয়।
+# বাংলা: bridge-plane স্টেট লেবেল — tower নিজেই WO-তে in-flight/terminal মার্কার
+# স্ট্যাম্প করে: pr-opened/queued/in-gates = PR পথে চলছে; rejected/idempotent-noop =
+# terminal (rescue plane scripts/ci/rejected_wo_rescue.py rejected-comment আলাদাভাবে
+# triage করে — এই সেট তাকে স্পর্শ করে না)। verdict-plane blackout (#2100) চলাকালে
+# landed WO-ও bridge:queued-ই থাকে (verdict history খালি) — এই ৫টা লেবেল ছাড়া
+# pick_next_issue landed/in-flight কাজকে পুনঃদাবিযোগ্য ভাবত; live প্রমাণ 2026-10-28:
+# খোলা বোর্ডের ২৭টা non-excluded সারির ২০টাই bridge:queued মিরর (landed #2071/#2056
+# সহ), ফলে drained board-এ সত্যিকারের নতুন কাজের (#2103) আগে ভুলভাবে বেছে নেওয়া হত।
 EXCLUDED_LABELS = frozenset({
     "status:claimed",
     "status:in-progress",
@@ -52,6 +60,11 @@ EXCLUDED_LABELS = frozenset({
     "mirror:private",
     "anchor-hub",
     "admin-only",
+    "bridge:pr-opened",
+    "bridge:queued",
+    "bridge:in-gates",
+    "bridge:rejected",
+    "bridge:idempotent-noop",
 })
 
 DEFAULT_GROUP = "core"
