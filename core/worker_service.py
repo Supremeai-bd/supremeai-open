@@ -36,7 +36,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from core.automation.models import ExecutionEnvelope
-from database.session import get_db_session_context
+try:
+    from database.session import get_db_session_context
+except ImportError:
+    from core.database.session import get_db_session_context
 
 SUPPORTED_CAPABILITIES = frozenset({"acknowledge", "scrape"})
 MAX_METADATA_BYTES = 32_768
