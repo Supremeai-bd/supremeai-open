@@ -109,3 +109,69 @@ inference follows the MCP version-negotiation rule; nothing was exploited or str
   baseline (option A) is sized accordingly — a first snapshot, not a compliance certificate.
 - Statuses here are point-in-time probes (2026-10-28); the lane's facts (ceiling echo, spec
   versions) are the stable half, reproducible from the transcripts above.
+
+## Option B executed (report-only follow-through, same day, ~11:25–11:27Z)
+
+Executed by the ecosystem-scout cadence (Job 478330, claim on #2103 granted 11:24:53Z,
+30-min lease): the official **MCP Inspector v2.12.0** run headless (`--cli` mode) against the
+same public endpoint, Streamable HTTP transport, read-only methods only. This is the
+"cheap first step" the option list routed — an independent, spec-complete client exercising
+the transport and surfaces this report's raw handshakes could not, plus the
+negotiated-vs-declared matrix the option promised.
+
+### Live transcript (Inspector 2.12.0, `--cli https://supremeai-mcp-tower.onrender.com/mcp --transport http`)
+
+| Probe | Result |
+|---|---|
+| initialize → `tools/list` | **exit 0 — 142 tools** (stable vs the raw probe above, same window) |
+| `resources/list` | **exit 0 — 12 resources**: 8 vendor doc surfaces (`docs://supabase/vercel/render/cloudflare/nextjs/fastapi/typescript/python`) + 4 Tower introspection planes (`control-tower://server/manifest`, `system/health`, `system/dependencies`, `clients/registry`) |
+| `prompts/list` | **exit 0 — 2 prompts**: `diagnose_service`, `onboard_client` |
+| transport | Streamable HTTP session established and driven end-to-end by the Inspector's own client stack (session header handled automatically; no manual SSE parsing) |
+
+Fresh raw `initialize` echo in the same window (offered `2026-07-28`): Tower echoed
+**`2025-11-25`** again — the ceiling holds at option-B time; advertised capabilities remain
+exactly `tools` / `resources` / `prompts`, **no Tasks extension negotiated at the protocol
+layer**.
+
+### The negotiated-vs-declared matrix (the option's prize)
+
+- **Handshake layer (negotiated)**: ceiling `2025-11-25`, capability set `{tools, resources,
+  prompts}` — nothing from the 2026-07-28 extension family is negotiable.
+- **Tool-schema layer (declared)**: **142/142 tools carry `execution: {"taskSupport":
+  "forbidden"}`** — that field is Tasks-extension vocabulary from the 2026-07-28 spec era;
+  a 2025-11-25-locked server "should not" speak it, yet every tool schema does. Uniform
+  `forbidden` is also an honest declaration: no Tower tool opts into async Task execution.
+- **Reading**: the server is in a **mixed protocol state** — its schema generator speaks the
+  newer vocabulary while its handshake pins the interim revision. The Tasks capability the
+  bridge's polling choreography wants (R49 §"why concrete" item 1) is therefore
+  **metadata-present but protocol-unreachable**: the wiring exists one layer below the
+  ceiling, and option C (SDK/protocol upgrade) is the lever that would light it up without
+  touching the 142 tool definitions.
+- **Proxy-shadow caveat: resolved.** The disclosed limitation above ("a proxy-mediated
+  deployment could shadow a newer core behind the 2025-11-25 edge") is now disambiguated:
+  an independent official client through the same public URL observes the identical echo
+  AND the identical 142-tool surface carrying the modern vocabulary. A shadowing proxy
+  rewrites protocol echoes, not per-tool schema fields; the mixed state is the server's
+  own, and the ceiling is the server's own.
+
+### First conformance-flavored baseline (Inspector schema-portability census)
+
+`--strict` audit over the full tool surface: **0 errors, 12 warnings across 12 tools** —
+every warning the same pattern (`additionalProperties` carrying no validation keyword — the
+object-literal spelling of bare `true` — on array-item/metadata schemas), concentrated in
+the `memory_*` tool family (`memory_add_observations`, `memory_delete_observations`,
+`memory_delete_relations`, `memory_store_document`, `memory_record_task`, and peers).
+Cosmetic schema-hygiene debt, zero protocol violations: the strongest signal yet that the
+Tower's surface is conformant at its declared ceiling, and the natural seed for option A's
+full conformance-suite baseline.
+
+### Never-do accounting and limitations
+
+- Request census, whole lane: 4 Inspector CLI sessions (initialize + one read-only list
+  method each, one repeated under `--strict`) + 1 raw `initialize` echo + 1 npm registry
+  version read = **~10 read-only requests, zero tool calls, zero mutations, zero
+  load/fuzzing**; the only write in the lane remains the radar machinery itself.
+- Point-in-time (2026-10-28, 11:25–11:27Z); Inspector pinned at 2.12.0 (CLI mode — the
+  interactive UI's resource/prompt preview flows are not exercised); `taskSupport`
+  tolerance on legacy clients is untested (unknown-field tolerance is JSON-RPC standard,
+  so the field is expected harmless — disclosed, not proven).
