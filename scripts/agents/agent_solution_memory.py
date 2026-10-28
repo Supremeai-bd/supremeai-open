@@ -6,6 +6,10 @@ Implements the "Search Before Solving · Pave Before Leaving · Gap Before Guess
 2. Record newly validated solutions into database memory and LESSONS_LEARNED.md.
 3. Record Solution Gaps (failed attempts, missing capabilities, future path) when no solution exists.
 4. Verify MCP Control Tower connection contract.
+5. Tower semantic fallback (#1747, slice 1): when local recall is thin, query
+   the Control Tower's semantic memory tier (memory_search_semantic /
+   memory_get_similar_tasks). Every hit carries a "tier" label; tower
+   unavailability degrades gracefully to local-only results (warn, exit 0).
 
 Usage:
     # 1. Search for existing solutions:
@@ -56,6 +60,124 @@ LESSONS_FILE = REPO_ROOT / "LESSONS_LEARNED.md"
 MCP_CONFIG_FILE = REPO_ROOT / "mcp.json"
 SQLITE_DB_PATH = REPO_ROOT / "data" / "supremeai.db"
 
+# --- Tower semantic-memory tier (#1747 slice 1: Gold Pearl, stdlib-only) ---
+# Session pattern mirrors examples/mcp-client-py/client.py (docs/MCP_CONNECT.md):
+# initialize -> Mcp-Session-Id -> notifications/initialized -> tools/call.
+TOWER_MCP_URL = os.environ.get(
+    "SUPREMEAI_MCP_TOWER_URL",
+    os.environ.get("MCP_TOWER_URL", "https://supremeai-mcp-tower.onrender.com"),
+).rstrip("/")
+if not TOWER_MCP_URL.endswith("/mcp"):
+    TOWER_MCP_URL += "/mcp"
+TOWER_FALLBACK_MIN_HITS = 3  # default; per-call override via MEMORY_TOWER_FALLBACK_MIN_HITS
+TOWER_TIMEOUT_SECS = float(os.environ.get("MEMORY_TOWER_TIMEOUT_SECS", "6"))
+_MCP_ACCEPT = "application/json, text/event-stream"
+
+
+def _fallback_min_hits() -> int:
+    """Local-recall threshold below which the tower tier is queried (#1747)."""
+    try:
+        return int(os.environ.get("MEMORY_TOWER_FALLBACK_MIN_HITS", str(TOWER_FALLBACK_MIN_HITS)))
+    except ValueError:
+        return TOWER_FALLBACK_MIN_HITS
+
+
+def _tower_post(session_id: str | None, payload: dict[str, Any]) -> tuple[str, str]:
+    """POST one JSON-RPC message to the tower; return (sse_body, session_id)."""
+    import urllib.error
+    import urllib.request
+
+    headers = {"Content-Type": "application/json", "Accept": _MCP_ACCEPT}
+    if session_id:
+        headers["mcp-session-id"] = session_id
+    req = urllib.request.Request(
+        TOWER_MCP_URL, data=json.dumps(payload).encode("utf-8"),
+        headers=headers, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=TOWER_TIMEOUT_SECS) as resp:
+            return (resp.read().decode("utf-8", errors="replace"),
+                    resp.headers.get("mcp-session-id") or session_id or "")
+    except urllib.error.HTTPError as err:  # honest failure class (4xx/5xx)
+        raise RuntimeError(f"tower HTTP {err.code}") from err
+
+
+def _parse_mcp_results(body: str) -> list[dict[str, Any]]:
+    """Extract MCP result payloads from an SSE body ('data: <json>' lines)."""
+    out: list[dict[str, Any]] = []
+    for line in body.splitlines():
+        if not line.startswith("data: "):
+            continue
+        try:
+            msg = json.loads(line[6:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(msg, dict) and isinstance(msg.get("result"), dict):
+            out.append(msg["result"])
+    return out
+
+
+def _coerce_memory_items(result: dict[str, Any]) -> list[Any]:
+    """Normalize a tower memory tool result to an item list (shapes vary)."""
+    items: list[Any] = []
+    for part in result.get("content") or []:
+        if not (isinstance(part, dict) and part.get("type") == "text"):
+            continue
+        try:
+            parsed = json.loads(part.get("text", ""))
+        except (json.JSONDecodeError, TypeError):
+            parsed = part.get("text", "")
+        if isinstance(parsed, dict):
+            for key in ("results", "tasks"):
+                if isinstance(parsed.get(key), list):
+                    items.extend(parsed[key])
+        elif isinstance(parsed, list):
+            items.extend(parsed)
+        elif parsed:
+            items.append({"text": str(parsed)})
+    return [item for item in items if item is not None]
+
+
+def _tower_semantic_hits(query: str) -> list[dict[str, Any]]:
+    """Query the tower semantic tier (one session, two read-only tools).
+
+    Raises on any tower failure — callers degrade to local-only results.
+    """
+    _, session_id = _tower_post(None, {
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05", "capabilities": {},
+            "clientInfo": {"name": "agent-solution-memory", "version": "1.0.0"},
+        },
+    })
+    _tower_post(session_id, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+    hits: list[dict[str, Any]] = []
+    plans = (
+        ("memory_search_semantic", "tower-semantic", "semantic"),
+        ("memory_get_similar_tasks", "tower-similar-tasks", "similar-task"),
+    )
+    for tool, tier, hit_type in plans:
+        body, session_id = _tower_post(session_id, {
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": tool, "arguments": {"query": query, "limit": 5}},
+        })
+        for result in _parse_mcp_results(body):
+            for item in _coerce_memory_items(result):
+                if isinstance(item, dict):
+                    text = str(item.get("text") or item.get("summary") or item.get("outcome")
+                               or item.get("context") or item.get("title") or "")
+                    task_id = str(item.get("task_id") or item.get("id") or "unknown")
+                    solution = str(item.get("solution") or "")
+                else:
+                    text, task_id, solution = str(item), "unknown", ""
+                if text:
+                    hits.append({
+                        "task_id": task_id, "type": hit_type, "problem": text,
+                        "solution": solution, "success": True,
+                        "source": f"tower:{tool}", "tier": tier,
+                    })
+    return hits
+
 
 def search_local_lessons(query: str) -> list[dict[str, str]]:
     """Search LESSONS_LEARNED.md for relevant entries matching keywords in query."""
@@ -80,7 +202,7 @@ def search_local_lessons(query: str) -> list[dict[str, str]]:
         line_lower = line_clean.lower()
         score = sum(1 for term in terms if term in line_lower)
         if score > 0:
-            hits.append({"text": line_clean, "score": score, "source": "LESSONS_LEARNED.md"})
+            hits.append({"text": line_clean, "score": score, "source": "LESSONS_LEARNED.md", "tier": "lessons-file"})
 
     hits.sort(key=lambda x: x["score"], reverse=True)
     return hits[:5]
@@ -102,9 +224,22 @@ def search_database_memory(query: str) -> list[dict[str, Any]]:
                 "solution": ep.get("outcome", ep.get("output_data", "")),
                 "success": ep.get("success", True),
                 "source": "EpisodicMemory (Database)",
+                "tier": "local-episodic",
             })
     except Exception:
         pass
+    if len(hits) < _fallback_min_hits():
+        # #1747: local recall thin -> tower semantic tier fallback.
+        # Graceful degradation is the contract: tower unreachable or tool
+        # error -> local-only results, warn line, exit stays 0, never a crash,
+        # never fabricated hits.
+        try:
+            hits.extend(_tower_semantic_hits(query))
+        except Exception as err:
+            print(
+                f"[WARN] Tower semantic tier unavailable ({type(err).__name__}); serving local-only results.",
+                file=sys.stderr,
+            )
     return hits
 
 
@@ -132,7 +267,13 @@ def record_solution(
             importance=1.0,
             success=True,
             tags=tags or [],
-            metadata={"lesson": lesson, "task_id": clean_task, "status": status},
+            metadata={
+                "lesson": lesson,
+                "task_id": clean_task,
+                "status": status,
+                "source": "agent_solution_memory",
+                "verified": status == "VERIFIED",
+            },  # #1747: additive provenance stamping (schema-compatible)
         )
         print(f"✅ Stored solution [{status}] into Database Episodic Memory for task #{clean_task}.")
     except Exception as err:
@@ -193,7 +334,8 @@ def record_solution_gap(
                 "missing_capability": missing_capability,
                 "future_path": future_path,
                 "status": "GAP",
-            },
+                "source": "agent_solution_memory",
+            },  # #1747: additive provenance stamping (schema-compatible)
         )
         print(f"🧭 Solution Gap [GAP-{clean_task}] recorded in Database Memory:")
         print(f"   Missing Capability: {missing_capability}")
@@ -280,7 +422,7 @@ def main() -> int:
         if db_hits:
             print("🧠 Matches from Database Episodic Memory:")
             for hit in db_hits:
-                print(f"  • [{hit['type'].upper()} #{hit['task_id']}] {hit['problem']} -> {hit['solution']}")
+                print(f"  • ({hit.get('tier', 'local')}) [{hit['type'].upper()} #{hit['task_id']}] {hit['problem']} -> {hit['solution']}")
             print()
 
         return 0
