@@ -460,17 +460,20 @@ def build_task_envelope(
     ডাউনস্ট্রিম এজেন্ট envelope পেয়েও কাজ করতে পারত না। এখন বোর্ড-থেকে-পাওয়া
     issue payload (বা --issue N, বা --allow-adhoc) থেকে সৎ, deterministic
     envelope তৈরি হয়: role classify_task_role() থেকে, group fail-closed রেজিস্ট্রি
-    থেকে, priority label-থেকে। body ফিল্ড ইচ্ছাকৃতভাবে বাদ (list payload-এ থাকে না;
-    মিথ্যা খালি string নয়, অনুপস্থিত কী-ই সৎ)।
+    থেকে, priority label-থেকে। body ফিল্ড hydrate-পথে (gh issue view
+    --json …,body) অন্তর্ভুক্ত — SPEC §2 problem_statement.body-র স্কিমা-মান;
+    hydrate ব্যর্থ/অনুপস্থিত হলে মিথ্যা খালি string নয়, কী-ই বাদ (সৎ absence)।
     """
     labels: list[str] = []
     title = ""
     issue_number: str | None = None
     state = "open"
+    body = ""
     if isinstance(issue, dict):
         issue_number = str(issue.get("number")) if issue.get("number") is not None else None
         title = str(issue.get("title", "") or "")
         state = str(issue.get("state", "open") or "open")
+        body = str(issue.get("body", "") or "")
         raw_labels = issue.get("labels")
         if isinstance(raw_labels, list):
             labels = [
@@ -537,13 +540,18 @@ def build_task_envelope(
             "branch_convention": "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/<slug>",
         },
     }
-    if labels:
-        envelope["problem_statement"] = {
+    if issue_number is not None:
+        # বাংলা: আগে `if labels:` ছিল — লেবেলহীন issue-র গোটা problem_statement
+        # হারিয়ে যেত; SPEC §2-তে এটি issue-ভিত্তিক, label-ভিত্তিক নয়।
+        problem_statement: dict[str, Any] = {
             "id": issue_number,
             "title": title,
             "labels": labels,
             "state": state,
         }
+        if body:
+            problem_statement["body"] = body
+        envelope["problem_statement"] = problem_statement
     if board_note:
         envelope["board_note"] = board_note
     return {"task_envelope": envelope}
@@ -833,7 +841,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                 v_cmd = [
                     "gh", "issue", "view", str(args.issue),
                     "--repo", UPSTREAM_REPO,
-                    "--json", "number,title,labels,state",
+                    "--json", "number,title,labels,state,body",
                 ]
                 try:
                     vp = subprocess.run(v_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
@@ -855,24 +863,26 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                 # --json number,labels) — auto-pick পথে target_issue শুধু number+labels
                 # বহন করত, ফলে এমিটেড envelope-এ objective="" যেত এবং এজেন্ট
                 # envelope পেয়েও কাজটা কী তা বুঝতে পারত না (SPEC §2 objective ফাঁকা)।
-                # --issue পথের মতোই নির্বাচিত issue-র title/state hydrate করা হয়;
-                # hydrate ব্যর্থ হলে সৎ board_note — নীরব খালি objective নয়।
+                # --issue পথের মতোই নির্বাচিত issue-র title/state/body hydrate করা হয়;
+                # body ছাড়া এজেন্ট acceptance criteria না-জেনে অন্ধকারে কাজ করত
+                # (SPEC §2 problem_statement.body স্কিমার অংশই)। hydrate ব্যর্থ হলে
+                # সৎ board_note — নীরব খালি objective নয়।
                 if target_issue is not None and target_issue.get("title") is None:
                     h_cmd = [
                         "gh", "issue", "view", str(picked),
                         "--repo", UPSTREAM_REPO,
-                        "--json", "number,title,labels,state",
+                        "--json", "number,title,labels,state,body",
                     ]
                     try:
                         hp = subprocess.run(h_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
                         if hp.returncode == 0 and hp.stdout.strip():
                             target_issue = json.loads(hp.stdout)
                         else:
-                            note = f"gh issue view {picked} failed: {(hp.stderr or '').strip() or hp.returncode}; envelope emitted without title"
+                            note = f"gh issue view {picked} failed: {(hp.stderr or '').strip() or hp.returncode}; envelope emitted without title/body"
                     except FileNotFoundError:
-                        note = "gh CLI not found on PATH; envelope emitted without title"
+                        note = "gh CLI not found on PATH; envelope emitted without title/body"
                     except Exception as exc:
-                        note = f"gh issue view error: {exc}; envelope emitted without title"
+                        note = f"gh issue view error: {exc}; envelope emitted without title/body"
             elif not args.allow_adhoc:
                 print(
                     "No claimable issue on the board. Pass --allow-adhoc to emit an ad-hoc envelope.",
