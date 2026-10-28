@@ -35,11 +35,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 COMMON_DOMAINS = [
     ("core/services", "gateway/services"),
     ("core/middleware", "gateway/middleware"),
+    ("core/ws", "gateway/ws"),
 ]
 
 
 def check_parity(repo_root: Path = REPO_ROOT) -> tuple[int, list[str]]:
-    """Check byte-parity across common services and middleware files."""
+    """Check byte-parity across common services, middleware, and ws files."""
     violations: list[str] = []
     scanned = 0
 
@@ -50,19 +51,21 @@ def check_parity(repo_root: Path = REPO_ROOT) -> tuple[int, list[str]]:
         if not core_dir.exists() or not gw_dir.exists():
             continue
 
-        core_files = {p.name for p in core_dir.glob("*.py") if p.is_file() and p.name != "__init__.py"}
-        gw_files = {p.name for p in gw_dir.glob("*.py") if p.is_file() and p.name != "__init__.py"}
+        core_files = {p.relative_to(core_dir) for p in core_dir.rglob("*.py") if p.is_file() and p.name != "__init__.py"}
+        gw_files = {p.relative_to(gw_dir) for p in gw_dir.rglob("*.py") if p.is_file() and p.name != "__init__.py"}
 
         shared_files = sorted(core_files.intersection(gw_files))
 
-        for filename in shared_files:
-            c_path = core_dir / filename
-            g_path = gw_dir / filename
+        for rel_path in shared_files:
+            c_path = core_dir / rel_path
+            g_path = gw_dir / rel_path
             scanned += 1
             if not filecmp.cmp(c_path, g_path, shallow=False):
                 g_content = g_path.read_text(encoding="utf-8", errors="replace").strip()
-                module_name = filename[:-3]
-                canonical_reexport = f"from core.{core_dir.name}.{module_name} import *  # noqa: F401, F403"
+                module_parts = list(rel_path.parts)
+                module_parts[-1] = module_parts[-1][:-3]
+                module_dotted = ".".join(module_parts)
+                canonical_reexport = f"from core.{core_dir.name}.{module_dotted} import *  # noqa: F401, F403"
                 if canonical_reexport not in g_content:
                     violations.append(
                         f"Divergence detected: '{c_path.relative_to(repo_root)}' != '{g_path.relative_to(repo_root)}'"
