@@ -1,0 +1,85 @@
+{
+  "schema": "docs-link-integrity-baseline/1",
+  "generatedAt": "2026-10-28",
+  "headAtGeneration": "R42 re-land r3 (post-#1980-routing-rejection) at open main f3f22a9 — monorepo lanes only; satellite fix in flight",
+  "probe": "scripts/ci/docs_link_integrity_guard.py",
+  "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (dated 2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): the single MANIFEST.md entry is satellite-lane debt — core/** routes to the satellite repo (bridge v2 routing law, the #1980 rejection), so its fix ships as a separate satellite order (bridge-20261028-r42-manifest-satellite-fix). SHRINK TO 0 once the mirror syncs: delete the entry, re-run --check.",
+  "ratchetedFloor": [
+    {
+      "file": "core/_archive/MANIFEST.md",
+      "target": "../../docs/plan-network/MAINTAINABILITY_PLAN.md",
+      "reason": "missing-file",
+      "allowed": 1
+    }
+  ],
+  "knownReportOnly": [
+    {
+      "file": ".agents/skills/developing-genkit-python/references/agents-http.md",
+      "target": "agents.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": ".agents/skills/developing-genkit-python/references/dev-workflow.md",
+      "target": "agents.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": ".agents/skills/github-actions-debugger/SKILL.md",
+      "target": "file:///f:/supremeai%20backup/docs/devops/CI_DEBUGGING_ROADMAP.md",
+      "reason": "file-uri"
+    }
+  ],
+  "knownExcluded": [
+    {
+      "file": "docs/AUDIT_2026-10-15.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/AUDIT_2026-10-16-external-audit.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/AUTONOMY_LOOP_CONTRACT.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/CI_MINIMUM_PIPELINE_STANDARD.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/CONTRIBUTING_BN.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/FAQ.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/GUARDIAN_EVALUATION.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/INGRESS_SECURITY_POLICY.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/ZERO_ADMIN_GUIDE.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/adrs/README.md",
+      "target": "../../AGENT_RULES.md",
+      "reason": "missing-file"
+    }
+  ],
+  "checkedAtGeneration": 269
+}
