@@ -31,6 +31,8 @@ GUARDS: list[list[str]] = [
     ["python", "scripts/ci/bandit_sast_guard.py", "--check"],
     ["python", "scripts/ci/js_dep_cve_guard.py", "--check"],
     ["python", "scripts/ci/py_dep_cve_guard.py", "--check"],
+    ["python", "scripts/ci/docs_link_integrity_guard.py", "--self-test"],
+    ["python", "scripts/ci/docs_link_integrity_guard.py"],
     ["python", "scripts/agents/check_loop_contract_parity.py"],
     ["python", "scripts/ci/test_parity_guard.py"],
     ["python", "scripts/ops/generate_script_index.py", "--check"],
