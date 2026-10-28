@@ -1,0 +1,597 @@
+#!/usr/bin/env python3
+"""py_dep_cve_guard.py — Python dependency CVE ratchet gate (#1969, radar R37).
+
+Mission (issue #1969, scout radar lane R37):
+    The #1950 doctrine says every adjacent security surface has a machine
+    gate. Its own coverage map enumerated image CVEs (Trivy, #1735), Python
+    SOURCE SAST (bandit, #1829), workflows (zizmor, #1776), import contracts
+    (import-linter, #1791), secrets (gitleaks), license SSOT (#1796), JS deps
+    (#1913) — and omitted exactly one plane: the Python dependency manifests
+    that `pip install -r` consumes at image-build time. `.github/workflows/`
+    has zero pip-audit/safety wiring; the in-tree consumers
+    (scripts/ops/security/auto_vulnerability_scanner.py, sentinel_agent.py,
+    dependency_manager_agent.py) are designed-but-never-fed (#1913 pattern).
+    This guard closes that plane with the PyPA-blessed primitive: pip-audit
+    (Apache-2.0, zero-credential, bare-runner requirements mode — no Docker,
+    no admin lane, no env build).
+
+Behavior contract (the #1796/#1829/#1913 shrink-only ratchet):
+
+    1. Discovers every tracked `requirements*.txt` manifest in the tree
+       (deterministic sorted walk; node_modules/.git/venv/build trees
+       skipped) and runs `pip-audit -r <manifest> --format json` per file.
+       pip-audit resolves range pins against PyPI itself — the guard never
+       reimplements a resolver (alternative 1 in #1969, rejected).
+    2. Aggregates findings to
+       "<manifest>:<name>@<version>" -> sorted advisory-id set, where the id
+       set is the union of the advisory's primary id and its aliases
+       (PYSEC/GHSA/CVE). Folding aliases makes the ratchet immune to
+       pip-audit's primary-id selection flipping across versions (a flip
+       keeps the union identical -> no false drift; a genuinely new advisory
+       adds a new id -> drift fires). Duplicate advisory entries within one
+       dependency (observed live: the same PYSEC id emitted twice) are
+       deduplicated.
+    3. Compares against scripts/ci/py_dep_cve_baseline.json:
+         - a pair absent from the baseline, or an id inside a baselined
+           pair that the baseline does not list, is DRIFT (fail-close);
+         - ids at or below the baseline are compliant (fewer ids is an
+           improvement — shrink the baseline entry in the same change; the
+           file may only ever shrink).
+    4. Routing (#1969 escalation contract): a NEW advisory id on any pin
+       fails CI the day it appears; the fix for a pinned/range pin is a
+       MAINTAINER bump decision — this guard reports findings and NEVER
+       edits requirements files. The landing floor carries the live audit's
+       finding (pytest 8.4.2 in core/client/supreme-node — PYSEC-2026-1845 /
+       GHSA-6w46-j5rx-g56g / CVE-2025-71176, fix 9.0.3 requires raising the
+       `<9.0` ceiling: maintainer lane), NOT the scout's assumed empty floor
+       — the scout audited 6 of 10 manifests and assumed the rest identical;
+       the full live sweep proved supreme-node carries 1 unique advisory.
+       An empty floor would have landed a red CI and a fabricated verdict.
+    5. Honest degradation (#1760 pattern): pip-audit absent, or any
+       pip-audit run failing (network unreachable, unparseable output) =>
+       skip with evidence (exit 0, note emitted) — it never fabricates a
+       PASS. A manifest that exists but cannot be READ is a surface change
+       and fail-closes (the #1913 unreadable-lockfile analog).
+
+Never-do (issue #1969): no auto bumps; no requirements edits; the baseline
+may never grow; no scanning .github/**; no safety CLI (commercial DB breaks
+zero-credential guard-time discipline); no trivy fs blur of the image-plane
+vs source-plane boundary (#1735); no secret values involved (advisory ids
+and package coordinates only).
+
+Usage:
+    python scripts/ci/py_dep_cve_guard.py --check            # roster mode
+    python scripts/ci/py_dep_cve_guard.py --files a b        # pre-push mode
+    python scripts/ci/py_dep_cve_guard.py --baseline         # regenerate floor
+    python scripts/ci/py_dep_cve_guard.py --json             # machine report
+    python scripts/ci/py_dep_cve_guard.py --self-test        # hermetic
+
+Exit codes: 0 = pass / known-floor / honest skip · 1 = new drift ·
+2 = usage error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    with contextlib.suppress(Exception):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+GUARD_TAG = "[py-dep-cve-guard]"
+BASELINE_PATH = Path("scripts/ci/py_dep_cve_baseline.json")
+MANIFEST_SURFACE = "requirements*.txt (any tracked depth)"
+
+EXIT_PASS = 0
+EXIT_DRIFT = 1
+EXIT_USAGE = 2
+
+PIP_AUDIT_BIN = "pip-audit"
+PIP_AUDIT_TIMEOUT = 300  # seconds per manifest (cold PyPI resolution included)
+SKIP_DIRS = frozenset(
+    {".git", "node_modules", ".venv", "venv", "env", "dist", "build",
+     "archives", ".pytest_cache", "__pycache__", ".tox", "site-packages"}
+)
+
+
+def _evidence(msg: str) -> None:
+    print(f"{GUARD_TAG} {msg}")
+
+
+def discover_manifests(repo_root: Path) -> list[str]:
+    """Sorted repo-relative paths of every tracked requirements manifest.
+
+    Deterministic walk of the working tree; SKIP_DIRS prunes vendored and
+    virtual-environment trees so only first-party manifests are audited.
+    """
+    found: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(repo_root, topdown=True):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for fn in filenames:
+            if fn.startswith("requirements") and fn.endswith(".txt"):
+                found.append((Path(dirpath) / fn).relative_to(repo_root).as_posix())
+    return sorted(found)
+
+
+def parse_pip_audit_json(doc: dict) -> dict[str, list[str]]:
+    """pip-audit --format json document -> "name@version" -> sorted id union.
+
+    The document shape is {"dependencies": [{"name", "version", "vulns":
+    [{"id", "aliases", ...}]}], "fixes": [...]}. Ids are the union of the
+    primary id and aliases (primary-flip immunity); duplicates — pip-audit
+    emitted the same PYSEC entry twice live — collapse in the set.
+    """
+    deps = doc.get("dependencies")
+    if not isinstance(deps, list):
+        raise ValueError("pip-audit JSON malformed: 'dependencies' must be a list")
+    found: dict[str, list[str]] = {}
+    for dep in deps:
+        if not isinstance(dep, dict):
+            raise ValueError("pip-audit JSON malformed: dependency must be an object")
+        name, version = dep.get("name"), dep.get("version")
+        if not name or not version:
+            raise ValueError("pip-audit JSON malformed: dependency missing name/version")
+        ids: set[str] = set()
+        for vuln in dep.get("vulns") or []:
+            if not isinstance(vuln, dict):
+                raise ValueError("pip-audit JSON malformed: vuln must be an object")
+            if vuln.get("id"):
+                ids.add(str(vuln["id"]))
+            for alias in vuln.get("aliases") or []:
+                if alias:
+                    ids.add(str(alias))
+        if ids:
+            key = f"{name}@{version}"
+            prev = found.get(key, [])
+            found[key] = sorted(set(prev) | ids)
+    return found
+
+
+def audit_manifest(manifest: Path) -> dict[str, list[str]]:
+    """One pip-audit requirements-mode run -> "name@version" -> id union.
+
+    Exit 0 (clean) and 1 (vulns found) are both valid outcomes parsed from
+    stdout; anything else raises RuntimeError with the stderr tail — the
+    honest-skip decision lives in evaluate().
+    """
+    proc = subprocess.run(
+        [PIP_AUDIT_BIN, "--progress-spinner", "off", "-r", str(manifest),
+         "--format", "json"],
+        capture_output=True, text=True, timeout=PIP_AUDIT_TIMEOUT, check=False,
+    )
+    if proc.returncode not in (0, 1):
+        tail = (proc.stderr or proc.stdout or "")[-400:].strip()
+        raise RuntimeError(
+            f"pip-audit failed on {manifest} (exit {proc.returncode}): {tail}"
+        )
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        tail = (proc.stderr or "")[-400:].strip()
+        raise RuntimeError(
+            f"pip-audit emitted unparseable JSON for {manifest}: {exc}; "
+            f"stderr tail: {tail}"
+        ) from exc
+    return parse_pip_audit_json(doc)
+
+
+def compare(
+    current: dict[str, list[str]], baseline: dict[str, list[str]]
+) -> tuple[list[dict], list[dict]]:
+    """Ratchet compare keyed "<manifest>:name@version" -> sorted id union.
+
+    drift: new pair, or an id inside a known pair that the baseline omits.
+    improvements: baselined ids/pairs that disappeared (shrink-the-floor
+    hints — the baseline entry may be removed in the same change).
+    """
+    drift: list[dict] = []
+    improvements: list[dict] = []
+    for pair in sorted(current):
+        cur = list(current[pair])
+        base = baseline.get(pair, [])
+        new_ids = [i for i in cur if i not in base]
+        if not base:
+            drift.append({"pair": pair, "ids": new_ids, "kind": "new-pair"})
+        elif new_ids:
+            drift.append({"pair": pair, "ids": new_ids, "kind": "new-id"})
+    for pair in sorted(baseline):
+        gone = [i for i in baseline[pair] if i not in current.get(pair, [])]
+        if gone or pair not in current:
+            improvements.append(
+                {"pair": pair, "resolved_ids": gone,
+                 "remaining": current.get(pair, [])}
+            )
+    return drift, improvements
+
+
+def load_baseline(repo_root: Path) -> tuple[dict[str, list[str]], dict]:
+    """Load the versioned baseline. Unreadable baseline is fail-closed drift."""
+    path = repo_root / BASELINE_PATH
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"baseline missing: {BASELINE_PATH} (run --baseline to create)"
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    findings = data.get("findings")
+    if not isinstance(findings, dict):
+        raise ValueError("baseline malformed: 'findings' must be an object")
+    clean: dict[str, list[str]] = {}
+    for pair, ids in findings.items():
+        if not isinstance(pair, str) or not isinstance(ids, list):
+            raise ValueError("baseline malformed: findings must be pair -> id list")
+        clean[pair] = [str(i) for i in ids]
+    return clean, data.get("meta", {})
+
+
+def build_baseline_report(repo_root: Path) -> dict:
+    """Live manifests + pip-audit sweep -> the versioned baseline document."""
+    manifests = discover_manifests(repo_root)
+    findings: dict[str, list[str]] = {}
+    pairs_total = 0
+    for rel in manifests:
+        per_manifest = audit_manifest(repo_root / rel)
+        pairs_total += len(per_manifest)
+        for key, ids in per_manifest.items():
+            findings[f"{rel}:{key}"] = ids
+    return {
+        "meta": {
+            "issue": 1969,
+            "tool": (
+                "pip-audit (PyPA, Apache-2.0) requirements mode --format json; "
+                "PyPI Advisory DB / OSV SSOT, zero-credential"
+            ),
+            "scanner_version": "2.10.1",
+            "surface": MANIFEST_SURFACE,
+            "dated": "2026-10-28",
+            "totals": {
+                "manifests_scanned": len(manifests),
+                "resolved_vulnerable_deps": pairs_total,
+                "vulnerable_pairs": len(findings),
+                "vuln_ids": sum(len(v) for v in findings.values()),
+            },
+            "doctrine": (
+                "shrink-only ratchet: entries and ids may only be REMOVED (in the "
+                "same change that resolves them — a maintainer pin/range bump or an "
+                "upstream fix absorbed by a floor reset). A new pair or a new "
+                "advisory id is drift; the baseline may never grow. Escalation "
+                "routing: findings on a pinned/range pin are maintainer bump "
+                "decisions — this guard never edits requirements files."
+            ),
+        },
+        "findings": findings,
+    }
+
+
+def evaluate(
+    repo_root: Path, files: list[str] | None = None
+) -> tuple[int, list[dict], list[dict], list[str]]:
+    """Single decision tree. Returns (exit, drift, improvements, notes)."""
+    notes: list[str] = []
+    manifests = discover_manifests(repo_root)
+    notes.append(f"surface: {len(manifests)} tracked requirements manifest(s)")
+
+    if files is not None:
+        touched = sorted(set(files) & set(manifests))
+        if not touched:
+            notes.append(
+                "changed set does not touch the Python dependency surface "
+                f"({MANIFEST_SURFACE}) — nothing to check"
+            )
+            return EXIT_PASS, [], [], notes
+        manifests = touched
+        notes.append(f"--files mode: checking {', '.join(touched)}")
+
+    if shutil.which(PIP_AUDIT_BIN) is None:
+        notes.append(
+            "pip-audit not installed — skipped with evidence (honest "
+            "degradation, #1760 pattern; pip install pip-audit to enable)"
+        )
+        return EXIT_PASS, [], [], notes
+
+    try:
+        baseline, _meta = load_baseline(repo_root)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+        return (
+            EXIT_DRIFT,
+            [{"pair": str(BASELINE_PATH), "ids": ["BASELINE"], "kind": "baseline",
+              "detail": str(exc)}],
+            [],
+            notes,
+        )
+
+    current: dict[str, list[str]] = {}
+    for rel in manifests:
+        path = repo_root / rel
+        try:
+            path.read_text(encoding="utf-8")
+        except Exception as exc:  # unreadable surface is fail-closed, never a skip
+            return (
+                EXIT_DRIFT,
+                [{"pair": rel, "ids": ["MANIFEST"], "kind": "unreadable-manifest",
+                  "detail": str(exc)}],
+                [],
+                notes,
+            )
+        try:
+            per_manifest = audit_manifest(path)
+        except (RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            notes.append(
+                f"pip-audit unreachable/failed on {rel} — skipped with evidence "
+                f"(honest degradation, #1760 pattern; never a fabricated PASS): "
+                f"{exc}"
+            )
+            return EXIT_PASS, [], [], notes
+        for key, ids in per_manifest.items():
+            current[f"{rel}:{key}"] = ids
+
+    notes.append(
+        f"pip-audit: {len(current)} vulnerable pair(s), "
+        f"{sum(len(i) for i in current.values())} advisory id(s) on the current tree"
+    )
+    drift, improvements = compare(current, baseline)
+    if drift:
+        return EXIT_DRIFT, drift, improvements, notes
+    return EXIT_PASS, [], improvements, notes
+
+
+def render(drift: list[dict], improvements: list[dict], notes: list[str]) -> None:
+    for note in notes:
+        _evidence(f"note | {note}")
+    for d in drift:
+        _evidence(
+            f"NEW-DRIFT (fail-closed) | {d['pair']} | {d['kind']} | ids: {', '.join(d['ids'])}"
+        )
+    for imp in improvements:
+        _evidence(
+            f"IMPROVED (remove the baseline entry in the same change) | {imp['pair']} | "
+            f"resolved: {', '.join(imp['resolved_ids']) or '(pair gone)'} | "
+            f"remaining: {', '.join(imp['remaining']) or 'none'}"
+        )
+    if not drift and not improvements:
+        _evidence("ratchet clean: no new advisory ids on the Python dependency plane")
+
+
+def self_test() -> bool:
+    """Hermetic guard-the-guard (offline; fixtures, monkeypatched audits)."""
+    print("[self-test] Running Python dependency CVE guard tests...")
+    import py_dep_cve_guard as g
+
+    # 1. The load-bearing pip-audit JSON parser: id-union folding, dedup of
+    #    duplicate advisory entries (observed live), empty-vuln skip.
+    doc = {
+        "dependencies": [
+            {"name": "fastapi", "version": "0.162.0", "vulns": []},
+            {"name": "pytest", "version": "8.4.2", "vulns": [
+                {"id": "PYSEC-2026-1845", "aliases": [
+                    "GHSA-6w46-j5rx-g56g", "CVE-2025-71176"]},
+                {"id": "PYSEC-2026-1845", "aliases": [
+                    "GHSA-6w46-j5rx-g56g", "CVE-2025-71176"]},
+            ]},
+        ],
+        "fixes": [],
+    }
+    found = g.parse_pip_audit_json(doc)
+    assert found == {
+        "pytest@8.4.2": ["CVE-2025-71176", "GHSA-6w46-j5rx-g56g", "PYSEC-2026-1845"]
+    }, found
+    print("  PASS | parser: alias union folded, duplicate advisories deduped")
+    try:
+        g.parse_pip_audit_json({"dependencies": [{"name": "x"}]})
+        raise SystemExit("malformed dependency must raise")
+    except ValueError:
+        pass
+    print("  PASS | parser: missing version fails loudly (never silent)")
+    # 2. Ratchet compare: equal/new-pair/new-id/shrunk/disappeared.
+    baseline = {"m:a@1.0.0": ["PYSEC-1"], "m:b@2.0.0": ["PYSEC-2", "PYSEC-3"]}
+    drift, improvements = g.compare(dict(baseline), baseline)
+    assert not drift and not improvements
+    drift, _ = g.compare({"m:c@3.0.0": ["PYSEC-9"]}, baseline)
+    assert drift and drift[0]["kind"] == "new-pair"
+    drift, _ = g.compare({"m:a@1.0.0": ["PYSEC-1", "PYSEC-new"]}, baseline)
+    assert drift and drift[0]["kind"] == "new-id" and drift[0]["ids"] == ["PYSEC-new"]
+    _, improvements = g.compare({"m:a@1.0.0": ["PYSEC-1"]}, baseline)
+    assert improvements and improvements[0]["pair"] == "m:b@2.0.0"
+    print("  PASS | ratchet: equal/new-pair/new-id/shrunk/disappeared semantics")
+    # 3. Decision tree on a sandbox repo: drift exit 1, honest skip when
+    #    pip-audit is missing or failing, unreadable manifest fail-closed.
+    with tempfile.TemporaryDirectory(prefix="py-dep-cve-guard-") as td:
+        root = Path(td)
+        (root / "scripts" / "ci").mkdir(parents=True)
+        (root / "gateway" / "services" / "x").mkdir(parents=True)
+        (root / "gateway" / "requirements.txt").write_text(
+            "fastapi>=0.110\n", encoding="utf-8"
+        )
+        (root / "gateway" / "services" / "x" / "requirements.txt").write_text(
+            "pytest>=7.4,<9.0\n", encoding="utf-8"
+        )
+        (root / BASELINE_PATH).write_text(
+            json.dumps({
+                "meta": {"issue": 1969},
+                "findings": {
+                    "gateway/services/x/requirements.txt:pytest@8.4.2": [
+                        "PYSEC-old", "PYSEC-gone"
+                    ]
+                },
+            }),
+            encoding="utf-8",
+        )
+        saved_audit = g.audit_manifest
+        try:
+            g.audit_manifest = lambda p: {
+                "pytest@8.4.2": ["PYSEC-old"],
+                "fastapi@0.162.0": ["PYSEC-fresh"],
+            }
+            code, drift, _imp, _notes = g.evaluate(root)
+            assert code == EXIT_DRIFT and drift[0]["pair"] == (
+                "gateway/requirements.txt:fastapi@0.162.0"
+            ), (code, drift)
+            print("  PASS | decision tree: new advisory pair fail-closes")
+            g.audit_manifest = lambda p: (
+                {"pytest@8.4.2": ["PYSEC-old"]} if "services" in str(p) else {}
+            )
+            code, drift, imp, _ = g.evaluate(root)
+            assert code == EXIT_PASS and drift == [] and imp, (code, imp)
+            assert imp[0]["resolved_ids"] == ["PYSEC-gone"]
+            print("  PASS | shrink path: resolved id routes to baseline-shrink hint")
+
+            def _boom(p):
+                raise RuntimeError("PyPI unreachable (simulated)")
+
+            g.audit_manifest = _boom
+            code, drift, _imp, notes = g.evaluate(root)
+            assert code == EXIT_PASS and not drift
+            assert any("pip-audit unreachable" in n for n in notes), notes
+            print("  PASS | pip-audit failure -> skip with evidence, never a fake PASS")
+
+            real_which = g.shutil.which
+            g.shutil.which = lambda name: None
+            try:
+                code, drift, _imp, notes = g.evaluate(root)
+                assert code == EXIT_PASS
+                assert any("pip-audit not installed" in n for n in notes), notes
+            finally:
+                g.shutil.which = real_which
+            print("  PASS | pip-audit missing -> skip with evidence")
+            g.audit_manifest = lambda p: (
+                {"pytest@8.4.2": ["PYSEC-old"]} if "services" in str(p) else {}
+            )
+            (root / "gateway" / "requirements.txt").chmod(0)
+            try:
+                code, drift, _imp, _ = g.evaluate(root)
+                assert code == EXIT_DRIFT and drift[0]["kind"] == "unreadable-manifest"
+            finally:
+                (root / "gateway" / "requirements.txt").chmod(0o644)
+            print("  PASS | unreadable manifest -> fail-closed")
+            (root / BASELINE_PATH).write_text("{not json", encoding="utf-8")
+            code, drift, _imp, _ = g.evaluate(root)
+            assert code == EXIT_DRIFT and drift[0]["ids"] == ["BASELINE"]
+            print("  PASS | malformed baseline -> fail-closed")
+            g.audit_manifest = lambda p: (
+                {"pytest@8.4.2": ["PYSEC-old"]} if "services" in str(p) else {}
+            )
+            (root / BASELINE_PATH).write_text(
+                json.dumps({
+                    "meta": {"issue": 1969},
+                    "findings": {
+                        "gateway/services/x/requirements.txt:pytest@8.4.2": ["PYSEC-old"]
+                    },
+                }),
+                encoding="utf-8",
+            )
+            code, drift, _imp, notes = g.evaluate(root, files=["README.md"])
+            assert code == EXIT_PASS and any("nothing to check" in n for n in notes)
+            code, drift, _imp, _ = g.evaluate(
+                root, files=["gateway/services/x/requirements.txt"]
+            )
+            assert code == EXIT_PASS and not drift
+            print("  PASS | --files mode: off-surface skip, on-surface full check")
+        finally:
+            g.audit_manifest = saved_audit
+    # 4. Live wiring: roster + pre-push carry the guard (when run inside the repo).
+    roster = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
+    if roster.is_file():
+        assert "scripts/ci/py_dep_cve_guard.py" in roster.read_text(encoding="utf-8"), (
+            "guard missing from run_all_guards roster"
+        )
+    hook = REPO_ROOT / ".githooks" / "pre-push"
+    if hook.is_file():
+        assert "py_dep_cve_guard.py" in hook.read_text(encoding="utf-8"), (
+            "guard missing from pre-push hook"
+        )
+    print("  PASS | roster + pre-push wiring present (when run inside the repo)")
+    # 5. Baseline provenance sanity (when run inside the repo).
+    bl_path = REPO_ROOT / BASELINE_PATH
+    if bl_path.is_file():
+        meta = json.loads(bl_path.read_text(encoding="utf-8")).get("meta", {})
+        assert "pip-audit" in str(meta.get("tool", "")), (
+            "baseline must record the pip-audit SSOT"
+        )
+        assert meta.get("doctrine", "").startswith("shrink-only")
+    print("[self-test] Python dependency CVE guard self-tests PASSED (5 test cases)!")
+    return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Python dependency CVE ratchet gate (#1969, pip-audit)"
+    )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="roster mode: full-surface ratchet compare",
+    )
+    parser.add_argument(
+        "--files", nargs="*",
+        help="pre-push mode: full check only when the changed set touches a requirements manifest",
+    )
+    parser.add_argument(
+        "--baseline", action="store_true",
+        help="regenerate the versioned baseline at current head (admin)",
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="machine-readable report on stdout"
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="hermetic self-test suite (offline)"
+    )
+    args = parser.parse_args()
+
+    if args.self_test:
+        return EXIT_PASS if self_test() else EXIT_DRIFT
+
+    if args.baseline:
+        doc = build_baseline_report(REPO_ROOT)
+        out = REPO_ROOT / BASELINE_PATH
+        out.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        _evidence(
+            f"baseline regenerated at {BASELINE_PATH} | "
+            f"{doc['meta']['totals']['manifests_scanned']} manifest(s) | "
+            f"{doc['meta']['totals']['vulnerable_pairs']} vulnerable pair(s) / "
+            f"{doc['meta']['totals']['vuln_ids']} id(s) — review the diff; "
+            f"the file may only shrink; pin fixes are maintainer decisions"
+        )
+        return EXIT_PASS
+
+    code, drift, improvements, notes = evaluate(
+        REPO_ROOT, files=args.files if args.files is not None else None
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "guard": "py_dep_cve_guard",
+                    "mode": "files" if args.files is not None else "check",
+                    "exit": code,
+                    "scanner": PIP_AUDIT_BIN,
+                    "surface": MANIFEST_SURFACE,
+                    "new_drift": drift,
+                    "improvements_shrink_hints": improvements,
+                    "notes": notes,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    else:
+        render(drift, improvements, notes)
+    if code == EXIT_DRIFT:
+        print(
+            f"{GUARD_TAG} ❌ NEW Python dependency advisory drift: resolve it "
+            f"(pin/range bumps are maintainer decisions) or re-floor the baseline "
+            f"deliberately — the baseline may never grow.",
+            file=sys.stderr,
+        )
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
