@@ -258,7 +258,7 @@ def three_way_check(
     base_sha: str,
     target_head: str,
     parents: Mapping[str, str],
-    commit_files: Mapping[str,],
+    commit_files: Mapping[str, tuple[str, ...]],
 ) -> tuple[str, ...]:
     """Files touched by BOTH the batch and the target since `base_sha`.
 
@@ -313,7 +313,7 @@ def plan_batches(
     last_synced: Mapping[str, str] | None = None,
     target_heads: Mapping[str, str] | None = None,
     parents: Mapping[str, str] | None = None,
-    commit_files: Mapping[str,] | None = None,
+    commit_files: Mapping[str, tuple[str, ...]] | None = None,
 ) -> BatchPlan:
     """Aggregate windowed + urgent commits into one batch per satellite.
 
