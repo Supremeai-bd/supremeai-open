@@ -235,7 +235,7 @@ STEALTH_WEBHOOK_URL = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHO
 STEALTH_WEBHOOK_SECRET = os.getenv("STEALTH_WEBHOOK_SECRET", os.getenv("UPSTREAM_WEBHOOK_SECRET", "")).strip()
 STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "28.0"))
 
-app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None, openapi_url=None)  # docs lockdown completion: the openapi_url default served the full route inventory (incl. admin route names) unauthenticated.
 
 # CORS setup for Studio and web agents - Restricted origins (no wildcard with credentials)
 _default_cors = [
