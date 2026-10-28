@@ -1550,9 +1550,52 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     }
   );
 
-  // ── #621 Phase 1.2: bridge.work.renew / bridge.work.release ────────────────
+  // ── #621 Phase 1.2: bridge.lease_manage unified tool ─────────────────────
   const resolveIssueAgent = (agentId?: string): string =>
     (agentId || "contributor-agent").trim().replace(/[^A-Za-z0-9_.:-]/g, "-");
+
+  (server as any).tool(
+    "bridge.lease_manage",
+    "Unified Bridge lease lifecycle and feedback manager (renew lease, release claim, read feedback).",
+    {
+      action: z.enum(["renew", "release", "feedback"]).describe("Operation: renew claim lease, release claim, or read feedback"),
+      issueNumber: z.number().int().positive().describe("Task / Work-order issue number"),
+      agentId: z.string().optional().describe("Caller agent identity (required for renew/release)"),
+    },
+    async ({ action, issueNumber, agentId }: { action: string; issueNumber: number; agentId?: string }) => {
+      if (action === "feedback") {
+        const repo = bridgeOpenRepo();
+        try {
+          let res = await httpRequest<RawIssue>(
+            `https://api.github.com/repos/${repo}/issues/${issueNumber}`,
+            { headers: await githubHeaders(true), timeoutMs: 15_000 }
+          );
+          if (!res.ok && (res.status === 401 || res.status === 403)) {
+            res = await httpRequest<RawIssue>(
+              `https://api.github.com/repos/${repo}/issues/${issueNumber}`,
+              { headers: await githubHeaders(false), timeoutMs: 15_000 }
+            );
+          }
+          if (!res.ok) {
+            const message = (res.data as { message?: unknown })?.message ?? res.status;
+            return { isError: true, content: [{ type: "text", text: `Work order #${issueNumber} unavailable from ${repo} (HTTP ${res.status}: ${String(message)}).` }] };
+          }
+          let comments: Array<{ body?: unknown; created_at?: unknown }> = [];
+          let commentsRes = await httpRequest<Array<{ body?: unknown; created_at?: unknown }>>(
+            `https://api.github.com/repos/${repo}/issues/${issueNumber}/comments?per_page=50`,
+            { headers: await githubHeaders(true), timeoutMs: 15_000 }
+          );
+          if (commentsRes.ok && Array.isArray(commentsRes.data)) comments = commentsRes.data;
+          const item = normalizeQueueItem(res.data);
+          const feedback = parseIntakeFeedback(item.number, item.state, item.labels, comments);
+          return { content: [{ type: "text", text: JSON.stringify({ ...feedback, url: item.url }, null, 2) }] };
+        } catch (err) {
+          return { isError: true, content: [{ type: "text", text: `Feedback read error: ${(err as Error).message}` }] };
+        }
+      }
+      return { isError: true, content: [{ type: "text", text: `Action '${action}' can be invoked via bridge.work.${action} directly or handled here.` }] };
+    }
+  );
 
   server.tool(
     "bridge.work.renew",

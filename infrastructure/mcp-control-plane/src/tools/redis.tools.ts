@@ -10,8 +10,44 @@ import { cacheLookup, cacheStore, cacheConfigStatus } from "../lib/semantic_cach
 const quotaAlertSent = new Map<string, string>();
 
 export async function registerRedisTools(server: McpServer): Promise<void> {
+  // ── Unified Consolidated Redis Tool ──
+  server.tool(
+    "redis.op",
+    "Unified Redis diagnostic and cache operations (ping, stats, read_key).",
+    {
+      action: z.enum(["ping", "stats", "read_key"]).describe("The Redis operation to perform"),
+      key: z.string().optional().describe("Key name to read (required when action='read_key')"),
+    },
+    async ({ action, key }) => {
+      try {
+        if (action === "ping") {
+          const res = await pingRedis();
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        if (action === "stats") {
+          const stats = await getRedisStats();
+          return { content: [{ type: "text", text: JSON.stringify(stats, null, 2) }] };
+        }
+        if (action === "read_key") {
+          if (!key) {
+            return {
+              isError: true,
+              content: [{ type: "text", text: "Error: 'key' parameter is required when action='read_key'" }],
+            };
+          }
+          const res = await readRedisKey(key);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        return { isError: true, content: [{ type: "text", text: `Unknown action: ${action}` }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+      }
+    }
+  );
+
   server.tool(
     "redis.ping",
+
     "Ping the Redis cache/queue to verify connectivity.",
     {},
     async () => {
