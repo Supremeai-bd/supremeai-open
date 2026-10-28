@@ -215,6 +215,61 @@ def test_self_test_hermetic():
     assert "[FAIL]" not in r.stdout, r.stdout
 
 
+def test_enrich_tower_verdicts_injectable():
+    """Feedback-plane enrichment (the guard's own documented future work):
+    MERGED_ON_MAIN rows get tower_verdict/tower_unstamped; the live
+    2026-10-28 blackout (13/13 merged WOs with latestVerdict=null while every
+    slug was provably landed) is exactly the True case. Fail-open semantics:
+    an unreadable verdict plane is honest unknown (None), never False, and
+    never changes a verdict class or the strict surface."""
+    mod = _load_watchdog_module()
+    merged = {"number": 40, "verdict": "MERGED_ON_MAIN",
+              "slug": "(bridge-20261028-alpha-lane)", "age_hours": 0.5}
+    risk = {"number": 41, "verdict": "LANDING_AT_RISK",
+            "slug": "(bridge-20261028-alpha-lane-r2)", "age_hours": 3.0}
+
+    def fb_none(n):
+        return {"issueNumber": n, "state": "open", "labels": ["bridge:queued"],
+                "latestVerdict": None, "verdictHistory": [], "commentCount": 0}
+
+    def fb_stamped(n):
+        return {"issueNumber": n, "state": "open", "labels": ["bridge:queued"],
+                "latestVerdict": "MERGED_ON_MAIN", "verdictHistory": ["MERGED_ON_MAIN"],
+                "commentCount": 1}
+
+    def boom(n):
+        raise RuntimeError("tower down")
+
+    # History-proven landing + Tower null -> unstamped True (blackout visible).
+    vs = mod.enrich_tower_verdicts([dict(merged), dict(risk)], fetch_feedback=fb_none)
+    assert vs[0]["tower_unstamped"] is True and vs[0]["tower_verdict"] == "none", vs[0]
+    # Non-merged rows stay untouched (zero enrichment keys, zero probes).
+    assert "tower_verdict" not in vs[1] and "tower_unstamped" not in vs[1], vs[1]
+    # Tower stamp present -> unstamped False (bookkeeping healthy).
+    vs = mod.enrich_tower_verdicts([dict(merged)], fetch_feedback=fb_stamped)
+    assert vs[0]["tower_unstamped"] is False and vs[0]["tower_verdict"] == "MERGED_ON_MAIN", vs[0]
+    # Raising fetcher -> honest unknown (None), never False, never a crash.
+    vs = mod.enrich_tower_verdicts([dict(merged)], fetch_feedback=boom)
+    assert vs[0]["tower_unstamped"] is None and vs[0]["tower_verdict"] == "unreadable", vs[0]
+    # Non-dict payload (MCP error envelope) -> honest unknown too.
+    vs = mod.enrich_tower_verdicts([dict(merged)], fetch_feedback=lambda n: "MCP error -32602")
+    assert vs[0]["tower_unstamped"] is None, vs[0]
+    # Non-merged rows cost zero feedback probes (probe counter stays zero).
+    probed = []
+
+    def spy(n):
+        probed.append(n)
+        return fb_none(n)
+
+    mod.enrich_tower_verdicts([dict(risk)], fetch_feedback=spy)
+    assert probed == [], probed
+    # Probe cap is honored.
+    probed.clear()
+    many = [dict(merged, number=i) for i in range(30)]
+    mod.enrich_tower_verdicts(many, fetch_feedback=spy, max_probes=5)
+    assert len(probed) == 5, probed
+
+
 def test_live_mode_honest_skip_on_unreachable():
     # A watchdog that reports a verdict on unreachable planes would be a wolf
     # itself — exit 2 (skip), never 0/1, when the board/history is unreachable.
