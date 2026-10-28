@@ -4,7 +4,7 @@
 CONTRACT_VERSION = "agent-loop-contract/1"
 
 Traffic-police logic:
-1. Always display the 4 Universal Invariant Pillars (Common Rules).
+1. Always display the 5 Universal Invariant Pillars (Common Rules).
 2. If unclaimed issues exist -> Unlimited Solvers allowed: prompt agent with solver mandate & auto-dispatch.
 3. If no open issues exist -> Reset/zero cadence timers so scheduled roles can run immediately.
 4. Scheduled roles -> Exactly 1 agent at a time per role (active lock / immediate state advance).
