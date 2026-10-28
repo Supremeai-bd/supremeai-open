@@ -82,7 +82,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
-import subprocess
+import subprocess  # nosec B404 — the guard shells out to git for the changed-lockfile surface; list-argv only (#2081 audit)
 import sys
 import time
 import urllib.request
@@ -193,7 +193,7 @@ def query_osv_batch(
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:
+                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:  # nosec B310 — OSV https endpoint is a pinned module constant, zero-credential read (#2081 audit)
                     response = json.loads(resp.read().decode("utf-8"))
                 last_error = None
                 break
@@ -263,7 +263,7 @@ def git_head(repo_root: Path) -> str:
 
 
 def subprocess_run(cmd: list[str], cwd: Path) -> str:
-    proc = subprocess.run(
+    proc = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git invocation (#2081 audit)
         cmd, cwd=cwd, capture_output=True, text=True, timeout=30, check=False
     )
     return proc.stdout
