@@ -120,7 +120,7 @@ export function normalizeBackendUrl(value: unknown): string {
 // এক বিল্ডে User + Admin দুই context-ই থাকে, তাই backend নির্বাচন এখন RUNTIME সিদ্ধান্ত:
 //  - '/admin-api' path অথবা /admin/* route context → admin backend (থাকলে)
 //  - বাকি সব → user backend
-// Firebase hosting external rewrite proxy সাপোর্ট করে না, তাই Firebase-এ সরাসরি backend URL ব্যবহার হয় (CORS allow)।
+// External rewrite proxy সাপোর্ট করে না, তাই সরাসরি backend URL ব্যবহার হয় (CORS allow)।
 // Vercel-এ relative path ('') রাখা হয় কারণ Vercel external rewrite proxy সাপোর্ট করে।
 
 /** User-context API calls-এর canonical backend URL (build-time resolved, runtime-picked) */
