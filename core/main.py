@@ -30,6 +30,10 @@ setup_silent_catcher()
 # ----------------------------------------------------------
 
 
+SUPREME_COMMIT_SHA = os.getenv("SUPREME_COMMIT_SHA", "unknown")
+SUPREME_BUILD_TIME = os.getenv("SUPREME_BUILD_TIME", "unknown")
+SUPREME_VERSION = os.getenv("SUPREME_VERSION", "unknown")
+
 import uvicorn
 
 from core.logging_config import logger
