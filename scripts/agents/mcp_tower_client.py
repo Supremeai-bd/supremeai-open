@@ -49,11 +49,24 @@ import requests
 # AUDIT-FIX (CI fixer): removed hardcoded deployment URL from default value.
 # The URL must be set via MCP_TOWER_URL env var. AGENTS.md Rule #19 references
 # the URL in documentation — the actual code reads it from env.
+def strip_endpoint_suffixes(url: str) -> str:
+    """Return the Tower base origin from any documented URL form.
+
+    #2317 (R60 lane, #2300 option A): the documented setup carries the /mcp
+    endpoint suffix (dispatch mandate export form, repo-root mcp.json) while
+    connect() appends MCP_SSE_PATH itself — the /mcp suffix must be stripped
+    here or the join produces the dead path GET /mcp/sse (live 404) instead of
+    GET /sse (200). Order-tolerant: /mcp, /sse, /mcp/sse and bare all resolve
+    to the base origin; exact-suffix matching cannot corrupt /mcp-server.
+    """
+    return url.rstrip("/").removesuffix("/sse").removesuffix("/mcp")
+
+
 def resolve_mcp_server_url() -> str:
     """Resolve MCP Control Tower URL from env or workspace mcp.json."""
     url = os.environ.get("MCP_TOWER_URL", os.environ.get("MCP_SERVER_URL", ""))
     if url:
-        return url.rstrip("/").removesuffix("/sse")
+        return strip_endpoint_suffixes(url)
     mcp_file = Path(__file__).resolve().parents[2] / "mcp.json"
     if mcp_file.exists():
         try:
@@ -62,7 +75,7 @@ def resolve_mcp_server_url() -> str:
                 tower = data.get("mcpServers", {}).get("supremeai-control-tower", {})
                 server_url = tower.get("url", "")
                 if server_url:
-                    return server_url.rstrip("/").removesuffix("/sse")
+                    return strip_endpoint_suffixes(server_url)
         except Exception:
             pass
     return "https://supremeai-mcp-tower.onrender.com"
