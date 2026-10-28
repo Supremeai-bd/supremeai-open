@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""S05 reference implementation r2: unified queue query construction (#474, #2115/#2123).
+"""S05 reference implementation: unified queue query construction (#474).
 
+r2 (#2115/#2123) adds the completeness contract: pagination + merge-dedupe.
 Executable spec for bridge.work_queue's GitHub query building, pagination,
 and issue normalization. The TS handler in bridge.tools.ts must behave
 identically; tests/test_s05_unified_queue.py asserts the contract offline,
