@@ -450,6 +450,44 @@ for line in $updates; do
         fi
     fi
 
+    # 13. JS-DEP CVE GUARD (#1913).
+    # JavaScript dependency vulnerability ratchet over studio/pnpm-lock.yaml
+    # (the unique (name, version) pin set, both lockfile sections, deduped).
+    # Engages ONLY when the push touches the studio dependency surface
+    # (studio/package.json or studio/pnpm-lock.yaml). Shrink-only baseline
+    # (scripts/ci/js_dep_cve_baseline.json): a NEW advisory pair or a NEW
+    # advisory id fail-closes the push; resolved ids route to baseline-shrink
+    # hints. Skips-with-evidence when the OSV API (api.osv.dev, zero-
+    # credential SSOT) is unreachable (honest degradation, #1760 pattern).
+    # Self-contained under `set -u`.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/js_dep_cve_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            jsdep_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            jsdep_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        jsdep_surface=$(printf '%s\n' "$jsdep_changed" | grep -E '^studio/(package\.json|pnpm-lock\.yaml)$' || true)
+        if [ -n "$jsdep_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/js_dep_cve_guard.py --files $jsdep_surface; then
+                    reject "JS-DEP CVE GUARD (#1913) FAILED" \
+                        "The push introduces NEW JavaScript dependency advisories on the studio plane." \
+                        "Resolve it (pin bumps are studio-owner decisions) or re-floor the baseline deliberately — the baseline may never grow." \
+                        "See the [js-dep-cve-guard] evidence lines above; OSV-unreachable runs skip with evidence." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"
