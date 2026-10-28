@@ -111,7 +111,7 @@ def _get(base_url: str, path: str, method: str = "GET", headers: dict | None = N
     for k, v in (headers or {}).items():
         req.add_header(k, v)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — read-only probe against repo-local base_url; audited #2081
             body = resp.read().decode("utf-8", "replace")
             return resp.status, {k.lower(): v for k, v in resp.headers.items()}, body
     except urllib.error.HTTPError as e:
