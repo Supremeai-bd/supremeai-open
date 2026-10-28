@@ -138,14 +138,9 @@ class LocalSearchRAG:
                     logger.warning(f"Exception suppressed: {e}")
                 self._index = {}
 
-    def build_search_url(self, query: str) -> str:
-        from urllib.parse import quote_plus
-
-        return f"https://duckduckgo.com/html/?q={quote_plus(query)}"
-
     def search(self, query: str) -> dict[str, Any]:
         # বাংলা মন্তব্য: ফ্রি DuckDuckGo (DDGS) সার্চ — কোনো API key বা ব্রাউজার লাগে না।
-        # প্যাকেজ না থাকলে পুরনো ব্রাউজার-স্ক্র্যাপিং ফলব্যাক ব্যবহার করে।
+        # core.search.web_search হলো repo-র একমাত্র search SSOT (issue #1751)।
         try:
             from core.search import web_search
 
@@ -153,32 +148,29 @@ class LocalSearchRAG:
         except Exception as exc:
             import loguru
 
-            loguru.logger.warning(f"DDGS search failed, falling back to browser scrape: {exc}")
+            loguru.logger.warning(f"web_search SSOT failed for '{query[:60]}': {exc}")
             raw = []
 
-        if raw:
-            results = [
-                SearchResult(
-                    title=r.get("title", ""),
-                    url=r.get("href") or r.get("url") or "",
-                    snippet=r.get("body", ""),
-                    content="",
-                )
-                for r in raw
-                if (r.get("href") or r.get("url"))
-            ]
+        results = [
+            SearchResult(
+                title=r.get("title", ""),
+                url=r.get("href") or r.get("url") or "",
+                snippet=r.get("body", ""),
+                content="",
+            )
+            for r in raw
+            if (r.get("href") or r.get("url"))
+        ]
+        if not results:
+            # Issue #1751: the browser-scrape fallback against the bot-hostile
+            # DDG-HTML endpoint is removed (live probe: HTTP 202 anti-bot
+            # interstitial — scraping viability was luck, not a contract).
+            # Zero usable results is the honest outcome; the env-keyed
+            # Brave/Tavily lanes now live inside the SSOT itself.
             return {
-                "status": "ok",
-                "query": query,
-                "results": [r.to_dict() for r in results[: self.max_pages]],
+                "status": "error",
+                "error": "no search results: web_search SSOT yielded nothing",
             }
-
-        # ফলব্যাক: ব্রাউজার দিয়ে DuckDuckGo HTML স্ক্র্যাপিং
-        search_url = self.build_search_url(query)
-        page_result = self.browser.fetch_page(search_url)
-        if not page_result.get("success"):
-            return {"status": "error", "error": page_result.get("error")}
-        results = self._parse_results(page_result.get("content", ""))
         return {
             "status": "ok",
             "query": query,
@@ -324,21 +316,6 @@ class LocalSearchRAG:
     async def astore_documents(self, query: str, docs: dict[str, list[str]]) -> None:
         """Async version of storing documents"""
         self._store_search(query, docs)
-
-    def _parse_results(self, page_text: str) -> list[SearchResult]:
-        results: list[SearchResult] = []
-        lines = [line.strip() for line in page_text.splitlines() if line.strip()]
-        i = 0
-        while i + 2 < len(lines) and len(results) < self.max_pages:
-            title = lines[i]
-            url = lines[i + 1]
-            snippet = lines[i + 2]
-            if (url.startswith("http://") or url.startswith("https://")) and " " not in url:
-                results.append(SearchResult(title=title, url=url, snippet=snippet, content=""))
-                i += 3
-            else:
-                i += 1
-        return results
 
     def summarize(self, url: str, content: str) -> dict[str, Any]:
         """Returns a summarized payload of the web page content."""

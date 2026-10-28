@@ -191,51 +191,50 @@ async def _llm_call(prompt: str, user_id: str, task_type: str = "deep_research")
 
 
 async def _scout_search(query: str, tenant_id: str) -> list[dict[str, str]]:
-    """Governed scout crawl search (MASTER_PLAN Phase 1: "Scout goes live").
+    """Policy-gated scout search on the core.search SSOT (MASTER_PLAN Phase 1).
 
-    বাংলা: আগে scout crawler ছিল API-র চোখে dead code — এখন deep research-এর
-    web search প্রথমে টেন্যান্টের *সক্রিয়* CrawlPolicy মেনে governed crawl চালায়
-    (robots.txt, rate pacing, SSRF gate, dedup, zero-token summary)। Policy না
-    থাকলে বা crawl খালি হলে কলার browser fallback-এ ফিরে যায় (Graceful
-    Degradation)। প্রতিটি crawl-এর ফলাফল durable history-তে রেকর্ড হয় —
-    research উত্তর এখন governed সোর্স cite করে (B2 battlefield fuel)।
+    বাংলা: scout search-পথ এখন টেন্যান্টের *সক্রিয়* CrawlPolicy মেনে চলে —
+    policy না থাকলে কিছই হয় না (Policy Before Power)। Policy থাকলে search
+    SSOT (``core.search.web_search``: ddgs ক্লায়েন্ট + env-keyed provider
+    fallback) ফলাফল দেয়; ফাঁকা হলে কলার browser fallback-এ ফিরে যায়
+    (Graceful Degradation)।
+
+    Issue #1751: search-leg আর বট-হোস্টাইল DDG-HTML এন্ডপয়েন্ট হাতে-স্ক্র্যাপ করে
+    না (লাইভ প্রোব: HTTP 202 anti-bot interstitial — স্ক্র্যাপিং ভরসা ছিল ভাগ্যের
+    উপর, চুক্তির উপর নয়)। governed crawler থাকছে যেখানে সেটিই সঠিক হাতিয়ার —
+    *পেজ আনা*; search-ফলাফল আবিষ্কার SSOT দিয়েই হবে।
     """
     results: list[dict[str, str]] = []
     try:
-        from urllib.parse import quote_plus
-
-        from scout.crawler import CrawlerService
-        from scout.models import CrawlRequest
-        from scout.persistence import get_active_policy, record_crawl_response
+        from scout.persistence import get_active_policy
 
         tenant_id = str(tenant_id).strip()
         if not tenant_id:
             return []
         policy = await get_active_policy(tenant_id)
         if policy is None:
-            # বাংলা: Policy Before Power — সক্রিয় policy না থাকলে scout কিছুই crawl করে না।
+            # বাংলা: Policy Before Power — সক্রিয় policy না থাকলে scout কিছুই করে না।
             return []
 
-        service = CrawlerService(policy=policy)
-        search_url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
-        resp = await service.execute_crawl(
-            CrawlRequest(
-                query_or_url=search_url,
-                tenant_id=tenant_id,
-                max_depth=1,
-                max_results=min(policy.max_results, 8),
-            )
-        )
-        await record_crawl_response(resp)
+        # Issue #1751: search results come from the core.search SSOT (ddgs
+        # client + env-keyed provider fallback). web_search is sync and
+        # network-bound — run it off the event loop. The governed crawler
+        # remains the right tool for fetching pages, not for discovering
+        # search results (the raw DDG-HTML scrape served HTTP 202 anti-bot
+        # interstitials — zero parseable results in the wild).
+        from core.search import web_search
 
-        for page in resp.pages:
-            if page.is_duplicate or not page.url:
+        max_results = min(policy.max_results, 8)
+        raw = await asyncio.to_thread(web_search, query, max_results)
+        for r in raw:
+            url = r.get("href") or r.get("url") or ""
+            if not url:
                 continue
-            snippet = " ".join((page.content or "").split())[:280]
+            snippet = " ".join((r.get("body") or "").split())[:280]
             results.append(
                 {
-                    "title": page.title or page.url,
-                    "url": page.url,
+                    "title": r.get("title") or url,
+                    "url": url,
                     "snippet": snippet,
                     "source": "scout",
                 }
@@ -246,11 +245,11 @@ async def _scout_search(query: str, tenant_id: str) -> list[dict[str, str]]:
 
 
 async def _web_search(query: str, user_id: str = "") -> list[dict[str, str]]:
-    """Scout-first web search with browser-agent fallback.
+    """Policy-gated scout search with honest empty fallback.
 
-    বাংলা: Phase 1 — governed scout crawl (tenant policy মেনে) প্রথম প্রচেষ্টা;
-    সেটি ফাঁকা হলে পুরোনো autonomous-browser path (LLM-চালিত) fallback হিসেবে
-    চলে। ফলাফল: [{title, url, snippet}]।
+    বাংলা: Phase 1 — CrawlPolicy-gated scout search (এখন core.search SSOT-এ,
+    issue #1751) প্রথম প্রচেষ্টা; সেটি ফাঁকা হলে সৎ zero-sources-ই ফলাফল।
+    ফলাফল: [{title, url, snippet}]।
     """
     results: list[dict[str, str]] = []
     try:
