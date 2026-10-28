@@ -44,10 +44,11 @@ def test_roster_wiring():
 
 def test_verdict_model_pins():
     mod = _load_watchdog_module()
-    # The five verdict classes are the model's SSOT — renaming one is a
+    # The six verdict classes are the model's SSOT — renaming one is a
     # contract break for every consumer of the report table.
     src = WATCHDOG.read_text(encoding="utf-8")
-    for verdict in ("MERGED_ON_MAIN", "OPEN_PR", "IN_GATES", "LANDING_AT_RISK", "NO_SLUG"):
+    for verdict in ("MERGED_ON_MAIN", "OPEN_PR", "IN_GATES", "LANDING_AT_RISK",
+                    "SATELLITE_TARGET", "NO_SLUG"):
         assert verdict in src, f"verdict class missing: {verdict}"
     # Slug grammar: (bridge-YYYYMMDD-slug), lowercase alnum + dashes, must start
     # alnum — the full token is the join key, so the regex must be token-shaped.
@@ -61,6 +62,15 @@ def test_verdict_model_pins():
     assert base not in mod.extract_slugs(f"x (bridge-20261028-alpha-lane-r2) y")
     # Threshold default: 2h (fresh-evidence window vs CI-Guardian latency).
     assert mod.DEFAULT_AT_RISK_HOURS == 2.0
+    # Satellite model (#1916 live false positive): the open repo constant and
+    # the standard WO-template Target Repo extraction.
+    assert mod.OPEN_REPO == "Supremeai-bd/supremeai-open"
+    assert mod.parse_target_repo(
+        "### Target Repo\nSupremeai-bd/supremeai-browser\n") == "Supremeai-bd/supremeai-browser"
+    assert mod.parse_target_repo("### Target Repo\nSupremeai-bd/supremeai-open\n") == mod.OPEN_REPO
+    assert mod.parse_target_repo("no section") is None  # fail-closed default
+    assert mod.parse_target_repo(None) is None
+    assert mod.parse_target_repo("") is None
 
 
 def test_classify_pure_matrix():
@@ -110,6 +120,73 @@ def test_classify_pure_matrix():
     v = mod.classify({"number": 10, "title": f"x {slug} y", "createdAt": edge},
                      [], [], now, at_risk_hours=2.0)
     assert v["verdict"] == "LANDING_AT_RISK", v
+
+
+def test_satellite_target_matrix():
+    """#1916 class: satellite-targeted WOs can never match the open-repo
+    history/PR planes, so age-based LANDING_AT_RISK would flag them forever.
+    The target_repo hint short-circuits that false positive — informationally,
+    never strict-flagged, and a matched slug still wins over the hint."""
+    mod = _load_watchdog_module()
+    now = 1793160000.0
+    slug = "(bridge-20261028-alpha-lane)"
+    sat = "Supremeai-bd/supremeai-browser"
+    old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 4 * 3600))
+    fresh = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 20 * 60))
+
+    # Old unmatched satellite WO -> SATELLITE_TARGET (not LANDING_AT_RISK).
+    v = mod.classify({"number": 20, "title": f"sat {slug}", "createdAt": old},
+                     [], [], now, target_repo=sat)
+    assert v["verdict"] == "SATELLITE_TARGET", v
+    assert sat in v["evidence"]
+    # Age-independent: a young satellite WO is also SATELLITE_TARGET (the planes
+    # can NEVER match it — IN_GATES would imply a future match is possible).
+    v = mod.classify({"number": 21, "title": f"sat {slug}", "createdAt": fresh},
+                     [], [], now, target_repo=sat)
+    assert v["verdict"] == "SATELLITE_TARGET", v
+    # A matched slug still wins over the satellite hint.
+    v = mod.classify({"number": 22, "title": f"sat landed {slug}", "createdAt": old},
+                     [f"feat: sat (bridge-20261028-alpha-lane) (#1906)"], [], now,
+                     target_repo=sat)
+    assert v["verdict"] == "MERGED_ON_MAIN", v
+    # Explicit open-repo target keeps the standard risk model.
+    v = mod.classify({"number": 23, "title": f"open {slug}", "createdAt": old},
+                     [], [], now, target_repo=mod.OPEN_REPO)
+    assert v["verdict"] == "LANDING_AT_RISK", v
+    # No hint (body unparseable) keeps the standard risk model (fail-closed).
+    v = mod.classify({"number": 24, "title": f"open {slug}", "createdAt": old},
+                     [], [], now, target_repo=None)
+    assert v["verdict"] == "LANDING_AT_RISK", v
+
+
+def test_refine_satellites_injectable():
+    mod = _load_watchdog_module()
+    sat_body = "### Target Repo\nSupremeai-bd/supremeai-browser\n"
+    open_body = "### Target Repo\nSupremeai-bd/supremeai-open\n"
+    risk = {"number": 30, "verdict": "LANDING_AT_RISK",
+            "slug": "(bridge-20261028-sat-lane)", "age_hours": 3.0}
+    # Satellite body -> downgraded to SATELLITE_TARGET, age preserved for the report.
+    vs = mod.refine_satellites([dict(risk)], fetch_body=lambda n: sat_body)
+    assert vs[0]["verdict"] == "SATELLITE_TARGET" and vs[0]["age_hours"] == 3.0, vs[0]
+    # Open-repo body -> risk flag kept.
+    vs = mod.refine_satellites([dict(risk)], fetch_body=lambda n: open_body)
+    assert vs[0]["verdict"] == "LANDING_AT_RISK", vs[0]
+    # Body-absent (None) -> risk flag kept (fail-closed).
+    vs = mod.refine_satellites([dict(risk)], fetch_body=lambda n: None)
+    assert vs[0]["verdict"] == "LANDING_AT_RISK", vs[0]
+    # Raising fetcher -> risk flag kept, never a crash (defense in depth).
+    def boom(n):
+        raise RuntimeError("tower down")
+    vs = mod.refine_satellites([dict(risk)], fetch_body=boom)
+    assert vs[0]["verdict"] == "LANDING_AT_RISK", vs[0]
+    # Non-at-risk verdicts are never probed (probe counter stays zero).
+    probed = []
+    def spy(n):
+        probed.append(n)
+        return sat_body
+    vs = mod.refine_satellites([{"number": 31, "verdict": "IN_GATES", "slug": "(bridge-20261028-x)",
+                                 "age_hours": 0.1}], fetch_body=spy)
+    assert probed == [] and vs[0]["verdict"] == "IN_GATES"
 
 
 def test_run_verdicts_label_ssot():
