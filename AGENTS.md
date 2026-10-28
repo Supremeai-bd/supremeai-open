@@ -17,14 +17,14 @@ All agents live, enter, and execute through exactly two unified pillars:
    Run `python scripts/agents/continuous_agent_loop.py`. The loop self-dispatches:  
    - Inspects board for unclaimed issues -> dispatches `solver`.  
    - Checks role cadence timers -> dispatches scheduled routine role.  
-   - Directly injects the 4 Universal Invariants and role mandate into execution.
+   - Directly injects the 5 Universal Invariants and role mandate into execution.
 
 ---
 
-## 📜 The 4 Universal Invariants (Must Follow vs Must Avoid)
+## 📜 The 5 Universal Invariants (Must Follow vs Must Avoid)
 
 - **MUST FOLLOW:**
-  1. **Dual-Rebase:** Rebase `origin/main` at work-start AND pre-push (0 behind). Strictly 8 Anchor Hubs (#749–#762); all work attaches as Sub-Issues.
+  1. **Dual-Rebase:** Rebase `origin/main` at work-start AND pre-push (0 behind). Strictly 14 Anchor Hubs (#749–#762: 12 domain + 2 federation desks); all work attaches as Sub-Issues.
   2. **Boundary:** Satellite code lives strictly in its approved domain mirror (`studio/*`, `gateway/*`, `core/*`, `browser/*`, `vscode/*`).
   3. **Superior Replacement:** Discard broken legacy code/tests rather than hacking new code to appease past mistakes. Work must tangibly benefit Machine, Admin, or User.
   4. **Verification & PR Blueprint:** 3-Tier Verify (Reflection -> Smoke -> Tests). PRs must carry `Closes #N` and `## Reflection Evidence (why + alternatives_rejected)`.

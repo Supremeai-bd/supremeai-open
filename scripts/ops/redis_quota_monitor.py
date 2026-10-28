@@ -45,12 +45,27 @@ import tempfile
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
+from pathlib import Path
 
 DEFAULT_TOWER_URL = "https://supremeai-mcp-tower.onrender.com/mcp"
 DEFAULT_WARN_PCT = 80.0
 DEFAULT_CRIT_PCT = 95.0
 
 STATE_ENV = "REDIS_QUOTA_STATE_FILE"
+
+# Persistent default state location (#1839). The old default lived in
+# tempfile.gettempdir(), which evaporates on every restart: the [BURN]
+# projection can never accumulate the two-run history it needs and the
+# (account, tier, window) alert dedup resets forever — the 2026-10-27
+# quota-wall scenario then recurs silently by construction. Home-relative
+# dir survives on any host with a persistent home; the scheduled workflow
+# additionally caches this dir across runner VMs (see the #1839 runbook).
+DEFAULT_STATE_DIR = Path.home() / ".supremeai"
+
+
+def default_state_path() -> Path:
+    """Default state file path, overridable via REDIS_QUOTA_STATE_FILE."""
+    return DEFAULT_STATE_DIR / "redis_quota_alert_state.json"
 
 # D1 burn projection: ignore snapshot deltas closer than this (noisy micro-windows).
 BURN_MIN_DT_SECONDS = 600
@@ -303,6 +318,9 @@ def load_state(path):
 
 def save_state(path, state):
     try:
+        parent = os.path.dirname(os.path.abspath(str(path)))
+        if parent:
+            os.makedirs(parent, exist_ok=True)  # #1839: ~/.supremeai may not exist yet
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(state, fh)
         return True
@@ -468,6 +486,15 @@ def run_self_test():
     check("state roundtrip", load_state(tmp) == state)
     os.unlink(tmp)
 
+    # #1839: persistent default state contract
+    dsp = default_state_path()
+    check("state default outside tmp (#1839)", str(dsp).startswith(str(Path.home())) and dsp.name == "redis_quota_alert_state.json")
+    nested = os.path.join(tempfile.gettempdir(), "rqm_nested_dir_a", "rqm_nested_dir_b", "state.json")
+    check("save_state creates parent dirs (#1839)", save_state(nested, state) and load_state(nested) == state)
+    os.unlink(nested)
+    os.rmdir(os.path.dirname(nested))
+    os.rmdir(os.path.dirname(os.path.dirname(nested)))
+
     # message composition
     msg = compose_message(alerts, active_primary="secondary", next_reset="2026-11-01T00:00:00Z")
     check("message mentions label", "primary" in msg and "secondary" in msg)
@@ -554,7 +581,7 @@ def main(argv=None):
     parser.add_argument("--crit-pct", type=float, default=float(os.environ.get("REDIS_QUOTA_CRIT_PCT", DEFAULT_CRIT_PCT)))
     parser.add_argument(
         "--state-file",
-        default=os.environ.get(STATE_ENV, os.path.join(tempfile.gettempdir(), "redis_quota_alert_state.json")),
+        default=os.environ.get(STATE_ENV, str(default_state_path())),
     )
     args = parser.parse_args(argv)
 

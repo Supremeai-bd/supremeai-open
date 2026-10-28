@@ -1,8 +1,2 @@
-from fastapi import APIRouter
-
-router = APIRouter(prefix="/ws/command-center", tags=["Command Center WS"])
-
-
-@router.get("/health")
-async def ws_health():
-    return {"status": "ok"}
+"""Canonical re-export from core.ws.command_center (SSOT #751)."""
+from core.ws.command_center import *  # noqa: F401, F403
