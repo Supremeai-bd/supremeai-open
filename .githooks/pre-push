@@ -527,6 +527,47 @@ for line in $updates; do
         fi
     fi
 
+    # 15. DOCS LINK INTEGRITY GUARD (#1938).
+    # Markdown internal-link integrity ratchet over every tracked .md surface.
+    # Engages ONLY when the push touches .md files; sweeps the surviving
+    # changed files (links OUT of them) against the shrink-only baseline
+    # scripts/ci/docs_link_integrity_baseline.json. NEW or GROWN ratcheted
+    # (file, target, reason) findings fail-close the push (writable lanes);
+    # vendored .agents/skills findings are report-only (routed to the #1725
+    # lane, never asserted by agents); AGENT_RULES.md ghost citations are
+    # excluded debt owned by constitution_pointer_guard (#1642->#1708).
+    # Deleted files are skipped with evidence; the roster full-sweep owns
+    # stranded targets. Fully offline stdlib; no external-URL checking.
+    # Self-contained under `set -u`. Wired additively after the two CVE
+    # guards (js_dep #1913, py_dep #1969) — neither CVE plane is touched.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/docs_link_integrity_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            links_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            links_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        links_md_files=$(printf '%s\n' "$links_changed" | grep -E '\.md$' || true)
+        if [ -n "$links_md_files" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/docs_link_integrity_guard.py --files $links_md_files; then
+                    reject "DOCS LINK INTEGRITY GUARD (#1938) FAILED" \
+                        "The push introduces NEW or GROWN broken internal markdown links in writable lanes." \
+                        "Fix the finding (see the [docs-link-integrity-guard] evidence lines above) — the baseline may never grow." \
+                        "Vendored .agents/skills findings are report-only and route to the #1725 lane." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"
