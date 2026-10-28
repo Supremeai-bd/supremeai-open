@@ -94,6 +94,42 @@ class TestDedupStateMachine(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    # ── #1839: persistent default state contract ─────────────────────────────
+
+    def test_default_state_path_is_persistent_not_tmp(self):
+        """The /tmp default starved [BURN] history; default must be home-relative (#1839)."""
+        p = rqm.default_state_path()
+        self.assertEqual(p.name, "redis_quota_alert_state.json")
+        self.assertTrue(str(p).startswith(str(rqm.Path.home())))
+        self.assertNotIn(str(rqm.tempfile.gettempdir()), str(p))
+
+    def test_env_override_wins_over_default(self):
+        """REDIS_QUOTA_STATE_FILE must keep precedence over the new home default (#1839)."""
+        import os as _os
+        from unittest import mock
+
+        with mock.patch.dict("os.environ", {"REDIS_QUOTA_STATE_FILE": "/x/y/state.json"}):
+            self.assertEqual(
+                _os.environ.get(rqm.STATE_ENV, str(rqm.default_state_path())),
+                "/x/y/state.json",
+            )
+
+    def test_save_state_creates_missing_parent_dirs(self):
+        """~/.supremeai may not exist on a fresh host; save_state must not fail silently (#1839)."""
+        import os
+        import tempfile
+
+        base = tempfile.mkdtemp()
+        nested = os.path.join(base, "lv1", "lv2", "state.json")
+        try:
+            self.assertFalse(os.path.isdir(os.path.dirname(nested)))
+            self.assertTrue(rqm.save_state(nested, {"k": 1}))
+            self.assertEqual(rqm.load_state(nested), {"k": 1})
+        finally:
+            import shutil
+
+            shutil.rmtree(base, ignore_errors=True)
+
 
 class TestMessageComposition(unittest.TestCase):
     def test_message_contains_facts(self):

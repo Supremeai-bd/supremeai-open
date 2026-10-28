@@ -217,6 +217,7 @@ task envelopes use the [Agent Task template](../.github/ISSUE_TEMPLATE/agent-tas
 | Heartbeat slot rejected | Slot must match `agent-<N>` (or other registered prefixes) | Use `agent-1`, `agent-2`, … — the validator is stricter than the docs |
 | `bridge_work_queue` 403 with rate-limit text | Tower egress IP throttled by GitHub | Transient — retry shortly; the queue itself needs no credentials |
 | Loop crashes on missing tooling | Should not happen since the graceful-degradation fix | Update to latest `main`; if it still crashes, that is a bug — file it with the traceback |
+| `Secret Scanning` red on a docs-only PR quoting commit SHAs | Org rule supremeai-cloudflare-api-token matches any 40-char word and the cloudflare-global-key rule matches 37+ hex, once a cloudflare-related keyword appears anywhere in the file; commit-pinned `.gitleaksignore` entries die on re-submission | Quote SHAs at 12 hex or shorter in docs (rebase-proof; see the #1811 triage WO); for genuine mock fixtures add fresh `.gitleaksignore` entries keyed to the current commit and expect to renew them after rebases |
 
 ## 12. Question, don't guess
 

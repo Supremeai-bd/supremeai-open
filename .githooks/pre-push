@@ -362,7 +362,42 @@ for line in $updates; do
         fi
     fi
 
-    # 11. BANDIT SAST GUARD (#1809).
+    # 11. CONTRACT CODEGEN GUARD (#1846).
+    # Contract -> generated-consumer viability gate for the stable external
+    # contract (api-schemas/gateway.openapi.yaml). Engages ONLY when the push
+    # touches the contract or its generated surface (api-schemas/generated/).
+    # Regenerates the committed artifact with the pinned datamodel-codegen in
+    # a tempdir and byte-compares (CRLF-normalized): any drift = the contract
+    # changed without regenerating its consumer surface. Honest skip when the
+    # pinned binary is absent or the installed version differs from the pin.
+    # Self-contained under `set -u`; never touches the YAML or the artifact.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/contract_codegen_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            codegen_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            codegen_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        if printf '%s\n' "$codegen_changed" | grep -qE '(^api-schemas/gateway\.openapi\.yaml$|^api-schemas/generated/)'; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/contract_codegen_guard.py --check; then
+                    reject "CONTRACT CODEGEN GUARD (#1846) FAILED" \
+                        "The push drifts the contract from its committed consumer artifact (api-schemas/generated/gateway_models.py)." \
+                        "Regenerate the artifact with the pinned generator and commit it (never hand-edit)." \
+                        "Evidence lines carry the [contract-codegen-guard] tag. Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+    # 12. BANDIT SAST GUARD (#1809).
     # Python source static-security ratchet over the non-test surface
     # (core scripts gateway browser skills examples infrastructure evals).
     # Engages ONLY when the push touches .py files inside the scan targets.
