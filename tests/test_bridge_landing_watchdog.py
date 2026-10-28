@@ -361,6 +361,86 @@ def test_fetch_work_orders_network_failure_fail_close():
     assert calls == [{"limit": 200}], calls
 
 
+def test_fetch_rejected_rows_paginates_short_page_stop():
+    """#2158: rejected rows the queue omits are enumerated straight from
+    GitHub via the S05 SSOT (short-page-stop, number-dedupe merge)."""
+    mod = _load_watchdog_module()
+    urls = []
+    page1 = [{"number": 1000 + i, "title": f"w{i}", "state": "open",
+              "labels": ["bridge:rejected"]} for i in range(100)]
+    page2 = [{"number": 7, "title": "x (bridge-20261028-y)", "state": "open",
+              "labels": [{"name": "bridge:rejected"}]},
+             {"number": 7, "title": "dup", "state": "open",
+              "labels": ["bridge:rejected"]}]
+
+    def fake(url):
+        urls.append(url)
+        assert "labels=bridge%3Arejected" in url, url
+        return {1: page1, 2: page2}[int(url.rsplit("page=", 1)[1].split("&")[0])]
+
+    rows = mod._fetch_rejected_rows(fetch_json=fake)
+    assert len(rows) == 101, len(rows)
+    assert rows[-1]["number"] == 7 and rows[-1]["labels"] == ["bridge:rejected"]
+    assert len(urls) == 2 and "page=1" in urls[0] and "page=2" in urls[1]
+
+
+def test_fetch_rejected_rows_rejects_non_list():
+    """A non-list GitHub payload is a loud per-plane error, never a silent
+    empty enumeration (honesty contract: unknown != zero)."""
+    mod = _load_watchdog_module()
+    try:
+        mod._fetch_rejected_rows(fetch_json=lambda u: {"message": "nope"})
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("non-list payload must raise TypeError")
+
+
+def test_join_rejected_plane_queue_rows_win_on_collision():
+    """The queue stays the board SSOT for queued work; only queue-omitted
+    rejected rows join — no double classification on label races."""
+    mod = _load_watchdog_module()
+    queue_rows = [{"number": 5, "title": "queued-row", "labels": ["bridge:queued"]}]
+    rejected = [{"number": 5, "title": "rejected-row", "labels": ["bridge:rejected"]},
+                {"number": 9, "title": "only-rejected", "labels": ["bridge:rejected"]}]
+    joined, n = mod._join_rejected_plane(queue_rows, rejected)
+    assert n == 1 and joined[0]["title"] == "queued-row" and joined[1]["number"] == 9
+
+
+def test_load_rejected_plane_fail_open():
+    """An unreachable GitHub plane degrades the rejected plane only: honest
+    'unreachable' note, empty rows — the queue plane stays authoritative."""
+    mod = _load_watchdog_module()
+
+    def boom():
+        raise ConnectionError("down")
+
+    rows, note = mod._load_rejected_plane(fetch_rows=boom)
+    assert rows == [] and "unreachable" in note and "ConnectionError" in note
+
+
+def test_load_rejected_plane_403_discloses_rate_limit():
+    """A 403 is transient (per-IP unauthenticated budget, resets hourly) and
+    must be reported by cause — not folded into a generic outage note."""
+    import urllib.error
+
+    mod = _load_watchdog_module()
+
+    def ratelimited():
+        raise urllib.error.HTTPError("https://api.github.com/x", 403,
+                                     "rate limit exceeded", None, None)
+
+    rows, note = mod._load_rejected_plane(fetch_rows=ratelimited)
+    assert rows == [] and "rate limit" in note and "resets hourly" in note
+
+    def server_error():
+        raise urllib.error.HTTPError("https://api.github.com/x", 500,
+                                     "boom", None, None)
+
+    rows, note = mod._load_rejected_plane(fetch_rows=server_error)
+    assert rows == [] and "HTTP 500" in note
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):
