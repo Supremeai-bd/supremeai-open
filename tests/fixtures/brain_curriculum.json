@@ -1,0 +1,80 @@
+{
+  "version": "supremeai-brain-curriculum-fixture",
+  "phases": [
+    {
+      "phase": 1,
+      "title": "Core intents",
+      "skills": [
+        {
+          "skill": "greeting",
+          "examples": [
+            {
+              "input": "assalamu alaikum",
+              "normalized": "assalamu alaikum",
+              "intent": "greeting",
+              "confidence": 0.95,
+              "urgency": "low",
+              "needs_clarification": false
+            },
+            {
+              "input": "kemon achen bhai",
+              "normalized": "kemon achen bhai",
+              "intent": "greeting",
+              "confidence": 0.9,
+              "urgency": "low",
+              "needs_clarification": false
+            }
+          ]
+        },
+        {
+          "skill": "request_status",
+          "examples": [
+            {
+              "input": "amar order kothay",
+              "normalized": "amar order kothay",
+              "intent": "order_status",
+              "confidence": 0.85,
+              "urgency": "medium",
+              "needs_clarification": false
+            },
+            {
+              "input": "delivery kobe pabo",
+              "normalized": "delivery kobe pabo",
+              "intent": "delivery_estimate",
+              "confidence": 0.8,
+              "urgency": "medium",
+              "needs_clarification": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": 2,
+      "title": "Support intents",
+      "skills": [
+        {
+          "skill": "refund",
+          "examples": [
+            {
+              "input": "taka ferot chai",
+              "normalized": "taka ferot chai",
+              "intent": "refund",
+              "confidence": 0.9,
+              "urgency": "high",
+              "needs_clarification": false
+            },
+            {
+              "input": "product ta noshto",
+              "normalized": "product ta noshto",
+              "intent": "damaged_product",
+              "confidence": 0.88,
+              "urgency": "high",
+              "needs_clarification": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
