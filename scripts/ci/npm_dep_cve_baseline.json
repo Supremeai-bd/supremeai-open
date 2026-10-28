@@ -1,21 +1,24 @@
 {
   "meta": {
-    "issue": 2059,
+    "issue": 2075,
     "tool": "osv-querybatch (api.osv.dev/v1/querybatch, zero-credential)",
     "lockfiles": [
       "infrastructure/mcp-control-plane/package-lock.json",
-      ".agents/skills/devtools-audit/package-lock.json"
+      ".agents/skills/devtools-audit/package-lock.json",
+      "browser/cloudflare-worker/package-lock.json",
+      "vscode/package-lock.json",
+      "vscode/extension/package-lock.json"
     ],
     "ecosystem": "npm",
     "dev_entries_skipped": true,
-    "head": "bab42ec 2026-10-28",
+    "head": "09a007c 2026-10-28",
     "dated": "2026-10-28",
     "totals": {
-      "pairs_scanned": 122,
-      "skipped_dev": 52,
-      "skipped_non_registry": 2,
-      "vulnerable_pairs": 8,
-      "vuln_ids": 19
+      "pairs_scanned": 219,
+      "skipped_dev": 279,
+      "skipped_non_registry": 11,
+      "vulnerable_pairs": 12,
+      "vuln_ids": 28
     },
     "per_lock": {
       "infrastructure/mcp-control-plane/package-lock.json": {
@@ -25,11 +28,40 @@
       ".agents/skills/devtools-audit/package-lock.json": {
         "pairs_scanned": 21,
         "vulnerable_pairs": 0
+      },
+      "browser/cloudflare-worker/package-lock.json": {
+        "pairs_scanned": 87,
+        "vulnerable_pairs": 4
+      },
+      "vscode/package-lock.json": {
+        "pairs_scanned": 10,
+        "vulnerable_pairs": 0
+      },
+      "vscode/extension/package-lock.json": {
+        "pairs_scanned": 0,
+        "vulnerable_pairs": 0
       }
     },
-    "doctrine": "shrink-only ratchet: entries and ids may only be REMOVED (in the same change that resolves them \u2014 a maintainer pin bump or an upstream fix absorbed by a floor reset). A new pair or a new advisory id is drift; the baseline may never grow. Seeded floor is the LIVE 2026-10-28 audit result (the #2033 lesson), not an assumed-empty one."
+    "doctrine": "shrink-only ratchet: entries and ids may only be REMOVED (in the same change that resolves them — a maintainer pin bump or an upstream fix absorbed by a floor reset). A new pair or a new advisory id is drift; the baseline may never grow ON A FIXED SURFACE. Seeded floor is the LIVE 2026-10-28 audit result (the #2033 lesson), not an assumed-empty one. R46 widening (#2075): the browser/cloudflare-worker + vscode + vscode/extension lockfiles joined the roster the same day; their 9 advisory ids on 4 pairs are seeded floor from an independent same-day live querybatch at head 09a007c (reproducing the scout's numbers exactly) — surface growth, not floor growth: every pre-existing R45 entry is byte-identical."
   },
   "findings": {
+    "browser/cloudflare-worker/package-lock.json:basic-ftp@5.3.1": [
+      "GHSA-c475-qrg2-pj4r"
+    ],
+    "browser/cloudflare-worker/package-lock.json:extract-zip@2.0.1": [
+      "GHSA-7pqw-9j4j-h8q3",
+      "GHSA-jmr9-qjv8-65gv"
+    ],
+    "browser/cloudflare-worker/package-lock.json:tar-fs@3.0.4": [
+      "GHSA-8cj5-5rvv-wf4v",
+      "GHSA-pq67-2wwv-3xjx",
+      "GHSA-vj76-c3g6-qr5v"
+    ],
+    "browser/cloudflare-worker/package-lock.json:ws@8.13.0": [
+      "GHSA-3h5v-q93c-6h6q",
+      "GHSA-58qx-3vcg-4xpx",
+      "GHSA-96hv-2xvq-fx4p"
+    ],
     "infrastructure/mcp-control-plane/package-lock.json:@modelcontextprotocol/sdk@1.30.0": [
       "GHSA-22jm-h49p-29qw",
       "GHSA-46jr-4wx8-v453",
