@@ -527,6 +527,53 @@ for line in $updates; do
         fi
     fi
 
+    # 14b. NPM-DEP CVE GUARD (#2059).
+    # npm dependency vulnerability ratchet over the two Tower buildCommand
+    # lockfiles (infrastructure/mcp-control-plane/package-lock.json via
+    # `npm install`, .agents/skills/devtools-audit/package-lock.json via
+    # `npm ci --prefix`), the control plane every agent loop and bridge
+    # handshake runs through. Letter-suffixed section number: the numeric
+    # sections are load-bearing cross-references in landed commit messages
+    # (e.g. #2044 cites section 15) — renumbering would break that trail.
+    # Engages ONLY when the push touches the npm dependency surface (the
+    # two package-lock paths or the Tower render.yaml, whose buildCommand
+    # supply-chain claims live here). Shrink-only baseline
+    # (scripts/ci/npm_dep_cve_baseline.json, seeded from the LIVE
+    # 2026-10-28 OSV audit — 8 production pairs / 19 advisory ids incl.
+    # @modelcontextprotocol/sdk 1.30.0): a NEW advisory pair or a NEW
+    # advisory id fail-closes the push; resolved ids route to
+    # baseline-shrink hints. Dev-only lock entries are outside the deploy
+    # surface (skipped). Skips-with-evidence when the OSV API
+    # (api.osv.dev, zero-credential SSOT) is unreachable (honest
+    # degradation, #1760 pattern). Self-contained under `set -u`.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/npm_dep_cve_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            npmdep_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            npmdep_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        npmdep_surface=$(printf '%s\n' "$npmdep_changed" | grep -E '^(infrastructure/mcp-control-plane/(package-lock\.json|render\.yaml)|\.agents/skills/devtools-audit/package-lock\.json)$' || true)
+        if [ -n "$npmdep_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/npm_dep_cve_guard.py --files $npmdep_surface; then
+                    reject "NPM-DEP CVE GUARD (#2059) FAILED" \
+                        "The push introduces NEW npm dependency advisories on the Tower control plane." \
+                        "Resolve it (pin bumps are maintainer decisions on the owning lockfile) or re-floor the baseline deliberately — the baseline may never grow." \
+                        "See the [npm-dep-cve-guard] evidence lines above; OSV-unreachable runs skip with evidence." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
     # 15. DOCS LINK INTEGRITY GUARD (#1938).
     # Markdown internal-link integrity ratchet over every tracked .md surface.
     # Engages ONLY when the push touches .md files; sweeps the surviving
