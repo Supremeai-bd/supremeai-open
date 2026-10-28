@@ -6,6 +6,7 @@ import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
 import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
+import { isWorkOrderForTaskId, taskIdSearchQuery } from "../lib/bridge_dedup.js";
 import { RequestContextStore } from "../policy/auth.context.js";
 
 export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
@@ -1079,14 +1080,23 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
 
       try {
         // Step 0: Ingress Idempotency Check (Zero-Duplicate Invariant, #155, #1692)
-        // If an open work order or branch already exists for this taskId, return idempotent success
+        // If an open work order already exists for this taskId, return idempotent success
         // without generating duplicate issues or competing PRs across asynchronous agents.
-        const searchRes = await httpRequest<{ items?: Array<{ number: number; html_url: string; title: string }> }>(
-          `https://api.github.com/search/issues?q=repo:${repo}+is:issue+is:open+${encodeURIComponent(taskId)}+in:title`,
+        // #2136: GitHub issue search ANDs hyphen-split tokens, so an unquoted taskId
+        // matched unrelated open WOs whose titles share vocabulary (live false positive:
+        // novel `bridge-20261028-radar-index-freshness-r2` resolved to WO #2094), and
+        // even quoted-phrase search surfaces issues that merely QUOTE a taskId in prose.
+        // The query is therefore a quoted phrase over title+body, and every hit must
+        // still verify as a work order FOR exactly this taskId (title tail `(taskId)`
+        // or body `### Task ID` field equality) before the idempotent-noop fires.
+        const searchRes = await httpRequest<{ items?: Array<{ number: number; html_url: string; title: string; body?: string }> }>(
+          `https://api.github.com/search/issues?q=${taskIdSearchQuery(repo, taskId)}`,
           { headers, timeoutMs: 10_000 }
         );
-        if (searchRes.ok && searchRes.data?.items && searchRes.data.items.length > 0) {
-          const existing = searchRes.data.items[0];
+        const existing = searchRes.ok
+          ? (searchRes.data?.items ?? []).find((it) => isWorkOrderForTaskId(it.title ?? "", it.body, taskId))
+          : undefined;
+        if (existing) {
           return {
             content: [{
               type: "text",
