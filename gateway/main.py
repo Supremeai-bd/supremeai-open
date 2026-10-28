@@ -57,6 +57,9 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - script-mode fal
     )
 
 GATEWAY_VERSION = "1.0.0"
+SUPREME_COMMIT_SHA = __import__("os").getenv("SUPREME_COMMIT_SHA", "unknown")
+SUPREME_BUILD_TIME = __import__("os").getenv("SUPREME_BUILD_TIME", "unknown")
+SUPREME_VERSION = GATEWAY_VERSION
 
 try:
     from .sanitization import *  # noqa: F401,F403
@@ -435,6 +438,18 @@ def create_app(
             "x-supremeai-key",
         ],
     )
+
+    @app.middleware("http")
+    async def supreme_build_metadata(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Supreme-Commit-Sha"] = __import__("os").getenv(
+            "SUPREME_COMMIT_SHA", "unknown"
+        )
+        response.headers["X-Supreme-Build-Time"] = __import__("os").getenv(
+            "SUPREME_BUILD_TIME", "unknown"
+        )
+        response.headers["X-Supreme-Version"] = GATEWAY_VERSION
+        return response
 
     # ---- Native Admin Auth Endpoints (Zero-Firebase) ----
     try:
