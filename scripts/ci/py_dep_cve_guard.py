@@ -93,7 +93,7 @@ import json
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 — the guard runs pip-audit and git via list-argv only (#2081 audit)
 import sys
 import tempfile
 from pathlib import Path
@@ -199,7 +199,7 @@ def audit_manifest(manifest: Path) -> dict[str, list[str]]:
     stdout; anything else raises RuntimeError with the stderr tail — the
     honest-skip decision lives in evaluate().
     """
-    proc = subprocess.run(
+    proc = subprocess.run(  # nosec B603 — list-argv, no shell, pinned PIP_AUDIT_BIN invocation (#2081 audit)
         [PIP_AUDIT_BIN, "--progress-spinner", "off", "-r", str(manifest),
          "--format", "json"],
         capture_output=True, text=True, timeout=PIP_AUDIT_TIMEOUT, check=False,
@@ -634,9 +634,10 @@ def self_test() -> bool:
         "fixes": [],
     }
     found = g.parse_pip_audit_json(doc)
-    assert found == {
+    if not (found == {
         "pytest@8.4.2": ["CVE-2025-71176", "GHSA-6w46-j5rx-g56g", "PYSEC-2026-1845"]
-    }, found
+    }):
+        raise AssertionError(found)
     print("  PASS | parser: alias union folded, duplicate advisories deduped")
     try:
         g.parse_pip_audit_json({"dependencies": [{"name": "x"}]})
@@ -647,13 +648,17 @@ def self_test() -> bool:
     # 2. Ratchet compare: equal/new-pair/new-id/shrunk/disappeared.
     baseline = {"m:a@1.0.0": ["PYSEC-1"], "m:b@2.0.0": ["PYSEC-2", "PYSEC-3"]}
     drift, improvements = g.compare(dict(baseline), baseline)
-    assert not drift and not improvements
+    if not (not drift and not improvements):
+        raise AssertionError()
     drift, _ = g.compare({"m:c@3.0.0": ["PYSEC-9"]}, baseline)
-    assert drift and drift[0]["kind"] == "new-pair"
+    if not (drift and drift[0]["kind"] == "new-pair"):
+        raise AssertionError()
     drift, _ = g.compare({"m:a@1.0.0": ["PYSEC-1", "PYSEC-new"]}, baseline)
-    assert drift and drift[0]["kind"] == "new-id" and drift[0]["ids"] == ["PYSEC-new"]
+    if not (drift and drift[0]["kind"] == "new-id" and drift[0]["ids"] == ["PYSEC-new"]):
+        raise AssertionError()
     _, improvements = g.compare({"m:a@1.0.0": ["PYSEC-1"]}, baseline)
-    assert improvements and improvements[0]["pair"] == "m:b@2.0.0"
+    if not (improvements and improvements[0]["pair"] == "m:b@2.0.0"):
+        raise AssertionError()
     print("  PASS | ratchet: equal/new-pair/new-id/shrunk/disappeared semantics")
     # 3. Decision tree on a sandbox repo: drift exit 1, honest skip when
     #    pip-audit is missing or failing, unreadable manifest fail-closed.
@@ -701,16 +706,19 @@ def self_test() -> bool:
                 "fastapi@0.162.0": ["PYSEC-fresh"],
             }
             code, drift, _imp, _notes = g.evaluate(root)
-            assert code == EXIT_DRIFT and drift[0]["pair"] == (
+            if not (code == EXIT_DRIFT and drift[0]["pair"] == (
                 "gateway/requirements.txt:fastapi@0.162.0"
-            ), (code, drift)
+            )):
+                raise AssertionError((code, drift))
             print("  PASS | decision tree: new advisory pair fail-closes")
             g.audit_manifest = lambda p: (
                 {"pytest@8.4.2": ["PYSEC-old"]} if "services" in str(p) else {}
             )
             code, drift, imp, _ = g.evaluate(root)
-            assert code == EXIT_PASS and drift == [] and imp, (code, imp)
-            assert imp[0]["resolved_ids"] == ["PYSEC-gone"]
+            if not (code == EXIT_PASS and drift == [] and imp):
+                raise AssertionError((code, imp))
+            if not (imp[0]["resolved_ids"] == ["PYSEC-gone"]):
+                raise AssertionError()
             print("  PASS | shrink path: resolved id routes to baseline-shrink hint")
 
             def _boom(p):
@@ -718,16 +726,20 @@ def self_test() -> bool:
 
             g.audit_manifest = _boom
             code, drift, _imp, notes = g.evaluate(root)
-            assert code == EXIT_PASS and not drift
-            assert any("pip-audit unreachable" in n for n in notes), notes
+            if not (code == EXIT_PASS and not drift):
+                raise AssertionError()
+            if not (any("pip-audit unreachable" in n for n in notes)):
+                raise AssertionError(notes)
             print("  PASS | pip-audit failure -> skip with evidence, never a fake PASS")
 
             real_which = g.shutil.which
             g.shutil.which = lambda name: None
             try:
                 code, drift, _imp, notes = g.evaluate(root)
-                assert code == EXIT_PASS
-                assert any("pip-audit not installed" in n for n in notes), notes
+                if not (code == EXIT_PASS):
+                    raise AssertionError()
+                if not (any("pip-audit not installed" in n for n in notes)):
+                    raise AssertionError(notes)
             finally:
                 g.shutil.which = real_which
             print("  PASS | pip-audit missing -> skip with evidence")
@@ -737,13 +749,15 @@ def self_test() -> bool:
             (root / "gateway" / "requirements.txt").chmod(0)
             try:
                 code, drift, _imp, _ = g.evaluate(root)
-                assert code == EXIT_DRIFT and drift[0]["kind"] == "unreadable-manifest"
+                if not (code == EXIT_DRIFT and drift[0]["kind"] == "unreadable-manifest"):
+                    raise AssertionError()
             finally:
                 (root / "gateway" / "requirements.txt").chmod(0o644)
             print("  PASS | unreadable manifest -> fail-closed")
             (root / BASELINE_PATH).write_text("{not json", encoding="utf-8")
             code, drift, _imp, _ = g.evaluate(root)
-            assert code == EXIT_DRIFT and drift[0]["ids"] == ["BASELINE"]
+            if not (code == EXIT_DRIFT and drift[0]["ids"] == ["BASELINE"]):
+                raise AssertionError()
             print("  PASS | malformed baseline -> fail-closed")
             g.audit_manifest = lambda p: (
                 {"pytest@8.4.2": ["PYSEC-old"]} if "services" in str(p) else {}
@@ -758,25 +772,35 @@ def self_test() -> bool:
                 encoding="utf-8",
             )
             code, drift, _imp, notes = g.evaluate(root, files=["README.md"])
-            assert code == EXIT_PASS and any("nothing to check" in n for n in notes)
+            if not (code == EXIT_PASS and any("nothing to check" in n for n in notes)):
+                raise AssertionError()
             code, drift, _imp, _ = g.evaluate(
                 root, files=["gateway/services/x/requirements.txt"]
             )
-            assert code == EXIT_PASS and not drift
+            if not (code == EXIT_PASS and not drift):
+                raise AssertionError()
             print("  PASS | --files mode: off-surface skip, on-surface full check")
         finally:
             g.shutil.which = real_which
             g.audit_manifest = saved_audit
     # 6. Spec classification: pinned / extras-pinned / unpinned / direct /
     #    dynamic / local — the vocabulary the report uses (#2064).
-    assert g._classify_spec("torch==2.4.1") == "pinned"
-    assert g._classify_spec('"uvicorn[standard]==0.34.0"') == "pinned"
-    assert g._classify_spec("wheel") == "unpinned"
-    assert g._classify_spec("nats-py") == "unpinned"
-    assert g._classify_spec("git+https://x/y.git") == "direct"
-    assert g._classify_spec("https://x/y.whl") == "direct"
-    assert g._classify_spec("${PIP_EXTRAS}") == "dynamic"
-    assert g._classify_spec("./local") == "local"
+    if not (g._classify_spec("torch==2.4.1") == "pinned"):
+        raise AssertionError()
+    if not (g._classify_spec('"uvicorn[standard]==0.34.0"') == "pinned"):
+        raise AssertionError()
+    if not (g._classify_spec("wheel") == "unpinned"):
+        raise AssertionError()
+    if not (g._classify_spec("nats-py") == "unpinned"):
+        raise AssertionError()
+    if not (g._classify_spec("git+https://x/y.git") == "direct"):
+        raise AssertionError()
+    if not (g._classify_spec("https://x/y.whl") == "direct"):
+        raise AssertionError()
+    if not (g._classify_spec("${PIP_EXTRAS}") == "dynamic"):
+        raise AssertionError()
+    if not (g._classify_spec("./local") == "local"):
+        raise AssertionError()
     print("  PASS | spec classification: pinned/unpinned/direct/dynamic/local")
 
     # 7. Parser: gateway `||` fallback (gate-defeat shape + 5 unpinned),
@@ -789,29 +813,40 @@ def self_test() -> bool:
         "RUN pip install --no-cache-dir -r requirements.txt || "
         "pip install --no-cache-dir fastapi uvicorn httpx pydantic pyyaml\n"
     )
-    assert len(gw) == 2, gw
-    assert gw[0]["class"] == "manifest-backed" and gw[0]["manifest_refs"]
-    assert gw[0]["gate_defeat_shape"] is True, "first branch sits on a || line"
-    assert gw[1]["class"] == "inline-unpinned"
-    assert [sp["spec"] for sp in gw[1]["specs"]] == [
-        "fastapi", "uvicorn", "httpx", "pydantic", "pyyaml"]
-    assert gw[1]["gate_defeat_shape"] is True
+    if not (len(gw) == 2):
+        raise AssertionError(gw)
+    if not (gw[0]["class"] == "manifest-backed" and gw[0]["manifest_refs"]):
+        raise AssertionError()
+    if not (gw[0]["gate_defeat_shape"] is True):
+        raise AssertionError("first branch sits on a || line")
+    if not (gw[1]["class"] == "inline-unpinned"):
+        raise AssertionError()
+    if not ([sp["spec"] for sp in gw[1]["specs"]] == [
+        "fastapi", "uvicorn", "httpx", "pydantic", "pyyaml"]):
+        raise AssertionError()
+    if not (gw[1]["gate_defeat_shape"] is True):
+        raise AssertionError()
     swarm = g.parse_pip_install_sites(
         "RUN pip install --upgrade pip && \\\n"
         "    pip install --no-cache-dir nats-py pydantic litellm langchain\n"
     )
-    assert len(swarm) == 2, swarm
-    assert all(s["class"] == "inline-unpinned" for s in swarm)
+    if not (len(swarm) == 2):
+        raise AssertionError(swarm)
+    if not (all(s["class"] == "inline-unpinned" for s in swarm)):
+        raise AssertionError()
     ci = g.parse_pip_install_sites(
         "RUN pip install --no-cache-dir setuptools==68.0.0 wheel\n"
     )
-    assert len(ci) == 1 and ci[0]["class"] == "inline-mixed", ci
-    assert [sp["class"] for sp in ci[0]["specs"]] == ["pinned", "unpinned"]
+    if not (len(ci) == 1 and ci[0]["class"] == "inline-mixed"):
+        raise AssertionError(ci)
+    if not ([sp["class"] for sp in ci[0]["specs"]] == ["pinned", "unpinned"]):
+        raise AssertionError()
     eco = g.parse_pip_install_sites(
         'RUN pip install --no-cache-dir fastapi==0.115.6 '
         '"uvicorn[standard]==0.34.0"\n'
     )
-    assert len(eco) == 1 and eco[0]["class"] == "inline-pinned", eco
+    if not (len(eco) == 1 and eco[0]["class"] == "inline-pinned"):
+        raise AssertionError(eco)
     print("  PASS | parser: gate-defeat || fallback, continuations, mixed pin, "
           "quoted extras pin, comment skip")
 
@@ -836,20 +871,28 @@ def self_test() -> bool:
         (root / "node_modules" / "x" / "Dockerfile").write_text(
             "RUN pip install nodejunk\n", encoding="utf-8")
         doc = g.scan_inline_pip_installs(root)
-        assert doc["dockerfiles_scanned"] == 2, doc["dockerfiles_scanned"]
-        assert doc["summary"]["pip_install_sites"] == 4, doc["summary"]
-        assert doc["summary"]["manifest_backed_sites"] == 1
-        assert doc["summary"]["inline_unpinned_sites"] == 3
-        assert doc["summary"]["gate_defeat_sites"] == 2  # both gateway occurrences on the || line
+        if not (doc["dockerfiles_scanned"] == 2):
+            raise AssertionError(doc["dockerfiles_scanned"])
+        if not (doc["summary"]["pip_install_sites"] == 4):
+            raise AssertionError(doc["summary"])
+        if not (doc["summary"]["manifest_backed_sites"] == 1):
+            raise AssertionError()
+        if not (doc["summary"]["inline_unpinned_sites"] == 3):
+            raise AssertionError()
+        if not (doc["summary"]["gate_defeat_sites"] == 2):
+            raise AssertionError()
         blind = {(s["file"], s["line"]) for s in doc["sites"]
                  if s["class"] == "inline-unpinned"}
-        assert blind == {("gateway/Dockerfile", 1),
-                         ("core/docker/swarm-worker.Dockerfile", 1)}, blind
+        if not (blind == {("gateway/Dockerfile", 1),
+                         ("core/docker/swarm-worker.Dockerfile", 1)}):
+            raise AssertionError(blind)
         (root / "gateway" / "Dockerfile").chmod(0)
         try:
             doc2 = g.scan_inline_pip_installs(root)
-            assert doc2["anomalies"] and doc2["anomalies"][0]["kind"] == "unreadable"
-            assert doc2["dockerfiles_scanned"] == 2
+            if not (doc2["anomalies"] and doc2["anomalies"][0]["kind"] == "unreadable"):
+                raise AssertionError()
+            if not (doc2["dockerfiles_scanned"] == 2):
+                raise AssertionError()
         finally:
             (root / "gateway" / "Dockerfile").chmod(0o644)
     print("  PASS | report-only scan: SKIP_DIRS pruned, blindspots surfaced, "
@@ -858,23 +901,21 @@ def self_test() -> bool:
     # 9. Live wiring: roster + pre-push carry the guard (when run inside the repo).
     roster = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
     if roster.is_file():
-        assert "scripts/ci/py_dep_cve_guard.py" in roster.read_text(encoding="utf-8"), (
-            "guard missing from run_all_guards roster"
-        )
+        if not ("scripts/ci/py_dep_cve_guard.py" in roster.read_text(encoding="utf-8")):
+            raise AssertionError("guard missing from run_all_guards roster")
     hook = REPO_ROOT / ".githooks" / "pre-push"
     if hook.is_file():
-        assert "py_dep_cve_guard.py" in hook.read_text(encoding="utf-8"), (
-            "guard missing from pre-push hook"
-        )
+        if not ("py_dep_cve_guard.py" in hook.read_text(encoding="utf-8")):
+            raise AssertionError("guard missing from pre-push hook")
     print("  PASS | roster + pre-push wiring present (when run inside the repo)")
     # 5. Baseline provenance sanity (when run inside the repo).
     bl_path = REPO_ROOT / BASELINE_PATH
     if bl_path.is_file():
         meta = json.loads(bl_path.read_text(encoding="utf-8")).get("meta", {})
-        assert "pip-audit" in str(meta.get("tool", "")), (
-            "baseline must record the pip-audit SSOT"
-        )
-        assert meta.get("doctrine", "").startswith("shrink-only")
+        if not ("pip-audit" in str(meta.get("tool", ""))):
+            raise AssertionError("baseline must record the pip-audit SSOT")
+        if not (meta.get("doctrine", "").startswith("shrink-only")):
+            raise AssertionError()
     print("[self-test] Python dependency CVE guard self-tests PASSED (9 test cases)!")
     return True
 
