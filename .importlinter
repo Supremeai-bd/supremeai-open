@@ -1,0 +1,86 @@
+# .importlinter — SupremeAI federation import-contract gate (ENFORCEMENT mode)
+#
+# Bridge Work Order: bridge-20261028-import-contract-lane (issue #1791, R37)
+#
+# Purpose: machine-check the ECOSYSTEM_MAP §3.1 routing matrix's domain
+# boundaries — the map (human SSOT) says core/** -> supremeai-core and
+# gateway/** -> supremeai-api are separate domains; #1693 proved the
+# private-import violation class (gateway importing core._monitoring_legacy
+# directly, bypassing the core.monitoring public facade) is real. The stdlib
+# AST guard tests/test_gateway_private_import_boundary.py already pins the
+# gateway tree (incl. dynamic import_module shapes); this config adds the
+# repo-wide static contract layer (CI-portable `lint-imports` exit code) so
+# the remaining mirror surfaces (e.g. core/api/) are covered by the same
+# doctrine. Complementary, not duplicate: the stdlib test stays.
+#
+# Install (pip equivalent until the R29 uv-lockfile lane lands):
+#   pip install -r requirements-dev.txt        # pins import-linter==2.15
+#   lint-imports                               # run from repo root
+#
+# Rollout history (per issue #1791 phase plan): landed 2026-10-28 as a
+# report-only ratchet with the 2 known #1693 sites baselined; PR #1879
+# remediated both sites to the core.monitoring public facade; ratchet
+# DROPPED 2026-10-28 (main 02590d1 era) — the contract is now
+# fail-on-broken: ANY direct core.api -> core._monitoring_legacy import
+# fails, per the issue's own flip condition.
+#
+# Contract-inventory honesty (dated 2026-10-28, main d67298c):
+# - core's private top-level modules: core._monitoring_legacy, core._archive
+#   (verified: `ls core/_*.py` + `find core -maxdepth 2 -name "_*" -type d`).
+# - gateway exposes ZERO private top-level modules today, so the symmetric
+#   "core must not import gateway._*" contract is intentionally absent —
+#   there is nothing to protect yet. When a gateway._ module appears, add
+#   the mirrored contract here (ratchet maintenance, same as the studio
+#   knip ratchet precedent).
+# - Wildcards like core._* are rejected by import-linter ("a wildcard can
+#   only replace a whole module"), hence explicit module enumeration.
+
+[importlinter]
+root_packages =
+    core
+    gateway
+include_external_packages = False
+
+# NOTE: ignore_imports is a PER-CONTRACT option in import-linter (a global
+# entry is silently ignored). The ratchet baseline therefore lives inside
+# the facade contract below, where it belongs.
+
+# --- Contract 1: gateway must not import core's private internals ----------
+# The gateway domain consumes core exclusively through public surfaces
+# (core.monitoring facade et al.). Pins the landed #1693 remediation
+# repo-wide, including any future gateway-side regression.
+# allow_indirect_imports=true scopes the ban to DIRECT imports: the
+# sanctioned route (gateway -> core.monitoring facade -> core internals)
+# must stay legal — banning indirect chains would flag every facade
+# consumer. Dynamic import_module shapes are covered by the stdlib AST
+# guard (tests/test_gateway_private_import_boundary.py).
+[importlinter:contract:gateway-no-core-private]
+name = gateway must not import core private internals (cross-domain private ban)
+type = forbidden
+source_modules =
+    gateway
+forbidden_modules =
+    core._monitoring_legacy
+    core._archive
+allow_indirect_imports = true
+
+# --- Contract 2: core.api consumes core.monitoring facade, not internals ---
+# Facade doctrine for the admin surface mirror (the #1693 violation class):
+# core.api modules must reach monitoring internals only through the
+# core.monitoring public facade — a DIRECT import of core._monitoring_legacy
+# from anywhere under core.api is a violation. The 2 known sites were
+# remediated to the facade by PR #1879 (verified: git grep shows zero
+# core._monitoring_legacy imports under core/api/ on main 02590d1+); the
+# dated ignore baseline is DROPPED — this contract is fail-on-broken.
+# Core-internal use outside core.api
+# (e.g. core/app_builder.py) is legitimate domain-internal access.
+# (A `layers` contract does NOT express this: layers semantics allow
+# higher->lower imports, so the bypass class needs an explicit ban.)
+[importlinter:contract:core-api-via-monitoring-facade]
+name = core.api routes consume monitoring through the public facade
+type = forbidden
+source_modules =
+    core.api
+forbidden_modules =
+    core._monitoring_legacy
+allow_indirect_imports = true

@@ -120,26 +120,6 @@ COMPLETE_SERVICE_REGISTRY: list[ServiceConfig] = [
         },
         check_type="api",
     ),
-    ServiceConfig(
-        name="firebase_auth",
-        display_name="Firebase Authentication",
-        category="auth",
-        url="https://identitytoolkit.googleapis.com",
-        health_endpoint="/v1/projects/<project-id>:lookup",
-        critical=True,
-        timeout=8.0,
-        check_type="api",
-    ),
-    ServiceConfig(
-        name="firebase_firestore",
-        display_name="Cloud Firestore",
-        category="database",
-        url="https://firestore.googleapis.com",
-        health_endpoint="/v1/projects/<project-id>/databases/(default)/documents",
-        critical=True,
-        timeout=8.0,
-        check_type="api",
-    ),
     # ─── EDGE & CDN ───────────────────────────────────────────────────────
     ServiceConfig(
         name="cloudflare_worker",
@@ -409,8 +389,6 @@ def calculate_topology_data(services: list[ServiceHealthResult]) -> dict[str, An
     # Define edges (dependencies)
     edge_definitions = [
         ("render_backend", "supabase_db"),
-        ("render_backend", "firebase_auth"),
-        ("render_admin", "firebase_auth"),
         ("render_admin", "supabase_db"),
         ("scraper_service", "render_backend"),
         ("cloudflare_worker", "render_backend"),
