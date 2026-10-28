@@ -13,6 +13,10 @@ Reconciliation model (three planes, one join key):
                     zero-credential; limit ladder 200->50->default crosses the
                     queue-fidelity deploy window #2115/#2123) — each title
                     carries the lane slug
+  - rejected plane: open `bridge:rejected` issues enumerated straight from
+                    the GitHub API (zero-credential, S05 query SSOT; #2158) —
+                    the queue omits rejected WOs (#1972), so landing truth
+                    must be checked where Tower hides them
                     `(bridge-YYYYMMDD-<slug>)`. Open WOs labeled
                     `bridge:rejected` are ALSO read, but solely to detect
                     FALSE_REJECTION (below) — a rejection is presumed
@@ -61,11 +65,13 @@ Verdict per open bridge:queued WO (any-slug match wins):
                    keeping the strict surface minimal. Honest scope limit:
                    the board plane IS the queue payload, and Tower currently
                    omits some rejected WOs from it entirely (live: #1972 was
-                   absent from bridge_work_queue) — those are invisible here
-                   until Tower either keeps rejected WOs in the queue or the
-                   guard gains a feedback-plane reader; the classification
-                   logic is proven hermetically and on the real #1972 data
-                   fed directly (integration run, 2026-10-28).
+                   absent from bridge_work_queue) — since 2026-10-28 (#2158)
+                   the rejected plane enumerates those rows directly from
+                   GitHub, closing the invisible-rejected half of this note
+                   (the merged-row half closed with the feedback-plane
+                   reader); the classification logic is proven hermetically
+                   and on the real #1972/#2158 data fed directly
+                   (integration runs, 2026-10-28).
 
 Modes:
   --self-test   hermetic verdict-matrix proof (fixture WOs/history/flight;
@@ -83,6 +89,7 @@ Zero credentials, read-only (Tower queries + local git log). No mutation.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
 import shutil
@@ -207,6 +214,90 @@ def _fetch_work_orders(fetch_text=_tower_text) -> tuple:
             continue
         return (payload.get("workOrders", []) or [], limit)
     raise last_err
+
+
+# ── rejected plane: GitHub-side enumeration of rows the queue omits (#2158) ──
+
+REJECTED_LABEL = "bridge:rejected"
+
+
+def _load_reference_module():
+    """SSOT import of the S05 queue-query reference (R51 pattern: semantics
+    owned upstream, no private copy)."""
+    path = REPO_ROOT / "scripts" / "tower" / "work_queue_query_reference.py"
+    spec = importlib.util.spec_from_file_location("work_queue_query_reference", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_REF = _load_reference_module()
+
+
+def _github_get_json(url: str, timeout: int = 20):
+    """Zero-credential GET (browser UA, per the freshness-probe convention)."""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "bridge-landing-watchdog/1.0 (zero-credential board audit)",
+        "Accept": "application/vnd.github+json",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — URL from the S05 SSOT reference (fixed repo, https)
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _fetch_rejected_rows(fetch_json=_github_get_json,
+                         max_pages: int | None = None) -> list[dict]:
+    """Enumerate open `bridge:rejected` issues straight from GitHub.
+
+    The queue omits rejected WOs (#1972 was absent from bridge_work_queue;
+    live #2158: landed #2020/#2056 stamped rejected and queue-invisible).
+    The S05 r2 contract (build_queue_query SSOT) forbids single-page
+    fetches — pages until a short page or the MAX_PAGES cap, number-dedupe
+    merged. Rows come back in normalize_queue shape, ready for
+    run_verdicts' existing rejected-row branch (zero new verdict classes).
+    """
+    pages = max(1, max_pages if max_pages is not None else _REF.QUEUE_MAX_PAGES)
+    rows: list[dict] = []
+    seen: set = set()
+    for page in range(1, pages + 1):
+        q = _REF.build_queue_query(REJECTED_LABEL, page=page)
+        payload = fetch_json(q["url"])
+        if not isinstance(payload, list):
+            raise TypeError(
+                f"github page {page}: expected a list, got {type(payload).__name__}")
+        for wo in _REF.normalize_queue(payload, q["applied_label"])["workOrders"]:
+            n = wo.get("number")
+            if n in seen:
+                continue
+            seen.add(n)
+            rows.append(wo)
+        if len(payload) < _REF.QUEUE_PAGE_SIZE:  # short page = enumeration end
+            break
+    return rows
+
+
+def _load_rejected_plane(fetch_rows=_fetch_rejected_rows) -> tuple:
+    """Per-plane fail-open: an unreachable GitHub plane degrades THIS plane
+    only (honest note), never the queue plane, never a fake empty truth.
+    A 403 is called out by cause: the unauthenticated API budget is per-IP
+    and shared by everything egressing the same address — rate-limited is
+    transient (resets hourly), unlike a genuine outage."""
+    try:
+        return fetch_rows(), "ok"
+    except urllib.error.HTTPError as err:
+        if err.code == 403:
+            return [], ("unreachable (HTTP 403 — unauthenticated GitHub API "
+                        "rate limit for this egress IP; resets hourly)")
+        return [], f"unreachable (HTTP {err.code})"
+    except Exception as err:  # noqa: BLE001 — one plane down is a disclosed skip
+        return [], f"unreachable ({err.__class__.__name__})"
+
+
+def _join_rejected_plane(work_orders: list[dict], rejected_rows: list[dict]) -> tuple:
+    """Queue rows win on number collision (the queue stays the board SSOT
+    for queued work); only queue-omitted rejected rows join the payload."""
+    queued = {w.get("number") for w in work_orders}
+    merged = [r for r in rejected_rows if r.get("number") not in queued]
+    return work_orders + merged, len(merged)
 
 
 # ── pure verdict core (hermetically testable) ────────────────────────────────
@@ -647,6 +738,49 @@ def self_test() -> list[tuple[str, bool, str]]:
         cases.append(("ladder transport failure fail-close", True, ""))
     except Exception as e:  # noqa: BLE001 — wrong failure class is a FAIL
         cases.append(("ladder transport failure fail-close", False, type(e).__name__))
+
+    # rejected plane (GitHub-side enumeration, #2158)
+    page1 = [{"number": 1000 + i, "title": f"w{i}", "state": "open",
+              "labels": ["bridge:rejected"]} for i in range(100)]
+    page2 = [{"number": 5, "title": "a (bridge-20261028-x)", "state": "open",
+              "labels": [{"name": "bridge:rejected"}]},
+             {"number": 5, "title": "dup", "state": "open",
+              "labels": ["bridge:rejected"]}]
+
+    def _fake_fetch(url):
+        assert "labels=bridge%3Arejected" in url, url
+        return {1: page1, 2: page2}[int(url.rsplit("page=", 1)[1].split("&")[0])]
+
+    rows = _fetch_rejected_rows(fetch_json=_fake_fetch)
+    cases.append(("rejected plane paginates + dedupes + normalizes",
+                  len(rows) == 101 and rows[-1]["number"] == 5
+                  and rows[-1]["labels"] == ["bridge:rejected"],
+                  f"rows={len(rows)}"))
+    try:
+        _fetch_rejected_rows(fetch_json=lambda u: {"error": "nope"})
+        cases.append(("rejected plane non-list fails loud", False, "no raise"))
+    except TypeError:
+        cases.append(("rejected plane non-list fails loud", True, ""))
+
+    def _boom():
+        raise RuntimeError("down")
+
+    gone, note = _load_rejected_plane(fetch_rows=_boom)
+    cases.append(("rejected plane per-plane fail-open",
+                  gone == [] and "unreachable" in note, f"note={note}"))
+
+    def _ratelimited():
+        raise urllib.error.HTTPError("https://api.github.com/x", 403,
+                                     "rate limit exceeded", None, None)
+
+    gone, note = _load_rejected_plane(fetch_rows=_ratelimited)
+    cases.append(("rejected plane 403 discloses rate-limit cause",
+                  gone == [] and "rate limit" in note and "resets hourly" in note,
+                  f"note={note}"))
+    joined, joined_n = _join_rejected_plane([{"number": 5, "title": "q"}], rows)
+    cases.append(("rejected plane queue rows win on collision",
+                  joined_n == 100 and joined[0]["title"] == "q"
+                  and all(r["number"] != 5 for r in joined[1:]), f"n={joined_n}"))
     return cases
 
 
@@ -678,6 +812,10 @@ def main(argv: list[str] | None = None) -> int:
 
     rung_s = "default" if queue_rung is None else str(queue_rung)
     print(f"QUEUE PLANE: {len(wos)} rows (limit rung {rung_s})")
+    rejected_rows, rejected_note = _load_rejected_plane()
+    wos, rejected_joined = _join_rejected_plane(wos, rejected_rows)
+    print(f"REJECTED PLANE: {len(rejected_rows)} open '{REJECTED_LABEL}' rows "
+          f"enumerated ({rejected_joined} queue-omitted joined; {rejected_note})")
     now = time.mktime(time.gmtime())
     verdicts = run_verdicts(wos, subjects, pr_titles, now, args.at_risk_hours)
     verdicts = refine_satellites(verdicts)
