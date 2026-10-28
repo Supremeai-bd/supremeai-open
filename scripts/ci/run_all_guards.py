@@ -23,6 +23,7 @@ GUARDS: list[list[str]] = [
     ["python", "scripts/ci/security_gate.py", "--self-test"],
     ["python", "scripts/ci/mcp_access_policy_guard.py", "--check"],
     ["python", "scripts/ci/license_ssot_guard.py", "--check"],
+    ["python", "scripts/ci/contract_codegen_guard.py", "--check"],
     ["python", "scripts/agents/check_loop_contract_parity.py"],
     ["python", "scripts/ci/test_parity_guard.py"],
     ["python", "scripts/ops/generate_script_index.py", "--check"],
