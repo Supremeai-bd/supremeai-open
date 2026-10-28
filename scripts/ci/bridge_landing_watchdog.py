@@ -26,6 +26,12 @@ Verdict per open bridge:queued WO (any-slug match wins):
                    deliverable is neither landed nor in flight: evicted,
                    rejected-without-verdict, or stuck. This is the class
                    #1953 sat in with zero signal.
+  SATELLITE_TARGET the WO body names a satellite Target Repo (#1916:
+                   Supremeai-bd/supremeai-browser) — its landing lands in the
+                   satellite and can NEVER appear in this repo's history or
+                   PR planes, so age-based risk flagging would be a structural
+                   false positive. Informational (never strict-flagged); the
+                   satellite landing remains outside this guard's observation.
   NO_SLUG          title carries no bridge slug — outside this guard's model
                    (reported informationally, never strict-flagged).
 
@@ -65,6 +71,13 @@ LOG_DEPTH = 400
 
 SLUG_RE = re.compile(r"\(bridge-\d{8}-[a-z0-9][a-z0-9-]*\)")
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+# The repo whose history/PR planes this guard reconciles against. A WO whose
+# body names ANY other Target Repo lands in that satellite (#1916 class).
+OPEN_REPO = "Supremeai-bd/supremeai-open"
+TARGET_REPO_RE = re.compile(r"^###\s+Target Repo\s*\n\s*(\S+)", re.MULTILINE)
+# Cap on per-WO body fetches during refinement (only at-risk candidates are
+# fetched; the common board has zero, so the steady-state cost is nil).
+MAX_SATELLITE_PROBES = 5
 
 _id = [100]
 
@@ -138,14 +151,33 @@ def _age_hours(created_at: str, now_epoch: float) -> float | None:
     return max(0.0, (now_epoch - created) / 3600.0)
 
 
+def parse_target_repo(body: str | None) -> str | None:
+    """Extract the WO body's `### Target Repo` value (standard WO template).
+
+    Returns the repo slug (e.g. 'Supremeai-bd/supremeai-browser') or None when
+    the section is absent/unparseable — None means 'no satellite evidence',
+    which keeps the WO on the default open-repo model (fail-closed).
+    """
+    if not body:
+        return None
+    m = TARGET_REPO_RE.search(body)
+    return m.group(1).strip() if m else None
+
+
 def classify(wo: dict, main_subjects: list[str], open_pr_titles: list[str],
-             now_epoch: float, at_risk_hours: float = DEFAULT_AT_RISK_HOURS) -> dict:
+             now_epoch: float, at_risk_hours: float = DEFAULT_AT_RISK_HOURS,
+             target_repo: str | None = None) -> dict:
     """Verdict one open bridge:queued WO against the history + flight planes.
 
     Any slug match wins (a WO with several lane slugs is landed if ANY of them
     landed). Slug matching is full-token: `bridge-20261028-foo` must NOT match
     a history subject carrying `bridge-20261028-foobar` (prefix collisions are
     real — e.g. the -r2 rescue lanes).
+
+    `target_repo` (from the WO body via parse_target_repo) short-circuits the
+    age-based risk flag: a satellite-targeted WO can never match the open-repo
+    planes by design, so an old unmatched satellite WO is SATELLITE_TARGET
+    (informational), not LANDING_AT_RISK (#1916 live false positive).
     """
     num = wo.get("number")
     title = wo.get("title") or ""
@@ -163,6 +195,12 @@ def classify(wo: dict, main_subjects: list[str], open_pr_titles: list[str],
     inflight = [s for s in slugs if any(s in t for t in open_pr_titles)]
     if inflight:
         return {**base, "verdict": "OPEN_PR", "evidence": f"slug {inflight[0]} in an open PR title"}
+
+    if target_repo and target_repo != OPEN_REPO:
+        return {**base, "verdict": "SATELLITE_TARGET",
+                "evidence": f"targets satellite {target_repo} — lands outside the open-repo "
+                            f"history/PR planes (never matchable by design; satellite landing "
+                            f"not observable here)"}
 
     if age is None:
         return {**base, "verdict": "IN_GATES", "evidence": "no match yet; unparseable createdAt (honest no-signal)"}
@@ -209,6 +247,42 @@ def _open_pr_titles() -> list[str]:
             titles.append(line)
     # fall back to whole text — the slug token match is substring-based anyway
     return titles or ([txt] if txt else [])
+
+
+def _fetch_wo_body(number: int) -> str | None:
+    """Fetch one WO's full body (read-only tower round-trip) for refinement."""
+    try:
+        return json.loads(_tower_text("bridge_work_order", {"number": number})).get("body")
+    except Exception:  # noqa: BLE001 - refinement is best-effort, fail-closed
+        return None
+
+
+def refine_satellites(verdicts: list[dict], fetch_body=_fetch_wo_body,
+                      max_probes: int = MAX_SATELLITE_PROBES) -> list[dict]:
+    """Re-classify LANDING_AT_RISK verdicts whose WO body targets a satellite.
+
+    The queue payload carries no body, so this fetches bodies ONLY for the
+    at-risk candidates (steady-state cost: zero round-trips on a healthy
+    board). Fail-closed: any fetch/parse failure keeps the risk flag — no
+    evidence of satellite targeting never downgrades a LANDING_AT_RISK.
+    """
+    out = list(verdicts)
+    probed = 0
+    for i, v in enumerate(out):
+        if v["verdict"] != "LANDING_AT_RISK" or probed >= max_probes:
+            continue
+        probed += 1
+        try:
+            repo = parse_target_repo(fetch_body(v["number"]))
+        except Exception:  # noqa: BLE001 - defense in depth: a raising injectable
+            repo = None     # fetcher must never turn a risk flag into a crash
+        if repo and repo != OPEN_REPO:
+            out[i] = classify(
+                {"number": v["number"], "title": (v.get("slug") or "") and f"x ({v['slug']})",
+                 "createdAt": None}, [], [], time.time(), target_repo=repo)
+            # preserve the measured age for the report line
+            out[i]["age_hours"] = v.get("age_hours")
+    return out
 
 
 def self_test() -> list[tuple[str, bool, str]]:
@@ -289,6 +363,59 @@ def self_test() -> list[tuple[str, bool, str]]:
     ok = (by_num == {14: "MERGED_ON_MAIN", 15: "LANDING_AT_RISK", 16: "IN_GATES"})
     cases.append(("mixed fixture board classifies exactly", ok, json.dumps(by_num)[:200]))
 
+    # 13. satellite refinement (the #1916 live false positive): an old
+    # unmatched WO whose body targets a satellite is SATELLITE_TARGET,
+    # never LANDING_AT_RISK.
+    sat_body = "### Task ID\nbridge-20261028-browser-webbotauth-probe\n\n### Target Repo\nSupremeai-bd/supremeai-browser\n"
+    cases.append(("parse_target_repo extracts satellite",
+                  parse_target_repo(sat_body) == "Supremeai-bd/supremeai-browser",
+                  repr(parse_target_repo(sat_body))))
+    cases.append(("parse_target_repo open repo", parse_target_repo(
+        "### Target Repo\nSupremeai-bd/supremeai-open\n") == OPEN_REPO, ""))
+    cases.append(("parse_target_repo absent -> None (fail-closed default)",
+                  parse_target_repo("no section here") is None, ""))
+    v = classify({"number": 17, "title": f"sat {slug_a} y", "createdAt": old},
+                 [], [], now, target_repo="Supremeai-bd/supremeai-browser")
+    cases.append(("old unmatched satellite WO -> SATELLITE_TARGET (not risk)",
+                  v["verdict"] == "SATELLITE_TARGET", json.dumps(v)[:160]))
+    v = classify({"number": 18, "title": f"sat {slug_a} y", "createdAt": fresh},
+                 [], [], now, target_repo="Supremeai-bd/supremeai-browser")
+    cases.append(("young satellite WO -> SATELLITE_TARGET (age-independent)",
+                  v["verdict"] == "SATELLITE_TARGET", json.dumps(v)[:160]))
+    v = classify({"number": 19, "title": f"sat landed {slug_a}", "createdAt": old},
+                 [f"feat: sat (bridge-20261028-alpha-lane) (#1906)"], [], now,
+                 target_repo="Supremeai-bd/supremeai-browser")
+    cases.append(("matched slug still wins over satellite hint",
+                  v["verdict"] == "MERGED_ON_MAIN", json.dumps(v)[:160]))
+    v = classify({"number": 20, "title": f"open {slug_a} y", "createdAt": old},
+                 [], [], now, target_repo=OPEN_REPO)
+    cases.append(("open-repo target keeps LANDING_AT_RISK",
+                  v["verdict"] == "LANDING_AT_RISK", json.dumps(v)[:160]))
+
+    # 14. refine_satellites: at-risk + satellite body -> downgraded; at-risk +
+    # open/absent body -> kept; fetch failure -> kept (fail-closed).
+    def _fetch_sat(number):
+        return sat_body
+
+    def _fetch_open(number):
+        return "### Target Repo\nSupremeai-bd/supremeai-open\n"
+
+    def _fetch_boom(number):
+        raise RuntimeError("tower down")
+
+    base_risk = {"number": 21, "verdict": "LANDING_AT_RISK", "slug": "(bridge-20261028-sat-lane)",
+                 "age_hours": 3.0}
+    vs = refine_satellites([dict(base_risk)], fetch_body=_fetch_sat)
+    cases.append(("refine downgrades satellite-targeted at-risk WO",
+                  vs[0]["verdict"] == "SATELLITE_TARGET" and vs[0]["age_hours"] == 3.0,
+                  json.dumps(vs[0])[:200]))
+    vs = refine_satellites([dict(base_risk)], fetch_body=_fetch_open)
+    cases.append(("refine keeps open-repo at-risk WO",
+                  vs[0]["verdict"] == "LANDING_AT_RISK", json.dumps(vs[0])[:160]))
+    vs = refine_satellites([dict(base_risk)], fetch_body=_fetch_boom)
+    cases.append(("refine is fail-closed on fetch failure (risk kept)",
+                  vs[0]["verdict"] == "LANDING_AT_RISK", json.dumps(vs[0])[:160]))
+
     return cases
 
 
@@ -321,10 +448,12 @@ def main(argv: list[str] | None = None) -> int:
 
     now = time.mktime(time.gmtime())
     verdicts = run_verdicts(wos, subjects, pr_titles, now, args.at_risk_hours)
+    verdicts = refine_satellites(verdicts)
     if not verdicts:
         print("REPORT: no open bridge:queued WOs to reconcile (queue clean).")
         return 0
-    order = {"LANDING_AT_RISK": 0, "MERGED_ON_MAIN": 1, "OPEN_PR": 2, "IN_GATES": 3, "NO_SLUG": 4}
+    order = {"LANDING_AT_RISK": 0, "MERGED_ON_MAIN": 1, "OPEN_PR": 2, "IN_GATES": 3,
+             "SATELLITE_TARGET": 4, "NO_SLUG": 5}
     for v in sorted(verdicts, key=lambda v: (order.get(v["verdict"], 9), v["number"] or 0)):
         flag = "!!" if v["verdict"] == "LANDING_AT_RISK" else "  "
         age_s = "?" if v["age_hours"] is None else f"{v['age_hours']:.1f}h"
