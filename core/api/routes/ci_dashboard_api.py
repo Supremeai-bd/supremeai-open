@@ -54,7 +54,7 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket
 from pydantic import BaseModel, Field
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security.ws_auth import authenticate_websocket
 
 # Set up logging
