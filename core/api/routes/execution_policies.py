@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from api.dependencies import get_current_admin
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.session import get_db_session
 from models.execution_policy import ExecutionPolicy
 
