@@ -1,12 +1,12 @@
 {
   "schema": "radar-index-freshness-baseline/2",
   "generatedAt": "2026-10-29",
-  "headAtGeneration": "146ec0d (feat(bridge): docs(scout): R62 row disposition - per_page fix landed #2379, verified receipt #23)",
+  "headAtGeneration": "2257642 (feat(bridge): a23: receipts 31-33 (runs 5603/5607/5617) - pattern on sixth WO in 22-min burst, w)",
   "probe": "scripts/ci/radar_index_freshness_guard.py",
-  "note": "shrink-only floor over the citation-ghost class only; key = [kind, file, base]. A/B invariant violations are NEVER floorable — they are structural and always fail.",
+  "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes (#2187: D lands first-run-clean — its floor is born empty); key = [kind, file, base] / [kind, base, subject]. A/B invariant violations are NEVER floorable — they are structural and always fail. /2 adds the enforced roster (invariant E, #2392 component 1): a pointer regression or row eviction fails closed — update roster in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline.",
   "floor": [],
   "roster": {
-    "pointer": 65,
+    "pointer": 67,
     "rows": [
       "R1",
       "R2",
@@ -74,9 +74,11 @@
       "R62",
       "R63-I",
       "R63-II",
-      "R64"
+      "R64",
+      "R65",
+      "R66"
     ]
   },
-  "pointerAtGeneration": 65,
-  "registryRowsAtGeneration": "R1-R64"
+  "pointerAtGeneration": 67,
+  "registryRowsAtGeneration": "R1-R66"
 }

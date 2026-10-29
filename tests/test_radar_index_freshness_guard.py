@@ -255,8 +255,12 @@ def test_live_repo_sweep_passes() -> None:
     # and after #2392 (R64 pointer-board agreement guard, pass 25) registered
     # the R64 row and advanced it R64 -> R65 (verified free: tracked scan
     # zero hits; 100-row board sweep zero citations outside the self-ref).
+    # and after #2464 (radar-index integrity r2, pass 26) registered the
+    # R65 (landed #2454, receipt-verified #2469) / R66 (claimed #2447,
+    # receipts #2452/#2469) rows and advanced it R65 -> R67 (verified free:
+    # tracked scan zero hits; 112-row board sweep zero citations).
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 65, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 67, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
