@@ -8,7 +8,7 @@ DevOps, security and constitutional-rules panels.
 from __future__ import annotations
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class AdminHandlersMixin:
