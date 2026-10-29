@@ -1933,6 +1933,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Task / Work-order issue number"),
       agentId: z.string().optional().describe("Caller agent identity (required for renew/release)"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ action, issueNumber, agentId }: { action: string; issueNumber: number; agentId?: string }) => {
       if (action === "feedback") {
         const repo = bridgeOpenRepo();
