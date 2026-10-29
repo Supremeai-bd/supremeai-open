@@ -284,7 +284,15 @@ def test_live_repo_sweep_passes() -> None:
     # on the advertised-successor slot) and advanced it R70 -> R72
     # (verified free: tracked scan zero hits; subject scan zero hits;
     # 7-row tower queue capture windowTruncated false, zero citations).
-    assert r["pointer"] == 72, "pointer drifted — regenerate expectation with the index"
+    # and after pass 31 (cycle-43, Job 478338) registered the R72 row
+    # (open/unclaimed, peer scout #2608 — annotations residual census,
+    # fix surface tower-owner for the 118 non-repo-reachable tools)
+    # PRE-EMPTIVELY before any landing cited the token (guard green at
+    # registration time — the pass-28 pattern's second application) and
+    # advanced it R72 -> R73 (verified free: tracked scan zero hits;
+    # subject scan zero hits; 127-row tower queue capture windowTruncated
+    # false, zero citations).
+    assert r["pointer"] == 73, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
