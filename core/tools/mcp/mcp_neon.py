@@ -15,7 +15,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from utils.environment import is_admin_authorized
 
 mcp = FastMCP("neon_mcp")
