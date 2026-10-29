@@ -19,14 +19,20 @@ Behavior contract (report-only ratchet first, fail-closed on NEW drift):
        expression from the pinned in-file allowlist (no network at guard time).
     3. Verifies declared-Proprietary mirror surfaces: LICENSE or NOTICE file
        present — compared against the mirror-surface table below (§2.2 + the
-       #1720 sentinel mapping), never guessing private repo state.
+       #1720 sentinel mapping), never guessing private repo state — and, since
+       the #1640/#1691 fix wave, carrying an actual proprietary marker: the
+       first 400 chars must contain "All Rights Reserved" (the §2.3 phrase)
+       unless the file is already the flagged MIT-text contradiction (one
+       witness per file, no double-flagging).
     4. Flags model contradictions in BOTH directions: an open-source SPDX token
        on a Proprietary-declared surface (the filed #1690 class), or a
        LicenseRef-Proprietary token on an MIT-declared surface.
     5. Ratchet (the dead-import #1598 pattern): findings in the dated KNOWN_DRIFTS
-       baseline are reported (exit 0, report-only first cycle — the 9 missing
-       package.json fields + 3 LICENSE-absent mirrors + 2 model contradictions
-       stay visible without reddening CI). Any finding OUTSIDE the baseline is
+       baseline are reported (exit 0, report-only — at the 2026-10-28 cut that
+       was 9 missing package.json fields + 4 LICENSE-absent mirrors + 2 model
+       contradictions = 15 entries; the 2026-10-29 #1640/#1691 fix wave shrank
+       it to 10 by landing the four proprietary LICENSE notices and the
+       mcp-control-plane LicenseRef field). Any finding OUTSIDE the baseline is
        new drift -> exit 1. The baseline can only shrink; the test suite pins
        its exact contents.
     6. `--strict` flips to fail-closed-on-any-finding for the admin to enable
@@ -115,7 +121,11 @@ LICENSE_CANDIDATES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "NOTICE", "NOTICE.
 
 # ---------------------------------------------------------------------------
 # Known-drift baseline (shrink-only ratchet, dead-import #1598 pattern).
-# Dated 2026-10-28 on main 203a562. (code, normalized path) pairs. When one of
+# Dated 2026-10-28 on main 203a562 with 15 entries. First shrink 2026-10-29
+# (the #1640/#1691 fix wave, PR against that lane set): the four proprietary
+# mirror surfaces landed LICENSE notices carrying the §2.3 "All Rights
+# Reserved" marker, and infrastructure/mcp-control-plane/package.json flipped
+# its package field to LicenseRef-Proprietary — 15 -> 10 entries. When one of
 # these is FIXED, delete the line and lower the test pin — never add entries
 # for new drift; new drift must be fixed, not baselined.
 # ---------------------------------------------------------------------------
@@ -131,17 +141,10 @@ KNOWN_DRIFTS: frozenset[tuple[str, str]] = frozenset(
         ("PACKAGE_LICENSE_MISSING", "vscode/desktop/package.json"),
         ("PACKAGE_LICENSE_MISSING", "browser/cloudflare-worker/package.json"),
         ("PACKAGE_LICENSE_MISSING", "infrastructure/cloudflare-studio-proxy/package.json"),
-        # -- LICENSE-absent proprietary mirror surfaces (#1640/#1691 class).
-        #    The WO acceptance named 3 (core, browser, mcp-control-plane); the
-        #    guard's surface model also correctly flags the infrastructure/
-        #    mirror root itself — same class, same dated provenance.
-        ("LICENSE_FILE_ABSENT", "core"),
-        ("LICENSE_FILE_ABSENT", "browser"),
-        ("LICENSE_FILE_ABSENT", "infrastructure"),
-        ("LICENSE_FILE_ABSENT", "infrastructure/mcp-control-plane"),
-        # -- 2 model contradictions (the #1690 declared-vs-actual class)
+        # -- 1 contested model contradiction (#1690: gateway public-boundary
+        #    status is a maintainer decision — audit offers two SSOT-consistent
+        #    resolutions; agents must not pick unilaterally).
         ("MODEL_CONTRADICTION", "gateway/LICENSE"),
-        ("MODEL_CONTRADICTION", "infrastructure/mcp-control-plane/package.json"),
     }
 )
 
@@ -285,6 +288,14 @@ def classify_findings(
                     "MODEL_CONTRADICTION",
                     license_file.relative_to(repo_root).as_posix(),
                     f"{repo} is declared PROPRIETARY in §2.3 but its mirror LICENSE is the MIT text (the #1690 class)",
+                )
+            elif "all rights reserved" not in head:
+                # #1640/#1691 wave hardening: presence alone is not compliance —
+                # a LICENSE placeholder or wrong-notice file must not pass.
+                add(
+                    "PROPRIETARY_NOTICE_ABSENT",
+                    license_file.relative_to(repo_root).as_posix(),
+                    f"{repo} is declared PROPRIETARY in §2.3 but its mirror LICENSE carries no 'All Rights Reserved' marker in the first 400 chars",
                 )
 
     # -- package.json license-field scan across every tracked manifest
@@ -433,6 +444,17 @@ def self_test() -> bool:
         # Proprietary surface with an MIT LICENSE text -> model contradiction.
         (root / "gateway").mkdir()
         (root / "gateway" / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+        # Proprietary surface with a marker-less LICENSE -> notice-absent
+        # (#1640/#1691 wave hardening: presence alone is not compliance).
+        (root / "browser").mkdir()
+        (root / "browser" / "LICENSE").write_text("Copyright someone. Be nice.\n", encoding="utf-8")
+        # Proprietary surface with a real §2.3-style notice -> clean (positive).
+        mcp = root / "infrastructure" / "mcp-control-plane"
+        mcp.mkdir(parents=True)
+        (mcp / "LICENSE").write_text(
+            "SupremeAI Proprietary License Notice\nCopyright (c) 2026 X. All Rights Reserved.\n",
+            encoding="utf-8",
+        )
         # Root-surface manifest without a license field -> finding (the root
         # itself is the supremeai-open MIT surface; valid manifests under
         # studio/ already cover the passing side).
@@ -443,10 +465,18 @@ def self_test() -> bool:
         assert ("LICENSE_FILE_ABSENT", "vscode") in by_key, by_key
         assert ("LICENSE_FILE_ABSENT", "core") in by_key, by_key
         assert ("MODEL_CONTRADICTION", "gateway/LICENSE") in by_key, by_key
+        assert ("PROPRIETARY_NOTICE_ABSENT", "browser/LICENSE") in by_key, by_key
+        assert not any(
+            f["code"] == "PROPRIETARY_NOTICE_ABSENT" and "mcp-control-plane" in f["path"]
+            for f in findings
+        ), "a real §2.3-style notice must NOT be flagged"
         assert ("PACKAGE_LICENSE_MISSING", "package.json") in by_key, by_key
         assert not any(f["code"] == "MAPPING_DRIFT" for f in findings), findings
-        assert any("absent on disk" in n for n in notes), notes  # browser/infra honest skips
-        print("  PASS | sandbox scan: missing/absent/contradiction + honest skips")
+        # every surface was materialized in THIS sandbox, so no honest-skip
+        # note fires here (absent-surface skips stay covered by the pytest
+        # sandbox in tests/test_license_ssot_guard.py):
+        assert not any("absent on disk" in n for n in notes), notes
+        print("  PASS | sandbox scan: missing/absent/contradiction/notice-less + honest skips")
         # 5. Decision tree: all findings inside baseline -> exit 0 (report-only).
         import license_ssot_guard as guard_mod  # noqa: PLC0415 — self-test only
 
