@@ -191,7 +191,7 @@ def _text_of(res) -> str:
 
 
 def _tower_text(name: str, arguments: dict) -> str:
-    _, sid = _rpc("initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
+    _, sid = _rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                  "clientInfo": {"name": "bridge-landing-watchdog", "version": "1.0"}})
     _rpc("notifications/initialized", {}, session_id=sid, notify=True)
     res, _ = _rpc("tools/call", {"name": name, "arguments": arguments}, session_id=sid)
