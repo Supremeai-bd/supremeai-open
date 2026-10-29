@@ -324,6 +324,7 @@ export const env = {
   // ── Firecrawl
   firecrawl: {
     get apiKeys(): string[] { return multiKey("FIRECRAWL_API_KEY"); },
+  },
 
   // ── DevTools audit backend (#1673 — chrome-devtools-mcp as tool backend)
   devtools: {
@@ -332,7 +333,6 @@ export const env = {
     get defaultTimeoutMs(): number { return positiveInt("DEVTOOLS_AUDIT_TIMEOUT_MS", 30000); },
     get slowRequestMs(): number { return positiveInt("DEVTOOLS_SLOW_REQUEST_MS", 1500); },
     get resultCapBytes(): number { return positiveInt("DEVTOOLS_RESULT_CAP_BYTES", 30000); },
-  },
   },
 };
 
