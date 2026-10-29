@@ -59,6 +59,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Your tenant ID (required when using tenant admin token)"),
       adminToken: z.string().optional().describe("Your tenant admin token (required for non-global-admin callers)"),
     },
+    { readOnlyHint: false },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -110,6 +111,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Tenant ID (tenant admin) — global admin may omit to see all"),
       adminToken: z.string().optional().describe("Tenant admin token"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -126,6 +128,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Your tenant ID"),
       adminToken: z.string().optional().describe("Your tenant admin token"),
     },
+    { readOnlyHint: false },
     async ({ clientId, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -148,6 +151,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Your tenant ID"),
       adminToken: z.string().optional().describe("Your tenant admin token"),
     },
+    { readOnlyHint: false },
     async ({ clientId, role, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -179,6 +183,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Your tenant ID"),
       adminToken: z.string().optional().describe("Your tenant admin token"),
     },
+    { readOnlyHint: false },
     async ({ clientId, toolProfile, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -211,6 +216,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false },
     async ({ clientId, provider, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -232,6 +238,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ clientId, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -252,6 +259,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ clientId, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
