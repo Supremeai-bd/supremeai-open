@@ -243,6 +243,32 @@ def find_mirror_in_items(
     return None
 
 
+def find_mirror_by_commit(
+    items: list[dict[str, Any]], repo: str, branch: str, commit_sha: str
+) -> int | None:
+    """Pure scan: find an OPEN mirror issue for the same repo+branch+commit.
+
+    Complements find_mirror_in_items (which keys on run_id). Re-runs of the
+    same commit produce different run_ids but the same root cause; this
+    prevents duplicate P0/P2 work orders for one incident (#2705).
+    """
+    if not commit_sha or len(commit_sha) < 8:
+        return None
+    short = commit_sha[:12]
+    for item in items or []:
+        if item.get("pull_request"):
+            continue
+        body = item.get("body") or ""
+        if repo not in body:
+            continue
+        if short not in body:
+            continue
+        if branch and branch not in ("unknown",) and f"`{branch}`" not in body and branch not in body:
+            continue
+        return int(item["number"])
+    return None
+
+
 def is_fresh_run(created_at: str, now_utc: datetime, max_age_hours: int) -> bool:
     """Pure: True only if the failed run is younger than max_age_hours.
 
@@ -370,6 +396,17 @@ def mirror_failure(
                 f"[watchdog] Incident already mirrored as issue #{existing_num}. Skipping."
             )
             return True
+        # Enhanced dedup (#2705): same repo+branch+commit => same incident,
+        # even if the run_id differs (re-runs / different workflow runs on
+        # the same commit). Prevents duplicate P0/P2 WOs for one root cause.
+        if commit_sha:
+            dup_num = find_mirror_by_commit(items, repo, branch, commit_sha)
+            if dup_num is not None:
+                print(
+                    f"[watchdog] Duplicate incident (same commit {commit_sha[:8]}) "
+                    f"already mirrored as issue #{dup_num}. Skipping."
+                )
+                return True
         if len(items) < 100:
             break
         page += 1
@@ -503,6 +540,12 @@ def poll_federation_failures(
                 mirrored_count += 1
             else:
                 failed_count += 1
+
+    # Auto-close already-resolved incidents so the board drains.
+    try:
+        auto_resolve_fixed_incidents(token=token)
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[watchdog] auto-resolve error: {exc}")
 
     return mirrored_count, failed_count
 

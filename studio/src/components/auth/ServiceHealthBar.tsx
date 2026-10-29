@@ -37,7 +37,7 @@ const SERVICE_LABEL_MAP: Record<string, string> = {
   application: 'Backend Core',
   database: 'Data Store (Postgres)',
   redis: 'Cache Cluster (Redis)',
-  scraper: 'Scraper Relay',
+  scraper: 'Scraper Service',
   tower: 'MCP Control Tower',
   primary: 'Primary Core Node',
   worker: 'Worker Node',
