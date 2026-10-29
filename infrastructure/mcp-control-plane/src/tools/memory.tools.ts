@@ -37,6 +37,35 @@ const FALLBACK_TOOLS: Array<{ name: string; description: string; inputSchema: Re
   { name: "search_learned_facts", description: "Search stored long-term facts.", inputSchema: { type: "object", properties: {} } },
 ];
 
+// R72 revival (#2618): truthful per-tool annotation hints. The memory family
+// proxies a live Python sidecar inventory, so hints key on the exposed name;
+// unknown names ship WITHOUT annotations (honest spec default) rather than
+// guessed ones.
+const MEMORY_HINTS: Record<string, Record<string, boolean>> = {
+  "memory.create_entities": { readOnlyHint: false },
+  "memory.create_relations": { readOnlyHint: false },
+  "memory.add_observations": { readOnlyHint: false },
+  "memory.delete_entities": { readOnlyHint: false, destructiveHint: true },
+  "memory.delete_observations": { readOnlyHint: false, destructiveHint: true },
+  "memory.delete_relations": { readOnlyHint: false, destructiveHint: true },
+  "memory.store_document": { readOnlyHint: false },
+  "memory.ingest_document_rag": { readOnlyHint: false },
+  "memory.record_task": { readOnlyHint: false },
+  "memory.remember_fact": { readOnlyHint: false },
+  "memory.clear_session": { readOnlyHint: false, destructiveHint: true },
+  "memory.wipe_memory": { readOnlyHint: false, destructiveHint: true },
+  "memory.read_graph": { readOnlyHint: true, idempotentHint: true },
+  "memory.search_nodes": { readOnlyHint: true, idempotentHint: true },
+  "memory.search_semantic": { readOnlyHint: true, idempotentHint: true },
+  "memory.open_nodes": { readOnlyHint: true, idempotentHint: true },
+  "memory.search_learned_facts": { readOnlyHint: true, idempotentHint: true },
+  "memory.get_similar_tasks": { readOnlyHint: true, idempotentHint: true },
+  "memory.get_recent_episodes": { readOnlyHint: true, idempotentHint: true },
+  "memory.build_context": { readOnlyHint: true, idempotentHint: true },
+  "memory.get_session_stats": { readOnlyHint: true, idempotentHint: true },
+  "memory.export_memory": { readOnlyHint: true, idempotentHint: true },
+};
+
 export async function registerMemoryTools(
   server: McpServer,
   adapter: MemorySubAdapter,
@@ -58,7 +87,8 @@ export async function registerMemoryTools(
       " [proxied to Python memory sidecar as '" + tool.name + "']" +
       " tenant_id is injected automatically by the control tower from your authenticated tenant (#1440).";
 
-    server.tool(exposed, desc, shape, async (rawArgs: unknown) => {
+    const hints = MEMORY_HINTS[exposed];
+    const handler = async (rawArgs: unknown) => {
       const args = (rawArgs ?? {}) as Record<string, unknown>;
       // Issue #1440: the Python sidecar's call gate REQUIRES a non-empty,
       // non-"default" tenant_id on every memory.* call, but no tool schema
@@ -79,24 +109,30 @@ export async function registerMemoryTools(
         if (res.ok) {
           const text = typeof res.data === "string"
             ? res.data : JSON.stringify(res.data ?? null, null, 2);
-          return { content: [{ type: "text", text }] };
+          return { content: [{ type: "text" as const, text }] };
         }
         return {
           isError: !res.transient ? true : undefined,
-          content: [{ type: "text", text: "Error: " + (res.error ?? "unknown") }],
+          content: [{ type: "text" as const, text: "Error: " + (res.error ?? "unknown") }],
         };
       } catch (err) {
         return {
-          content: [{ type: "text", text: "Error: " + (err as Error).message }],
+          content: [{ type: "text" as const, text: "Error: " + (err as Error).message }],
         };
       }
-    });
+    };
+    if (hints) {
+      server.tool(exposed, desc, shape, hints, handler);
+    } else {
+      server.tool(exposed, desc, shape, handler);
+    }
   }
 
   server.tool(
     "memory.status",
     "Health of the internal Python memory sidecar (ready/starting, tool count, last error).",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const tools = await adapter.listTools();
       const payload = {

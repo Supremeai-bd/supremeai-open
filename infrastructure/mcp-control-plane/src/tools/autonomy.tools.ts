@@ -7,6 +7,7 @@ export async function registerAutonomyTools(server: McpServer): Promise<void> {
     "autonomy.status",
     "Check if Autonomous Remediation is currently ENABLED or DISABLED.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const enabled = globalKillSwitch.isAutonomyEnabled();
       return {
@@ -19,6 +20,7 @@ export async function registerAutonomyTools(server: McpServer): Promise<void> {
     "autonomy.kill_switch",
     "Emergency stop! Instantly disable all autonomous remediations.",
     {},
+    { readOnlyHint: false, destructiveHint: true },
     async () => {
       globalKillSwitch.emergencyStop();
       return {
@@ -31,6 +33,7 @@ export async function registerAutonomyTools(server: McpServer): Promise<void> {
     "autonomy.enable",
     "Re-enable autonomous remediations.",
     {},
+    { readOnlyHint: false },
     async () => {
       globalKillSwitch.enableAutonomy();
       return {

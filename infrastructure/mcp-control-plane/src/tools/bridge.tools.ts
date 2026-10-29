@@ -861,6 +861,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         workOrders: z.array(z.object(bridgeQueueItemSchema)),
         nextStep: z.string(),
       },
+      annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ limit, label }) => {
       const repo = bridgeOpenRepo();
@@ -955,6 +956,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         body: z.string(),
         contract: z.record(z.string(), z.unknown()),
       },
+      annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ number }) => {
       const repo = bridgeOpenRepo();

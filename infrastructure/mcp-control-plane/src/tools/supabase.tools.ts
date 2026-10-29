@@ -16,6 +16,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
       limit: z.number().optional().describe("Maximum rows to fetch (default: 20, max: 100)"),
       filter: z.string().optional().describe("PostgREST filter string (e.g. 'status=eq.active')"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ action, accountId, table, select, limit, filter }) => {
       try {
         if (action === "health") {
@@ -50,6 +51,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
     {
       accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId }) => {
       try {
         const health = await getHealth(accountId);
@@ -71,6 +73,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
     {
       accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId }) => {
       try {
         const users = await getAuthUsers(accountId);
@@ -96,6 +99,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
       limit: z.number().optional().describe("Maximum rows to fetch (default: 20, max: 100)"),
       filter: z.string().optional().describe("PostgREST filter string (e.g. 'status=eq.active')"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId, table, select, limit, filter }) => {
       try {
         const data = await readTable(accountId, table, select ?? "*", limit ?? 20, filter);
@@ -119,6 +123,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
         accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
         table: z.string().optional().describe("Optional table name; omit to list all tables"),
       },
+      { readOnlyHint: true, idempotentHint: true },
       async ({ accountId, table }) => {
         try {
           const data = await getDatabaseSchema(accountId, table);
