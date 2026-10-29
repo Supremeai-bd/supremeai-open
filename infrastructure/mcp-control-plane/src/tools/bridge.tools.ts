@@ -137,6 +137,17 @@ export interface BridgePrBodyOptions {
   reflectionWhy?: string;
   alternativesRejected?: string;
   rollbackPath?: string;
+  /**
+   * #2485: opt-in escape hatch for the receipt-closure class. Docs-only
+   * (spec-only) submissions emit `Refs #N` so a spec-first lane keeps its work
+   * order open until code lands - but for CI-failure closure receipts the
+   * receipt IS the resolution, so the WO would stay open forever
+   * (evidence: #2405 stayed open after #2427 landed; #2368 after #2466).
+   * When true, a docs-only submission emits `Closes #N` for both the original
+   * issue and the round's work-order issue. Absent/false preserves the
+   * spec-only keep-open contract exactly.
+   */
+  closesOriginalIssue?: boolean;
 }
 
 export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
@@ -152,8 +163,12 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
   );
 
   // Auto-close original issue if provided (e.g. #1519, #1520)
+  // #2485: isSpecOnly normally downgrades Closes->Refs ("open until code
+  // implementation"), but closesOriginalIssue opts a docs-only receipt out of
+  // that keep-open contract (receipt-closure class: #2405/#2427, #2368/#2466).
+  const keepSpecOpen = isSpecOnly && !opts.closesOriginalIssue;
   if (opts.originalIssueNumber) {
-    if (isSpecOnly) {
+    if (keepSpecOpen) {
       linkedIssues.push(`Refs #${opts.originalIssueNumber}`);
     } else {
       linkedIssues.push(`Closes #${opts.originalIssueNumber}`, `Refs #${opts.originalIssueNumber}`);
@@ -162,7 +177,7 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
 
   // Also close/ref the bridge work order issue
   if (opts.issueNumber && opts.issueNumber !== opts.originalIssueNumber) {
-    if (isSpecOnly) {
+    if (keepSpecOpen) {
       linkedIssues.push(`Refs #${opts.issueNumber}`, `<!-- spec-only: keeps #${opts.issueNumber} open until code implementation -->`);
     } else {
       linkedIssues.push(`Closes #${opts.issueNumber}`, `Refs #${opts.issueNumber}`);
@@ -1078,6 +1093,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     agentIdentity,
     reflectionWhy,
     alternativesRejected,
+    closesOriginalIssue,
   }: {
     taskId: string;
     summary: string;
@@ -1089,6 +1105,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     agentIdentity?: string;
     reflectionWhy?: string;
     alternativesRejected?: string;
+    closesOriginalIssue?: boolean;
   }) => {
     // If not explicitly passed, detect original issue reference from summary e.g. "fix #1519" or "(#1519)"
     const detectedIssueNum = originalIssueNumber ?? (() => {
@@ -1506,6 +1523,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           reflectionWhy,
           alternativesRejected,
           rollbackPath,
+          closesOriginalIssue,
         });
 
         let prNumber: number | undefined;
@@ -1604,6 +1622,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     agentIdentity: z.string().optional().describe("Agent name / session attribution"),
     reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
     alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
+    closesOriginalIssue: z.boolean().optional().describe("#2485: opt-in for receipt-closure submissions. Docs-only (spec-only) payloads normally emit Refs #N so the work order stays open until code lands - but when this docs-only patch IS the resolution (e.g. a CI-failure closure receipt whose root cause is already remediated on main), set true to emit Closes #N on merge. Absent/false preserves the spec-only keep-open contract. Evidence: #2405 stayed open after #2427 landed; #2368 after #2466."),
   };
 
   server.tool(
