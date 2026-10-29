@@ -29,7 +29,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from core.cache.redis_manager import redis_manager
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks-orchestration"])
 
