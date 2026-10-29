@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.errors.error_bus import with_error_bus
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/style", tags=["style-learner"])
 
