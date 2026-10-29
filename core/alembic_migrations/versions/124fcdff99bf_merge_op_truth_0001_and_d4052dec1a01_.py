@@ -6,11 +6,7 @@ Create Date: 2026-10-06 16:20:15.039403
 
 """
 
-from typing import Sequence, Union  # noqa: UP035, UP007 — alembic template style pinned by graph-unification file
-
-from alembic import op
-import sqlalchemy as sa
-
+from typing import Sequence  # noqa: UP035 — alembic template style pinned by graph-unification file
 
 # revision identifiers, used by Alembic.
 revision: str = "124fcdff99bf"
