@@ -106,12 +106,15 @@ POINTER_PHRASE_RE = re.compile(
 SUBJECT_WINDOW = 60
 SUBJECT_SLICE = 96
 # Registry rows: "| R37 | ..." or "| R23-**V** | ..." (column 1 of §1 table).
-REGISTRY_ROW_RE = re.compile(r"^\|\s*R([1-9]\d{0,2})(?:-\*{0,2}(V|VI|c)\*{0,2})?\s*\|", re.MULTILINE)
-# Any uppercase R-citation, optional -V/-VI/-c suffix ("R23-VI", "R26-c").
+REGISTRY_ROW_RE = re.compile(r"^\|\s*R([1-9]\d{0,2})(?:-\*{0,2}(VI|V|I{1,2}|c)\*{0,2})?\s*\|", re.MULTILINE)
+# Any uppercase R-citation, optional -V/-VI/-I/-II/-c suffix ("R23-VI",
+# "R26-c", and the #2372 double-adoption ordinals "R63-I"/"R63-II" —
+# vocabulary widened V|VI|c -> +I{1,2} per the filer's live parse probe
+# at pass 24; the R53 POINTER_PHRASE_RE widening precedent).
 # Domain note: scout R-numbers start at R1 (the registry allocation begins
 # there and the pointer only advances) — "R0" is a different namespace (the
 # risk-engine decision matrix R0-R6 in docs/security/), never a scout lane.
-R_TOKEN_RE = re.compile(r"\bR([1-9]\d{0,2})(?:-(V|VI|c))?\b")
+R_TOKEN_RE = re.compile(r"\bR([1-9]\d{0,2})(?:-(VI|V|I{1,2}|c))?\b")
 # Lowercase pointer token inside a tracked FILENAME ("-r39-", "_r45."),
 # delimited so commit-slang like "r3" inside longer words never matches.
 FNAME_TOKEN_RE = re.compile(r"(?:^|[^a-z0-9])r(\d{1,3})(?:[^a-z0-9]|$)", re.IGNORECASE)
@@ -528,6 +531,21 @@ def self_test() -> bool:
     r = sweep(root)
     check("F6-citation-ghost-found",
           any(f["base"] == 98 and f["file"] == "docs/d.md" for f in r["cits"]))
+
+    # F6b: ordinal-suffix collision rows (#2372 double-adoption form) parse
+    # and register the base — a docs citation to R63 resolves once the
+    # R63-I/R63-II rows exist (pre-widening the rows were invisible to the
+    # gate and the citation stayed a ghost; live probe reproduced both states).
+    body = ("# Idx\n> Allocation rule (next free: **R64**).\n\n"
+            "## 1. R\n| R# | F | L | I | V | S |\n|---|---|---|---|---|---|\n"
+            "| R63-**I** | a | b | #2343 | c | d |\n"
+            "| R63-**II** | e | f | #2358 | g | h |\n\n"
+            "## 5. End\n")
+    root = tree({INDEX_REL: body, "docs/d.md": "# D\ncites R63\n"})
+    r = sweep(root)
+    check("F6b-ordinal-suffix-rows-register-base",
+          r["pointer"] == 64 and not r["a"] and not r["b"]
+          and not any(f["base"] == 63 for f in r["cits"]))
 
     # F7: pointer-in-filename — tracked filename embeds the pointer token
     root = tree({INDEX_REL: index(51, [1]),
