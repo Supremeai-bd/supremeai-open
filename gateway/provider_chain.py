@@ -228,6 +228,7 @@ async def execute_chain(
     attempt_fn: AttemptFn | None = None,
     max_retries: int = 2,
     backoff_base_s: float = 0.1,
+    circuit_breaker: Any = None,
 ) -> AttemptResult:
     """Try endpoints in order; fail over ONLY on retryable outcomes.
 
@@ -235,10 +236,26 @@ async def execute_chain(
     to ``max_retries`` times with exponential backoff (issue #2082) before
     failing over to the next endpoint. Each retry is ledgered honestly.
     """
+    if circuit_breaker is None:
+        from .circuit_breaker import default_breaker as circuit_breaker
     attempt = attempt_fn or _default_attempt
     ledger = ChainLedger()
     for idx, endpoint in enumerate(chain):
-        last_result: AttemptResult | None = None
+        provider = endpoint.provider
+        try:
+            allowed = circuit_breaker.allow(provider)
+        except Exception:
+            allowed = True
+        if not allowed:
+            ledger.record(
+                index=idx,
+                provider=provider,
+                model=endpoint.model,
+                outcome="circuit_open",
+                detail="circuit breaker open; provider skipped",
+            )
+            continue
+        last_result = None
         for retry in range(max_retries + 1):
             try:
                 result = await attempt(endpoint, payload)
@@ -250,13 +267,16 @@ async def execute_chain(
             ) as exc:
                 ledger.record(
                     index=idx,
-                    provider=endpoint.provider,
+                    provider=provider,
                     model=endpoint.model,
                     attempt=retry,
                     outcome="transport_error",
                     detail=str(exc)[:200],
                 )
-                # transport error: back off before retrying the same endpoint
+                try:
+                    circuit_breaker.record_failure(provider)
+                except Exception:
+                    pass
                 if retry < max_retries:
                     await asyncio.sleep(backoff_base_s * (2 ** retry))
                     continue
@@ -265,7 +285,7 @@ async def execute_chain(
             last_result = result
             ledger.record(
                 index=idx,
-                provider=endpoint.provider,
+                provider=provider,
                 model=endpoint.model,
                 attempt=retry,
                 outcome="success" if result.status < 400 else "provider_error",
@@ -273,11 +293,12 @@ async def execute_chain(
                 latency_ms=result.latency_ms,
             )
             if result.status < 400:
+                try:
+                    circuit_breaker.record_success(provider)
+                except Exception:
+                    pass
                 return result
-            # Retryable 503 (and 429 with Retry-After): back off and retry same endpoint.
-            retryable = result.status == 503 or (
-                result.status == 429
-            )
+            retryable = result.status == 503 or result.status == 429
             if retryable and retry < max_retries:
                 delay = backoff_base_s * (2 ** retry)
                 ra = result.retry_after_s
@@ -285,15 +306,18 @@ async def execute_chain(
                     delay = min(delay, ra)
                 await asyncio.sleep(delay)
                 continue
-            # Non-retryable or exhausted retries: decide failover.
             if result.status not in FAILOVER_STATUS and result.status not in (401, 403):
+                try:
+                    circuit_breaker.record_failure(provider)
+                except Exception:
+                    pass
                 return result
+            try:
+                circuit_breaker.record_failure(provider)
+            except Exception:
+                pass
             break
-        if last_result is not None and last_result.status in FAILOVER_STATUS:
-            # failed over after retries
-            pass
-    # If we get here, all endpoints exhausted.
-    raise ProviderChainExhausted(
+        raise ProviderChainExhausted(
         "all providers in the chain failed — 502 upstream (zero silent fallback)",
         ledger=ledger.entries,
     )
