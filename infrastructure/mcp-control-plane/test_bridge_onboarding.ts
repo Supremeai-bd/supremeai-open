@@ -141,6 +141,22 @@ async function makeBridgeServer(): Promise<McpServer> {
     }
     return (originalTool as unknown as (n: string, ...a: unknown[]) => unknown)(sanitizedName, ...args);
   };
+  // #2423 option A: mirror the production registerTool shim (index.fixed.ts) —
+  // bridge.work_queue/work_order now register through the SDK-blessed
+  // registerTool surface (outputSchema carriers), so the harness must apply
+  // the SAME name sanitization + toolAccessError gate on that surface too.
+  const originalRegisterTool = (server as unknown as { registerTool: (n: string, c: unknown, cb: unknown) => unknown }).registerTool.bind(server);
+  (server as unknown as { registerTool: unknown }).registerTool = (name: string, config: unknown, cb: unknown) => {
+    const sanitizedName = name.replace(/\./g, "_");
+    const governed = typeof cb === "function"
+      ? async (toolArgs: unknown) => {
+          const denial = toolAccessError(sanitizedName);
+          if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
+          return (cb as (a: unknown, e: unknown) => unknown)(toolArgs, {});
+        }
+      : cb;
+    return originalRegisterTool(sanitizedName, config, governed);
+  };
   await registerBridgeTools(server);
   attachDiscoveryFilter(server);
   return server;
