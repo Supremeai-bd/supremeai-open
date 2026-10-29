@@ -159,7 +159,13 @@ def gh(method: str, path: str, token: str, payload: dict | None = None) -> tuple
 def gh_ok(method: str, path: str, token: str, payload: dict | None = None) -> dict:
     status, body = gh(method, path, token, payload)
     if status >= 300:
-        raise BridgeError(f"github {method} {path} → HTTP {status}: {str(body.get('message', body))[:200]}")
+        # #2792 RCA amp-3: `errors[]` ফেলে দিলে GitHub-এর সাব-কারণ (যেমন "No commits
+        # between main and ...") verdict plane-এ পৌঁছায় না — 422 সব একই দেখায়।
+        detail = str(body.get("message", body))[:200]
+        errs = body.get("errors")
+        if errs:
+            detail += " | errors: " + str(errs)[:200]
+        raise BridgeError(f"github {method} {path} → HTTP {status}: {detail}")
     return body
 
 
@@ -333,6 +339,18 @@ def split_brain_duplicates(
         if (base / twin).is_file():
             dupes.append(canon)
     return dupes
+
+
+def _has_effective_landing(has_staged: bool, already_applied: bool) -> bool:
+    """#2792 RCA guard-2: POST /pulls-এর আগে কার্যকর commit আছে কি?
+
+    বাংলা: zero-diff অর্ডার (content অন্য কোথাও merge হয়ে গেছে) apply no-op →
+    has_staged=False → commit-হীন branch → POST /pulls → GitHub 422 "No commits
+    between" → পুরো রান exit-2 → sync/reporting মরে যায় (প্রমাণিত streak #327-#329)।
+    E4-resume-এ already_applied=True মানে commit branch-এই আছে, শুধু push বাকি —
+    সেই পাথ চলবে; বাকি সব নিষ্প্রাণ ল্যান্ডিং clean reject হবে (crash নয়)।
+    """
+    return bool(has_staged or already_applied)
 
 
 def sanitize_public_comment(text: str, token: str) -> str:
@@ -791,6 +809,15 @@ def process_issue(issue: dict, token: str, work: Path, results: list[str]) -> No
     if len(diff.encode("utf-8", "replace")) > MAX_PATCH_BYTES:
         reject(f"patch too large ({len(diff)} bytes > {MAX_PATCH_BYTES})")
         return
+    # #2792 RCA guard-1: zero-diff patch branch = content already merged elsewhere
+    # (or empty branch). Clean reject HERE — no commit-less branch, no POST /pulls
+    # 422, no exit-2, the order leaves the queue with an honest terminal label.
+    if not files or not diff.strip():
+        reject(
+            "zero-diff patch branch — content already merged elsewhere or empty "
+            "branch; nothing effective to land (#2792)"
+        )
+        return
     if len(files) > MAX_FILES:
         reject(f"too many files ({len(files)} > {MAX_FILES})")
         return
@@ -885,6 +912,15 @@ def process_issue(issue: dict, token: str, work: Path, results: list[str]) -> No
     run(["git", "add", "-A"], cwd=private_dir)
     # already-applied retry-এ staged পরিবর্তন নেই → খালি commit নয়, বিদ্যমান HEAD।
     has_staged = run(["git", "diff", "--cached", "--quiet"], cwd=private_dir, check=False).returncode == 1
+    # #2792 RCA guard-2 (belt behind guard-1): no effective commit → clean reject
+    # BEFORE POST /pulls — the proven 422-poison that exit-2'd whole intake runs.
+    if not _has_effective_landing(has_staged, already_applied):
+        reject(
+            "no effective commit to land — patch applies as a no-op on "
+            + (f"{target_repo}@{land_branch} (retry)" if resumed else f"{target_repo}@{PRIVATE_MAIN}")
+            + "; content already merged elsewhere (#2792)"
+        )
+        return
     if has_staged:
         run(
             [
@@ -1152,12 +1188,17 @@ def main() -> int:
         print(f"unknown mode: {mode}", file=sys.stderr)
         return 2
     try:
-        rc = 0
+        # #2792 RCA guard-4: intake rc≠0 হলেও sync চলবে — একটা খারাপ অর্ডার
+        # landed/rejected রিপোর্টিং বন্ধ করতে পারে না (streak #327-#329-এ
+        # reporting সম্পূর্ণ মরেছিল)। দুটো exit code আলাদাভাবে জানানো হয়।
+        rcs: list[int] = []
         if mode in ("intake", "both"):
-            rc = cmd_intake(token)
-        if rc == 0 and mode in ("sync", "both"):
-            rc = cmd_sync(token)
-        return rc
+            rcs.append(cmd_intake(token))
+            print(f"== intake rc={rcs[-1]} ==")
+        if mode in ("sync", "both"):
+            rcs.append(cmd_sync(token))
+            print(f"== sync rc={rcs[-1]} ==")
+        return max(rcs) if rcs else 0
     except BridgeError as exc:
         print(f"BRIDGE FAIL-HONEST: {exc}", file=sys.stderr)
         return 1
