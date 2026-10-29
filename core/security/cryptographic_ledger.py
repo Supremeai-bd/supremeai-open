@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class CryptographicLedger:
