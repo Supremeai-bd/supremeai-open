@@ -786,6 +786,23 @@ function clipBody(body: unknown): string {
   return body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}\n... [truncated ${body.length - MAX_BODY_CHARS} chars]` : body;
 }
 
+/** #2423 option A — zod mirror of normalizeQueueItem's guaranteed shape.
+ * Single source shared by the bridge.work_queue rows (z.array(z.object)) and
+ * the bridge.work_order top-level fields (spread), so the declared
+ * outputSchema and the emitted structuredContent payloads cannot drift
+ * apart: normalizeQueueItem is the only producer of both shapes. */
+const bridgeQueueItemSchema = {
+  number: z.number().int().nullable(),
+  title: z.string(),
+  state: z.string(),
+  stateReason: z.string().nullable(),
+  url: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  labels: z.array(z.string()),
+  comments: z.number().int(),
+};
+
 export async function registerBridgeTools(server: McpServer): Promise<void> {
   server.tool(
     "bridge.guide",
@@ -796,12 +813,33 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  // #2423 option A (radar R65): declare outputSchema + emit structuredContent
+  // per MCP spec rev 2025-06-18 ("Structured Content"). Dual emission is
+  // additive by construction: the TextContent block stays byte-identical so
+  // every existing hand-parsing caller (watchdog, filer scripts, mcp_client)
+  // keeps working unchanged, while schema-aware callers get a machine-
+  // validatable contract whose required keys lock in the R59 window echo
+  // (count/totalOpen/windowTruncated) at schema level.
+  server.registerTool(
     "bridge.work_queue",
-    "List OPEN work-order issues awaiting an agent in the public open-source repo (defaults to all open issues, or filter by optional label). Read-only, public data only.",
     {
-      limit: z.number().int().min(1).max(QUEUE_LIMIT_MAX).optional().describe("Max work orders to return (default 20; up to 200 for full-board reconciliation)"),
-      label: z.string().optional().describe("Optional label filter; omit or empty = all open issues"),
+      description: "List OPEN work-order issues awaiting an agent in the public open-source repo (defaults to all open issues, or filter by optional label). Read-only, public data only.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(QUEUE_LIMIT_MAX).optional().describe("Max work orders to return (default 20; up to 200 for full-board reconciliation)"),
+        label: z.string().optional().describe("Optional label filter; omit or empty = all open issues"),
+      },
+      outputSchema: {
+        repo: z.string(),
+        label: z.string().nullable(),
+        scope: z.string(),
+        authenticatedRead: z.boolean(),
+        callerAuthenticated: z.boolean(),
+        count: z.number().int(),
+        totalOpen: z.number().int(),
+        windowTruncated: z.boolean(),
+        workOrders: z.array(z.object(bridgeQueueItemSchema)),
+        nextStep: z.string(),
+      },
     },
     async ({ limit, label }) => {
       const repo = bridgeOpenRepo();
@@ -852,22 +890,25 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         // window contract is observable instead of silent. Additive fields,
         // mirrors the R54 stateReason passthrough shape.
         const totalOpen = filtered.length;
+        // Dual emission (#2423): the SAME object feeds both planes — zero
+        // drift by construction. SDK-side validateToolOutput enforces the
+        // schema on every success result; isError paths stay exempt and
+        // text-only, exactly as before.
+        const payload = {
+          repo,
+          label: appliedLabel,
+          scope: "all-open",
+          authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
+          callerAuthenticated: !anonymous,
+          count: workOrders.length,
+          totalOpen,
+          windowTruncated: workOrders.length < totalOpen,
+          workOrders,
+          nextStep: "Call bridge.work_order with a number, then follow bridge.guide.",
+        };
         return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              repo,
-              label: appliedLabel,
-              scope: "all-open",
-              authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
-              callerAuthenticated: !anonymous,
-              count: workOrders.length,
-              totalOpen,
-              windowTruncated: workOrders.length < totalOpen,
-              workOrders,
-              nextStep: "Call bridge.work_order with a number, then follow bridge.guide.",
-            }, null, 2),
-          }],
+          structuredContent: payload,
+          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
         };
       } catch (err) {
         return {
@@ -878,11 +919,21 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  // #2423 option A: outputSchema = normalizeQueueItem fields + body + contract
+  // (the full read envelope). Rows and top-level fields share
+  // bridgeQueueItemSchema, so queue rows and single-order reads cannot drift.
+  server.registerTool(
     "bridge.work_order",
-    "Fetch one Bridge Work Order from the public open-source repo by issue number: title, labels, sanitized body and URL. Read-only, public data only.",
     {
-      number: z.number().int().positive().describe("Work-order issue number in the public open-source repo"),
+      description: "Fetch one Bridge Work Order from the public open-source repo by issue number: title, labels, sanitized body and URL. Read-only, public data only.",
+      inputSchema: {
+        number: z.number().int().positive().describe("Work-order issue number in the public open-source repo"),
+      },
+      outputSchema: {
+        ...bridgeQueueItemSchema,
+        body: z.string(),
+        contract: z.record(z.string(), z.unknown()),
+      },
     },
     async ({ number }) => {
       const repo = bridgeOpenRepo();
@@ -912,15 +963,15 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           };
         }
         const item = normalizeQueueItem(res.data);
+        // Dual emission (#2423): same object in both planes, zero drift.
+        const payload = {
+          ...item,
+          body: clipBody(res.data.body),
+          contract: bridgeGuide().contract,
+        };
         return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              ...item,
-              body: clipBody(res.data.body),
-              contract: bridgeGuide().contract,
-            }, null, 2),
-          }],
+          structuredContent: payload,
+          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
         };
       } catch (err) {
         return {
