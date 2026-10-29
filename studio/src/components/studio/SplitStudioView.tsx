@@ -58,7 +58,9 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
     try {
       const saved = localStorage.getItem('supremeai_avatar_settings');
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch (_err) {
+      /* ignore invalid JSON in storage */
+    }
     return DEFAULT_AVATAR_SETTINGS;
   });
 
@@ -75,6 +77,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
 
   // Bottom Trays Toggle
   const [bottomTray, setBottomTray] = useState<'none' | 'files' | 'terminal'>('none');
+  const onSendMessageRef = useRef<(text?: string) => Promise<void>>(async () => {});
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     '[MCP Bridge] Connected to supremeai-mcp-tower.onrender.com',
     '[Sandbox] Iframe renderer initialized with Tailwind CSS v4',
@@ -259,7 +262,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
           const transcript = event.results[0][0].transcript;
           setIsListening(false);
           setInputMessage(transcript);
-          handleSendMessage(transcript);
+          onSendMessageRef.current(transcript);
         };
 
         recognition.onerror = () => {
@@ -290,9 +293,9 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
         } else {
           const fallbackCmd = language === 'bn' ? 'একটি SaaS গ্লাসমরফিজম পেজ বানাও' : 'Build a SaaS landing page with glassmorphism';
           setInputMessage(fallbackCmd);
-          handleSendMessage(fallbackCmd);
+          onSendMessageRef.current(fallbackCmd);
         }
-      } catch {
+      } catch (_err) {
         setIsListening(false);
         setJarvisState('idle');
       }
@@ -319,11 +322,11 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
 
     const lower = text.toLowerCase();
 
-    let isFoodRequest = lower.includes('food') || lower.includes('restaurant') || lower.includes('রেস্তোরাঁ') || lower.includes('ফুড');
-    let isSaasRequest = lower.includes('saas') || lower.includes('glass') || lower.includes('ড্যাশবোর্ড') || lower.includes('dashboard') || lower.includes('ক্লিন');
-    let isFinanceRequest = lower.includes('fintech') || lower.includes('trading') || lower.includes('chart') || lower.includes('ট্রেডিং') || lower.includes('ফিনটেক');
-    let isKanbanRequest = lower.includes('kanban') || lower.includes('board') || lower.includes('agile') || lower.includes('কানবান');
-    let isDeployRequest = lower.includes('deploy') || lower.includes('publish') || lower.includes('পাবলিশ');
+    const isFoodRequest = lower.includes('food') || lower.includes('restaurant') || lower.includes('রেস্তোরাঁ') || lower.includes('ফুড');
+    const isSaasRequest = lower.includes('saas') || lower.includes('glass') || lower.includes('ড্যাশবোর্ড') || lower.includes('dashboard') || lower.includes('ক্লিন');
+    const isFinanceRequest = lower.includes('fintech') || lower.includes('trading') || lower.includes('chart') || lower.includes('ট্রেডিং') || lower.includes('ফিনটেক');
+    const isKanbanRequest = lower.includes('kanban') || lower.includes('board') || lower.includes('agile') || lower.includes('কানবান');
+    const isDeployRequest = lower.includes('deploy') || lower.includes('publish') || lower.includes('পাবলিশ');
 
     if (isDeployRequest) {
       setIsPublishModalOpen(true);
@@ -404,6 +407,10 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
       );
     }, 800);
   };
+
+  useEffect(() => {
+    onSendMessageRef.current = handleSendMessage;
+  });
 
   // Human-Eye Autonomous UI Audit Handler
   const handleFixWithHumanEye = () => {

@@ -56,7 +56,9 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
     try {
       const saved = localStorage.getItem('supremeai_avatar_settings');
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch (_err) {
+      /* ignore invalid JSON in storage */
+    }
     return DEFAULT_AVATAR_SETTINGS;
   });
 
@@ -112,79 +114,7 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
   const rippleWaves = useRef<{ radius: number; maxRadius: number; alpha: number }[]>([]);
   const recognitionRef = useRef<any>(null);
 
-  // Setup Web Speech Recognition
-  const initSpeech = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = language === 'bn' ? 'bn-BD' : 'en-US';
-
-      recognition.onstart = () => {
-        setIsMicActive(true);
-        setInternalState('listening');
-        jarvisAudio.playScan();
-      };
-
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            const transcript = event.results[i][0].transcript;
-            setSpeechTranscript(transcript);
-            handleUserDirective(transcript);
-          } else {
-            interim += event.results[i][0].transcript;
-            setSpeechTranscript(interim);
-          }
-        }
-      };
-
-      recognition.onerror = () => {
-        setIsMicActive(false);
-      };
-
-      recognition.onend = () => {
-        setIsMicActive(false);
-      };
-
-      recognitionRef.current = recognition;
-    } catch (e) {
-      console.warn('Speech recognition not available:', e);
-    }
-  }, [language]);
-
-  useEffect(() => {
-    initSpeech();
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
-    };
-  }, [initSpeech]);
-
-  const toggleMic = () => {
-    if (isMicActive) {
-      if (recognitionRef.current) recognitionRef.current.stop();
-      setIsMicActive(false);
-      setInternalState('idle');
-    } else {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch {
-          initSpeech();
-          recognitionRef.current?.start();
-        }
-      }
-    }
-  };
-
-  const handleUserDirective = (text: string) => {
+  const handleUserDirective = useCallback((text: string) => {
     if (!text.trim()) return;
     setInternalState('thinking');
     jarvisAudio.playActivate();
@@ -230,6 +160,78 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
         }, 3000);
       }
     }, 1100);
+  }, [currentAvatar, isSpeakerMuted, language, onSendMessage]);
+
+  // Setup Web Speech Recognition
+  const initSpeech = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = language === 'bn' ? 'bn-BD' : 'en-US';
+
+      recognition.onstart = () => {
+        setIsMicActive(true);
+        setInternalState('listening');
+        jarvisAudio.playScan();
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            const transcript = event.results[i][0].transcript;
+            setSpeechTranscript(transcript);
+            handleUserDirective(transcript);
+          } else {
+            interim += event.results[i][0].transcript;
+            setSpeechTranscript(interim);
+          }
+        }
+      };
+
+      recognition.onerror = () => {
+        setIsMicActive(false);
+      };
+
+      recognition.onend = () => {
+        setIsMicActive(false);
+      };
+
+      recognitionRef.current = recognition;
+    } catch (e) {
+      console.warn('Speech recognition not available:', e);
+    }
+  }, [handleUserDirective, language]);
+
+  useEffect(() => {
+    initSpeech();
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, [initSpeech]);
+
+  const toggleMic = () => {
+    if (isMicActive) {
+      if (recognitionRef.current) recognitionRef.current.stop();
+      setIsMicActive(false);
+      setInternalState('idle');
+    } else {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch {
+          initSpeech();
+          recognitionRef.current?.start();
+        }
+      }
+    }
   };
 
   const sendQuickDirective = (directiveBn: string, directiveEn: string) => {
@@ -244,7 +246,9 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
     setCurrentAvatar(updated);
     try {
       localStorage.setItem('supremeai_avatar_settings', JSON.stringify(updated));
-    } catch {}
+    } catch (_err) {
+      /* ignore storage quota/security error */
+    }
     if (onUpdateAvatarSettings) onUpdateAvatarSettings(updated);
     jarvisAudio.playScan();
   };
