@@ -285,6 +285,56 @@ def scan_secrets(diff_text: str) -> list[str]:
     return [family for family, rx in SECRET_PATTERNS if rx.search(diff_text)]
 
 
+def deletion_paths(diff_text: str) -> set[str]:
+    """Diff থেকে সম্পূর্ণভাবে মোছা ফাইলের সেট (b/-side path)।
+
+    বাংলা: `diff --git a/X b/X` হেডারের পরে `deleted file mode` লাইন থাকলে X
+    মুছে যাচ্ছে — split-brain guard (#1676) কেবল add/modify-তে আটকাবে, স্টেল
+    কপির deletion-কে (cleanup lane) চলতে দেবে।
+    """
+    deleted: set[str] = set()
+    cur: str | None = None
+    for ln in (diff_text or "").splitlines():
+        m = re.match(r"^diff --git a/(.+?) b/(.+?)$", ln)
+        if m:
+            cur = m.group(2)
+            continue
+        if cur and ln.startswith("deleted file mode "):
+            deleted.add(cur)
+            cur = None
+    return deleted
+
+
+def split_brain_duplicates(
+    target_repo: str, target_dir: Path | str, mapped: list[tuple[str, bool]]
+) -> list[str]:
+    """#1676 split-brain guard: dispatch যে path-গুলো target-এর root ফাইলের
+    duplicate তৈরি করবে সেগুলোর তালিকা।
+
+    বাংলা: স্যাটেলাইট মিরর মনোরিপো namespace dir-এর *content* root-এ রাখে
+    (যেমন supremeai-studio-র root == মনোরিপোর studio/ content)। তাই
+    `<ns>/<rest>` dispatch করলে root-এর `<rest>`-এর পাশে একটি স্টেল nested
+    কপি জন্ম নেয় — #1676-র 15টি studio/ কপি এই রুটিং দোষেই জমেছিল। Monorepo
+    (PRIVATE_REPO) বাদ — সেখানে studio/ বৈধ workspace namespace। Deletion
+    (cleanup) বাদ — স্টেল কপি মোছার অর্ডারই তো কাঙ্ক্ষিত। Fail-closed: root
+    twin আসলেই থাকলে (clone থেকে প্রমাণিত) কেবল তখনই reject।
+    """
+    if target_repo == PRIVATE_REPO:
+        return []
+    base = Path(target_dir)
+    dupes: list[str] = []
+    for canon, is_deletion in mapped:
+        if is_deletion:
+            continue
+        parts = (canon or "").replace("\\", "/").lstrip("/").split("/")
+        if len(parts) < 2 or not parts[1]:
+            continue  # root-level path — namespace নেই, duplicate হওয়া অসম্ভব
+        twin = "/".join(parts[1:])
+        if (base / twin).is_file():
+            dupes.append(canon)
+    return dupes
+
+
 def sanitize_public_comment(text: str, token: str) -> str:
     """Defense-in-depth: token string + যেকোনো secret-pattern REDACT করা।"""
     if token:
@@ -778,11 +828,24 @@ def process_issue(issue: dict, token: str, work: Path, results: list[str]) -> No
     if target_repo is None:
         reject("order spans multiple target repos — one order per target (bridge v2 routing rule)")
         return
+    deleted = deletion_paths(diff)
+    mapped = [(path_map.get(f, f), f in deleted) for f in files]
     diff_routed = rewrite_patch_paths(diff, path_map)
     private_dir = str(work / f"priv-{num}")
     clone(target_repo, token, Path(private_dir))
     run(["git", "config", "user.name", "supremeai-bridge"], cwd=private_dir)
     run(["git", "config", "user.email", "bridge@supremeai.local"], cwd=private_dir)
+    # #1676 split-brain guard — satellite root-mirror duplicate detection (fail-closed,
+    # root twin proven from the freshly cloned target main, deletions exempt).
+    dupes = split_brain_duplicates(target_repo, Path(private_dir), mapped)
+    if dupes:
+        shown = ", ".join(dupes[:8]) + (" …" if len(dupes) > 8 else "")
+        reject(
+            "split-brain guard (#1676): dispatched path(s) would duplicate existing root "
+            + f"file(s) in {target_repo}: {shown} — write the root path instead, or submit "
+            + "a deletion order for the stale copy and resubmit"
+        )
+        return
     land_branch = f"bridge-land/{task_id}"
     # E4: আগের রান push করেছে কিন্তু intake issue (dedup marker) তৈরি হওয়ার আগেই
     # মৃত্যু/রদ হয়েছে (concurrency cancel, timeout, API ৫xx) — সেই orphan
