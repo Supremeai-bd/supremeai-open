@@ -30,7 +30,12 @@ import urllib.request
 LOGGER = logging.getLogger("docs_ingest")
 
 TOWER_URL = os.environ.get("SUPREMEAI_MCP_URL", "https://supremeai-mcp-tower.onrender.com/mcp")
-HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+# MCP-Protocol-Version on every request: streamable HTTP (spec rev >= 2025-06-18)
+# requires the negotiated version post-initialize; a missing header makes the server
+# assume 2025-03-26, voiding the 2025-11-25 floor (#2568, radar R70). Mirrors
+# PROTOCOL_VERSION_STREAMABLE in scripts/agents/mcp_tower_client.py.
+HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
+           "MCP-Protocol-Version": "2025-11-25"}
 
 # (repo, path prefix, doc collection label) — keep in sync with the work order
 TARGETS = [
@@ -68,7 +73,7 @@ def post(payload: dict, session_id: str | None = None, timeout: int = 90):
 
 def ensure_session() -> str:
     sid, _ = post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                   "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                   "params": {"protocolVersion": "2025-11-25", "capabilities": {},
                               "clientInfo": {"name": "docs-ingest", "version": "1.0"}}})
     post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
     return sid
@@ -107,7 +112,7 @@ def main() -> int:
                 doc_paths.append(root_doc)
         LOGGER.info("%s (%s): %d candidate docs", repo, label, len(doc_paths))
         for path in sorted(doc_paths)[: args.max_docs]:
-            read = call(sid, "github_read_file", {"repo": repo, "path": path}, rid)
+            read = call(sid, "github.read_file", {"repo": repo, "path": path}, rid)
             rid += 1
             try:
                 inner = json.loads(read.get("result", {}).get("content", [{}])[0].get("text", "{}"))

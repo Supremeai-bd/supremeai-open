@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 
 from api.dependencies import get_current_admin
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Issue #683 Section 1 (inward layer violation): the recording functions, the
 # Prometheus collectors and the SupremeMetricsEngine latency-history engine

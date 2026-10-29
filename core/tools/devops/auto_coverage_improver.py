@@ -3,7 +3,7 @@ import asyncio
 import os
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from tools.code.auto_test_generator import AutoTestGenerator
 from tools.devops.coverage_auditor import CoverageAuditor
 

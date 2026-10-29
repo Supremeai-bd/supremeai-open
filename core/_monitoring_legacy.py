@@ -27,7 +27,7 @@ from enum import Enum
 from functools import wraps
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Logging is now unified via Loguru InterceptHandler in core.logging_config
 

@@ -35,7 +35,7 @@ from typing import Any
 # Issue #542 (BE-10): unify the JWT secret floor with the other validators.
 # Issue #1260 (Wave 3.4): CONFIG_SCHEMA derives from the canonical CONFIG_SPECS.
 from core.config_classification import get_config_spec
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.secret_policy import (
     JWT_SECRET_ENV,
     JWT_SECRET_MIN_LENGTH,

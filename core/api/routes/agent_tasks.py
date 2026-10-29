@@ -8,7 +8,7 @@ from api.dependencies import get_current_user_token
 from brain.agent_departments import AgentDepartment
 from brain.model_router import ModelRouter
 from core.generation_monitor import GenerationMonitor
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.zero_cost_architecture.swarm_orchestrator_integration import ZeroCostSwarmOrchestrator
 
 agent_router = APIRouter(

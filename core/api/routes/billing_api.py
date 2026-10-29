@@ -16,7 +16,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from api.dependencies import get_current_user_token
 from core.config import settings
 from core.llm.token_deductor import TokenDeductor
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.session import get_db_session
 from models.wallet import TransactionLedgerEntry, UserWallet
 from services.billing.billing_plans import SUBSCRIPTION_PLANS, CheckoutRequest

@@ -109,7 +109,7 @@ def main() -> None:
 
     curriculum = load_curriculum(input_path)
     rows = convert(curriculum, args.format)
-    random.Random(args.seed).shuffle(rows)
+    random.Random(args.seed).shuffle(rows)  # nosec B311 — seeded determinism is a data-gen feature (reproducible splits), not crypto (#2081 audit)
 
     split = int(len(rows) * (1 - args.val_ratio))
     train_rows = rows[:split]

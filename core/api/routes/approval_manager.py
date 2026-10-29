@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from api.dependencies import get_project_admin
 from core.code_validator import AICodeValidator
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security.ws_auth import authenticate_websocket
 from models.pending_tasks import (
     ApprovalStateError,

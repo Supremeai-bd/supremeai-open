@@ -16,6 +16,7 @@ test_boundary_contract_sentinel.py.
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 import time
@@ -285,6 +286,266 @@ def test_live_mode_honest_skip_on_unreachable():
         # In-repo the git plane works; the Tower plane is exercised by the
         # report-only live mode elsewhere. Nothing to assert here.
         pass
+
+
+def test_fetch_work_orders_r2_tower_serves_full_ladder_top():
+    """r2 tower (#2115/#2123): limit=200 accepted, rows returned, lower rungs
+    never dialed (no wasted round-trips, no silent cap at 50 after deploy)."""
+    mod = _load_watchdog_module()
+    calls = []
+
+    def r2_tower(name, arguments):
+        calls.append(dict(arguments))
+        assert arguments.get("limit") == 200
+        return json.dumps({"workOrders": [{"number": 1}, {"number": 2}]})
+
+    rows, rung = mod._fetch_work_orders(fetch_text=r2_tower)
+    assert rows == [{"number": 1}, {"number": 2}] and rung == 200
+    assert calls == [{"limit": 200}], calls
+
+
+def test_fetch_work_orders_pre_r2_validation_fallback():
+    """Pre-r2 deployed tower: limit=200 is a -32602 validation rejection
+    (non-JSON error text) -> falls to 50 (pre-r2 cap; live receipt 35 rows);
+    default rung never dialed. Rank-window visibility widens 20 -> 35."""
+    mod = _load_watchdog_module()
+    calls = []
+
+    def prer2_tower(name, arguments):
+        calls.append(dict(arguments))
+        if arguments.get("limit") == 200:
+            return ("MCP error -32602: Input validation error: Invalid "
+                    "arguments for tool bridge.work_queue: Too big: expected "
+                    "number to be <=50")
+        assert arguments.get("limit") == 50, arguments
+        return json.dumps({"workOrders": [{"number": n} for n in range(35)]})
+
+    rows, rung = mod._fetch_work_orders(fetch_text=prer2_tower)
+    assert len(rows) == 35 and rung == 50
+    assert calls == [{"limit": 200}, {"limit": 50}], calls
+
+
+def test_fetch_work_orders_default_rung_last_resort():
+    """Both explicit rungs rejected -> tower default (exact pre-ladder
+    behavior); the ladder never invents an empty board."""
+    mod = _load_watchdog_module()
+    calls = []
+
+    def legacy_tower(name, arguments):
+        calls.append(dict(arguments))
+        if "limit" in arguments:
+            return "MCP error -32602: Input validation error: unexpected argument"
+        return json.dumps({"workOrders": [{"number": 7}]})
+
+    rows, rung = mod._fetch_work_orders(fetch_text=legacy_tower)
+    assert rows == [{"number": 7}] and rung is None
+    assert calls == [{"limit": 200}, {"limit": 50}, {}], calls
+
+
+def test_fetch_work_orders_network_failure_fail_close():
+    """Only argument-validation rejections fall through; a transport failure
+    propagates so main() keeps its honest SKIP (exit 2, never 0/1)."""
+    mod = _load_watchdog_module()
+    calls = []
+
+    def dead_tower(name, arguments):
+        calls.append(dict(arguments))
+        raise ConnectionError("unreachable")
+
+    try:
+        mod._fetch_work_orders(fetch_text=dead_tower)
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("transport failure must propagate, not fall through")
+    assert calls == [{"limit": 200}], calls
+
+
+def test_fetch_rejected_rows_paginates_short_page_stop():
+    """#2158: rejected rows the queue omits are enumerated straight from
+    GitHub via the S05 SSOT (short-page-stop, number-dedupe merge)."""
+    mod = _load_watchdog_module()
+    urls = []
+    page1 = [{"number": 1000 + i, "title": f"w{i}", "state": "open",
+              "labels": ["bridge:rejected"]} for i in range(100)]
+    page2 = [{"number": 7, "title": "x (bridge-20261028-y)", "state": "open",
+              "labels": [{"name": "bridge:rejected"}]},
+             {"number": 7, "title": "dup", "state": "open",
+              "labels": ["bridge:rejected"]}]
+
+    def fake(url):
+        urls.append(url)
+        assert "labels=bridge%3Arejected" in url, url
+        return {1: page1, 2: page2}[int(url.rsplit("page=", 1)[1].split("&")[0])]
+
+    rows = mod._fetch_rejected_rows(fetch_json=fake)
+    assert len(rows) == 101, len(rows)
+    assert rows[-1]["number"] == 7 and rows[-1]["labels"] == ["bridge:rejected"]
+    assert len(urls) == 2 and "page=1" in urls[0] and "page=2" in urls[1]
+
+
+def test_fetch_rejected_rows_rejects_non_list():
+    """A non-list GitHub payload is a loud per-plane error, never a silent
+    empty enumeration (honesty contract: unknown != zero)."""
+    mod = _load_watchdog_module()
+    try:
+        mod._fetch_rejected_rows(fetch_json=lambda u: {"message": "nope"})
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("non-list payload must raise TypeError")
+
+
+def test_join_rejected_plane_queue_rows_win_on_collision():
+    """The queue stays the board SSOT for queued work; only queue-omitted
+    rejected rows join — no double classification on label races."""
+    mod = _load_watchdog_module()
+    queue_rows = [{"number": 5, "title": "queued-row", "labels": ["bridge:queued"]}]
+    rejected = [{"number": 5, "title": "rejected-row", "labels": ["bridge:rejected"]},
+                {"number": 9, "title": "only-rejected", "labels": ["bridge:rejected"]}]
+    joined, n = mod._join_rejected_plane(queue_rows, rejected)
+    assert n == 1 and joined[0]["title"] == "queued-row" and joined[1]["number"] == 9
+
+
+def test_load_rejected_plane_fail_open():
+    """Both transports down degrade the rejected plane only: honest dual-cause
+    'unreachable' note, empty rows — the queue plane stays authoritative."""
+    mod = _load_watchdog_module()
+
+    def boom():
+        raise ConnectionError("down")
+
+    rows, note = mod._load_rejected_plane(fetch_rows=boom, tower_rows=boom)
+    assert rows == [] and "unreachable" in note
+    assert "github ConnectionError" in note and "tower ConnectionError" in note
+
+
+def test_fetch_rejected_rows_tower_shape():
+    """The tower fallback parses the label-filtered bridge.work_queue payload
+    (#2251 fixed the self-defeating filter) and fails loud on drift."""
+    mod = _load_watchdog_module()
+
+    ok = mod._fetch_rejected_rows_tower(fetch_text=lambda n, a: json.dumps({"count": 1, "workOrders": [
+            {"number": 2056, "title": "x", "labels": ["bridge:rejected"]}]}))
+    assert len(ok) == 1 and ok[0]["number"] == 2056
+
+    try:
+        mod._fetch_rejected_rows_tower(fetch_text=lambda n, a: '{"repo": "x"}')
+        raise AssertionError("expected TypeError for missing workOrders")
+    except TypeError:
+        pass
+
+
+def test_enrich_tower_verdicts_blank_stamp_shapes():
+    """The stamp plane migrated live within hours (cbb9ab2 plane watch):
+    latestVerdict went null -> strings -> objects carrying EMPTY verdict
+    strings. A blank stamp is a blackout (unstamped), never a stamp; a real
+    object stamp must surface its verdict token, not a dict repr."""
+    mod = _load_watchdog_module()
+    row = {"number": 70, "verdict": "MERGED_ON_MAIN",
+           "slug": "(bridge-20261028-a)", "age_hours": 1.0}
+
+    def run(latest):
+        return mod.enrich_tower_verdicts(
+            [dict(row)],
+            fetch_feedback=lambda n: {"issueNumber": n, "latestVerdict": latest})[0]
+
+    blank = run({"verdict": "", "at": "x"})
+    assert blank["tower_unstamped"] is True and blank["tower_verdict"] == "none"
+    ws = run("   ")
+    assert ws["tower_unstamped"] is True and ws["tower_verdict"] == "none"
+    stamped = run({"verdict": "MERGED_ON_MAIN", "at": "x"})
+    assert (stamped["tower_unstamped"] is False
+            and stamped["tower_verdict"] == "MERGED_ON_MAIN")
+    plain = run("MERGED_ON_MAIN")
+    assert plain["tower_unstamped"] is False and plain["tower_verdict"] == "MERGED_ON_MAIN"
+
+
+def test_load_rejected_plane_403_falls_back_to_tower():
+    """A 403 is transient (per-IP unauthenticated budget, resets hourly) and
+    must be reported by cause whether the tower fallback covers it (#2251
+    fixed the tower-side label filter; live 2026-10-29: github 403 from a
+    shared egress while the tower plane served 20 rows) or both planes fail."""
+    import urllib.error
+
+    mod = _load_watchdog_module()
+
+    def ratelimited():
+        raise urllib.error.HTTPError("https://api.github.com/x", 403,
+                                     "rate limit exceeded", None, None)
+
+    def boom():
+        raise RuntimeError("down")
+
+    rows, note = mod._load_rejected_plane(
+        fetch_rows=ratelimited, tower_rows=lambda: [{"number": 2056}])
+    assert rows == [{"number": 2056}]
+    assert "tower-plane fallback" in note
+    assert "rate limit" in note and "resets hourly" in note
+
+    rows, note = mod._load_rejected_plane(
+        fetch_rows=ratelimited, tower_rows=boom)
+    assert rows == [] and "unreachable" in note
+    assert "rate limit" in note and "resets hourly" in note
+    assert "tower RuntimeError" in note
+
+    def server_error():
+        raise urllib.error.HTTPError("https://api.github.com/x", 500,
+                                     "boom", None, None)
+
+    rows, note = mod._load_rejected_plane(fetch_rows=server_error,
+                                          tower_rows=boom)
+    assert rows == [] and "HTTP 500" in note
+
+
+def test_queue_integrity_both_directions():
+    """missing = queued-on-GitHub absent from listing (#2173 class);
+    phantom = listed but absent from the label plane."""
+    mod = _load_watchdog_module()
+    missing, phantom = mod._check_queue_integrity({5}, {5, 9, 11})
+    assert missing == [9, 11] and phantom == []
+    missing, phantom = mod._check_queue_integrity({5, 7}, {5})
+    assert missing == [] and phantom == [7]
+
+
+def test_fetch_label_rows_parameterizes_label():
+    """The shared core must carry the requested label into the query URL."""
+    page = [{"number": 9, "title": "queued", "state": "open",
+             "labels": ["bridge:queued"]}]
+
+    def fake(url):
+        assert "labels=bridge%3Aqueued" in url, url
+        return page
+
+    mod = _load_watchdog_module()
+    rows = mod._fetch_label_rows(mod.QUEUED_LABEL, fetch_json=fake)
+    assert len(rows) == 1 and rows[0]["number"] == 9
+
+
+def test_load_queue_integrity_ok_and_fail_open():
+    """OK path diffs both directions; 403 is by-cause; other failures
+    degrade this disclosure only (per-plane fail-open)."""
+    import urllib.error
+
+    mod = _load_watchdog_module()
+    page = [{"number": 9, "title": "queued", "state": "open",
+             "labels": ["bridge:queued"]}]
+    (n, missing, phantom), note = mod._load_queue_integrity(
+        {5, 9}, fetch_rows=lambda label: page)
+    assert note == "ok" and n == 1 and missing == [] and phantom == [5]
+
+    def ratelimited(label):
+        raise urllib.error.HTTPError("https://api.github.com/x", 403,
+                                     "rate limit exceeded", None, None)
+
+    res, note = mod._load_queue_integrity({5}, fetch_rows=ratelimited)
+    assert res is None and "rate limit" in note and "resets hourly" in note
+
+    def down(label):
+        raise ConnectionError("nope")
+
+    res, note = mod._load_queue_integrity({5}, fetch_rows=down)
+    assert res is None and "unreachable" in note
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from agents.internet_monitor_agent import (
     internet_monitor_agent,
 )
 from api.dependencies import get_current_admin
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/internet-monitor", tags=["Internet Monitor"])
 

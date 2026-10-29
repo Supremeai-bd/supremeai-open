@@ -6,7 +6,7 @@ import jwt
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.messaging.event_bus import ErrorEvent, error_event_bus
 from core.security import ALGORITHM
 

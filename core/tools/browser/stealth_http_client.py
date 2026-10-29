@@ -3,7 +3,7 @@ from typing import Any
 
 import httpx
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from tools.security_tools.proxy_manager import ProxyManager
 
 # List of typical browser User-Agents for stealth scraping emulation

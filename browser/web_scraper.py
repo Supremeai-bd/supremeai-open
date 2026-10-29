@@ -31,6 +31,18 @@ except ImportError:  # embedded in main backend
         is_safe_url_resolved,
     )
 
+# Issue #1665: prompt-injection screening of untrusted page content. Optional
+# at import time so the standalone microservice keeps booting without the
+# monorepo layout; when present, every fetched page carries an
+# `injection_screen` summary alongside its content.
+try:
+    from browser.runtime.content_screen import screen_page  # monorepo layout
+except ImportError:  # standalone scraper microservice: browser package off-path
+    try:
+        from runtime.content_screen import screen_page  # type: ignore[no-redef]
+    except ImportError:  # screening unavailable — fetch path continues unscreened
+        screen_page = None  # type: ignore[assignment]
+
 # 🔧 DYNAMIC CONFIG: User-Agent from env, with safe default
 _DEFAULT_USER_AGENT = os.getenv(
     "SCRAPER_USER_AGENT",
@@ -101,7 +113,18 @@ class WebScraper:
                 tag.decompose()
             text = " ".join(soup.get_text(separator=" ").split())[:3000]
             links = [a.get("href", "") for a in soup.find_all("a", href=True)][:20]
-            return {
+            # Issue #1665: screen the page (raw HTML catches comment/meta/alt/
+            # hidden-span payloads that get_text drops or keeps invisibly).
+            # Additive only — screening never alters fetch success semantics.
+            screen = screen_page(response.text) if screen_page is not None else None
+            if screen is not None and screen.is_injection:
+                logger.warning(
+                    "Prompt-injection patterns matched on %s (matched=%s, sources=%s)",
+                    url,
+                    screen.matched,
+                    screen.sources,
+                )
+            result = {
                 "success": True,
                 "url": url,
                 "title": title,
@@ -109,6 +132,14 @@ class WebScraper:
                 "links": links,
                 "status_code": response.status_code,
             }
+            if screen is not None:
+                result["injection_screen"] = {
+                    "is_injection": screen.is_injection,
+                    "score": screen.score,
+                    "matched": screen.matched,
+                    "sources": screen.sources,
+                }
+            return result
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error(f"Failed to fetch {url}: {e}")
             return {"success": False, "error": str(e), "url": url}

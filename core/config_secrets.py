@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import PrivateAttr, SecretStr, model_serializer
 
 from core.config_parsers import parse_origin_list
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Issue #542 (BE-10): single shared floor for the JWT secret minimum length.
 from core.secret_policy import JWT_SECRET_MIN_LENGTH, resolve_jwt_secret_env

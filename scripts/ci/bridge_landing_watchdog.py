@@ -9,15 +9,24 @@ between "bridge accepted the patch" and "CI Guardian lands it", and nothing
 reconciles the two planes. This is the watchdog mirror the triage asked for.
 
 Reconciliation model (three planes, one join key):
-  - board plane   : open WOs labeled `bridge:queued` (Tower bridge_work_queue,
-                    zero-credential) — each title carries the lane slug
+  - board plane   : open WOs labeled `bridge:queued` (Tower bridge.work_queue —
+                    renamed from bridge_work_queue 2026-10-29, #2454 r3 deploy
+                    / #2457 migration; zero-credential; limit ladder
+                    200->50->default crosses the queue-fidelity deploy window
+                    #2115/#2123) — each title carries the lane slug
+  - rejected plane: open `bridge:rejected` issues enumerated straight from
+                    the GitHub API (zero-credential, S05 query SSOT; #2158) —
+                    the queue omits rejected WOs (#1972), so landing truth
+                    must be checked where Tower hides them
                     `(bridge-YYYYMMDD-<slug>)`. Open WOs labeled
                     `bridge:rejected` are ALSO read, but solely to detect
                     FALSE_REJECTION (below) — a rejection is presumed
                     legitimate unless main history proves otherwise.
   - history plane : landed commit subjects on origin/main (squash-merge
                     convention embeds the same slug and the PR number).
-  - flight plane  : open PR titles (Tower github_list_prs) — same slug token.
+  - flight plane  : open PR titles (Tower github.list_prs — dotted form since
+                    the 2026-10-29 github-family rename wave, #2486) — same
+                    slug token.
   - verdict plane : Tower bridge_read_feedback per WO number — the feedback-
                     plane reader this file's own scope note called for. Used
                     ONLY to enrich MERGED_ON_MAIN rows (tower_verdict /
@@ -31,7 +40,12 @@ Reconciliation model (three planes, one join key):
 
 Verdict per open bridge:queued WO (any-slug match wins):
   MERGED_ON_MAIN   slug found in main history — WO should close; flagged as
-                   bookkeeping lag when it ages past the threshold.
+                   bookkeeping lag when it ages past the threshold. Rows whose
+                   `updatedAt == createdAt` additionally carry the never-touched
+                   close-on-merge flap fingerprint (#2401/#2430 class: the
+                   closure worker never even touched the row — the reconciler's
+                   exact worklist), while touched rows stay untagged and rows
+                   missing timestamps stay honestly untagged (unknown).
   OPEN_PR          slug found in an open PR title — in flight, healthy.
   IN_GATES         no match anywhere, WO younger than the threshold — normal
                    CI-Guardian latency, not a signal.
@@ -59,11 +73,24 @@ Verdict per open bridge:queued WO (any-slug match wins):
                    keeping the strict surface minimal. Honest scope limit:
                    the board plane IS the queue payload, and Tower currently
                    omits some rejected WOs from it entirely (live: #1972 was
-                   absent from bridge_work_queue) — those are invisible here
-                   until Tower either keeps rejected WOs in the queue or the
-                   guard gains a feedback-plane reader; the classification
-                   logic is proven hermetically and on the real #1972 data
-                   fed directly (integration run, 2026-10-28).
+                   absent from bridge.work_queue) — since 2026-10-28 (#2158)
+                   the rejected plane enumerates those rows directly from
+                   GitHub, closing the invisible-rejected half of this note
+                   (the merged-row half closed with the feedback-plane
+                   reader); the classification logic is proven hermetically
+                   and on the real #1972/#2158 data fed directly
+                   (integration runs, 2026-10-28). The queued half of the
+                   omission class is covered too (#2190): the queue-
+                   integrity plane enumerates open `bridge:queued` rows
+                   from the same label plane and diffs BOTH directions
+                   against the listing Tower serves (missing-from-listing,
+                   phantom-in-listing) — disclosure-only, since queued rows
+                   can be mid-transition and joining them could resurrect
+                   work another plane owns. Live motivation (2026-10-28,
+                   #2173): a landed-and-merged WO stayed `bridge:queued`
+                   yet absent from an untruncated 16-18-row listing while
+                   bridge.work_order confirmed it — the integrity line is
+                   the only place such a row surfaces.
 
 Modes:
   --self-test   hermetic verdict-matrix proof (fixture WOs/history/flight;
@@ -81,9 +108,11 @@ Zero credentials, read-only (Tower queries + local git log). No mutation.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404 — live-mode IO wrappers shell out to git via list-argv only (#2081 audit)
 import sys
 import time
 import urllib.error
@@ -126,7 +155,12 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
         _id[0] += 1
         payload["id"] = _id[0]
     headers = {"Content-Type": "application/json",
-               "Accept": "application/json, text/event-stream"}
+               "Accept": "application/json, text/event-stream",
+               # Streamable HTTP (spec rev >= 2025-06-18): every post-initialize request
+               # must carry the negotiated version; a missing header makes the server
+               # assume 2025-03-26, voiding the 2025-11-25 floor (#2568, radar R70).
+               # Mirrors PROTOCOL_VERSION_STREAMABLE in scripts/agents/mcp_tower_client.py.
+               "MCP-Protocol-Version": "2025-11-25"}
     if session_id:
         headers["Mcp-Session-Id"] = session_id
     last = None
@@ -134,7 +168,7 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
         req = urllib.request.Request(TOWER, data=json.dumps(payload).encode(),
                                      headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            with urllib.request.urlopen(req, timeout=45) as resp:  # nosec B310 — tower URL is a pinned https module constant; audited #2081
                 sid = resp.headers.get("Mcp-Session-Id")
                 body = resp.read().decode("utf-8", errors="replace")
                 ctype = resp.headers.get("Content-Type") or ""
@@ -149,7 +183,7 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
             if line.startswith("data:"):
                 try:
                     return json.loads(line[5:].strip()), sid
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001  # nosec B112 — SSE lines are individually skippable by design; continue IS the contract (#2081 audit)
                     continue
     if not body.strip():
         return {"accepted": True}, sid
@@ -162,11 +196,233 @@ def _text_of(res) -> str:
 
 
 def _tower_text(name: str, arguments: dict) -> str:
-    _, sid = _rpc("initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
+    _, sid = _rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                  "clientInfo": {"name": "bridge-landing-watchdog", "version": "1.0"}})
     _rpc("notifications/initialized", {}, session_id=sid, notify=True)
     res, _ = _rpc("tools/call", {"name": name, "arguments": arguments}, session_id=sid)
     return _text_of(res)
+
+
+# ── queue fetch: limit ladder across the fidelity deploy window (#2115/#2123) ──
+
+QUEUE_LIMIT_LADDER: tuple = (200, 50, None)
+
+
+def _fetch_work_orders(fetch_text=_tower_text) -> tuple:
+    """Fetch open work orders across the queue-fidelity deploy window.
+
+    r2 (#2115/#2123) makes bridge.work_queue paginate (short-page-stop,
+    number-dedupe merge) and raises its limit cap 50 -> 200, but the
+    DEPLOYED tower can keep running the pre-r2 single-page handler while
+    the redeploy lags — and a single-page window is a creation-rank
+    window: rows drop as traffic flows (#2115: 98 open issues read as
+    20-35 rows; the default window observed at ~20 rows). Ladder: ask for
+    200 first (an r2 tower answers with full pagination); only an
+    argument-validation rejection (non-JSON error text, or an isError
+    envelope) falls through to 50 (the pre-r2 cap), then to the tower
+    default — exact pre-ladder behavior as the last rung. Transport
+    failures propagate so main() keeps its fail-close SKIP. A rung that
+    answers is served as-is (never retried). Returns (workOrders,
+    serving_limit); serving_limit is None for the tower-default rung.
+    """
+    last_err: Exception = RuntimeError("queue ladder exhausted")
+    for limit in QUEUE_LIMIT_LADDER:
+        arguments = {} if limit is None else {"limit": limit}
+        try:
+            payload = json.loads(fetch_text("bridge.work_queue", arguments))
+        except json.JSONDecodeError as err:  # error-envelope text, not JSON
+            last_err = err
+            continue
+        if not isinstance(payload, dict) or payload.get("isError"):
+            last_err = TypeError(f"queue rung {limit} answered a non-payload")
+            continue
+        return (payload.get("workOrders", []) or [], limit)
+    raise last_err
+
+
+# ── rejected plane: GitHub-side enumeration of rows the queue omits (#2158) ──
+
+REJECTED_LABEL = "bridge:rejected"
+QUEUED_LABEL = "bridge:queued"
+
+
+def _load_reference_module():
+    """SSOT import of the S05 queue-query reference (R51 pattern: semantics
+    owned upstream, no private copy)."""
+    path = REPO_ROOT / "scripts" / "tower" / "work_queue_query_reference.py"
+    spec = importlib.util.spec_from_file_location("work_queue_query_reference", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_REF = _load_reference_module()
+
+
+def _github_get_json(url: str, timeout: int = 20):
+    """Zero-credential GET (browser UA, per the freshness-probe convention)."""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "bridge-landing-watchdog/1.0 (zero-credential board audit)",
+        "Accept": "application/vnd.github+json",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — URL from the S05 SSOT reference (fixed repo, https)
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _fetch_label_rows(label: str, fetch_json=_github_get_json,
+                      max_pages: int | None = None) -> list[dict]:
+    """Enumerate open issues carrying `label` straight from GitHub.
+
+    The S05 r2 contract (build_queue_query SSOT) forbids single-page
+    fetches — pages until a short page or the MAX_PAGES cap, number-dedupe
+    merged. Rows come back in normalize_queue shape. Shared core for the
+    rejected plane (bridge:rejected) and the queue-integrity cross-check
+    (bridge:queued, #2190).
+    """
+    pages = max(1, max_pages if max_pages is not None else _REF.QUEUE_MAX_PAGES)
+    rows: list[dict] = []
+    seen: set = set()
+    for page in range(1, pages + 1):
+        q = _REF.build_queue_query(label, page=page)
+        payload = fetch_json(q["url"])
+        if not isinstance(payload, list):
+            raise TypeError(
+                f"github page {page}: expected a list, got {type(payload).__name__}")
+        for wo in _REF.normalize_queue(payload, q["applied_label"])["workOrders"]:
+            n = wo.get("number")
+            if n in seen:
+                continue
+            seen.add(n)
+            rows.append(wo)
+        if len(payload) < _REF.QUEUE_PAGE_SIZE:  # short page = enumeration end
+            break
+    return rows
+
+
+def _fetch_rejected_rows(fetch_json=_github_get_json,
+                         max_pages: int | None = None) -> list[dict]:
+    """Enumerate open `bridge:rejected` issues straight from GitHub.
+
+    The queue omits rejected WOs (#1972 was absent from bridge.work_queue;
+    live #2158: landed #2020/#2056 stamped rejected and queue-invisible).
+    Rows are ready for run_verdicts' existing rejected-row branch (zero new
+    verdict classes)."""
+    return _fetch_label_rows(REJECTED_LABEL, fetch_json=fetch_json,
+                             max_pages=max_pages)
+
+
+def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
+    """Tower-plane enumeration of open `bridge:rejected` via the
+    label-filtered bridge.work_queue query — the disclosed fallback when the
+    unauthenticated GitHub budget is exhausted (per-IP, shared egress).
+
+    #2251 un-self-defeated the tower-side label filter: queueFromIssues had
+    applied the universal !isRejectedOrLanded board filter to EVERY path
+    including label-filtered ones (live pre-fix: confirmed open+rejected
+    #2020/#2056 enumerated 0 rows; live post-fix 2026-10-29, zero-credential
+    vantage: 20 rows). Rows carry number/title/labels/createdAt in the same
+    normalize shape as the github plane (no body — run_verdicts needs none
+    and refine_satellites fetches bodies itself).
+
+    Limit ladder (#2292 evidence, #2286 class): the no-limit call fetched
+    only the tower default page — 20 rows against a 52-row rejected plane
+    (R58 sweep, 2026-10-29), silently truncating the FALSE_REJECTION
+    worklist. Walks the SAME QUEUE_LIMIT_LADDER as the queue plane, label
+    preserved per rung: an r2 tower answers 200; a lagging pre-r2 deploy
+    descends to 50, then the tower default (exact pre-ladder behavior as
+    the last rung). Transport rejections (non-JSON error text, isError
+    envelope) descend; a payload that ANSWERS with the wrong shape stays
+    fail-loud — a contract violation is never read as an empty truth."""
+    last_err: Exception = RuntimeError("rejected-plane tower ladder exhausted")
+    for limit in QUEUE_LIMIT_LADDER:
+        arguments = {"label": REJECTED_LABEL} if limit is None else {
+            "label": REJECTED_LABEL, "limit": limit}
+        try:
+            payload = json.loads(fetch_text("bridge.work_queue", arguments))
+        except json.JSONDecodeError as err:  # error-envelope text, not JSON
+            last_err = err
+            continue
+        if not isinstance(payload, dict) or payload.get("isError"):
+            last_err = TypeError(f"rejected rung {limit} answered a non-payload")
+            continue
+        if not isinstance(payload.get("workOrders"), list):
+            raise TypeError("bridge.work_queue: expected {workOrders: [...]}, got "
+                            f"{type(payload).__name__}")
+        return payload["workOrders"]
+    raise last_err
+
+
+def _load_rejected_plane(fetch_rows=_fetch_rejected_rows,
+                         tower_rows=_fetch_rejected_rows_tower) -> tuple:
+    """Dual-transport rejected plane, per-plane fail-open: a down plane
+    degrades THIS plane only (honest note), never the queue plane, never a
+    fake empty truth. GitHub direct stays primary (independent transport of
+    the same S05 build_queue_query contract); the tower label-filtered
+    queue is the fallback for the per-IP unauthenticated GitHub budget —
+    shared by everything egressing the same address (live 2026-10-29:
+    github 403 from this egress while the tower plane served 20 rows).
+    The 403 cause is disclosed verbatim whether the fallback covers it or
+    both planes fail — rate-limited is transient (resets hourly), unlike a
+    genuine outage."""
+    try:
+        return fetch_rows(), "ok"
+    except urllib.error.HTTPError as err:
+        gh_note = ("HTTP 403 — unauthenticated GitHub API rate limit for "
+                   "this egress IP (shared egress may exhaust it "
+                   "continuously); budget resets hourly" if err.code == 403
+                   else f"HTTP {err.code}")
+    except Exception as err:  # noqa: BLE001 — one plane down is a disclosed skip
+        gh_note = err.__class__.__name__
+    try:
+        return tower_rows(), f"tower-plane fallback (github: {gh_note})"
+    except Exception as err:  # noqa: BLE001 — both planes down: dual-cause note
+        return [], (f"unreachable (github {gh_note}; "
+                    f"tower {err.__class__.__name__})")
+
+
+def _join_rejected_plane(work_orders: list[dict], rejected_rows: list[dict]) -> tuple:
+    """Queue rows win on number collision (the queue stays the board SSOT
+    for queued work); only queue-omitted rejected rows join the payload."""
+    queued = {w.get("number") for w in work_orders}
+    merged = [r for r in rejected_rows if r.get("number") not in queued]
+    return work_orders + merged, len(merged)
+
+
+def _check_queue_integrity(listing_numbers: set, label_numbers: set) -> tuple:
+    """Both directions of label-plane vs listing divergence (#2190).
+
+    missing = open `bridge:queued` on GitHub yet absent from the tower
+    listing — queued work the board cannot see (live: #2173 landed on main
+    while listed nowhere). phantom = listed by the tower yet absent from
+    the GitHub label plane — the listing source diverged. Disclosure-only
+    by design: unlike rejected rows (terminal, queue-omitted BY DESIGN), a
+    queued row can be mid-transition (claim-label lag is structural per
+    the #2182 plane watch), so these rows do NOT join the verdict payload
+    — the line discloses exact numbers; bridge.work_order resolves each.
+    """
+    missing = sorted(label_numbers - listing_numbers)
+    phantom = sorted(listing_numbers - label_numbers)
+    return missing, phantom
+
+
+def _load_queue_integrity(listing_numbers: set,
+                          fetch_rows=_fetch_label_rows) -> tuple:
+    """Fail-open like the rejected plane: an unreachable GitHub label plane
+    degrades this disclosure only, never the queue plane, with the same
+    cause-level 403 note (per-IP unauthenticated budget, shared egress)."""
+    try:
+        rows = fetch_rows(QUEUED_LABEL)
+    except urllib.error.HTTPError as err:
+        if err.code == 403:
+            return None, ("unreachable (HTTP 403 — unauthenticated GitHub API "
+                          "rate limit for this egress IP (shared egress may "
+                          "exhaust it continuously); budget resets hourly)")
+        return None, f"unreachable (HTTP {err.code})"
+    except Exception as err:  # noqa: BLE001 — one plane down is a disclosed skip
+        return None, f"unreachable ({err.__class__.__name__})"
+    missing, phantom = _check_queue_integrity(
+        set(listing_numbers), {r.get("number") for r in rows})
+    return (len(rows), missing, phantom), "ok"
 
 
 # ── pure verdict core (hermetically testable) ────────────────────────────────
@@ -225,7 +481,16 @@ def classify(wo: dict, main_subjects: list[str], open_pr_titles: list[str],
 
     merged = [s for s in slugs if any(s in subj for subj in main_subjects)]
     if merged:
-        return {**base, "verdict": "MERGED_ON_MAIN", "evidence": f"slug {merged[0]} in main history"}
+        v = {**base, "verdict": "MERGED_ON_MAIN", "evidence": f"slug {merged[0]} in main history"}
+        ca, ua = wo.get("createdAt") or "", wo.get("updatedAt") or ""
+        if ca and ua and ca == ua:
+            # never-touched close-on-merge flap fingerprint (#2401/#2430):
+            # the closure worker never touched the row post-creation — the
+            # reconciler's exact worklist. Touched rows and rows with missing
+            # timestamps stay untagged (touched-lag vs honest unknown).
+            v["never_touched"] = True
+            v["evidence"] += " — never-touched since creation (close-on-merge flap fingerprint, #2401/#2430)"
+        return v
 
     inflight = [s for s in slugs if any(s in t for t in open_pr_titles)]
     if inflight:
@@ -277,8 +542,9 @@ def run_verdicts(work_orders: list[dict], main_subjects: list[str],
 # ── IO wrappers (live mode) ──────────────────────────────────────────────────
 
 def _main_subjects(depth: int = LOG_DEPTH) -> list[str]:
-    out = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
+    git_bin = shutil.which("git") or "git"  # B607: resolve to absolute path when available
+    out = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git read-only command (#2081 audit)
+        [git_bin, "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
         capture_output=True, text=True, timeout=60,
     )
     if out.returncode != 0:
@@ -286,8 +552,20 @@ def _main_subjects(depth: int = LOG_DEPTH) -> list[str]:
     return [ln for ln in out.stdout.splitlines() if ln.strip()]
 
 
-def _open_pr_titles() -> list[str]:
-    txt = _tower_text("github_list_prs", {"state": "open", "per_page": 50})
+def _open_pr_titles(fetch_text=_tower_text) -> list[str]:
+    # Flight plane pins the OPEN repo and the schema-conformant limit knob.
+    # Two stacked silent defects found live (cycle 23/24, Job 478338): (1) a
+    # repo-less call resolved github-primary's account url = the CORE
+    # satellite (Supremeai-bd/supremeai), so open-repo bridge PRs were never
+    # in the listing at all; (2) the tool schema has no per_page — it was
+    # silently ignored and limit fell back to its default 5 (five newest
+    # rows only). Neither defect raises; classification just degraded to the
+    # age ladder (LANDING_AT_RISK false positives for WOs whose PR was
+    # genuinely in flight). Third silent mode (cycle 36, #2486): the
+    # github-family dotted-wave rename turned the legacy wire name into a
+    # -32602 error whose text flowed into the classifier as pseudo-titles
+    # (OPEN_PR=0 while PRs were open) — migrated to the dotted name.
+    txt = fetch_text("github.list_prs", {"state": "open", "repo": OPEN_REPO, "limit": 50})
     titles = []
     for line in txt.splitlines():
         line = line.strip()
@@ -300,7 +578,7 @@ def _open_pr_titles() -> list[str]:
 def _fetch_wo_body(number: int) -> str | None:
     """Fetch one WO's full body (read-only tower round-trip) for refinement."""
     try:
-        return json.loads(_tower_text("bridge_work_order", {"number": number})).get("body")
+        return json.loads(_tower_text("bridge.work_order", {"number": number})).get("body")
     except Exception:  # noqa: BLE001 - refinement is best-effort, fail-closed
         return None
 
@@ -341,6 +619,20 @@ def _fetch_wo_feedback(number: int) -> dict | None:
         return None
 
 
+def _verdict_string(latest) -> str | None:
+    """Extract a non-blank verdict token from the plane's evolving shapes.
+
+    The stamp plane migrated live within hours (2026-10-28, cbb9ab2 plane
+    watch): latestVerdict went from null to plain strings to OBJECTS
+    carrying EMPTY verdict strings. A blank stamp is a blackout, not a
+    stamp: '' / whitespace / {'verdict': ''} must read unstamped, and a
+    real {'verdict': 'X'} must surface its token (never a dict repr)."""
+    val = latest.get("verdict") if isinstance(latest, dict) else latest
+    if isinstance(val, str):
+        val = val.strip()
+    return str(val) if val else None
+
+
 def enrich_tower_verdicts(verdicts: list[dict], fetch_feedback=_fetch_wo_feedback,
                           max_probes: int = MAX_FEEDBACK_PROBES) -> list[dict]:
     """Cross-check MERGED_ON_MAIN rows against Tower's own verdict plane.
@@ -354,7 +646,8 @@ def enrich_tower_verdicts(verdicts: list[dict], fetch_feedback=_fetch_wo_feedbac
     Fail-open by contract: enrichment is best-effort and NEVER changes a
     verdict class or the strict surface — a transient Tower condition must
     not red a gate. Non-merged rows cost zero probes (healthy-board steady
-    state: zero round-trips, mirroring refine_satellites).
+    state: zero round-trips, mirroring refine_satellites). Shape evolution
+    (null -> string -> blank-stamp object) is handled by _verdict_string.
     """
     out = list(verdicts)
     probed = 0
@@ -370,9 +663,9 @@ def enrich_tower_verdicts(verdicts: list[dict], fetch_feedback=_fetch_wo_feedbac
         if not isinstance(fb, dict):
             out[i] = {**v, "tower_verdict": "unreadable", "tower_unstamped": None}
             continue
-        latest = fb.get("latestVerdict")
-        if latest:
-            out[i] = {**v, "tower_verdict": str(latest), "tower_unstamped": False}
+        verdict_str = _verdict_string(fb.get("latestVerdict"))
+        if verdict_str:
+            out[i] = {**v, "tower_verdict": verdict_str, "tower_unstamped": False}
         else:
             out[i] = {**v, "tower_verdict": "none", "tower_unstamped": True}
     return out
@@ -485,6 +778,32 @@ def self_test() -> list[tuple[str, bool, str]]:
     cases.append(("open-repo target keeps LANDING_AT_RISK",
                   v["verdict"] == "LANDING_AT_RISK", json.dumps(v)[:160]))
 
+    # 13b. never-touched flap fingerprint (#2401/#2430): MERGED_ON_MAIN rows
+    # whose updatedAt == createdAt carry the close-on-merge flap signature;
+    # touched rows and rows missing timestamps stay untagged (honest unknown);
+    # the tag propagates to FALSE_REJECTION rows (same classify path).
+    merged_hist = [f"feat: landed (bridge-20261028-alpha-lane) (#1905)"]
+    v = classify({"number": 31, "title": f"x {slug_a}", "createdAt": old, "updatedAt": old},
+                 merged_hist, [], now)
+    cases.append(("never-touched merged row carries flap fingerprint",
+                  v["verdict"] == "MERGED_ON_MAIN" and v.get("never_touched") is True
+                  and "flap fingerprint" in v["evidence"], json.dumps(v)[:200]))
+    v = classify({"number": 32, "title": f"x {slug_a}", "createdAt": old, "updatedAt": fresh},
+                 merged_hist, [], now)
+    cases.append(("touched merged row carries no fingerprint",
+                  v["verdict"] == "MERGED_ON_MAIN" and "never_touched" not in v,
+                  json.dumps(v)[:160]))
+    v = classify({"number": 33, "title": f"x {slug_a}", "createdAt": old},
+                 merged_hist, [], now)
+    cases.append(("missing updatedAt -> no fingerprint (honest unknown)",
+                  v["verdict"] == "MERGED_ON_MAIN" and "never_touched" not in v, ""))
+    vs = run_verdicts([{"number": 34, "title": f"rej {slug_a}", "createdAt": old,
+                        "updatedAt": old, "labels": ["bridge:rejected"]}],
+                      merged_hist, [], now)
+    cases.append(("never-touched propagates to FALSE_REJECTION rows",
+                  len(vs) == 1 and vs[0]["verdict"] == "FALSE_REJECTION"
+                  and vs[0].get("never_touched") is True, json.dumps(vs)[:200]))
+
     # 14. refine_satellites: at-risk + satellite body -> downgraded; at-risk +
     # open/absent body -> kept; fetch failure -> kept (fail-closed).
     def _fetch_sat(number):
@@ -579,6 +898,188 @@ def self_test() -> list[tuple[str, bool, str]]:
     enrich_tower_verdicts([dict(risk_v)], fetch_feedback=_fb_spy)
     cases.append(("non-merged rows cost zero feedback probes", probed == [], str(probed)))
 
+    # queue limit ladder (deploy-window consumer, #2115/#2123)
+    def _r2(name, arguments):
+        assert arguments.get("limit") == 200, arguments
+        return json.dumps({"workOrders": [{"number": 1}]})
+
+    def _prer2(name, arguments):
+        if arguments.get("limit") == 200:
+            return "MCP error -32602: Too big: expected number to be <=50"
+        assert arguments.get("limit") == 50, arguments
+        return json.dumps({"workOrders": [{"number": 1}, {"number": 2}]})
+
+    def _dead(name, arguments):
+        raise ConnectionError("unreachable")
+
+    rows, rung = _fetch_work_orders(fetch_text=_r2)
+    cases.append(("ladder r2 serves rung 200",
+                  rows == [{"number": 1}] and rung == 200, f"rung={rung}"))
+    rows, rung = _fetch_work_orders(fetch_text=_prer2)
+    cases.append(("ladder pre-r2 falls 200->50",
+                  len(rows) == 2 and rung == 50, f"rung={rung}"))
+    try:
+        _fetch_work_orders(fetch_text=_dead)
+        cases.append(("ladder transport failure fail-close", False, "no raise"))
+    except ConnectionError:
+        cases.append(("ladder transport failure fail-close", True, ""))
+    except Exception as e:  # noqa: BLE001 — wrong failure class is a FAIL
+        cases.append(("ladder transport failure fail-close", False, type(e).__name__))
+
+    # flight plane arguments lock (wrong-repo + ignored per_page, both silent)
+    sent = {}
+
+    def _cap(name, arguments):
+        sent["name"], sent["args"] = name, arguments
+        return json.dumps([{"number": 2220, "title": "feat: x (bridge-20261029-y)"}])
+
+    titles = _open_pr_titles(fetch_text=_cap)
+    cases.append(("flight plane pins open repo + schema limit (no per_page)",
+                  sent.get("name") == "github.list_prs"
+                  and sent.get("args", {}).get("repo") == OPEN_REPO
+                  and sent.get("args", {}).get("limit") == 50
+                  and "per_page" not in sent.get("args", {})
+                  and bool(titles), json.dumps(sent.get("args", {}))[:120]))
+
+    # rejected plane (GitHub-side enumeration, #2158)
+    page1 = [{"number": 1000 + i, "title": f"w{i}", "state": "open",
+              "labels": ["bridge:rejected"]} for i in range(100)]
+    page2 = [{"number": 5, "title": "a (bridge-20261028-x)", "state": "open",
+              "labels": [{"name": "bridge:rejected"}]},
+             {"number": 5, "title": "dup", "state": "open",
+              "labels": ["bridge:rejected"]}]
+
+    def _fake_fetch(url):
+        assert "labels=bridge%3Arejected" in url, url
+        return {1: page1, 2: page2}[int(url.rsplit("page=", 1)[1].split("&")[0])]
+
+    rows = _fetch_rejected_rows(fetch_json=_fake_fetch)
+    cases.append(("rejected plane paginates + dedupes + normalizes",
+                  len(rows) == 101 and rows[-1]["number"] == 5
+                  and rows[-1]["labels"] == ["bridge:rejected"],
+                  f"rows={len(rows)}"))
+    try:
+        _fetch_rejected_rows(fetch_json=lambda u: {"error": "nope"})
+        cases.append(("rejected plane non-list fails loud", False, "no raise"))
+    except TypeError:
+        cases.append(("rejected plane non-list fails loud", True, ""))
+
+    def _boom():
+        raise RuntimeError("down")
+
+    gone, note = _load_rejected_plane(fetch_rows=_boom, tower_rows=_boom)
+    cases.append(("rejected plane per-plane fail-open (both down, dual cause)",
+                  gone == [] and "unreachable" in note
+                  and "github RuntimeError" in note and "tower RuntimeError" in note,
+                  f"note={note}"))
+
+    def _ratelimited():
+        raise urllib.error.HTTPError("https://api.github.com/x", 403,
+                                     "rate limit exceeded", None, None)
+
+    gone, note = _load_rejected_plane(fetch_rows=_ratelimited,
+                                      tower_rows=lambda: [{"number": 2056}])
+    cases.append(("rejected plane 403 falls back to tower, cause disclosed",
+                  gone == [{"number": 2056}] and "rate limit" in note
+                  and "resets hourly" in note and "tower-plane fallback" in note,
+                  f"note={note}"))
+
+    tower_rows = _fetch_rejected_rows_tower(fetch_text=lambda n, a: json.dumps(
+        {"count": 1, "workOrders": [{"number": 2056, "title": "x",
+                                     "labels": ["bridge:rejected"]}]}))
+    cases.append(("tower rejected plane parses workOrders",
+                  len(tower_rows) == 1 and tower_rows[0]["number"] == 2056,
+                  f"rows={len(tower_rows)}"))
+    try:
+        _fetch_rejected_rows_tower(fetch_text=lambda n, a: '{"repo": "x"}')
+        cases.append(("tower rejected plane missing workOrders fails loud",
+                      False, "no raise"))
+    except TypeError:
+        cases.append(("tower rejected plane missing workOrders fails loud",
+                      True, ""))
+    sent_args: list = []
+    _fetch_rejected_rows_tower(fetch_text=lambda n, a: (sent_args.append(dict(a)) or
+        json.dumps({"count": 1, "workOrders": [{"number": 2056, "title": "x",
+                                                "labels": ["bridge:rejected"]}]})))
+    cases.append(("rejected tower ladder asks label+limit 200 first",
+                  sent_args and sent_args[0].get("label") == REJECTED_LABEL
+                  and sent_args[0].get("limit") == 200,
+                  f"args={sent_args[:1]}"))
+    rung_calls: list = []
+
+    def _pre_r2(n, a):
+        rung_calls.append(dict(a))
+        if len(rung_calls) == 1:
+            return "MCP error -32602: limit 200 above pre-r2 cap"
+        return json.dumps({"count": 1, "workOrders": [{"number": 2056}]})
+
+    descended = _fetch_rejected_rows_tower(fetch_text=_pre_r2)
+    cases.append(("rejected tower ladder descends to 50, label preserved",
+                  descended == [{"number": 2056}] and len(rung_calls) == 2
+                  and rung_calls[1].get("label") == REJECTED_LABEL
+                  and rung_calls[1].get("limit") == 50,
+                  f"calls={rung_calls}"))
+    joined, joined_n = _join_rejected_plane([{"number": 5, "title": "q"}], rows)
+    cases.append(("rejected plane queue rows win on collision",
+                  joined_n == 100 and joined[0]["title"] == "q"
+                  and all(r["number"] != 5 for r in joined[1:]), f"n={joined_n}"))
+    # verdict-shape hardening (cbb9ab2: blank-stamp objects are blackout)
+    def _fb(n, latest):
+        return {"issueNumber": n, "latestVerdict": latest, "verdictHistory": []}
+
+    vs = enrich_tower_verdicts(
+        [{"number": 60, "verdict": "MERGED_ON_MAIN"}],
+        fetch_feedback=lambda n: _fb(n, {"verdict": "", "at": "x"}))
+    cases.append(("enrich blank-stamp object reads unstamped",
+                  vs[0]["tower_unstamped"] is True
+                  and vs[0]["tower_verdict"] == "none", str(vs[0])))
+    vs = enrich_tower_verdicts(
+        [{"number": 61, "verdict": "MERGED_ON_MAIN"}],
+        fetch_feedback=lambda n: _fb(n, {"verdict": "MERGED_ON_MAIN", "at": "x"}))
+    cases.append(("enrich stamped object surfaces its token",
+                  vs[0]["tower_unstamped"] is False
+                  and vs[0]["tower_verdict"] == "MERGED_ON_MAIN", str(vs[0])))
+    # queue-integrity plane (#2190): label-plane vs listing divergence
+    missing, phantom = _check_queue_integrity({5}, {5, 9, 11})
+    cases.append(("integrity missing direction",
+                  missing == [9, 11] and phantom == [],
+                  f"m={missing} p={phantom}"))
+    missing, phantom = _check_queue_integrity({5, 7}, {5})
+    cases.append(("integrity phantom direction",
+                  missing == [] and phantom == [7],
+                  f"m={missing} p={phantom}"))
+    qpage = [{"number": 9, "title": "queued", "state": "open",
+              "labels": ["bridge:queued"]}]
+
+    def _fake_queued(url):
+        assert "labels=bridge%3Aqueued" in url, url
+        return qpage  # short page -> single-page enumeration
+
+    qrows = _fetch_label_rows(QUEUED_LABEL, fetch_json=_fake_queued)
+    cases.append(("label core parameterizes the queued label",
+                  len(qrows) == 1 and qrows[0]["number"] == 9,
+                  f"n={len(qrows)}"))
+    (q_n, q_missing, q_phantom), q_note = _load_queue_integrity(
+        {5, 9}, fetch_rows=lambda label: qpage)
+    cases.append(("integrity ok-path diffs both directions",
+                  q_note == "ok" and q_n == 1 and q_missing == []
+                  and q_phantom == [5], f"m={q_missing} p={q_phantom}"))
+
+    def _q_ratelimited(label):
+        raise urllib.error.HTTPError("https://api.github.com/x", 403,
+                                     "rate limit exceeded", None, None)
+
+    qi, q_note = _load_queue_integrity({5}, fetch_rows=_q_ratelimited)
+    cases.append(("integrity 403 discloses cause, unchecked never empty",
+                  qi is None and "rate limit" in q_note
+                  and "resets hourly" in q_note, f"note={q_note}"))
+
+    def _q_down(label):
+        raise ConnectionError("nope")
+
+    qi, q_note = _load_queue_integrity({5}, fetch_rows=_q_down)
+    cases.append(("integrity per-plane fail-open",
+                  qi is None and "unreachable" in q_note, f"note={q_note}"))
     return cases
 
 
@@ -601,14 +1102,42 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if failed else 0
 
     try:
-        queue_txt = _tower_text("bridge_work_queue", {})
-        wos = json.loads(queue_txt).get("workOrders", [])
+        wos, queue_rung = _fetch_work_orders()
         subjects = _main_subjects()
         pr_titles = _open_pr_titles()
     except Exception as e:  # noqa: BLE001 - unreachable planes are a skip, never a pass
         print(f"SKIP: board/history unreachable ({e.__class__.__name__}: {e})")
         return 2
 
+    rung_s = "default" if queue_rung is None else str(queue_rung)
+    print(f"QUEUE PLANE: {len(wos)} rows (limit rung {rung_s})")
+    listing_numbers = {w.get("number") for w in wos}
+    rejected_rows, rejected_note = _load_rejected_plane()
+    wos, rejected_joined = _join_rejected_plane(wos, rejected_rows)
+    print(f"REJECTED PLANE: {len(rejected_rows)} open '{REJECTED_LABEL}' rows "
+          f"enumerated ({rejected_joined} queue-omitted joined; {rejected_note})")
+    integrity, integrity_note = _load_queue_integrity(listing_numbers)
+    if integrity is None:
+        print(f"QUEUE INTEGRITY: unchecked ({integrity_note})")
+    else:
+        label_n, missing, phantom = integrity
+        shape = (f"{label_n} '{QUEUED_LABEL}' label rows vs "
+                 f"{len(listing_numbers)} listing rows")
+        if not missing and not phantom:
+            print(f"QUEUE INTEGRITY: {shape} — consistent")
+        else:
+            bits = []
+            if missing:
+                head = ", ".join(f"#{n}" for n in missing[:10])
+                if len(missing) > 10:
+                    head += f" (+{len(missing) - 10} more)"
+                bits.append(f"{len(missing)} missing from listing: {head}")
+            if phantom:
+                head = ", ".join(f"#{n}" for n in phantom[:10])
+                if len(phantom) > 10:
+                    head += f" (+{len(phantom) - 10} more)"
+                bits.append(f"{len(phantom)} phantoms: {head}")
+            print(f"QUEUE INTEGRITY: {shape} — " + "; ".join(bits))
     now = time.mktime(time.gmtime())
     verdicts = run_verdicts(wos, subjects, pr_titles, now, args.at_risk_hours)
     verdicts = refine_satellites(verdicts)
@@ -622,8 +1151,9 @@ def main(argv: list[str] | None = None) -> int:
         flag = "!!" if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION") else "  "
         age_s = "?" if v["age_hours"] is None else f"{v['age_hours']:.1f}h"
         tv_s = f" tower_verdict={v['tower_verdict']}" if "tower_verdict" in v else ""
+        nt_s = " never-touched" if v.get("never_touched") else ""
         print(f"{flag} #{v['number']} [{v['verdict']}] age={age_s} "
-              f"slug={v['slug']}{tv_s} — {v['evidence'][:100]}")
+              f"slug={v['slug']}{tv_s}{nt_s} — {v['evidence'][:100]}")
     counts: dict[str, int] = {}
     for v in verdicts:
         counts[v["verdict"]] = counts.get(v["verdict"], 0) + 1
@@ -635,6 +1165,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"TOWER VERDICT PLANE: {len(unstamped)}/{merged_total} merged WOs carry NO Tower "
               f"verdict stamp" + (f" ({unreadable} unreadable)" if unreadable else "") +
               " — bookkeeping blackout, report-only.")
+    untouched = [v for v in verdicts if v.get("never_touched")]
+    if untouched:
+        print(f"NEVER-TOUCHED SIGNATURE: {len(untouched)} landed WOs untouched since creation — "
+              "close-on-merge flap fingerprint (#2401/#2430 class), the reconciler's "
+              "exact worklist, report-only.")
     risky = [v for v in verdicts
              if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION")
              or (v["verdict"] == "MERGED_ON_MAIN" and (v["age_hours"] or 0) >= args.at_risk_hours)]

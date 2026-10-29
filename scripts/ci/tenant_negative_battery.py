@@ -6,7 +6,7 @@ every call that should be forbidden must 403/empty. Results are JSON-serializabl
 so CI can assert zero cross-tenant successes.
 
 Env:
-  SUPREMEAI_API_URL   e.g. https://supremeai-api.onrender.com
+  SUPREMEAI_API_URL   e.g. https://supremeai-api-ulw0.onrender.com
   CUSTOMER_TOKEN      admin token of the dogfood CUSTOMER tenant
   ADMIN_ENDPOINT_TOKEN  (optional) default-tenant token used only to verify it is NOT accepted cross-tenant
 

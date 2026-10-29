@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from api.dependencies import get_current_admin
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.session import get_db_session
 from models.selector_healing_event import SelectorHealingEvent
 
@@ -66,7 +66,7 @@ async def make_healing_decision(
 ):
     import uuid
 
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"Admin {admin_user.get('sub')} making decision on healing event {event_id}")
 

@@ -53,10 +53,12 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unicodedata
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -356,6 +358,35 @@ def self_test() -> bool:
     return ok
 
 
+def _git_head_provenance(root: Path) -> str:
+    """Live generation provenance for baseline stamps (#2180).
+
+    Returns "<short-hash> (<subject>)" for the repo at `root`; on any failure
+    (hermetic sandboxes without git) returns an honest fallback instead of a
+    frozen literal. Best-effort by design: provenance is informational — the
+    gate's load-bearing field is ratchetedFloor only. Same helper shape as the
+    radar guard's (#2180 class fix); deliberately duplicated, not shared, so
+    each guard stays standalone-runnable in pre-push.
+    """
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=str(root),
+            capture_output=True, text=True, timeout=10,
+        )
+        subj = subprocess.run(
+            ["git", "log", "-1", "--format=%s"], cwd=str(root),
+            capture_output=True, text=True, timeout=10,
+        )
+        if head.returncode == 0 and subj.returncode == 0:
+            h = head.stdout.strip()
+            s = " ".join(subj.stdout.split())[:96]
+            if h:
+                return f"{h} ({s})" if s else h
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "unknown (git unavailable at generation)"
+
+
 def build_baseline(root: Path) -> dict:
     checked, findings = sweep(root)
     ratch: Counter = Counter()
@@ -371,8 +402,8 @@ def build_baseline(root: Path) -> dict:
             excluded.append(f)
     return {
         "schema": "docs-link-integrity-baseline/1",
-        "generatedAt": "2026-10-28",
-        "headAtGeneration": "post-#1938-fixes (R42 landing)",
+        "generatedAt": datetime.now(timezone.utc).date().isoformat(),
+        "headAtGeneration": _git_head_provenance(root),
         "probe": "scripts/ci/docs_link_integrity_guard.py",
         "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; "
                 "report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). "
@@ -403,6 +434,19 @@ def main() -> int:
 
     if args.baseline:
         data = build_baseline(root)
+        # #2180: the note is FILE-OWNED narrative history (genesis ratchet,
+        # dated shrink stamps — pinned by tests); a canonical regen must carry
+        # it forward instead of clobbering it with the builder's short template.
+        # Provenance/checked fields stay builder-owned live stamps. Best-effort:
+        # a missing/malformed prior baseline simply leaves the template note.
+        p = root / BASELINE_PATH
+        if p.is_file():
+            try:
+                prev = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(prev.get("note"), str) and prev["note"].strip():
+                    data["note"] = prev["note"]
+            except (OSError, json.JSONDecodeError):
+                pass
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
 

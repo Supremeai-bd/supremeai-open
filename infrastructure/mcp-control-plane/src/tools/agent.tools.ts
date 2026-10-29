@@ -45,6 +45,7 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
         .optional()
         .describe("Human-readable tool label, e.g. 'Cline' (defaults to slot id)"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     async ({ slot, agentId }) => {
       try {
         const context = RequestContextStore.get();
@@ -89,6 +90,7 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
     "agent_status",
     "List live agent-slot heartbeats with derived real-time state: online (≤90s), stale (>90s, key alive), expired (no runtime signal, visible for 24h archive grace). Expired slots beyond the grace are reaped from the registry and returned once under `archived` (#1641).",
     {},
+    { readOnlyHint: false, destructiveHint: false },
     async () => {
       try {
         const context = RequestContextStore.get();

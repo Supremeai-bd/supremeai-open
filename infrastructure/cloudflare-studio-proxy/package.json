@@ -1,6 +1,7 @@
 {
   "name": "supremeai-studio-proxy",
   "version": "1.0.0",
+  "license": "LicenseRef-Proprietary",
   "type": "module",
   "scripts": {
     "deploy": "wrangler deploy"

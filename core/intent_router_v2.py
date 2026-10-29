@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ──────────────────────────────────────────────────────────────────────────
 # PromptAction dataclass + ACTION_PATTERNS dict (canonical location)

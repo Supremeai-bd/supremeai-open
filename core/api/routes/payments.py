@@ -3,7 +3,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.deps import get_current_user_token
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     import stripe

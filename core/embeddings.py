@@ -28,7 +28,7 @@ from collections import OrderedDict
 
 from core.config import settings
 from core.i18n import bengali_text
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 LOW_MEMORY_MODE = os.getenv("LOW_MEMORY_MODE", "false").lower() == "true"
 # Issue #442: this used to be hardcoded False even where sentence-transformers

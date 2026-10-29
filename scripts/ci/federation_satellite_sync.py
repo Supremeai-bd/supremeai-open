@@ -54,6 +54,12 @@ except Exception:
     pass
 
 
+# Targets where automated CI/deployment workflows should run on sync push
+# (e.g. Cloudflare Pages deploy in supremeai-studio)
+DEPLOY_TARGETS: set[str] = {
+    "Supremeai-bd/supremeai-studio",
+}
+
 # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
 # (source_rel_in_open, target_repo, target_rel_in_satellite)
 CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
@@ -383,7 +389,8 @@ def sync_satellite(
             cwd=str(tmp_repo),
         )
         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
-        msg = f"sync(open->{slug}): {commit_msg} [skip ci]"
+        ci_tag = "" if target_repo in DEPLOY_TARGETS else " [skip ci]"
+        msg = f"sync(open->{slug}): {commit_msg}{ci_tag}"
         res = subprocess.run(
             ["git", "commit", "--no-verify", "-m", msg],
             cwd=str(tmp_repo),

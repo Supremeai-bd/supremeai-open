@@ -223,6 +223,10 @@ class TestFederationCiWatchdog(unittest.TestCase):
             "<!-- MIRROR_RUN: Supremeai-bd/supremeai-skills/actions/runs/888 -->", body
         )
         self.assertIn("AssertionError: 5 != 6", body)
+        # #2512: protected-path routing note ships on every lane — workflow-
+        # internal root causes are admin-only regardless of lane scope.
+        self.assertIn("Protected-Path Routing Note (#2512)", body)
+        self.assertIn("admin-only", body)
 
 
 class TestLaneClassification(unittest.TestCase):
@@ -290,6 +294,10 @@ class TestLaneClassification(unittest.TestCase):
         )
         self.assertIn("P0-critical (Production CI failure / blocker)", body)
         self.assertNotIn("Lane Classification (PR-lane)", body)
+        # #2512: production-lane incidents carry the admin-only routing note —
+        # the exact lane where the #2511 claim+TTL burn happened.
+        self.assertIn("Protected-Path Routing Note (#2512)", body)
+        self.assertIn("structurally blocked patch", body)
 
     def test_pr_lane_body_names_pr_and_disclaims_production(self):
         body = build_issue_body(

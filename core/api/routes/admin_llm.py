@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from api.dependencies import get_current_admin
 from api.routes.admin import god_layer  # shared God-layer instance (single SQLite handle)
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/api/admin/llm", tags=["Admin LLM Gateway"])
 

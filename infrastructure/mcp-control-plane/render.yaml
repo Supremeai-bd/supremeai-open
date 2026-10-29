@@ -2,6 +2,14 @@ services:
   - type: web
     name: supremeai-mcp-tower
     env: node
+    # R55 option B (#2249): health-check gating. The deploy-lane RCA
+    # (docs/bridge/bridge-20261028-deploy-lane-rca.md) documented healthCheckPath
+    # empty => boot failures surface only as the generic swap failure with no
+    # health signal; P1 #2211's silent rollback was exactly that class. /health
+    # verified live 200/82ms (zero-credential probe 2026-10-29 ~19:45Z; body is
+    # the tower's own subsystem JSON and Render's gate is transport-level 2xx,
+    # body ignored — boot discrimination is the goal, subsystem view is not).
+    healthCheckPath: /health
     # INF-03/INF-04 (issues #506/#507): without rootDir, Render ran every
     # command from the repo root: 'npm run start' hit the root package.json
     # (no 'start' script -> instant crash) and 'npm run build' invoked turbo,

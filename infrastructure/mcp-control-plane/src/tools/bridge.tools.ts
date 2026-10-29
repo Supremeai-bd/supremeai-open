@@ -6,6 +6,15 @@ import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
 import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
+import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
+import { evaluateBaseStaleness, staleBaseErrorText, type MainBlobState } from "../lib/bridge_staleness.js";
+import {
+  isTestWired,
+  payloadTestWiringGroups,
+  unwiredTestErrorText,
+} from "../lib/bridge_test_wiring.js";
+import { applyLabelFallback, type VerdictSource } from "../lib/bridge_verdicts.js";
+import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
 import { RequestContextStore } from "../policy/auth.context.js";
 
 export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
@@ -118,6 +127,22 @@ export function reflectionFixSnippet(): string {
   ].join("\n");
 }
 
+// Auto-close detection for submit summaries - VERB INTENT ONLY
+// ("fixes #1519", "resolves #1520", "closes #1521", "issue #1522").
+// #1609's original regex carried a bare-`\#` branch that matched ANY first
+// "#NNN" mention, so referencing an open ticket in prose auto-emitted
+// `Closes #N` on merge. Three false-closes traced to it, all on
+// radar-registration submissions whose summaries cited the tickets they
+// registered: PR #2518 closed #2512 (+3s post-merge, 08:46:25Z); PR #2556
+// closed #2545 (+3s, 10:50:46Z); PR #2611 closed #2608 (+2s, 13:43:39Z -
+// independently audited as a premature zero-work closure in #2615). A bare
+// mention references; it does not resolve. The verb branches keep #1609's
+// intended auto-link for intent-carrying summaries.
+export function detectOriginalIssueFromSummary(summary: string): number | undefined {
+  const match = summary.match(/(?:close[s]?|fix(?:es)?|resolve[s]?|issue)\s*#?([0-9]{2,6})\b/i);
+  return match ? parseInt(match[1], 10) : undefined;
+}
+
 export interface BridgePrBodyOptions {
   taskId: string;
   summary: string;
@@ -128,6 +153,17 @@ export interface BridgePrBodyOptions {
   reflectionWhy?: string;
   alternativesRejected?: string;
   rollbackPath?: string;
+  /**
+   * #2485: opt-in escape hatch for the receipt-closure class. Docs-only
+   * (spec-only) submissions emit `Refs #N` so a spec-first lane keeps its work
+   * order open until code lands - but for CI-failure closure receipts the
+   * receipt IS the resolution, so the WO would stay open forever
+   * (evidence: #2405 stayed open after #2427 landed; #2368 after #2466).
+   * When true, a docs-only submission emits `Closes #N` for both the original
+   * issue and the round's work-order issue. Absent/false preserves the
+   * spec-only keep-open contract exactly.
+   */
+  closesOriginalIssue?: boolean;
 }
 
 export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
@@ -143,8 +179,12 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
   );
 
   // Auto-close original issue if provided (e.g. #1519, #1520)
+  // #2485: isSpecOnly normally downgrades Closes->Refs ("open until code
+  // implementation"), but closesOriginalIssue opts a docs-only receipt out of
+  // that keep-open contract (receipt-closure class: #2405/#2427, #2368/#2466).
+  const keepSpecOpen = isSpecOnly && !opts.closesOriginalIssue;
   if (opts.originalIssueNumber) {
-    if (isSpecOnly) {
+    if (keepSpecOpen) {
       linkedIssues.push(`Refs #${opts.originalIssueNumber}`);
     } else {
       linkedIssues.push(`Closes #${opts.originalIssueNumber}`, `Refs #${opts.originalIssueNumber}`);
@@ -153,7 +193,7 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
 
   // Also close/ref the bridge work order issue
   if (opts.issueNumber && opts.issueNumber !== opts.originalIssueNumber) {
-    if (isSpecOnly) {
+    if (keepSpecOpen) {
       linkedIssues.push(`Refs #${opts.issueNumber}`, `<!-- spec-only: keeps #${opts.issueNumber} open until code implementation -->`);
     } else {
       linkedIssues.push(`Closes #${opts.issueNumber}`, `Refs #${opts.issueNumber}`);
@@ -438,6 +478,14 @@ export interface IssueFeedback {
   state: string;
   labels: string[];
   latestVerdict: IntakeVerdict | null;
+  // #2344 Option A: the RAW intake-plane verdict (null for the anonymous-bridge
+  // cohort where the verdict writer never fired) — auditability alongside the
+  // possibly label-derived latestVerdict above.
+  intakeVerdict: IntakeVerdict | null;
+  // #2344 Option A: provenance of latestVerdict — "intake-bot" (plane wrote a
+  // record), "label-fallback" (derived from bridge:landed + closed), or null
+  // (no verdict representable).
+  verdictSource: VerdictSource;
   verdictHistory: IntakeVerdict[];
   latestClaim: { agent: string; at: string; ttlMinutes: number } | null;
   commentCount: number;
@@ -482,11 +530,21 @@ export function parseIntakeFeedback(
     });
   }
   const markers = parseClaimMarkers(comments);
+  // #2344 Option A: the intake-verdict plane has NEVER written for
+  // anonymous-bridge WOs (7-WO live cohort, all latestVerdict=null despite
+  // byte-verified landings). Derive the landed-class verdict read-side so
+  // bridge_read_feedback stops promising data it never returns; the raw null
+  // is preserved as intakeVerdict and the derivation is attributed via
+  // verdictSource. verdictHistory stays pure intake-bot history.
+  const rawLatest = history.length > 0 ? history[history.length - 1]! : null;
+  const fallback = applyLabelFallback(state, labels, rawLatest);
   return {
     issueNumber,
     state,
     labels: [...labels],
-    latestVerdict: history.length > 0 ? history[history.length - 1]! : null,
+    latestVerdict: fallback.latestVerdict,
+    intakeVerdict: fallback.intakeVerdict,
+    verdictSource: fallback.verdictSource,
     verdictHistory: history,
     latestClaim: markers.latest
       ? { agent: markers.latest.agent, at: markers.latest.ts.toISOString(), ttlMinutes: markers.latest.ttlMinutes }
@@ -618,6 +676,7 @@ interface RawIssue {
   body?: unknown;
   pull_request?: unknown;
   comments?: unknown;
+  state_reason?: unknown;
 }
 
 /** Sanitized queue entry — public content only, no credentials, no raw trust. */
@@ -635,6 +694,7 @@ export function normalizeQueueItem(raw: RawIssue) {
     number: typeof raw.number === "number" ? raw.number : null,
     title: typeof raw.title === "string" ? raw.title : "",
     state: typeof raw.state === "string" ? raw.state : "",
+    stateReason: typeof raw.state_reason === "string" ? raw.state_reason : null,
     url: typeof raw.html_url === "string" ? raw.html_url : "",
     createdAt: typeof raw.created_at === "string" ? raw.created_at : "",
     updatedAt: typeof raw.updated_at === "string" ? raw.updated_at : "",
@@ -656,11 +716,17 @@ export function isAnchorHubOrGovernance(raw: RawIssue): boolean {
   return labels.some((l) => l.toLowerCase() === "area:governance");
 }
 
+/** Bridge-state labels mark settled work: excluded from the default board. */
+export function isBridgeStateLabel(label: string): boolean {
+  const l = label.toLowerCase();
+  return l === "bridge:rejected" || l === "bridge:landed";
+}
+
 export function isRejectedOrLanded(raw: RawIssue): boolean {
   const labels = Array.isArray(raw.labels)
     ? raw.labels.map((l) => (typeof l === "string" ? l : (l as { name?: string })?.name || ""))
     : [];
-  return labels.some((l) => l.toLowerCase() === "bridge:rejected" || l.toLowerCase() === "bridge:landed");
+  return labels.some((l) => isBridgeStateLabel(l));
 }
 
 /** Open issues only (defense in depth: the API query filters, we verify). */
@@ -668,18 +734,74 @@ function isOpenIssue(raw: RawIssue): boolean {
   return typeof raw.state !== "string" || raw.state.toLowerCase() === "open";
 }
 
+/**
+ * Queue fetch paging contract (#2115/#2123): the board must be enumerated
+ * completely, not sampled from one page. A single fetch of the newest
+ * creations (issues + PRs mixed) makes the queue a creation-rank window
+ * that silently drops open work as traffic flows (observed window shrank
+ * to ~2.5h during fleet storms and read 20–35 rows vs 98 open issues).
+ */
+export const QUEUE_PAGE_SIZE = 100;
+export const QUEUE_MAX_PAGES = 5;
+export const QUEUE_LIMIT_MAX = 200;
+
+/** Pure URL builder for one queue page (label optional, page is 1-based). */
+export function buildQueueQueryUrl(repo: string, label: string | null, page: number): string {
+  const params = new URLSearchParams({
+    state: "open",
+    per_page: String(QUEUE_PAGE_SIZE),
+    sort: "created",
+    direction: "desc",
+    page: String(Math.max(1, page)),
+  });
+  if (label) params.set("labels", label);
+  return `https://api.github.com/repos/${repo}/issues?${params.toString()}`;
+}
+
+/** Pure page merge: flatten + dedupe by issue number (first occurrence wins). */
+export function mergeIssuePages(pages: RawIssue[][]): RawIssue[] {
+  const seen = new Set<number>();
+  const out: RawIssue[] = [];
+  for (const page of Array.isArray(pages) ? pages : []) {
+    for (const item of Array.isArray(page) ? page : []) {
+      if (!item || typeof item !== "object") continue;
+      const num = (item as { number?: unknown }).number;
+      if (typeof num === "number" && Number.isFinite(num)) {
+        if (seen.has(num)) continue;
+        seen.add(num);
+      }
+      out.push(item as RawIssue);
+    }
+  }
+  return out;
+}
+
 /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
-export function queueFromIssues(rawIssues: unknown, limit = 20) {
+/** Shared filter+rank stage (#2286 option B): the queue semantics WITHOUT the
+ *  window slice, so callers can echo the true open total alongside the window.
+ *  queueFromIssues keeps its slice contract on top of this stage. */
+export function filterQueueItems(rawIssues: unknown,
+                                 opts: { keepBridgeStateRows?: boolean } = {}) {
   const items = Array.isArray(rawIssues) ? rawIssues : [];
   return items
     .filter((item): item is RawIssue => Boolean(item) && typeof item === "object")
     .filter(isIssueNotPullRequest)
     .filter(isOpenIssue)
     .filter((item) => !isAnchorHubOrGovernance(item))
-    .filter((item) => !isRejectedOrLanded(item))
+    // A label-filtered query that ASKS for a bridge-state label must not
+    // have that same label filtered out: the universal filter serves the
+    // default claimable board, not targeted reconciliation queries (#2163
+    // arc: label=bridge:rejected returned 0 rows for 2 confirmed open rows,
+    // live-proven across the redeploy boundary).
+    .filter((item) => opts.keepBridgeStateRows || !isRejectedOrLanded(item))
     .map(normalizeQueueItem)
-    .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
-    .slice(0, Math.min(Math.max(1, limit), 50));
+    .sort((a, b) => (b.number ?? 0) - (a.number ?? 0));
+}
+
+export function queueFromIssues(rawIssues: unknown, limit = 20,
+                                opts: { keepBridgeStateRows?: boolean } = {}) {
+  return filterQueueItems(rawIssues, opts)
+    .slice(0, Math.min(Math.max(1, limit), QUEUE_LIMIT_MAX));
 }
 
 async function githubHeaders(withAuth = true): Promise<Record<string, string>> {
@@ -700,67 +822,131 @@ function clipBody(body: unknown): string {
   return body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}\n... [truncated ${body.length - MAX_BODY_CHARS} chars]` : body;
 }
 
+/** #2423 option A — zod mirror of normalizeQueueItem's guaranteed shape.
+ * Single source shared by the bridge.work_queue rows (z.array(z.object)) and
+ * the bridge.work_order top-level fields (spread), so the declared
+ * outputSchema and the emitted structuredContent payloads cannot drift
+ * apart: normalizeQueueItem is the only producer of both shapes. */
+const bridgeQueueItemSchema = {
+  number: z.number().int().nullable(),
+  title: z.string(),
+  state: z.string(),
+  stateReason: z.string().nullable(),
+  url: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  labels: z.array(z.string()),
+  comments: z.number().int(),
+};
+
 export async function registerBridgeTools(server: McpServer): Promise<void> {
   server.tool(
     "bridge.guide",
     "Zero-credential onboarding contract for external agents working from the public open-source repo: lifecycle, branch convention, diff caps, protected paths and the submission flow. No network required.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       return { content: [{ type: "text", text: JSON.stringify(bridgeGuide(), null, 2) }] };
     }
   );
 
-  server.tool(
+  // #2423 option A (radar R65): declare outputSchema + emit structuredContent
+  // per MCP spec rev 2025-06-18 ("Structured Content"). Dual emission is
+  // additive by construction: the TextContent block stays byte-identical so
+  // every existing hand-parsing caller (watchdog, filer scripts, mcp_client)
+  // keeps working unchanged, while schema-aware callers get a machine-
+  // validatable contract whose required keys lock in the R59 window echo
+  // (count/totalOpen/windowTruncated) at schema level.
+  server.registerTool(
     "bridge.work_queue",
-    "List OPEN work-order issues awaiting an agent in the public open-source repo (defaults to all open issues, or filter by optional label). Read-only, public data only.",
     {
-      limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return (default 20)"),
-      label: z.string().optional().describe("Optional label filter; omit or empty = all open issues"),
+      description: "List OPEN work-order issues awaiting an agent in the public open-source repo (defaults to all open issues, or filter by optional label). Read-only, public data only.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(QUEUE_LIMIT_MAX).optional().describe("Max work orders to return (default 20; up to 200 for full-board reconciliation)"),
+        label: z.string().optional().describe("Optional label filter; omit or empty = all open issues"),
+      },
+      outputSchema: {
+        repo: z.string(),
+        label: z.string().nullable(),
+        scope: z.string(),
+        authenticatedRead: z.boolean(),
+        callerAuthenticated: z.boolean(),
+        count: z.number().int(),
+        totalOpen: z.number().int(),
+        windowTruncated: z.boolean(),
+        workOrders: z.array(z.object(bridgeQueueItemSchema)),
+        nextStep: z.string(),
+      },
+      annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ limit, label }) => {
       const repo = bridgeOpenRepo();
       const appliedLabel = typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
-      const queryParams = new URLSearchParams({ state: "open", per_page: "50", sort: "created", direction: "desc" });
-      if (appliedLabel) {
-        queryParams.set("labels", appliedLabel);
-      }
       try {
-        let res = await httpRequest<RawIssue[]>(
-          `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
-          { headers: await githubHeaders(true), timeoutMs: 15_000 }
-        );
-        // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
-        if (!res.ok && (res.status === 401 || res.status === 403)) {
-          res = await httpRequest<RawIssue[]>(
-            `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
-            { headers: await githubHeaders(false), timeoutMs: 15_000 }
+        // Complete enumeration: walk pages until a short page (or cap).
+        // Fixes #2115/#2123 — a single per_page=50 fetch turned the queue
+        // into a creation-rank window that dropped open work (98 open
+        // issues read as 20–35 rows) while bridge_read_feedback still
+        // resolved the dropped rows.
+        const pages: RawIssue[][] = [];
+        let page = 1;
+        while (page <= QUEUE_MAX_PAGES) {
+          const url = buildQueueQueryUrl(repo, appliedLabel, page);
+          let res = await httpRequest<RawIssue[]>(
+            url,
+            { headers: await githubHeaders(true), timeoutMs: 15_000 }
           );
+          // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
+          if (!res.ok && (res.status === 401 || res.status === 403)) {
+            res = await httpRequest<RawIssue[]>(
+              url,
+              { headers: await githubHeaders(false), timeoutMs: 15_000 }
+            );
+          }
+          if (!res.ok) {
+            const message = (res.data as { message?: unknown })?.message ?? res.status;
+            return {
+              isError: true,
+              content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}: ${String(message)}). Retry shortly; the queue is public and needs no credentials.` }],
+            };
+          }
+          const rows = Array.isArray(res.data) ? res.data : [];
+          pages.push(rows);
+          if (rows.length < QUEUE_PAGE_SIZE) break;
+          page += 1;
         }
-        if (!res.ok) {
-          const message = (res.data as { message?: unknown })?.message ?? res.status;
-          return {
-            isError: true,
-            content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}: ${String(message)}). Retry shortly; the queue is public and needs no credentials.` }],
-          };
-        }
-        const queued = queueFromIssues(res.data, limit ?? 20);
+        const filtered = filterQueueItems(mergeIssuePages(pages),
+          { keepBridgeStateRows: appliedLabel !== null && isBridgeStateLabel(appliedLabel) });
         // Expose all active open issues so agents discover claimable federation work
         const anonymous = RequestContextStore.get()?.authenticated !== true;
-        const workOrders = queued;
+        const workOrders = filtered.slice(0, Math.min(Math.max(1, limit ?? 20), QUEUE_LIMIT_MAX));
+        // Window-contract echo (#2286 option B): count alone mirrors the window,
+        // not the board — a default-depth scan read 20 of 87 live open rows
+        // (77% dark) with zero signal, and every fleet snapshot that day scanned
+        // at depth <= 50. The enumeration pass already walked all pages, so the
+        // exact open total is free here; echo it with a truncation flag so the
+        // window contract is observable instead of silent. Additive fields,
+        // mirrors the R54 stateReason passthrough shape.
+        const totalOpen = filtered.length;
+        // Dual emission (#2423): the SAME object feeds both planes — zero
+        // drift by construction. SDK-side validateToolOutput enforces the
+        // schema on every success result; isError paths stay exempt and
+        // text-only, exactly as before.
+        const payload = {
+          repo,
+          label: appliedLabel,
+          scope: "all-open",
+          authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
+          callerAuthenticated: !anonymous,
+          count: workOrders.length,
+          totalOpen,
+          windowTruncated: workOrders.length < totalOpen,
+          workOrders,
+          nextStep: "Call bridge.work_order with a number, then follow bridge.guide.",
+        };
         return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              repo,
-              label: appliedLabel,
-              scope: "all-open",
-              authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
-              callerAuthenticated: !anonymous,
-              count: workOrders.length,
-              workOrders,
-              nextStep: "Call bridge.work_order with a number, then follow bridge.guide.",
-            }, null, 2),
-          }],
+          structuredContent: payload,
+          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
         };
       } catch (err) {
         return {
@@ -771,11 +957,22 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  // #2423 option A: outputSchema = normalizeQueueItem fields + body + contract
+  // (the full read envelope). Rows and top-level fields share
+  // bridgeQueueItemSchema, so queue rows and single-order reads cannot drift.
+  server.registerTool(
     "bridge.work_order",
-    "Fetch one Bridge Work Order from the public open-source repo by issue number: title, labels, sanitized body and URL. Read-only, public data only.",
     {
-      number: z.number().int().positive().describe("Work-order issue number in the public open-source repo"),
+      description: "Fetch one Bridge Work Order from the public open-source repo by issue number: title, labels, sanitized body and URL. Read-only, public data only.",
+      inputSchema: {
+        number: z.number().int().positive().describe("Work-order issue number in the public open-source repo"),
+      },
+      outputSchema: {
+        ...bridgeQueueItemSchema,
+        body: z.string(),
+        contract: z.record(z.string(), z.unknown()),
+      },
+      annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ number }) => {
       const repo = bridgeOpenRepo();
@@ -805,15 +1002,15 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           };
         }
         const item = normalizeQueueItem(res.data);
+        // Dual emission (#2423): same object in both planes, zero drift.
+        const payload = {
+          ...item,
+          body: clipBody(res.data.body),
+          contract: bridgeGuide().contract,
+        };
         return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              ...item,
-              body: clipBody(res.data.body),
-              contract: bridgeGuide().contract,
-            }, null, 2),
-          }],
+          structuredContent: payload,
+          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
         };
       } catch (err) {
         return {
@@ -834,6 +1031,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return when viewing queue (default: 20)."),
       label: z.string().optional().describe("Optional label filter for queue."),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ view, taskId, limit, label }) => {
       const repo = bridgeOpenRepo();
       if (view === "guide") {
@@ -890,7 +1088,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         if (!res.ok) {
           return { isError: true, content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}).` }] };
         }
-        const queued = queueFromIssues(res.data, limit ?? 20);
+        const queued = queueFromIssues(res.data, limit ?? 20,
+          { keepBridgeStateRows: appliedLabel !== null && isBridgeStateLabel(appliedLabel) });
         return {
           content: [{
             type: "text",
@@ -914,23 +1113,25 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     agentIdentity,
     reflectionWhy,
     alternativesRejected,
+    closesOriginalIssue,
   }: {
     taskId: string;
     summary: string;
     originalIssueNumber?: number;
     scopePaths: string[];
     testsEvidence: string;
-    files: Array<{ path: string; content?: string; mode?: "full_file" | "unified_diff"; diff?: string }>;
+    files: Array<{ path: string; content?: string; mode?: "full_file" | "unified_diff"; diff?: string; baseSha?: string }>;
     rollbackPath?: string;
     agentIdentity?: string;
     reflectionWhy?: string;
     alternativesRejected?: string;
+    closesOriginalIssue?: boolean;
   }) => {
-    // If not explicitly passed, detect original issue reference from summary e.g. "fix #1519" or "(#1519)"
-    const detectedIssueNum = originalIssueNumber ?? (() => {
-      const match = summary.match(/(?:close[s]?|fix(?:es)?|resolve[s]?|issue|\#)\s*#?([0-9]{2,6})\b/i);
-      return match ? parseInt(match[1], 10) : undefined;
-    })();
+    // If not explicitly passed, detect original issue reference from summary -
+    // verb-intent only ("fixes #1519"); a bare "#NNN" mention references, it
+    // does not resolve (see detectOriginalIssueFromSummary: the old bare-`\#`
+    // branch false-closed three open tickets via auto-detected Closes links).
+    const detectedIssueNum = originalIssueNumber ?? detectOriginalIssueFromSummary(summary);
     // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
     const candidateBody = [
       REFLECTION_EVIDENCE_SECTION,
@@ -1027,30 +1228,57 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
 
       try {
         // Step 0: Ingress Idempotency Check (Zero-Duplicate Invariant, #155, #1692)
-        // If an open work order or branch already exists for this taskId, return idempotent success
+        // If an open work order already exists for this taskId, return idempotent success
         // without generating duplicate issues or competing PRs across asynchronous agents.
-        const searchRes = await httpRequest<{ items?: Array<{ number: number; html_url: string; title: string }> }>(
-          `https://api.github.com/search/issues?q=repo:${repo}+is:issue+is:open+${encodeURIComponent(taskId)}+in:title`,
+        // #2136: GitHub issue search ANDs hyphen-split tokens, so an unquoted taskId
+        // matched unrelated open WOs whose titles share vocabulary (live false positive:
+        // novel `bridge-20261028-radar-index-freshness-r2` resolved to WO #2094), and
+        // even quoted-phrase search surfaces issues that merely QUOTE a taskId in prose.
+        // The query is therefore a quoted phrase over title+body, and every hit must
+        // still verify as a work order FOR exactly this taskId (title tail `(taskId)`
+        // or body `### Task ID` field equality) before the idempotent-noop fires.
+        const searchRes = await httpRequest<{ items?: Array<{ number: number; html_url: string; title: string; body?: string }> }>(
+          `https://api.github.com/search/issues?q=${taskIdSearchQuery(repo, taskId)}`,
           { headers, timeoutMs: 10_000 }
         );
-        if (searchRes.ok && searchRes.data?.items && searchRes.data.items.length > 0) {
-          const existing = searchRes.data.items[0];
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                ok: true,
-                taskId,
-                targetRepo: targetRepoResolution.repo,
-                targetAnchor: targetRepoResolution.anchor,
-                targetMode: targetRepoResolution.mode,
-                issueNumber: existing.number,
-                issueUrl: existing.html_url,
-                status: "bridge:idempotent-noop",
-                message: `Work order for task '${taskId}' is already active (#${existing.number}). Duplicate generation prevented.`,
-              }, null, 2),
-            }],
-          };
+        const existing = searchRes.ok
+          ? (searchRes.data?.items ?? []).find((it) => isWorkOrderForTaskId(it.title ?? "", it.body, taskId))
+          : undefined;
+        // #2227: a verified active WO is no longer a whole-run stop. The
+        // zero-duplicate invariant guards duplicate WO GENERATION and competing
+        // landings, not the FIRST legitimate landing against a pre-existing WO
+        // (manually-filed WOs, or prior rounds that stranded before Step B —
+        // the #2195 stranded-branch class). Branch-aware resolution restores
+        // the #2112 semantics: noop only when the patch branch is already in
+        // flight/landed on the remote; otherwise pair with the existing WO and
+        // land (Step D skips duplicate generation for the same taskId).
+        let pairedWorkOrder: { number: number; html_url: string } | undefined;
+        if (existing) {
+          const branchProbeRes = await httpRequest<{ ref?: string }>(
+            `https://api.github.com/repos/${repo}/git/ref/heads/bridge/${taskId}`,
+            { headers, timeoutMs: 15_000 }
+          );
+          const ingress = resolveIngressAction(!!(branchProbeRes.ok && branchProbeRes.data?.ref));
+          if (ingress.action === "idempotent-noop") {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  ok: true,
+                  taskId,
+                  targetRepo: targetRepoResolution.repo,
+                  targetAnchor: targetRepoResolution.anchor,
+                  targetMode: targetRepoResolution.mode,
+                  issueNumber: existing.number,
+                  issueUrl: existing.html_url,
+                  status: "bridge:idempotent-noop",
+                  branchExists: true,
+                  message: `Work order for task '${taskId}' is already active (#${existing.number}) and its patch branch is already in flight. Duplicate generation prevented.`,
+                }, null, 2),
+              }],
+            };
+          }
+          pairedWorkOrder = { number: existing.number, html_url: existing.html_url };
         }
 
         // Step A: Get main branch SHA
@@ -1062,6 +1290,67 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           return { isError: true, content: [{ type: "text", text: `Failed to resolve main branch on ${repo}: HTTP ${mainRes.status}` }] };
         }
         const mainSha = mainRes.data.object.sha;
+
+        // #2444 test-wiring checkpoint (pre-branch, pre-PUT): a NEW test file in
+        // the guarded package that no npm script references would deterministically
+        // fail the #116 wiring guard on the PR gate AFTER the branch + PR already
+        // exist (recurring class: #2404 r1 run 40803525030, #2440 r2 run
+        // 40816022722 — each cost a red gate, a stranded PR, and a triage WO).
+        // Refuse at submit-time with the exact fix instead. Scope is exactly the
+        // guard's collection shapes under infrastructure/mcp-control-plane/;
+        // everything else is never evaluated (zero false-positive surface).
+        // Fail-open with disclosure whenever the Tower cannot prove the wiring
+        // state (manifest absent, API error, diff-mode manifest override) —
+        // availability over false blocks, never silent (staleness precedent).
+        let unwiredError: string | undefined;
+        const wiringCheckSkips: string[] = [];
+        for (const group of payloadTestWiringGroups(files.map((f) => f.path))) {
+          const pkgPath = `${group.packageDir}/package.json`;
+          const override = files.find((f) => f.path === pkgPath);
+          let blob: string | undefined;
+          if (override && (override.mode ?? "full_file") === "full_file" && typeof override.content === "string") {
+            // Payload's own manifest is the wiring authority when present: it
+            // is exactly what the guard will read post-land.
+            blob = override.content;
+          } else if (override) {
+            wiringCheckSkips.push(`${pkgPath}: payload override is unified_diff — post-apply blob not evaluated here; fail-open`);
+            continue;
+          } else {
+            const pkgRes = await httpRequest<{ content?: string; encoding?: string }>(
+              `https://api.github.com/repos/${repo}/contents/${pkgPath}?ref=main`,
+              { headers, timeoutMs: 15_000 }
+            );
+            if (pkgRes.ok && pkgRes.data?.content) {
+              blob = Buffer.from(pkgRes.data.content, "base64").toString("utf-8");
+            } else if (pkgRes.status === 404) {
+              wiringCheckSkips.push(`${pkgPath}: absent on main (HTTP 404) — guard not applicable to this group`);
+              continue;
+            } else {
+              wiringCheckSkips.push(`${pkgPath}: read failed HTTP ${pkgRes.status} — fail-open`);
+              continue;
+            }
+          }
+          const groupUnwired: string[] = [];
+          for (const testPath of group.testPaths) {
+            const existsRes = await httpRequest<{ sha?: string }>(
+              `https://api.github.com/repos/${repo}/contents/${testPath}?ref=main`,
+              { headers, timeoutMs: 15_000 }
+            );
+            if (existsRes.ok) continue; // modification of an existing (main-wired) suite
+            if (existsRes.status !== 404) {
+              wiringCheckSkips.push(`${testPath}: existence probe HTTP ${existsRes.status} — fail-open`);
+              continue;
+            }
+            if (!isTestWired(testPath, blob)) groupUnwired.push(testPath);
+          }
+          if (groupUnwired.length > 0) {
+            unwiredError = unwiredTestErrorText(groupUnwired, pkgPath);
+            break;
+          }
+        }
+        if (unwiredError) {
+          return { isError: true, content: [{ type: "text", text: unwiredError }] };
+        }
 
         // Step B: Create branch bridge/<taskId> if not exists
         const branchName = `bridge/${taskId}`;
@@ -1090,7 +1379,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         }
 
         // Step C: Commit files to the branch (dual-mode ingress, #539)
-        const fileResults: Array<{ path: string; mode: string; hunksApplied?: number; offsets?: number[] }> = [];
+        const fileResults: Array<{ path: string; mode: string; hunksApplied?: number; offsets?: number[]; stalenessCheck?: string }> = [];
         for (const file of files) {
           const ingressMode = file.mode ?? "full_file";
           const getFileRes = await httpRequest<{ sha?: string; content?: string; encoding?: string }>(
@@ -1121,7 +1410,41 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             }
           } else {
             finalContent = file.content ?? "";
-            fileResults.push({ path: file.path, mode: ingressMode });
+            // #2333 staleness checkpoint (full_file only): when the filer
+            // declares the blob sha the file had on main at branch-cut time,
+            // re-read main now and fail closed on any drift — a stale
+            // full_file overwrite silently reverts main's increment (the R62
+            // eviction class: #2322's whole-file landing deleted #2314's
+            // landed registration). Opt-in per file, so legacy filers and
+            // brand-new files are untouched (no declared base -> no check,
+            // zero behavior change). API failure other than 404 fails open
+            // with a per-file disclosure (stalenessCheck) instead of blocking
+            // legitimate submissions on Tower-side API health.
+            let stalenessCheck: string | undefined;
+            if (file.baseSha) {
+              const mainBlobRes = await httpRequest<{ sha?: string; message?: string }>(
+                `https://api.github.com/repos/${repo}/contents/${file.path}?ref=main`,
+                { headers, timeoutMs: 15_000 }
+              );
+              // 200 -> compare against main's blob; 404 -> file absent on main
+              // (deleted since the cut); any other status -> Tower-side API
+              // health problem, fail open with a per-file disclosure.
+              const mainBlob: MainBlobState | undefined = mainBlobRes.ok
+                ? { exists: true, sha: mainBlobRes.data?.sha }
+                : mainBlobRes.status === 404
+                  ? { exists: false }
+                  : undefined;
+              if (mainBlob) {
+                const verdict = evaluateBaseStaleness(file.baseSha, mainBlob);
+                if (verdict.verdict === "stale") {
+                  return { isError: true, content: [{ type: "text", text: staleBaseErrorText(file.path, verdict) }] };
+                }
+                stalenessCheck = "checked-fresh";
+              } else {
+                stalenessCheck = "skipped-api-error";
+              }
+            }
+            fileResults.push({ path: file.path, mode: ingressMode, stalenessCheck });
           }
 
           const putFileRes = await httpRequest<{ message?: string }>(
@@ -1144,7 +1467,16 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           }
         }
 
-        // Step D: Create Bridge Work Order Issue
+        // Step D: Create Bridge Work Order Issue — SKIPPED when pairing with an
+        // existing active WO (#2227): the zero-duplicate invariant guards WO
+        // generation, so the paired PR closes/ref's the EXISTING work order
+        // instead of spawning a duplicate issue for the same taskId.
+        let issueNumber: number | undefined;
+        let issueUrl: string | undefined;
+        if (pairedWorkOrder) {
+          issueNumber = pairedWorkOrder.number;
+          issueUrl = pairedWorkOrder.html_url;
+        } else {
         const issueBody = [
           "### Task ID",
           taskId,
@@ -1177,7 +1509,11 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             method: "POST",
             headers,
             body: {
-              title: `🌉 Bridge Work Order — ${summary} (${taskId})`,
+              // #2195 Failure 1: GitHub now caps issue titles at ~256 chars;
+              // an unclamped 980-char summary 422'd deterministically and
+              // stranded the pushed branch. Clamp preserves the (taskId) tail
+              // (authoritative for #2136 dedup).
+              title: issueTitleFor(summary, taskId),
               labels: [BRIDGE_QUEUE_LABEL],
               body: issueBody,
             },
@@ -1192,41 +1528,63 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}${msg}` }],
           };
         }
+        issueNumber = issueRes.data?.number;
+        issueUrl = issueRes.data?.html_url;
+        }
 
         // Step E: Atomic PR Pairing (Invariant #514 — Zero Stranded Branches)
         const prBody = buildBridgePrBody({
           taskId,
           summary,
-          issueNumber: issueRes.data?.number,
+          issueNumber,
           originalIssueNumber: detectedIssueNum,
           scopePaths,
           testsEvidence,
           reflectionWhy,
           alternativesRejected,
           rollbackPath,
+          closesOriginalIssue,
         });
 
         let prNumber: number | undefined;
         let prUrl: string | undefined;
-
-        const prRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
-          `https://api.github.com/repos/${repo}/pulls`,
-          {
-            method: "POST",
-            headers,
-            body: {
-              title: `feat(bridge): ${summary} (${taskId})`,
-              head: branchName,
-              base: "main",
-              body: prBody,
-            },
-            timeoutMs: 15_000,
+        // #2195 Failure 2/3: the deployed plane ran `if (prRes.ok && prRes.data)`
+        // with NO else — a failed PR creation (validation, head-not-found, the
+        // new ~256-char title cap) was silently swallowed and the round returned
+        // ok:true/bridge:queued with prNumber undefined, stranding branches with
+        // zero diagnostics (contra Invariant #514). Surface the failure as
+        // prError while keeping the bridge:queued state machine unchanged: the
+        // branch and work-order issue already exist, so the round is still a
+        // recoverable queued state — but now the agent and the admin can see WHY.
+        let prError: PrFailure | undefined;
+        try {
+          const prRes = await httpRequest<{ number?: number; html_url?: string; message?: string; errors?: Array<{ message?: string }> }>(
+            `https://api.github.com/repos/${repo}/pulls`,
+            {
+              method: "POST",
+              headers,
+              body: {
+                // #2195 Failure 1 twin: same GitHub ~256-char cap applies to PR
+                // titles; clamp with the (taskId) tail preserved.
+                title: prTitleFor(summary, taskId),
+                head: branchName,
+                base: "main",
+                body: prBody,
+              },
+              timeoutMs: 15_000,
+            }
+          );
+          if (prRes.ok && prRes.data) {
+            prNumber = prRes.data.number;
+            prUrl = prRes.data.html_url;
+          } else if (!prRes.ok) {
+            prError = prFailureFromHttp(prRes.status, prRes.data);
           }
-        );
-
-        if (prRes.ok && prRes.data) {
-          prNumber = prRes.data.number;
-          prUrl = prRes.data.html_url;
+        } catch (prErr) {
+          // Transport-level throw (timeout/DNS): keep the round's existing
+          // artifacts visible instead of letting the outer catch discard
+          // fileResults + issueNumber behind a generic isError.
+          prError = { status: 0, message: (prErr as Error).message };
         }
 
         return {
@@ -1239,16 +1597,23 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               targetAnchor: targetRepoResolution.anchor,
               targetMode: targetRepoResolution.mode,
               files: fileResults,
+              ...(wiringCheckSkips.length > 0 ? { wiringCheckSkips } : {}),
               branch: branchName,
               branchUrl: `https://github.com/${repo}/tree/${branchName}`,
-              issueNumber: issueRes.data?.number,
-              issueUrl: issueRes.data?.html_url,
+              issueNumber,
+              issueUrl,
               prNumber,
               prUrl,
+              prError,
+              pairedWithExistingWorkOrder: pairedWorkOrder ? pairedWorkOrder.number : undefined,
               status: prNumber ? "bridge:pr-opened" : "bridge:queued",
               message: prNumber
-                ? `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
-                : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
+                ? pairedWorkOrder
+                  ? `Work submitted and PR #${prNumber} opened atomically, paired with existing work order #${pairedWorkOrder.number} (no duplicate generated)! CI Guardian will evaluate and land via constitutional gates.`
+                  : `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
+                : prError
+                  ? `Branch + work order created, but PR creation FAILED (${prError.status}: ${prError.message}) — branch stranded pending admin pairing or a resubmit; do NOT treat this round as landed.`
+                  : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
             }, null, 2),
           }],
         };
@@ -1262,7 +1627,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
 
   const submitPatchSchema = {
     taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
-    summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
+    summary: z.string().min(5).max(1000).describe("Summary of what was changed and why. Auto-close detection (#1609) fires on verb-intent phrases only (fixes/closes/resolves #N); a bare #N mention references without resolving - the old bare-# branch false-closed three open tickets (see detectOriginalIssueFromSummary)"),
     originalIssueNumber: z.number().int().positive().optional().describe("Original GitHub issue number being resolved (e.g. 1519) to ensure root issue closes automatically on PR merge"),
     scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
     testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
@@ -1271,17 +1636,20 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
       mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
       diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
-    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
+      baseSha: z.string().regex(/^[0-9a-f]{40}$/).optional().describe("#2333 staleness checkpoint: blob sha of this file as read from main at branch-cut time. Before landing, the Tower re-reads main and rejects with STALE_BASE_ERROR when the blob moved (main-advanced or file-deleted), preventing a stale full_file overwrite from silently reverting main. Omit for brand-new files (nothing to compare) or legacy unchecked submissions."),
+    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539; optional per-file baseSha staleness checkpoint per #2333)"),
     rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
     agentIdentity: z.string().optional().describe("Agent name / session attribution"),
     reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
     alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
+    closesOriginalIssue: z.boolean().optional().describe("#2485: opt-in for receipt-closure submissions. Docs-only (spec-only) payloads normally emit Refs #N so the work order stays open until code lands - but when this docs-only patch IS the resolution (e.g. a CI-failure closure receipt whose root cause is already remediated on main), set true to emit Closes #N on merge. Absent/false preserves the spec-only keep-open contract. Evidence: #2405 stayed open after #2427 landed; #2368 after #2466."),
   };
 
   server.tool(
     "bridge.submit_patch",
     "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
     submitPatchSchema,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     submitPatchHandler as any
   );
 
@@ -1290,6 +1658,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     "bridge.submit",
     "Unified patch submission endpoint (S0.4 canonical alias of bridge.submit_patch). Submits work to the public repo atomically with automatic branch creation, commit, and PR generation.",
     submitPatchSchema,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     submitPatchHandler as any
   );
 
@@ -1494,6 +1863,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Task issue number to claim"),
       agentId: z.string().optional().describe("Optional caller identity (defaults to authenticated client or contributor)"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     claimHandler
   );
 
@@ -1504,6 +1874,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     {
       number: z.number().int().positive().describe("Work-order issue number in the public open-source repo"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ number }) => {
       const repo = bridgeOpenRepo();
       try {
@@ -1562,6 +1933,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Task / Work-order issue number"),
       agentId: z.string().optional().describe("Caller agent identity (required for renew/release)"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ action, issueNumber, agentId }: { action: string; issueNumber: number; agentId?: string }) => {
       if (action === "feedback") {
         const repo = bridgeOpenRepo();
@@ -1604,6 +1976,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Claimed task issue number"),
       agentId: z.string().optional().describe("Caller identity — must match the claiming agent"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ issueNumber, agentId }) => {
       const repo = bridgeOpenRepo();
       const agent = resolveIssueAgent(agentId);
@@ -1662,6 +2035,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Claimed task issue number"),
       agentId: z.string().optional().describe("Caller identity — must match the claiming agent"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ issueNumber, agentId }) => {
       const repo = bridgeOpenRepo();
       const agent = resolveIssueAgent(agentId);

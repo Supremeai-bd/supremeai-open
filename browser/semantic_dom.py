@@ -12,7 +12,7 @@ import math
 from typing import Any
 
 from core.embeddings import EmbeddingEngine
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ── Confidence Guardrails (issue #1570 Part 1) ────────────────────────────
 # score >= 0.85   → execute immediately

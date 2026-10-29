@@ -1,7 +1,7 @@
 {
   "schema": "docs-link-integrity-baseline/1",
   "generatedAt": "2026-10-28",
-  "headAtGeneration": "R42 re-land r3 (post-#1980-routing-rejection) at open main f3f22a9 — monorepo lanes only; satellite fix in flight",
+  "headAtGeneration": "10a4727 (feat(bridge): docs(scout): register R52 row + next-free R53 (#2172). #2161 landed via #2165 (622)",
   "probe": "scripts/ci/docs_link_integrity_guard.py",
   "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): pinned core/_archive/MANIFEST.md as satellite-lane debt while its fix shipped via bridge-20261028-r42-manifest-satellite-fix. SHRUNK TO 0 same day: the satellite fix landed as bc810e7 (PR #2028) and mirrored to this tree before the r3 landing CI window closed — floor is EMPTY, the original r3 empty-floor endgame reached by the routing-legal route.",
   "ratchetedFloor": [],
@@ -74,5 +74,5 @@
       "reason": "missing-file"
     }
   ],
-  "checkedAtGeneration": 269
+  "checkedAtGeneration": 268
 }

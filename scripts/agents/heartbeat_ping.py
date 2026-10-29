@@ -120,7 +120,7 @@ def ping_mcp(slot: str, agent_id: str, mcp_url: str, api_key: str, client_label:
     """Full inline MCP handshake (initialize → initialized → tools/call)."""
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "MCP-Protocol-Version": "2025-03-26",
+        "MCP-Protocol-Version": "2025-11-25",
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
     }
@@ -141,7 +141,7 @@ def ping_mcp(slot: str, agent_id: str, mcp_url: str, api_key: str, client_label:
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-03-26",
+                "protocolVersion": "2025-11-25",
                 "capabilities": {},
                 "clientInfo": {"name": client_label, "version": "1.0.0"},
             },

@@ -9,6 +9,7 @@ export async function registerSystemSummaryTools(server: McpServer): Promise<voi
     "health.full_sweep",
     "Universal Observe Layer: Forces a fresh sweep of all adapters (bypassing cache) and returns the incident report and snapshots.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const report = await globalHealthEngine.runFullSweep();
@@ -28,6 +29,7 @@ export async function registerSystemSummaryTools(server: McpServer): Promise<voi
     "health.dashboard",
     "Universal Observe Layer: Returns the latest cached health snapshot instantly (no network requests).",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const snapshots = globalHealthCache.getAllSnapshots();
@@ -52,6 +54,7 @@ export async function registerSystemSummaryTools(server: McpServer): Promise<voi
     "resources.dashboard",
     "Returns the account-aware resource inventory with the latest cached provider status.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const resources = await listResources();
@@ -66,6 +69,7 @@ export async function registerSystemSummaryTools(server: McpServer): Promise<voi
     "system.dependencies",
     "Universal Observe Layer: Returns the dependency graph map.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const deps = globalDependencyGraph.getRawMap();
       return {

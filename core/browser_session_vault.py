@@ -32,7 +32,7 @@ from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # সেশন-বৈধতা heuristic (#943): শেষ লগইন ৭ দিনের বেশি পুরোনো হলে অবৈধ।
 DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 3600

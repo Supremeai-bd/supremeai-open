@@ -22,6 +22,7 @@ import {
   consumeMcpRateLimit,
   toolRateLimitIdentity,
   consumeToolRateLimit,
+  mutationToolGateError,
   toolPayloadError,
   ToolExecutionTimeoutError,
   truncateToolResult,
@@ -30,6 +31,7 @@ import { registerAllTools } from "./tools/index.js";
 import { RequestContextStore, type UserRole } from "./policy/auth.context.js";
 import { getServiceDescriptors } from "./service-circles.js";
 import { nowTimestamp, timestampDetails, withTimestamp } from "./lib/timestamps.js";
+import { deriveWatchdog, recordWatchdogAlarm } from "./health/watchdog.js";
 import { approveClient, changeClientProfile, changeClientProvider, changeClientRole, countClientsByTenant, defaultClientScopes, getClient, initClientRegistry, listClients, registerClient, resolveClient, revokeClient, rotateClient, roleAllows, scopeAllows, type ExternalClient } from "./policy/client-registry.js";
 import { extractClientInfoName, recordPresence, listWorkforce, registerIoredis } from "./registry/mcp_presence.js";
 import { createBuiltinManifest } from "./registry/mcp.contracts.js";
@@ -236,6 +238,42 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
   // Never hold the process open just for the reaper — Render spin-down must
   // stay possible; the timer dies with the event loop.
 
+  // #2710 watchdog increment (#2673 remedy pt.2): >10min without ANY sweep
+  // completion (scheduled or manual) is the #2665 live-but-empty class
+  // signature — alarm on the RISING EDGE only, re-arm on the next completion.
+  // Anti-false-clear: a one-off manual sweep re-stamps the completion clock
+  // and buys exactly one staleness window of silence; it cannot permanently
+  // silence this alarm. The alarm is also mirrored into the durable health
+  // history (__watchdog__ rows) so post-mortems survive restarts.
+  const healthWatchdogBootedAtMs = Date.now();
+  let healthWatchdogAlarmActive = false;
+  const healthWatchdogTimer = setInterval(() => {
+    void (async () => {
+      try {
+        const { globalHealthCache } = await import("./health/snapshot.js");
+        const view = deriveWatchdog(
+          Date.now(),
+          healthWatchdogBootedAtMs,
+          globalHealthCache.getLastCompletedSweepMs(),
+          globalHealthCache.getSweepCompletions(),
+        );
+        if (view.alarmDue && !healthWatchdogAlarmActive) {
+          healthWatchdogAlarmActive = true;
+          console.error(
+            `[HealthWatchdog] no sweep completion in >10min (completions=${view.sweepCompletions}, lastCompletedSweepAt=${String(view.lastCompletedSweepAt)}) — live-but-empty class #2665: registry is stale, not verified-healthy`,
+          );
+          await recordWatchdogAlarm(view);
+        } else if (!view.stale) {
+          // Fresh completion landed — re-arm so the NEXT gap re-alarms.
+          healthWatchdogAlarmActive = false;
+        }
+      } catch {
+        // The watchdog must never throw into the event loop.
+      }
+    })();
+  }, 60_000);
+  if (typeof healthWatchdogTimer.unref === "function") healthWatchdogTimer.unref();
+
   /** True when the parsed JSON-RPC body is an `initialize` request (or batch containing one). */
   function isMcpInitializeRequest(body: unknown): boolean {
     if (!body) return false;
@@ -336,20 +374,39 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
           status: snapshot.status,
         }));
         const unhealthy = services.filter((s) => s.status !== "healthy").length;
-        const status: string = unhealthy === 0 ? "ok" : unhealthy < services.length ? "degraded" : "outage";
+        // #2681: an empty snapshot table (post-restart, before any check ran) must NOT
+        // read "ok" — that is the #2665 live-but-empty signature ("ok" + total:0 while
+        // the system runs work). Boot-state honesty: derive "starting" (remains 200 —
+        // a boot state is not an outage). Empty-array vacuous truth is the trap:
+        // unhealthy === 0 is vacuously true over services = [].
+        const status: string = services.length === 0 ? "starting" : unhealthy === 0 ? "ok" : unhealthy < services.length ? "degraded" : "outage";
         const httpStatus = status === "outage" ? 503 : 200;
+        // #2710 watchdog increment: additive staleness telemetry so consumers
+        // can distinguish "all-clear" from "no data / data too old" (the #2665
+        // anti-false-clear requirement). Additive keys only — existing
+        // consumers read status/services and are unaffected.
+        const watchdogView = deriveWatchdog(
+          Date.now(),
+          healthWatchdogBootedAtMs,
+          globalHealthCache.getLastCompletedSweepMs(),
+          globalHealthCache.getSweepCompletions(),
+        );
         res.writeHead(httpStatus, { "Content-Type": "application/json", "Cache-Control": "no-store" });
         res.end(JSON.stringify(withTimestamp({
           status,
           server: SERVER_NAME,
           version: SERVER_VERSION,
           services: { healthy: services.length - unhealthy, degraded: unhealthy, total: services.length },
+          lastCompletedSweepAt: watchdogView.lastCompletedSweepAt,
+          sweepCompletions: watchdogView.sweepCompletions,
+          stale: watchdogView.stale,
         })));
       } catch {
-        // Fallback: if health cache isn't loaded yet (cold start), return ok
-        // but flag that health data isn't available yet.
+        // Fallback: if health cache isn't loaded yet (cold start), report "starting" —
+        // #2681: an unreadable cache is never evidence that everything is healthy,
+        // so the fallback must not emit a bare "ok" either.
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(withTimestamp({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION, note: "health cache not yet loaded" })));
+        res.end(JSON.stringify(withTimestamp({ status: "starting", server: SERVER_NAME, version: SERVER_VERSION, note: "health cache not yet loaded", stale: true, lastCompletedSweepAt: null, sweepCompletions: 0 })));
       }
       return;
     }
@@ -991,6 +1048,21 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
         try {
           if (body) parsedBody = JSON.parse(body);
         } catch {}
+
+        // ── Anonymous-mutation plane bound (#2363 Option A) ──
+        // Per-(caller IP, tool) hourly window on the 4 mutation tools.
+        // 429 + Retry-After at the HTTP layer; read plane and malformed
+        // bodies fail open into the downstream RBAC/limits untouched.
+        const mutationGate = mutationToolGateError(parsedBody, clientIpFor(req));
+        if (mutationGate) {
+          writeJson(
+            res,
+            429,
+            { error: `Rate limit exceeded for mutation tool '${mutationGate.tool}'`, tool: mutationGate.tool, retryAfterMs: mutationGate.retryAfterMs },
+            { "Retry-After": String(Math.ceil(mutationGate.retryAfterMs / 1000)) }
+          );
+          return;
+        }
 
         const sessionIdHeader = typeof req.headers["mcp-session-id"] === "string"
           ? (req.headers["mcp-session-id"] as string)

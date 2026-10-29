@@ -14,6 +14,12 @@ export interface HealthSnapshot {
 export class HealthCache {
   private cache = new Map<string, HealthSnapshot>();
   private defaultTtlMs: number;
+  // #2710 watchdog increment: sweep-completion telemetry (anti-false-clear —
+  // the #2665 live-but-empty class). Stamped by HealthEngine.runFullSweep on
+  // every successful completion; exposed via /health so external watchdogs can
+  // compute freshness instead of trusting a possibly one-off manual re-seed.
+  private lastCompletedSweepMs: number | null = null;
+  private sweepCompletions = 0;
 
   constructor(defaultTtlMs = 30000) {
     this.defaultTtlMs = defaultTtlMs;
@@ -61,6 +67,24 @@ export class HealthCache {
    */
   public getFailures(provider: string): number {
     return this.cache.get(provider)?.consecutiveFailures || 0;
+  }
+
+  /**
+   * #2710: stamps a sweep completion (scheduled or manual). A manual sweep
+   * refreshes this clock, buying exactly one staleness window of silence —
+   * the watchdog alarm re-arms unless completions recur (anti-false-clear).
+   */
+  public markSweepCompleted(atMs: number = Date.now()) {
+    this.lastCompletedSweepMs = atMs;
+    this.sweepCompletions += 1;
+  }
+
+  public getLastCompletedSweepMs(): number | null {
+    return this.lastCompletedSweepMs;
+  }
+
+  public getSweepCompletions(): number {
+    return this.sweepCompletions;
   }
 
   /**

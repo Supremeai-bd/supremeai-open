@@ -64,7 +64,7 @@ import difflib
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 — the guard's contract/regeneration checks ARE subprocess invocations; list-argv only (#2081 audit)
 import sys
 import tempfile
 from pathlib import Path
@@ -133,7 +133,7 @@ def discover_tool(explicit_tool: str | None = None) -> tuple[str | None, str | N
     if not Path(tool).exists():
         return None, f"{TAG} SKIP: CONTRACT_CODEGEN_TOOL points to a nonexistent path: {tool}"
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec B603 — list-argv, no shell, tool path validated via Path(tool).exists() above (#2081 audit)
             [tool, "--version"], capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -160,7 +160,7 @@ def discover_tool(explicit_tool: str | None = None) -> tuple[str | None, str | N
 def generate(tool: str, contract: Path, out: Path) -> None:
     """Regenerate the artifact from the contract with the pinned invocation."""
     cmd = [tool, "--input", str(contract), *GEN_BASE_ARGS, "--output", str(out)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(contract.parent.parent))
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(contract.parent.parent))  # nosec B603 — list-argv, no shell, tool path validated (#2081 audit)
     if proc.returncode != 0:
         raise RuntimeError(
             f"generator exited {proc.returncode} (contract may be ungeneratable — "
@@ -226,8 +226,9 @@ def changed_files(base: str | None, head: str | None, files: list[str]) -> list[
         return files
     if base:
         rev = f"{base}..{head}" if head else f"{base}...HEAD"
-        proc = subprocess.run(
-            ["git", "diff", "--name-only", rev], capture_output=True, text=True, cwd=str(REPO_ROOT),
+        git_bin = shutil.which("git") or "git"  # B607: resolve to absolute path when available
+        proc = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git read-only command (#2081 audit)
+            [git_bin, "diff", "--name-only", rev], capture_output=True, text=True, cwd=str(REPO_ROOT),
         )
         return proc.stdout.split()
     return []

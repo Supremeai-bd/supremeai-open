@@ -36,7 +36,7 @@ SUPREME_VERSION = os.getenv("SUPREME_VERSION", "unknown")
 
 import uvicorn
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # বাংলা মন্তব্য: টেস্ট এনভায়রনমেন্টে সম্পূর্ণ অ্যাপ এবং প্রোডাকশনে রোল অনুযায়ী ইউজার/অ্যাডমিন এন্ট্রি পয়েন্ট লোড করা হচ্ছে
 # বাংলা: _APP_IMPORT_STRING ট্র্যাক করা হয় যাতে uvicorn.run()-এ app object-এর বদলে
@@ -68,7 +68,7 @@ def __getattr__(name: str) -> Any:
 
 
 from core.config import settings
-from core.logging_config import setup_logging
+from core.monitoring.logging_config import setup_logging
 
 print(">>> CONFIG AND LOGGING LOADED <<<", flush=True)
 
