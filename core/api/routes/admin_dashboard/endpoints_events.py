@@ -6,7 +6,7 @@ import os
 from fastapi import HTTPException, Query
 
 from api.routes.admin_dashboard import router
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 @router.get("/events")
