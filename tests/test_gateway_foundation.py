@@ -28,6 +28,7 @@ from gateway.config import (
     GatewayConfig,
     parse_routing_policy,
 )
+from gateway.circuit_breaker import CircuitBreaker
 from gateway.memory import QdrantMemoryStore
 from gateway.provider_chain import (
     AttemptResult,
@@ -169,7 +170,12 @@ class TestProviderChain(unittest.TestCase):
             )
 
         res = asyncio.run(
-            execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
+            execute_chain(
+                (ep1, ep2),
+                b'{"messages":[]}',
+                attempt_fn=fake_attempt,
+                circuit_breaker=CircuitBreaker(),
+            )
         )
         self.assertEqual(res.status, 200)
         self.assertEqual(res.endpoint.provider, "groq")
@@ -196,7 +202,12 @@ class TestProviderChain(unittest.TestCase):
             )
 
         res = asyncio.run(
-            execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
+            execute_chain(
+                (ep1, ep2),
+                b'{"messages":[]}',
+                attempt_fn=fake_attempt,
+                circuit_breaker=CircuitBreaker(),
+            )
         )
         self.assertEqual(res.status, 200)
         self.assertEqual(res.endpoint.provider, "gemini")
@@ -216,7 +227,12 @@ class TestProviderChain(unittest.TestCase):
 
         with self.assertRaises(ProviderChainExhausted) as ctx:
             asyncio.run(
-                execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
+                execute_chain(
+                    (ep1, ep2),
+                    b'{"messages":[]}',
+                    attempt_fn=fake_attempt,
+                    circuit_breaker=CircuitBreaker(),
+                )
             )
 
         self.assertEqual(len(ctx.exception.ledger), 2)
