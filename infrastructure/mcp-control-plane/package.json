@@ -77,7 +77,7 @@
     "supremeai",
     "control-tower"
   ],
-  "license": "MIT",
+  "license": "LicenseRef-Proprietary",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@upstash/redis": "^1.38.3",
