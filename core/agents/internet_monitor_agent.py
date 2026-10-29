@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # aiohttp প্যাকেজ উপলব্ধ না থাকলে সেফ ইমপোর্ট ফলব্যাক।
 try:
