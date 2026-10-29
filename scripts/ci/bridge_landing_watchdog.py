@@ -155,7 +155,12 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
         _id[0] += 1
         payload["id"] = _id[0]
     headers = {"Content-Type": "application/json",
-               "Accept": "application/json, text/event-stream"}
+               "Accept": "application/json, text/event-stream",
+               # Streamable HTTP (spec rev >= 2025-06-18): every post-initialize request
+               # must carry the negotiated version; a missing header makes the server
+               # assume 2025-03-26, voiding the 2025-11-25 floor (#2568, radar R70).
+               # Mirrors PROTOCOL_VERSION_STREAMABLE in scripts/agents/mcp_tower_client.py.
+               "MCP-Protocol-Version": "2025-11-25"}
     if session_id:
         headers["Mcp-Session-Id"] = session_id
     last = None
