@@ -406,7 +406,13 @@ def validate_queue_capture(queue: object, source: str = "queue artifact") -> Non
           absent — a schema drift would otherwise sweep zero titles
           silently). A healthy EMPTY board (workOrders: [] with count=0)
           still passes: absence of rows is only a crime when the envelope
-          never declared them.
+          never declared them,
+      (f) a non-empty `label` field — a label-sliced capture is
+          count-complete but UNIVERSE-incomplete; invariant F (#2718)
+          consumes this artifact as the whole open-issue universe, so a
+          slice must never reach it,
+      (g) a `scope` other than the #2286 contract shape `all-open` — same
+          universe-incompleteness class as (f).
 
     Pre-envelope raw row lists (the F18d shape) carry no contract-bearing
     fields and pass through untouched. Raises SystemExit(1) after a FAIL
@@ -453,6 +459,19 @@ def validate_queue_capture(queue: object, source: str = "queue artifact") -> Non
                   "list at all — a schema drift here would sweep zero titles silently "
                   "(R76 fail-loud); a healthy empty board declares workOrders: []")
         raise SystemExit(1)
+    label = queue.get("label")
+    if label:
+        _evidence(f"FAIL board-sweep capture contract: {source} is label-sliced "
+                  f"(label={label!r}) — count-complete but universe-incomplete; invariant F "
+                  "(#2718) consumes this artifact as the WHOLE open-issue universe, so a "
+                  "slice must never reach it (R77 fail-loud)")
+        raise SystemExit(1)
+    scope = queue.get("scope")
+    if scope is not None and scope != "all-open":
+        _evidence(f"FAIL board-sweep capture contract: {source} scope={scope!r} is not the "
+                  "#2286 contract shape 'all-open' — same universe-incompleteness class as "
+                  "a label slice (R77 fail-loud)")
+        raise SystemExit(1)
 
 
 def board_sweep(queue: dict | list, token: int, allow: set[int]) -> list[dict]:
@@ -483,6 +502,69 @@ def board_sweep(queue: dict | list, token: int, allow: set[int]) -> list[dict]:
                     "title": " ".join(str(title).split())[:160],
                 })
                 break
+    return findings
+
+
+def row_state_findings(idx_text: str, queue: dict | list) -> list[dict]:
+    """Invariant F — row-state truthfulness (#2718 / R77), index-vs-board plane.
+
+    Invariants A–E verify the index's INTERNAL consistency and #2704's
+    validate_queue_capture verifies the capture input; none verified a row's
+    STATUS CLAIM against the issue state that claim describes. The scout's
+    receipts: 5 recent issue-filed rows asserted `open` while their defining
+    issues were closed-completed (R71/R72/R73/R75/R76 → #2586/#2608/#2627/
+    #2654/#2691); a full pre-flight over the live index found the rot 27 rows
+    deep (doc-filed eras included: R17/R20/R24-VI/R25/R29-R32/R36/R46-R62/R66
+    + R63-I's superseded-PR `in gates` cell). Stale-open is the dominant
+    divergence class — worse than stale-landed because it SUPPRESSES
+    successor work instead of duplicating it (Rule 7: the index is the only
+    counter; a lying counter is not a stale cache).
+
+    Check: for every §1 registry row whose status cell asserts an in-flight
+    state (anything not landed/closed/done/rejected/superseded/withdrawn —
+    `open`, `in gates`, `adopted`, `fixed` all qualify), the row's FILED-cell
+    issue #N must be present in the captured open-issue universe — the same
+    proven-complete artifact --board-sweep already ingests (label-sliced and
+    non-all-open scopes are refused upstream by validate_queue_capture). A
+    cited issue absent from a complete open set means the row claims
+    in-flight work that has actually landed. Scope honesty (the scout's own
+    limitation, kept verbatim): only issues checkable against an open-only
+    universe; landed-row misstatement detection is a non-goal this lane does
+    not claim. Parse honesty: cells are split on `|` naively — a pipe inside
+    a code span would confuse the parse; the live file parses clean (41
+    in-flight rows receipted this cycle), noted as a known limit.
+
+    Pure function — findings only; the caller renders evidence and fails.
+    """
+    rows_q = queue if isinstance(queue, list) else (
+        queue.get("workOrders") or queue.get("rows") or [])
+    open_nums = set()
+    for r in rows_q:
+        if isinstance(r, dict):
+            n = r.get("number", r.get("issueNumber"))
+            if isinstance(n, int):
+                open_nums.add(n)
+    landed_words = ("landed", "closed", "done", "rejected", "superseded", "withdrawn")
+    findings: list[dict] = []
+    for ln in idx_text.splitlines():
+        m = re.match(r"^\|\s*(R\d+[^|]*)\s*\|", ln)
+        if not m:
+            continue
+        cells = [c.strip() for c in ln.split("|")][1:-1]
+        if len(cells) < 6:
+            continue
+        fm = re.search(r"#(\d+)", cells[3])
+        if not fm:
+            continue
+        issue = int(fm.group(1))
+        status = re.sub(r"[*_`]", "", cells[5]).strip()
+        head_w = status.split("(")[0].split()
+        head = head_w[0].lower() if head_w else ""
+        if not head or head.startswith("\u2014") or head in landed_words:
+            continue
+        if issue not in open_nums:
+            findings.append({"kind": "stale-row", "row": re.sub(r"[*_]", "", m.group(1)).strip(),
+                             "issue": issue, "status": " ".join(status.split())[:80]})
     return findings
 
 
@@ -902,7 +984,13 @@ def self_test() -> bool:
     # a silently under-scanned sweep is worse than a loud failure. CLI
     # fixtures run the real binary via subprocess (offline, tempdir) and
     # require a nonzero exit; F19e is the positive control — a healthy
-    # envelope must still exit 0, the hardening must not false-positive.
+    # envelope must still exit 0 end-to-end. R77 canary note: this CLI run also
+    # executes invariant F over the DEPLOYED index, so it passes iff the deployed
+    # index is row-state-clean; a stale deployed index SHOULD redden here (that is
+    # invariant F working — refresh the rows; #2718). The synthetic queue is
+    # deliberately NOT the real open universe, so the canary only stays green when
+    # the index has zero in-flight rows citing issues outside a complete capture —
+    # i.e. after the R77 refresh landed.
     def queue_file(content: str) -> Path:
         p = Path(tempfile.mkdtemp(prefix="rifg-f19-")) / "queue.json"
         p.write_text(content, encoding="utf-8")
@@ -928,9 +1016,32 @@ def self_test() -> bool:
                         "workOrders": [{"number": 2401, "title": "row one"},
                                        {"number": 2402, "title": "row two"}]})
     check("F19d-small-payload-vs-totalopen-exits-nonzero", cli_exit(queue_file(small)) != 0)
-    healthy = json.dumps({"count": 2, "totalOpen": 2, "windowTruncated": False,
-                          "workOrders": [{"number": 2401, "title": "row one"},
-                                         {"number": 2402, "title": "row two"}]})
+    healthy_src = {"count": 2, "totalOpen": 2, "windowTruncated": False,
+                   "workOrders": [{"number": 2401, "title": "row one"},
+                                  {"number": 2402, "title": "row two"}]}
+    # F19e positive control, self-consistent-universe edition (R77): a healthy
+    # envelope must still drive the whole --board-sweep pipeline to exit 0.
+    # The queue universe is DERIVED from the deployed index's own in-flight
+    # filed-issue citations (offline, no network) so the index matches its
+    # queue by construction — invariant F then passes whatever the deployed
+    # row-state is, and this fixture proves the OK-path plumbing, not the
+    # row-state (the LIVE board-sweep against a real capture is where stale
+    # rows redden; the F20 fixtures pin the synthetic red/green semantics).
+    deployed = (REPO_ROOT / INDEX_REL).read_text(encoding="utf-8", errors="replace")
+    cited = set()
+    for ln2 in deployed.splitlines():
+        if not re.match(r"^\|\s*(R\d+[^|]*)\s*\|", ln2):
+            continue
+        cells2 = [c.strip() for c in ln2.split("|")][1:-1]
+        if len(cells2) < 6:
+            continue
+        fm2 = re.search(r"#(\d+)", cells2[3])
+        if fm2:
+            cited.add(int(fm2.group(1)))
+    uni_rows = healthy_src["workOrders"] + [
+        {"number": n, "title": f"universe row #{n}"} for n in sorted(cited - {2401, 2402})]
+    healthy = json.dumps({"count": len(uni_rows), "totalOpen": len(uni_rows),
+                          "windowTruncated": False, "workOrders": uni_rows})
     check("F19e-healthy-envelope-still-passes", cli_exit(queue_file(healthy)) == 0)
 
     def exits_loud(fn) -> bool:
@@ -949,6 +1060,37 @@ def self_test() -> bool:
     check("F19h-healthy-empty-board-passes",
           not exits_loud(lambda: validate_queue_capture(
               {"count": 0, "totalOpen": 0, "windowTruncated": False, "workOrders": []})))
+
+    # F20: invariant F — row-state truthfulness (#2718 / R77), the index-vs-board
+    # plane. Red-first discipline: the five scout-named rows (R71/R72/R73/R75/R76
+    # → #2586/#2608/#2627/#2654/#2691) are the named fixtures replayed here
+    # synthetically; the live red receipt (27 stale rows over the real index +
+    # real capture) is taken in the landing PR's evidence. Scope honesty is
+    # fixture-pinned: landed rows and no-issue rows must NEVER fire.
+    idx_f = (
+        "| R# | Radar file | Lane | Filed | Verdict | Status |\n"
+        "|----|-----------|------|-------|---------|--------|\n"
+        "| R71 | `a.md` | lane one | #2586 | `adapt` | **open (claimed #2586)** |\n"
+        "| R74 | `b.md` | lane two | #2633 | — | **open (unclaimed)** |\n"
+        "| R70 | `c.md` | lane three | #2500 | `adapt` | **landed (PR #2501 closes #2500)** |\n"
+        "| R90 | `d.md` | lane four | not filed | `adapt` | **open** |\n"
+        "| R63-**I** | `e.md` | lane five | #2343 | — | **in gates (PR #2352; merge closes #2343)** |\n"
+    )
+    q_on = {"workOrders": [{"number": 2633, "title": "the one open lane"}]}
+    st = row_state_findings(idx_f, q_on)
+    check("F20a-stale-open-row-fires", any(f["row"] == "R71" and f["issue"] == 2586 for f in st))
+    check("F20b-healthy-open-row-passes", not any(f["row"] == "R74" for f in st))
+    check("F20c-landed-row-skipped", not any(f["row"] == "R70" for f in st))
+    check("F20d-no-issue-row-skipped", not any(f["row"] == "R90" for f in st))
+    check("F20e-in-gates-cell-fires", any(f["row"] == "R63-I" and f["issue"] == 2343 for f in st))
+    check("F20f-label-sliced-capture-refused",
+          exits_loud(lambda: validate_queue_capture(
+              {"label": "scout", "count": 1, "totalOpen": 1,
+               "workOrders": [{"number": 1, "title": "x"}]})))
+    check("F20g-scoped-capture-refused",
+          exits_loud(lambda: validate_queue_capture(
+              {"scope": "label:scout", "count": 1, "totalOpen": 1,
+               "workOrders": [{"number": 1, "title": "x"}]})))
 
     print(f"{'SELF-TEST OK: radar_index_freshness_guard' if ok else 'SELF-TEST FAILED: radar_index_freshness_guard'}")
     return ok
@@ -1081,14 +1223,29 @@ def main() -> int:
         findings = board_sweep(queue, token, allow)
         for f in findings:
             _evidence(f"BOARD-FAIL title-citation: #{f['issue']} cites {f['token']} — '{f['title']}'")
+        # R77 invariant F (#2718): row-state truthfulness — the refresh half of
+        # the freshness contract, mechanized. Runs only past validate_queue_capture,
+        # i.e. against a capture proven count- AND universe-complete.
+        stale = row_state_findings(idx_text, queue)
+        for f in stale:
+            _evidence(f"STALE-ROW row-state: {f['row']} cites #{f['issue']} in-flight "
+                      f"('{f['status']}') but #{f['issue']} is absent from the proven-complete "
+                      "open capture — refresh the row (invariant F, #2718/R77)")
         n_rows = len(queue) if isinstance(queue, list) else len(
             queue.get("workOrders") or queue.get("rows") or [])
         if findings:
             _evidence(f"FAIL board-sweep: R{token} cited by {len(findings)} open title(s) outside "
                       f"allow={sorted(allow)} — never advertise dirty (auto-advance out of scope v1)")
             return 1
+        if stale:
+            _evidence(f"FAIL board-sweep: {len(stale)} registry row(s) assert in-flight state for "
+                      f"issue(s) absent from the proven-complete open capture (first few: "
+                      f"{[f['row'] for f in stale[:6]]}) — refresh the rows before advertising "
+                      "(invariant F, #2718/R77): a filer's freeness check must not consume a lying index")
+            return 1
         _evidence(f"OK board-sweep: R{token} zero title citations outside allow={sorted(allow)} "
-                  f"over {n_rows} captured row(s) — advertisable per the #2392 predicate")
+                  f"over {n_rows} captured row(s), 0 stale rows — advertisable per the #2392 "
+                  "predicate + #2718 invariant F")
         return 0
 
     only = None
