@@ -25,7 +25,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 MAX_TOKENS_PER_RECORD = 10
 DEFAULT_RESUME_TTL_SECONDS = 24 * 3600
