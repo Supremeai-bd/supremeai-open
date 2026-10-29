@@ -37,7 +37,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:  # optional dependency — the whole surface degrades to 503 without it
     from mcp.server.sse import SseServerTransport
