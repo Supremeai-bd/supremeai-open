@@ -12,6 +12,9 @@ Design invariants:
 - Claim identity: parses S0.1 atomic-claim marker comments
   (<!-- atomic-claim:issue=N,agent=A,ts=T,ttl=Xm -->) and plain
   <!-- atomic-claim --> markers.
+- Fresh-claim floor (#57 idempotency guard): never release a claim younger
+  than MIN_CLAIM_AGE_BEFORE_RELEASE_MINUTES (war evidence: releases landed
+  ~16s after claim; also neutralizes malformed short-ttl markers).
 
 Self-test: python3 stale_claim_releaser.py --self-test
 """
@@ -22,8 +25,18 @@ import json
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-TTL_MINUTES_DEFAULT = 30
+# #57 SSOT wiring: the 30-minute lease and the 5-minute fresh-claim floor are
+# owned by scripts/agents/claim_thresholds.py (landed to end the
+# release<->re-claim flip-flop war but never imported — dual-SSOT drift).
+_AGENTS_DIR = str(Path(__file__).resolve().parents[1] / "agents")
+if _AGENTS_DIR not in sys.path:
+    sys.path.insert(0, _AGENTS_DIR)
+
+from claim_thresholds import MIN_CLAIM_AGE_BEFORE_RELEASE_MINUTES, ORPHAN_RELEASE_MINUTES
+
+TTL_MINUTES_DEFAULT = ORPHAN_RELEASE_MINUTES
 
 _MARKER_TYPED = re.compile(
     r"<!--\s*atomic-claim:issue=(?P<issue>\d+),agent=(?P<agent>[^,]+),"
@@ -137,6 +150,19 @@ def release_plan(snapshot: dict, now: datetime) -> dict:
                     "issue": number,
                     "agent": claim["agent"],
                     "reason": "activity_after_claim",
+                }
+            )
+            continue
+        claim_age = (now - claim["ts"]).total_seconds() / 60.0
+        if claim_age < MIN_CLAIM_AGE_BEFORE_RELEASE_MINUTES:
+            # #57 idempotency floor: a sweep must never release a fresh claim,
+            # no matter what ttl the marker declares (short-ttl markers and
+            # racing releasers were the flip-flop-war vector).
+            keeps.append(
+                {
+                    "issue": number,
+                    "agent": claim["agent"],
+                    "reason": "fresh_claim_floor",
                 }
             )
             continue
