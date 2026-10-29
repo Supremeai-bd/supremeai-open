@@ -145,6 +145,7 @@ export async function registerGuardianTools(server: McpServer): Promise<void> {
       prNumber: z.number().int().positive().describe("Pull request number"),
       scopePrefixes: scopeSchema,
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId, prNumber, scopePrefixes }) => {
       try {
         const denied = accessError("viewer");
@@ -185,6 +186,7 @@ export async function registerGuardianTools(server: McpServer): Promise<void> {
       limit: z.number().int().min(1).max(50).optional().describe("Max open PRs to evaluate (default: 20)"),
       scopePrefixes: scopeSchema,
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId, limit, scopePrefixes }) => {
       try {
         const denied = accessError("viewer");
@@ -247,6 +249,7 @@ export async function registerGuardianTools(server: McpServer): Promise<void> {
         .describe("Allow merging a Tier-2 (canary-gated) PR. Tier-3 PRs always require human approval."),
       scopePrefixes: scopeSchema,
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ accountId, prNumber, decision, mergeMethod, allowCanary, scopePrefixes }) => {
       try {
         const denied = accessError("agent");
