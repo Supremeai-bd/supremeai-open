@@ -22,6 +22,7 @@ import {
   consumeMcpRateLimit,
   toolRateLimitIdentity,
   consumeToolRateLimit,
+  mutationToolGateError,
   toolPayloadError,
   ToolExecutionTimeoutError,
   truncateToolResult,
@@ -991,6 +992,21 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
         try {
           if (body) parsedBody = JSON.parse(body);
         } catch {}
+
+        // ── Anonymous-mutation plane bound (#2363 Option A) ──
+        // Per-(caller IP, tool) hourly window on the 4 mutation tools.
+        // 429 + Retry-After at the HTTP layer; read plane and malformed
+        // bodies fail open into the downstream RBAC/limits untouched.
+        const mutationGate = mutationToolGateError(parsedBody, clientIpFor(req));
+        if (mutationGate) {
+          writeJson(
+            res,
+            429,
+            { error: `Rate limit exceeded for mutation tool '${mutationGate.tool}'`, tool: mutationGate.tool, retryAfterMs: mutationGate.retryAfterMs },
+            { "Retry-After": String(Math.ceil(mutationGate.retryAfterMs / 1000)) }
+          );
+          return;
+        }
 
         const sessionIdHeader = typeof req.headers["mcp-session-id"] === "string"
           ? (req.headers["mcp-session-id"] as string)
