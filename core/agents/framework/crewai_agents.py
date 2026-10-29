@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import Optional
 
 from brain.model_router import ModelRouter
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class CrewTask:
