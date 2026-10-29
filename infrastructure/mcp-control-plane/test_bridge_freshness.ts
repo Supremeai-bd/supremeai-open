@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   buildBridgePrBody,
   bridgeGuide,
+  detectOriginalIssueFromSummary,
   extractRequiredReflectionFields,
   readPullRequestTemplate,
   reflectionFixSnippet,
@@ -255,6 +256,35 @@ const LIVE_TEMPLATE = [
     alternativesRejected: "alt, rejected because z",
   });
   assert.ok(!noIssue.includes("Linked Work Order"), "no issue -> no linked section");
+
+  // ── #1609 footgun fix: the auto-close detector must fire on VERB INTENT only ──
+  // A bare "#NNN" mention references an open ticket; it does not resolve it.
+  // The old bare-`\#` branch emitted Closes for the FIRST #NNN in any summary,
+  // so radar-registration prose (which cites the tickets it registers) closed
+  // them on merge: PR #2518 -> #2512 (+3s post-merge, 08:46:25Z); PR #2556 ->
+  // #2545 (+3s, 10:50:46Z); PR #2611 -> #2608 (+2s, 13:43:39Z, audit #2615).
+  assert.equal(
+    detectOriginalIssueFromSummary(
+      "docs(radar): pass 32 - register R75 (open/unclaimed #2608, peer scout census)"
+    ),
+    undefined,
+    "bare #mention must NOT auto-detect a resolution target",
+  );
+  assert.equal(
+    detectOriginalIssueFromSummary("fixes #2608 by annotating the residual families"),
+    2608,
+    "verb-intent mention keeps the #1609 auto-link",
+  );
+  assert.equal(
+    detectOriginalIssueFromSummary("register the R76 row (receipt be6e34f/WO #2545) and advance the pointer"),
+    undefined,
+    "receipt-path mention is a reference, not a resolution",
+  );
+  assert.equal(
+    detectOriginalIssueFromSummary("closes #1739 - the evaluation IS the resolution"),
+    1739,
+    "closes-verb still detects",
+  );
 }
 
 // ─── ৭. e2e: submit_patch fail-closes PRE-PUSH (no token, no network) ───────
