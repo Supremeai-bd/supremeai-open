@@ -315,7 +315,7 @@ def test_fetch_work_orders_pre_r2_validation_fallback():
         calls.append(dict(arguments))
         if arguments.get("limit") == 200:
             return ("MCP error -32602: Input validation error: Invalid "
-                    "arguments for tool bridge_work_queue: Too big: expected "
+                    "arguments for tool bridge.work_queue: Too big: expected "
                     "number to be <=50")
         assert arguments.get("limit") == 50, arguments
         return json.dumps({"workOrders": [{"number": n} for n in range(35)]})
@@ -421,7 +421,7 @@ def test_load_rejected_plane_fail_open():
 
 
 def test_fetch_rejected_rows_tower_shape():
-    """The tower fallback parses the label-filtered bridge_work_queue payload
+    """The tower fallback parses the label-filtered bridge.work_queue payload
     (#2251 fixed the self-defeating filter) and fails loud on drift."""
     mod = _load_watchdog_module()
 

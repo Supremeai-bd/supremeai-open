@@ -288,7 +288,10 @@ def _tower_queue_floor(timeout_s: float = 12.0) -> str:
 
             client = _mtc.McpTowerClient()
             client.connect()
-            q = client.call_tool("bridge_work_queue", {})
+            # 2026-10-29: the tower renamed bridge_work_queue -> bridge.work_queue
+            # (#2454 r3 deploy; old name absent from the live registry) — use the
+            # dotted name or the P0-drainage probe stays dark (#2457).
+            q = client.call_tool("bridge.work_queue", {})
             # call_tool returns the raw MCP envelope ({"content":[{"text": ...}]});
             # the queue dict rides as JSON inside content[0].text (same extraction
             # the client's own CLI does). Tolerate both envelope and parsed shapes.
