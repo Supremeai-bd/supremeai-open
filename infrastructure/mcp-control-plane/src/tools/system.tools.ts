@@ -518,6 +518,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     {
       scope: z.enum(["summary", "health", "dependencies", "dashboard", "resources"]).describe("Aspect of system state to inspect"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ scope }: { scope: string }) => {
       try {
         if (scope === "summary") {
