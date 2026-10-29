@@ -127,6 +127,22 @@ export function reflectionFixSnippet(): string {
   ].join("\n");
 }
 
+// Auto-close detection for submit summaries - VERB INTENT ONLY
+// ("fixes #1519", "resolves #1520", "closes #1521", "issue #1522").
+// #1609's original regex carried a bare-`\#` branch that matched ANY first
+// "#NNN" mention, so referencing an open ticket in prose auto-emitted
+// `Closes #N` on merge. Three false-closes traced to it, all on
+// radar-registration submissions whose summaries cited the tickets they
+// registered: PR #2518 closed #2512 (+3s post-merge, 08:46:25Z); PR #2556
+// closed #2545 (+3s, 10:50:46Z); PR #2611 closed #2608 (+2s, 13:43:39Z -
+// independently audited as a premature zero-work closure in #2615). A bare
+// mention references; it does not resolve. The verb branches keep #1609's
+// intended auto-link for intent-carrying summaries.
+export function detectOriginalIssueFromSummary(summary: string): number | undefined {
+  const match = summary.match(/(?:close[s]?|fix(?:es)?|resolve[s]?|issue)\s*#?([0-9]{2,6})\b/i);
+  return match ? parseInt(match[1], 10) : undefined;
+}
+
 export interface BridgePrBodyOptions {
   taskId: string;
   summary: string;
@@ -1111,11 +1127,11 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     alternativesRejected?: string;
     closesOriginalIssue?: boolean;
   }) => {
-    // If not explicitly passed, detect original issue reference from summary e.g. "fix #1519" or "(#1519)"
-    const detectedIssueNum = originalIssueNumber ?? (() => {
-      const match = summary.match(/(?:close[s]?|fix(?:es)?|resolve[s]?|issue|\#)\s*#?([0-9]{2,6})\b/i);
-      return match ? parseInt(match[1], 10) : undefined;
-    })();
+    // If not explicitly passed, detect original issue reference from summary -
+    // verb-intent only ("fixes #1519"); a bare "#NNN" mention references, it
+    // does not resolve (see detectOriginalIssueFromSummary: the old bare-`\#`
+    // branch false-closed three open tickets via auto-detected Closes links).
+    const detectedIssueNum = originalIssueNumber ?? detectOriginalIssueFromSummary(summary);
     // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
     const candidateBody = [
       REFLECTION_EVIDENCE_SECTION,
@@ -1611,7 +1627,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
 
   const submitPatchSchema = {
     taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
-    summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
+    summary: z.string().min(5).max(1000).describe("Summary of what was changed and why. Auto-close detection (#1609) fires on verb-intent phrases only (fixes/closes/resolves #N); a bare #N mention references without resolving - the old bare-# branch false-closed three open tickets (see detectOriginalIssueFromSummary)"),
     originalIssueNumber: z.number().int().positive().optional().describe("Original GitHub issue number being resolved (e.g. 1519) to ensure root issue closes automatically on PR merge"),
     scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
     testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
