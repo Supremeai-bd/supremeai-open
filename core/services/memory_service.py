@@ -11,7 +11,7 @@ from typing import Any
 from core.config import settings
 from core.degraded_mode import InMemoryRing, sqlite_fallback_allowed
 from core.embeddings import hash_vectorize as _canonical_hash_vectorize
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.persistence import pooled_pg
 from core.state_store import durable_state
 
