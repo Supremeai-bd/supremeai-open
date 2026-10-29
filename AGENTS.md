@@ -19,6 +19,8 @@ All agents live, enter, and execute through exactly two unified pillars:
    - Checks role cadence timers -> dispatches scheduled routine role.  
    - Directly injects the 5 Universal Invariants and role mandate into execution.
 
+> **Local gate activation (R63):** the shipped `.githooks/` suite (pre-commit / pre-push / post-commit) never runs until the clone opts in — git cannot auto-activate a versioned hooks directory by design (githooks(1): the default is `$GIT_DIR/hooks`; a repo-shipped directory is honored only via the client-side `core.hooksPath` config). Run once per clone: `git config core.hooksPath .githooks` (or `bash scripts/setup_git_hooks.sh`; `--check` verifies without mutating). Unactivated clones push with the Board-Freshness pre-push gate (#4177 — Universal Invariant 1's local layer) silently dark; the loop prints a start-of-run advisory when it detects that state.
+
 ---
 
 > **Operating System (the two-sided guarantee in action):** the step-by-step
