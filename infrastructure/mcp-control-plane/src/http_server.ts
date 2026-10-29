@@ -337,7 +337,12 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
           status: snapshot.status,
         }));
         const unhealthy = services.filter((s) => s.status !== "healthy").length;
-        const status: string = unhealthy === 0 ? "ok" : unhealthy < services.length ? "degraded" : "outage";
+        // #2681: an empty snapshot table (post-restart, before any check ran) must NOT
+        // read "ok" — that is the #2665 live-but-empty signature ("ok" + total:0 while
+        // the system runs work). Boot-state honesty: derive "starting" (remains 200 —
+        // a boot state is not an outage). Empty-array vacuous truth is the trap:
+        // unhealthy === 0 is vacuously true over services = [].
+        const status: string = services.length === 0 ? "starting" : unhealthy === 0 ? "ok" : unhealthy < services.length ? "degraded" : "outage";
         const httpStatus = status === "outage" ? 503 : 200;
         res.writeHead(httpStatus, { "Content-Type": "application/json", "Cache-Control": "no-store" });
         res.end(JSON.stringify(withTimestamp({
@@ -347,10 +352,11 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
           services: { healthy: services.length - unhealthy, degraded: unhealthy, total: services.length },
         })));
       } catch {
-        // Fallback: if health cache isn't loaded yet (cold start), return ok
-        // but flag that health data isn't available yet.
+        // Fallback: if health cache isn't loaded yet (cold start), report "starting" —
+        // #2681: an unreadable cache is never evidence that everything is healthy,
+        // so the fallback must not emit a bare "ok" either.
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(withTimestamp({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION, note: "health cache not yet loaded" })));
+        res.end(JSON.stringify(withTimestamp({ status: "starting", server: SERVER_NAME, version: SERVER_VERSION, note: "health cache not yet loaded" })));
       }
       return;
     }
