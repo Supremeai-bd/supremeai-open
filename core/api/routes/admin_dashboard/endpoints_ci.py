@@ -3,7 +3,7 @@
 from fastapi import HTTPException, Request
 
 from api.routes.admin_dashboard import router
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from models.ci_report import CIReportPayload, create_ci_report
 
 
