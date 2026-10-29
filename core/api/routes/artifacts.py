@@ -14,7 +14,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 
 from api.deps import get_current_user_token
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.supabase_client import SupabaseDB
 
 router = APIRouter(
