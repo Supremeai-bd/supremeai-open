@@ -33,10 +33,14 @@ interface ServiceStatusProps {
 }
 
 const SERVICE_LABEL_MAP: Record<string, string> = {
+  api: 'API Gateway',
   application: 'Backend Core',
   database: 'Data Store (Postgres)',
   redis: 'Cache Cluster (Redis)',
-  scraper: 'Scraper Service',
+  scraper: 'Scraper Relay',
+  tower: 'MCP Control Tower',
+  primary: 'Primary Core Node',
+  worker: 'Worker Node',
   ollama: 'Local Ollama Node',
   memory: 'Compute Memory',
   disk: 'Storage Node',
