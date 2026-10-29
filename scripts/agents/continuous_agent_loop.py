@@ -13,7 +13,7 @@ Traffic-police logic:
 """
 from __future__ import annotations
 import argparse, json, os, re, subprocess, sys, threading, time, urllib.request
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -164,15 +164,127 @@ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
             return True
     return False
 
+# #2794 fix (1) — live-claim pre-verify depth: only the top-N sorted candidates
+# are probed against the feedback plane. Bounded so the dispatch hot path stays
+# O(N) tower reads (<=5 small bridge_read_feedback calls, each degrade-safe);
+# beyond-window rows are NOT dispatched blind — an exhausted window returns
+# None with an honest note instead (see pick_next_issue).
+FEEDBACK_PREVERIFY_TOPN = 5
+
+def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> tuple[bool, str]:
+    """#2794 fix (1) — live-plane claim pre-verify for the dispatch pick.
+
+    বাংলা: কিউ-লেবেল লাইভ tower claim-কে ৩০-মিনিট claim TTL পর্যন্ত পিছিয়ে থাকে
+    (#2100/#2111 arc; #2794-এর লাইভ প্রমাণ 2026-10-29: ১ ঘণ্টায় ৩টি live-claimed
+    রো dispatch হয়েছে — #1776/#2597/#2738) — ফলে label-only pick অন্য এজেন্টের
+    মালিকানাধীন রো পুনঃ-এমিট করে এবং এজেন্টের পুরো সাইকেল atomic-claim rejection-
+    এ পোড়ে যায়। এই প্রোব bridge_read_feedback-এর latestClaim জিজ্ঞেস করে জানায়
+    সক্রিয় (মেয়াদ-অপ্রাপ্ত) claim আছে কি না — claim-lag অর্ধেক-চার্ন স্ট্রাকচারালি
+    বন্ধ করতে (#2794 proposed fix (1); item (2)-র lane:admin convention আলাদা,
+    owner-blessing অপেক্ষায়)।
+
+    Transport mirrors _tower_queue_floor's never-raise contract: lazy sibling
+    import, daemon probe thread + hard join, and every failure mode degrades to
+    (False, honest-note) — a dark feedback plane must NOT silently change pick
+    behavior (label-only dispatch proceeds; the STALE-CLAIM advisory prose stays
+    as the agent-side second layer — U3 two-layer pattern preserved). Small
+    payloads ride the sibling client's call_tool (the urllib transport split in
+    _tower_board_rows is only needed for the giant queue payload).
+
+    Returns (claim_active, note): True ⇒ row owned right now (note carries
+    agent/at/ttl/remaining); False ⇒ no active claim OR plane dark (note says
+    which — callers log it honestly). Decision logic is exercised with injected
+    probes by tests/test_pick_feedback_preverify.py (zero network).
+    """
+    outcome: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            client = _mtc.McpTowerClient()
+            client.connect()
+            # Live-registry name (underscore form) — the dotted bridge.read_feedback
+            # is dead since #2454-r3; same pin the STALE-CLAIM advisory text follows (#2775).
+            fb = client.call_tool("bridge_read_feedback", {"number": int(issue_number)})
+            # call_tool returns the raw MCP envelope ({"content": [{"text": ...}]});
+            # the feedback dict rides as JSON inside content[0].text — tolerate both
+            # envelope and already-parsed shapes (same extraction as _tower_queue_floor).
+            if isinstance(fb, dict) and isinstance(fb.get("content"), list) and fb["content"]:
+                first = fb["content"][0]
+                txt = first.get("text") if isinstance(first, dict) else None
+                if isinstance(txt, str):
+                    try:
+                        fb = json.loads(txt)
+                    except Exception:
+                        fb = None
+            if isinstance(fb, dict):
+                outcome["fb"] = fb
+            else:
+                outcome["error"] = "feedback payload not parseable"
+        except Exception as exc:  # noqa: BLE001 — probe must never raise
+            outcome["error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — floor must never raise
+        return False, f"feedback probe error ({type(exc).__name__})"
+    if t.is_alive():
+        return False, f"feedback probe timed out after {timeout_s:.0f}s"
+    if "error" in outcome:
+        return False, f"feedback plane dark ({outcome['error']})"
+
+    fb = outcome.get("fb")
+    claim = fb.get("latestClaim") if isinstance(fb, dict) else None
+    if not isinstance(claim, dict) or not claim:
+        return False, "no active claim on the feedback plane"
+
+    agent = str(claim.get("agent") or "unknown-agent")
+    at_raw = claim.get("at")
+    ttl_raw = claim.get("ttlMinutes")
+    if not isinstance(at_raw, str) or not isinstance(ttl_raw, (int, float)):
+        return False, (
+            f"latestClaim present but unparseable (at={at_raw!r}, ttl={ttl_raw!r})"
+        )
+
+    import datetime as _dt  # local import — the shared import lines are #2796-conflict surfaces
+
+    try:
+        claimed_at = _dt.datetime.fromisoformat(str(at_raw).replace("Z", "+00:00"))
+    except ValueError:
+        return False, f"latestClaim timestamp unparseable ({at_raw!r})"
+
+    age_s = max(0.0, time.time() - claimed_at.timestamp())  # clock skew ⇒ just-claimed
+    ttl_s = float(ttl_raw) * 60.0
+    if age_s < ttl_s:
+        remaining_m = (ttl_s - age_s) / 60.0
+        return True, (
+            f"live claim by {agent} at {at_raw} (ttl {ttl_raw:g}m, {remaining_m:.0f}m remaining)"
+        )
+    return False, (
+        f"latestClaim by {agent} expired ({age_s / 60.0:.0f}m age > {ttl_raw:g}m ttl)"
+    )
+
 def pick_next_issue(
     exclude: set[str] | list[str] | None = None,
     issues: list[dict[str, Any]] | None = None,
+    claim_probe: Callable[[int | str], tuple[bool, str]] | None = None,
 ) -> str | None:
     """বাংলা: priority-অনুসারে পরবর্তী claimable issue বাছাই (P0 আগে, তারপর নম্বর)।
 
     আগের সংস্করণে এই ফাংশনটিই একমাত্র priority-sorter ছিল কিন্তু main() কখনো ডাকতই না
     (dead code) — ফলে লুপ P0 আগে দেবে এই প্রতিশ্রুতি কোডে কখনো কার্যকর হয়নি। এখন
     main() pre-fetched board এখানে পাঠায় (issues=...) — এক সাইকেলে দুবার gh query হয় না।
+
+    #2794 fix (1): claim_probe দিলে top-FEEDBACK_PREVERIFY_TOPN প্রার্থী bridge_read_feedback
+    দিয়ে live-claim যাচাই হয় — সক্রিয় claim-পত রো একই রানে স্কিপ হয়ে পরের প্রার্থীতে
+    এগোয় (এজেন্টকে পুরো লুপ পুনঃরান করতে বলা হয় না); প্রোব-ডার্ক হলে label-only
+    আচরণ (আচরণ অপরিবর্তিত, সৎ নোট); উইন্ডো শেষ হলে সৎ None — জানা-মালিকানাধীন রো
+    এক র‍্যাঙ্ক নিচে দিয়ে অন্ধ dispatch নয়। claim_probe=None মানে pure mode —
+    label-only pick, আগের চুক্তি অক্ষত (হারমেটিক টেস্ট এভাবেই ডাকে)।
     """
     if issues is None:
         code, out, _ = run_cmd([
@@ -222,8 +334,38 @@ def pick_next_issue(
         excluded_set = {str(e) for e in exclude}
         candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
     sorted_issues = sorted(candidates, key=priority_key)
+    if claim_probe is None:
+        # Pure mode — label-only pick, exactly the pre-#2794 contract (hermetic
+        # tests and opt-out callers ride this path; zero network, zero behavior change).
+        if sorted_issues:
+            return str(sorted_issues[0].get("number"))
+        return None
+
+    # #2794 fix (1) — live-plane pre-verify before ACTION: queue labels lag live
+    # claims by up to the 30-min claim TTL, so the label-only pick re-emits rows
+    # another agent already owns (live 2026-10-29: #1776/#2597/#2738 dispatched
+    # while live-claimed). An active claim skips the row IN THE SAME RUN; a dark
+    # probe degrades to label-only (behavior unchanged, honest note); an exhausted
+    # window returns None instead of dispatching a known-owned row one rank lower.
+    for item in sorted_issues[:FEEDBACK_PREVERIFY_TOPN]:
+        num = str(item.get("number", ""))
+        try:
+            active, note = claim_probe(item.get("number"))
+        except Exception as exc:  # noqa: BLE001 — a broken probe must not break the pick
+            active, note = False, f"probe raised {type(exc).__name__}"
+        if active:
+            log("!", f"pick pre-verify: #{num} skipped — {note}; advancing to next candidate (#2794 fix (1))")
+            continue
+        if note and not note.startswith("no active claim"):
+            log("!", f"pick pre-verify: #{num} {note} — proceeding on labels (live advisory to the agent stays in force)")
+        return num
     if sorted_issues:
-        return str(sorted_issues[0].get("number"))
+        log(
+            "!",
+            f"pick pre-verify: top {min(FEEDBACK_PREVERIFY_TOPN, len(sorted_issues))} candidates live-claimed — "
+            "no clean pick this run (rerun later or dispatch explicitly via --issue N); "
+            "dispatching a known-owned row would burn the cycle on atomic-claim rejection",
+        )
     return None
 
 
@@ -1313,7 +1455,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         elif board_unavailable:
             note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
         else:
-            picked = pick_next_issue(issues=raw)
+            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)
             if picked:
                 target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
                 # বাংলা: board query-র list payload-এ title থাকে না (gh issue list
@@ -1406,7 +1548,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # never raises/hangs (see _tower_queue_floor).
             log("!", _tower_queue_floor())
     else:
-        picked = pick_next_issue(issues=raw)
+        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)
         if picked:
             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
             # status:runway → ci-fixer, gate:pre-landing → task-auditor হলেও
