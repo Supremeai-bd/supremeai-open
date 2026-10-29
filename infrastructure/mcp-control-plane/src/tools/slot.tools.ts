@@ -40,6 +40,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Tenant ID (tenant admin)"),
       adminToken: z.string().optional().describe("Tenant admin token"),
     },
+    { readOnlyHint: false },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -75,6 +76,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -92,6 +94,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -109,6 +112,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -126,6 +130,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -143,6 +148,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -157,6 +163,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
     {
       name: z.string().describe("Slot name or full slot id"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async (args) => {
       const id = resolveSlotId(args.name);
       const slot = getSlotRecord(id);
@@ -185,6 +192,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -220,6 +228,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
       name: z.string().optional().describe("Filter by slot name/id"),
       limit: z.number().int().min(1).max(500).optional().describe("Max events (newest last)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async (args) => {
       const slotId = args.name ? resolveSlotId(args.name) : undefined;
       const events = readSlotAudit({ slotId, limit: args.limit });
