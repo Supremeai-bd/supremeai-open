@@ -127,6 +127,9 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
         "mistral": ("https://api.mistral.ai/v1", ["MISTRAL_API_KEY"]),
         "anthropic": ("https://api.anthropic.com/v1", ["ANTHROPIC_API_KEY"]),
         "deepseek": ("https://api.deepseek.com/v1", ["DEEPSEEK_API_KEY"]),
+        "deepinfra": ("https://api.deepinfra.com/v1/openai", ["DEEPINFRA_API_KEY", "DEEPINFRA_API_KEYS"]),
+        "together": ("https://api.together.xyz/v1", ["TOGETHER_API_KEY", "TOGETHER_API_KEYS"]),
+        "xai": ("https://api.x.ai/v1", ["XAI_API_KEY", "XAI_API_KEYS"]),
     }
     if (not api_base or not api_key) and provider in _FALLBACKS:
         fb_base, fb_keys = _FALLBACKS[provider]
@@ -149,6 +152,9 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
         "mistral": ["MISTRAL_API_KEY"],
         "anthropic": ["ANTHROPIC_API_KEY"],
         "deepseek": ["DEEPSEEK_API_KEY"],
+        "deepinfra": ["DEEPINFRA_API_KEY", "DEEPINFRA_API_KEYS"],
+        "together": ["TOGETHER_API_KEY", "TOGETHER_API_KEYS"],
+        "xai": ["XAI_API_KEY", "XAI_API_KEYS"],
     }
     keys: list[str] = []
     if api_key:
@@ -317,7 +323,7 @@ async def execute_chain(
             except Exception:
                 pass
             break
-        raise ProviderChainExhausted(
+    raise ProviderChainExhausted(
         "all providers in the chain failed — 502 upstream (zero silent fallback)",
         ledger=ledger.entries,
     )
