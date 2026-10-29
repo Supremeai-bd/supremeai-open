@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from services.config_service import ConfigService
 
 # Configure logging
