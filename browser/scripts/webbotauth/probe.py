@@ -32,9 +32,7 @@ import argparse
 import base64
 import hashlib
 import json
-import os
 import secrets
-import socket
 import sys
 import time
 import urllib.error
@@ -48,9 +46,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
-    PrivateFormat,
     PublicFormat,
-    NoEncryption,
 )
 
 DEMO_ORIGIN = "https://http-message-signatures-example.research.cloudflare.com"

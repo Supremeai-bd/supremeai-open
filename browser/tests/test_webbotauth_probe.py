@@ -12,7 +12,6 @@ Runs against browser/scripts/webbotauth/probe.py with zero new dependencies
 """
 from __future__ import annotations
 
-import base64
 import importlib.util
 import os
 from pathlib import Path
