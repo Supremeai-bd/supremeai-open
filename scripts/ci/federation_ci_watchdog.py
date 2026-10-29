@@ -174,6 +174,9 @@ Workflow **{workflow_name}** failed on repository `{repo}` (branch `{branch}`).
 - **Commit:** `{short_commit}`{error_section}
 - **Failure Logs / Check Details:** Inspect the check run logs in the linked run.
 
+### Protected-Path Routing Note (#2512)
+The bridge lane rejects `.github/` writes (protected paths — workflow files execute with repo secrets, so intake never accepts them from agents). If this failure's root cause lives in `.github/workflows/` (workflow-internal class: sync clobbers, guard removals, action-version breakage — e.g. the #2511 schedule-lane clobber), NO agent patch can land it: the fix is admin-only. Check the board for a triage report before claiming; if none exists, file triage evidence (report-only) instead of burning a claim+TTL on a structurally blocked patch.
+
 ### Acceptance Criteria
 1. Inspect the failing check logs in Run #{run_id}.
 2. Fix root cause in `{repo}`.
@@ -775,6 +778,11 @@ def self_test() -> int:
     assert "agent-orchestration" in body
     assert marker in body
     assert "tests/test_command.py: FAILED" in body
+    # #2512: the protected-path routing note ships in every incident body —
+    # agents must see the admin-only boundary before burning a claim+TTL on
+    # a `.github/`-root-caused lane (the #2511 structural-block class).
+    assert "Protected-Path Routing Note" in body
+    assert "admin-only" in body
 
     labels = build_issue_labels("Supremeai-bd/supremeai-command")
     assert "status:unclaimed" in labels
