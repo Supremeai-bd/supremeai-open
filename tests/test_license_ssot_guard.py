@@ -262,16 +262,19 @@ def test_live_repo_reports_exactly_the_baselined_drifts() -> None:
         "shrink KNOWN_DRIFTS in scripts/ci/license_ssot_guard.py in the same "
         "change (shrink-only ratchet); if drift was ADDED, fix it instead."
     )
-    # The WO acceptance core, post-#1621: the license-field class is FIXED
-    # (zero PACKAGE_LICENSE_MISSING must remain), the LICENSE-absent mirrors
-    # and the #1690 contradiction class stay baselined.
+    # The WO acceptance core, post-#1640/#1691: the 4 proprietary mirrors
+    # (core, browser, infrastructure, infrastructure/mcp-control-plane) now
+    # carry §2.3 LICENSE notices and the mcp-control-plane package.json declares
+    # LicenseRef-Proprietary. Zero LICENSE_FILE_ABSENT remains.
     missing = {p for c, p in keys if c == "PACKAGE_LICENSE_MISSING"}
     assert not missing, (
         "#1621 acceptance: the 9 package.json license fields were declared; "
         f"a new PACKAGE_LICENSE_MISSING is a fix-it regression, not baseline material: {missing}"
     )
-    absent = {p for c, p in keys if c == "LICENSE_FILE_ABSENT"}
-    assert {"core", "browser", "infrastructure/mcp-control-plane"} <= absent
+    assert not any(c == "LICENSE_FILE_ABSENT" for c, _ in keys), (
+        "the #1640/#1691 fix wave landed all proprietary mirror LICENSE notices; "
+        "a LICENSE_FILE_ABSENT here means a mirror license was removed — restore it"
+    )
     contradiction = {p for c, p in keys if c == "MODEL_CONTRADICTION"}
     assert "gateway/LICENSE" in contradiction, "the #1690 class must stay visible"
 
@@ -309,7 +312,9 @@ def test_json_report_is_machine_readable() -> None:
     assert report["guard"] == "license_ssot_guard"
     assert report["map"] == MAP
     assert report["mode"] == "ratchet"
-    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 6
+    # Dated floor (post-#1640/#1691 shrink): 6 -> 1 entry (the contested #1690
+    # gateway/LICENSE contradiction).
+    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 1
     assert isinstance(report["findings"], list) and isinstance(report["notes"], list)
     for f in report["findings"]:
         assert set(f) == {"code", "path", "detail"}
