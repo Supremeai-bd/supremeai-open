@@ -8,6 +8,11 @@ import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
 import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
 import { evaluateBaseStaleness, staleBaseErrorText, type MainBlobState } from "../lib/bridge_staleness.js";
+import {
+  isTestWired,
+  payloadTestWiringGroups,
+  unwiredTestErrorText,
+} from "../lib/bridge_test_wiring.js";
 import { applyLabelFallback, type VerdictSource } from "../lib/bridge_verdicts.js";
 import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
 import { RequestContextStore } from "../policy/auth.context.js";
@@ -1198,6 +1203,67 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         }
         const mainSha = mainRes.data.object.sha;
 
+        // #2444 test-wiring checkpoint (pre-branch, pre-PUT): a NEW test file in
+        // the guarded package that no npm script references would deterministically
+        // fail the #116 wiring guard on the PR gate AFTER the branch + PR already
+        // exist (recurring class: #2404 r1 run 40803525030, #2440 r2 run
+        // 40816022722 — each cost a red gate, a stranded PR, and a triage WO).
+        // Refuse at submit-time with the exact fix instead. Scope is exactly the
+        // guard's collection shapes under infrastructure/mcp-control-plane/;
+        // everything else is never evaluated (zero false-positive surface).
+        // Fail-open with disclosure whenever the Tower cannot prove the wiring
+        // state (manifest absent, API error, diff-mode manifest override) —
+        // availability over false blocks, never silent (staleness precedent).
+        let unwiredError: string | undefined;
+        const wiringCheckSkips: string[] = [];
+        for (const group of payloadTestWiringGroups(files.map((f) => f.path))) {
+          const pkgPath = `${group.packageDir}/package.json`;
+          const override = files.find((f) => f.path === pkgPath);
+          let blob: string | undefined;
+          if (override && (override.mode ?? "full_file") === "full_file" && typeof override.content === "string") {
+            // Payload's own manifest is the wiring authority when present: it
+            // is exactly what the guard will read post-land.
+            blob = override.content;
+          } else if (override) {
+            wiringCheckSkips.push(`${pkgPath}: payload override is unified_diff — post-apply blob not evaluated here; fail-open`);
+            continue;
+          } else {
+            const pkgRes = await httpRequest<{ content?: string; encoding?: string }>(
+              `https://api.github.com/repos/${repo}/contents/${pkgPath}?ref=main`,
+              { headers, timeoutMs: 15_000 }
+            );
+            if (pkgRes.ok && pkgRes.data?.content) {
+              blob = Buffer.from(pkgRes.data.content, "base64").toString("utf-8");
+            } else if (pkgRes.status === 404) {
+              wiringCheckSkips.push(`${pkgPath}: absent on main (HTTP 404) — guard not applicable to this group`);
+              continue;
+            } else {
+              wiringCheckSkips.push(`${pkgPath}: read failed HTTP ${pkgRes.status} — fail-open`);
+              continue;
+            }
+          }
+          const groupUnwired: string[] = [];
+          for (const testPath of group.testPaths) {
+            const existsRes = await httpRequest<{ sha?: string }>(
+              `https://api.github.com/repos/${repo}/contents/${testPath}?ref=main`,
+              { headers, timeoutMs: 15_000 }
+            );
+            if (existsRes.ok) continue; // modification of an existing (main-wired) suite
+            if (existsRes.status !== 404) {
+              wiringCheckSkips.push(`${testPath}: existence probe HTTP ${existsRes.status} — fail-open`);
+              continue;
+            }
+            if (!isTestWired(testPath, blob)) groupUnwired.push(testPath);
+          }
+          if (groupUnwired.length > 0) {
+            unwiredError = unwiredTestErrorText(groupUnwired, pkgPath);
+            break;
+          }
+        }
+        if (unwiredError) {
+          return { isError: true, content: [{ type: "text", text: unwiredError }] };
+        }
+
         // Step B: Create branch bridge/<taskId> if not exists
         const branchName = `bridge/${taskId}`;
         const refRes = await httpRequest<{ ref?: string }>(
@@ -1442,6 +1508,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               targetAnchor: targetRepoResolution.anchor,
               targetMode: targetRepoResolution.mode,
               files: fileResults,
+              ...(wiringCheckSkips.length > 0 ? { wiringCheckSkips } : {}),
               branch: branchName,
               branchUrl: `https://github.com/${repo}/tree/${branchName}`,
               issueNumber,
