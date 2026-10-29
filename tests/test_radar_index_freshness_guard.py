@@ -276,7 +276,15 @@ def test_live_repo_sweep_passes() -> None:
     # outside hash-substring false positives; tower queue capture zero
     # citations).
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 70, "pointer drifted — regenerate expectation with the index"
+    # and after pass 30 (cycle-42, Job 478338) registered the R70 row
+    # (landed b6ef339 / #2574, closes #2568 — pass-27 registration-default
+    # class recurred a third time in five passes, guard RED at HEAD:
+    # commit-subject-ghost single, code-plane landing) AND the R71 row
+    # (open/claimed, peer scout #2586 — pass-26 adoption-staleness class
+    # on the advertised-successor slot) and advanced it R70 -> R72
+    # (verified free: tracked scan zero hits; subject scan zero hits;
+    # 7-row tower queue capture windowTruncated false, zero citations).
+    assert r["pointer"] == 72, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
