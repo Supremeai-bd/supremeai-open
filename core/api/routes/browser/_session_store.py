@@ -43,7 +43,7 @@ def _hydrate_sessions() -> None:
                 record = {k: v for k, v in data.items() if k != "__id__"}
                 SESSIONS[sid] = record
     except Exception as hydrate_err:
-        from core.logging_config import logger
+        from core.monitoring.logging_config import logger
 
         logger.warning("browser session store hydrate failed (mirror-only): %s", hydrate_err)
 

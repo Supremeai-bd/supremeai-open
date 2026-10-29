@@ -20,7 +20,7 @@ from datetime import datetime
 
 from fastapi import APIRouter
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Dependency-free by design (see module docstring): NO router-level auth
 # dependency here, unlike the package's main ``router``.
