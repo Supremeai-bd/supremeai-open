@@ -31,6 +31,26 @@ Verdict routing (single bookkeeping):
     D  commit-subject — সাম্প্রতিক squash-merge subject-এ এমন R-citation
        যার registry row নেই (#2187 offline port; জন্মে floor ফাঁকা —
        first-run-clean, shrink-only)।
+    E  roster-regression (#2392 component 1 — pass-23's deferred pre-land
+       check, mechanized) — baseline /2-এর enforced roster-এর তুলনায় pointer
+       পিছনে গেলে বা নথিভুক্ত row token অদৃশ্য হলে FAIL (stale-branch
+       whole-file overwrite class, pass-9/22/23); forward motion কখনো fail
+       করে না। /1 baseline থাকলে honest-skip — কখনো মিথ্যা PASS নয়।
+
+Pointer↔board agreement predicate (#2372 option B / #2392 component 2,
+offline plane — the guard binary stays network-free per the Never-do):
+    A successor number R<N> is advertisable iff the tracked tree carries
+    zero R<N> citations (invariants A–D) AND the captured open-issue-title
+    queue carries zero R<N> citations (--board-sweep), except (a) the
+    successor lane's own defining ticket (self-ref class, --allow — the
+    pass-15 honesty-note precedent) and (b) citations inside the
+    pointer-advance commit performing the advertisement (mechanism text,
+    not lane adoption). Pass-4 strict outer bound: any third-party radar
+    doc, issue, or main-history citation fails. Cite found ⇒ fail loud,
+    never advertise dirty; auto-advance is out of scope v1 (fail-loud
+    first, per the guard genre's ratchet semantics). The IO is the filer's
+    capture step: bridge_work_queue {"limit": 200} saved to a file
+    (permanent contract, #2286), the guard consumes the artifact.
 
 Invariant D-এর পুরনো রূপ (issue-body citation scan, "GitHub API চায়") ইতিহাসে
 গেছে — #2127-এর state-plane আর squash subject-এ WO শিরোনাম থাকায় offline
@@ -44,7 +64,14 @@ Modes:
     --check        roster mode: full sweep vs baseline (default)
     --files <p..>  pre-push mode: content scans limited to these changed
                    files (pointer + filename scans stay global — cheap)
-    --baseline     print a freshly swept baseline JSON (admin/regenerate)
+    --baseline     print a freshly swept baseline JSON (admin/regenerate;
+                   /2 seeds the enforced roster — update it in the same PR
+                   that moves the registry, mirroring the pin discipline)
+    --board-sweep  pointer↔board agreement (#2372 opt-B): scan a CAPTURED
+                   queue artifact (--queue-file) for open-issue-title
+                   citations of the candidate successor (--token, default
+                   pointer+1), --allow lists the self-ref defining ticket;
+                   offline by constitution — no network in this binary
     --json         machine-readable auditor report on stdout
     --self-test    hermetic offline fixture suite (guard-the-guard)
 
@@ -314,6 +341,68 @@ def invariant_d(root: Path, bases: set[int]) -> tuple[list[dict], bool]:
     return scan_subjects(proc.stdout.splitlines(), bases), True
 
 
+def invariant_e(
+    pointer: int | None, tokens_now: set[str], baseline: dict,
+) -> tuple[list[dict], bool]:
+    """Roster regression — pass-23's deferred pre-land check, mechanized.
+
+    (#2392 component 1.) A landing REGRESSES the registry when the pointer
+    moves backward or a baseline-recorded row token vanishes: the
+    stale-branch whole-file overwrite class (pass-9/22/23) whose
+    co-regression blind spot the pin discipline cannot see (pin regressed
+    WITH the pointer at ebe630c and every citation count stayed green).
+    Forward motion — pointer advance, rows added — never fails. A /1
+    baseline (no enforced roster) honest-skips: evidence, never a
+    fabricated PASS. Update the roster in the same PR that moves the
+    registry — the baseline companion of the pin-accompanies-pointer rule.
+    """
+    roster = baseline.get("roster") if isinstance(baseline, dict) else None
+    if not (isinstance(roster, dict)
+            and isinstance(roster.get("rows"), list)
+            and isinstance(roster.get("pointer"), int)):
+        _evidence("SKIP invariant E: baseline has no enforced roster (schema /1) — "
+                  "seed one in the same PR that moves the registry")
+        return [], False
+    findings: list[dict] = []
+    if pointer is not None and pointer < roster["pointer"]:
+        findings.append({"kind": "roster-pointer-regressed",
+                         "was": roster["pointer"], "now": pointer})
+    for tok in sorted(set(roster["rows"]) - set(tokens_now)):
+        findings.append({"kind": "roster-row-evicted", "token": tok})
+    return findings, True
+
+
+def board_sweep(queue: dict | list, token: int, allow: set[int]) -> list[dict]:
+    """Pointer↔board agreement predicate over captured open-issue titles.
+
+    (#2372 option B / #2392 component 2, offline plane.) The IO is the
+    filer's capture step — a zero-credential bridge_work_queue
+    {"limit": 200} snapshot saved to a file; the GUARD BINARY stays
+    network-free (Never-do). Rows are keyed `number`/`title` (post-#2286
+    schema; the older `issueNumber` key accepted). Pointer phrases are
+    stripped first so WO mirrors quoting the allocation rule do not
+    self-trip. See the module docstring for the full predicate spec.
+    """
+    if isinstance(queue, dict):
+        queue = queue.get("workOrders") or queue.get("rows") or []
+    findings: list[dict] = []
+    for row in queue:
+        if not isinstance(row, dict):
+            continue
+        num = row.get("number", row.get("issueNumber"))
+        title = row.get("title") or ""
+        for m in R_TOKEN_RE.finditer(strip_pointer_phrases(str(title))):
+            if int(m.group(1)) == token and num not in allow:
+                suffix = m.group(2)
+                findings.append({
+                    "issue": num,
+                    "token": f"R{m.group(1)}" + (f"-{suffix}" if suffix else ""),
+                    "title": " ".join(str(title).split())[:160],
+                })
+                break
+    return findings
+
+
 def key_of(f: dict) -> tuple:
     kind = f.get("kind", "citation-ghost")
     if kind == "commit-subject-ghost":
@@ -345,6 +434,10 @@ def load_baseline(repo_root: Path) -> dict:
     if not isinstance(data, dict) or not isinstance(data.get("floor"), list):
         _evidence("FAIL baseline schema unrecognised (need schema + floor list)")
         raise SystemExit(1)
+    if data.get("schema") not in ("radar-index-freshness-baseline/1",
+                                  "radar-index-freshness-baseline/2"):
+        _evidence("FAIL baseline schema unrecognised (need /1 or /2)")
+        raise SystemExit(1)
     return data
 
 
@@ -373,9 +466,19 @@ def render(
     a: list[dict], b: list[dict], cits: list[dict], report_only: list[dict],
     drift: list[dict], improvements: list[dict], pointer: int | None,
     d: list[dict] | None = None, d_ran: bool = False,
+    e: list[dict] | None = None, e_ran: bool = False,
 ) -> None:
     if d is None:
         d = []
+    if e is None:
+        e = []
+    for f in e:
+        if f["kind"] == "roster-pointer-regressed":
+            _evidence(f"E-FAIL roster-pointer-regressed: pointer {f['was']} -> {f['now']} "
+                      "— registry motion is forward-only (#2392 invariant E)")
+        else:
+            _evidence(f"E-FAIL roster-row-evicted: {f['token']} present in the baseline "
+                      "roster is gone from the registry (#2392 invariant E)")
     for f in d:
         _evidence(f"D-FAIL commit-subject-ghost: recent subject '{f['subject']}' cites "
                   f"{f['token']} — no registry row for R{f['base']} (#2187 commit-plane)")
@@ -413,8 +516,8 @@ def render(
         for d in drift:
             _evidence(f"DRIFT {d['kind']}: key={d['key']} {d['now']}/{d['allowed']}")
         _evidence(f"FAIL {len(a) + len(b) + len(unpinned)} invariant finding(s), {len(drift)} ratchet drift — the floor may never grow")
-    elif a or b or unpinned:
-        _evidence("FAIL radar-index freshness invariants violated (see A-FAIL/B-FAIL/C-FAIL lines)")
+    elif a or b or unpinned or e:
+        _evidence("FAIL radar-index freshness invariants violated (see A-FAIL/B-FAIL/C-FAIL/E-FAIL lines)")
     elif d:
         _evidence(f"PINNED {len(d)} commit-subject ghost(s) in the landing window — "
                   "pre-existing debt, shrink-only (#2187); register the row to shrink")
@@ -422,6 +525,10 @@ def render(
         _evidence("OK invariant D: recent commit subjects carry no unregistered R-token (commit-plane clean, #2187)")
     else:
         _evidence("OK invariants A/B/C hold; registry, pointer and docs citations agree (D honest-skipped: no git)")
+    if e:
+        pass  # E-FAIL lines already emitted above — never reached on a fail verdict
+    elif e_ran:
+        _evidence("OK invariant E: roster agrees with the enforced baseline — no pointer regression, no row eviction (#2392)")
 
 
 def sweep(
@@ -436,13 +543,14 @@ def sweep(
     a = invariant_a(text, tokens)
     b = invariant_b(text, root, tokens, bases, pointer)
     cits, report_only = invariant_c(root, bases, pointer, only_files)
+    row_tokens = set(tokens)
     # #2187: invariant D rides the same sweep — global commit-plane scan,
     # not scoped to --files (pre-push content limits stay A/B/C-scoped).
     ghosts, d_ran = invariant_d(root, bases)
     rows_range = (min(bases), max(bases)) if bases else None
     return {"pointer": pointer, "a": a, "b": b, "cits": cits,
             "report_only": report_only, "rows": rows_range,
-            "d": ghosts, "d_ran": d_ran}
+            "d": ghosts, "d_ran": d_ran, "row_tokens": row_tokens}
 
 
 def self_test() -> bool:
@@ -661,6 +769,47 @@ def self_test() -> bool:
     check("F16-commit-subject-ghost-found",
           len(ghosts) == 1 and ghosts[0]["base"] == 97 and ghosts[0]["token"] == "R97")
 
+    # F17: invariant E — roster regression, pass-23's deferred pre-land
+    # check mechanized (#2392 component 1). The ebe630c clobber class:
+    # pointer reverted + rows evicted by a stale-branch whole-file
+    # overwrite while every citation count stayed green (the pin
+    # regressed WITH the pointer — the co-regression blind spot).
+    base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
+             "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
+    idx_txt = index(64, [1, 63, 64])  # pointer reverted 65 -> 64
+    e_find, e_ran = invariant_e(parse_pointer(idx_txt), set(parse_registry(idx_txt)[0]), base2)
+    check("F17a-pointer-regression-fails", e_ran and
+          any(f["kind"] == "roster-pointer-regressed" and f["was"] == 65 and f["now"] == 64
+              for f in e_find))
+    idx_txt = index(65, [1, 63])  # R64 row evicted, pointer intact
+    e_find, e_ran = invariant_e(parse_pointer(idx_txt), set(parse_registry(idx_txt)[0]), base2)
+    check("F17b-row-eviction-fails", e_ran and
+          any(f["kind"] == "roster-row-evicted" and f["token"] == "R64" for f in e_find))
+    idx_txt = index(66, [1, 63, 64, 66])  # forward motion: advance + additions
+    e_find, e_ran = invariant_e(parse_pointer(idx_txt), set(parse_registry(idx_txt)[0]), base2)
+    check("F17c-forward-motion-passes", e_ran and e_find == [])
+    e_find, e_ran = invariant_e(None, set(), {"schema": "radar-index-freshness-baseline/1", "floor": []})
+    check("F17d-v1-baseline-honest-skips", e_find == [] and not e_ran)
+
+    # F18: board sweep predicate over captured titles (#2392 component 2,
+    # #2372 option B) — offline by constitution; the IO artifact is
+    # filer-captured. Word-boundary citation fails; the self-ref defining
+    # ticket passes via --allow; a WO mirror quoting the allocation rule
+    # (pointer phrase) must not self-trip.
+    queue = {"workOrders": [
+        {"number": 2401, "title": "scout(R97): a third-party lane citing the successor"},
+        {"number": 2402, "title": "guard(docs): register R60 row + next-free R97 (WO mirror quote)"},
+        {"number": 2403, "title": "unrelated lane with R59 only"},
+        {"number": 2392, "title": "scout(R64): the successor lane's own defining ticket"},
+    ]}
+    fnd = board_sweep(queue, 97, set())
+    check("F18a-title-cite-fails", any(f["issue"] == 2401 and f["token"] == "R97" for f in fnd))
+    check("F18b-pointer-phrase-in-mirror-ignored", not any(f["issue"] == 2402 for f in fnd))
+    check("F18c-self-ref-allow-passes", board_sweep(queue, 97, {2401}) == [])
+    check("F18d-issue-number-key-accepted",
+          board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())
+          and board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())[0]["issue"] == 9)
+
     print(f"{'SELF-TEST OK: radar_index_freshness_guard' if ok else 'SELF-TEST FAILED: radar_index_freshness_guard'}")
     return ok
 
@@ -692,20 +841,34 @@ def _git_head_provenance(root: Path) -> str:
     return "unknown (git unavailable at generation)"
 
 
+def _row_sort_key(tok: str) -> tuple[int, int]:
+    """Roster ordering: numeric base, then suffix rank (document order family)."""
+    m = re.fullmatch(r"R(\d+)(?:-(I{1,2}|V|VI|c))?", tok)
+    base = int(m.group(1)) if m else 9999
+    rank = {None: 0, "I": 1, "II": 2, "V": 5, "VI": 6, "c": 7}.get(
+        m.group(2) if m else None, 9)
+    return (base, rank)
+
+
 def build_baseline(root: Path) -> dict:
     r = sweep(root)
     counts = counts_of(r["cits"])
     rows = r.get("rows")
     return {
-        "schema": "radar-index-freshness-baseline/1",
+        "schema": "radar-index-freshness-baseline/2",
         "generatedAt": datetime.now(timezone.utc).date().isoformat(),
         "headAtGeneration": _git_head_provenance(root),
         "probe": "scripts/ci/radar_index_freshness_guard.py",
         "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes "
                 "(#2187: D lands first-run-clean — its floor is born empty); "
                 "key = [kind, file, base] / [kind, base, subject]. "
-                "A/B invariant violations are NEVER floorable — they are structural and always fail.",
+                "A/B invariant violations are NEVER floorable — they are structural and always fail. "
+                "/2 adds the enforced roster (invariant E, #2392 component 1): a pointer "
+                "regression or row eviction fails closed — update roster in the same PR that "
+                "moves the registry, mirroring the pin-accompanies-pointer discipline.",
         "floor": [{"key": list(k), "allowed": v} for k, v in sorted(counts.items(), key=lambda kv: repr(kv[0]))],
+        "roster": {"pointer": r["pointer"],
+                   "rows": sorted(r["row_tokens"], key=_row_sort_key)},
         "pointerAtGeneration": r["pointer"],
         "registryRowsAtGeneration": (
             f"R{rows[0]}-R{rows[1]}" if rows else "unknown (empty registry at generation)"
@@ -718,6 +881,16 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="roster mode: full sweep (default)")
     parser.add_argument("--files", nargs="*", help="pre-push mode: restrict content scans to these files")
     parser.add_argument("--baseline", action="store_true", help="print freshly swept baseline JSON")
+    parser.add_argument("--board-sweep", action="store_true",
+                        help="pointer-board agreement (#2372 opt-B): scan a CAPTURED queue "
+                             "artifact for open-issue-title citations of the candidate "
+                             "successor; offline — capture filer-side, no network here")
+    parser.add_argument("--token", type=int, default=None,
+                        help="candidate successor base for --board-sweep (default: pointer+1)")
+    parser.add_argument("--allow", nargs="*", type=int, default=[],
+                        help="self-ref exception: the successor lane's own defining ticket number(s)")
+    parser.add_argument("--queue-file", default=None,
+                        help='captured bridge_work_queue {"limit": 200} JSON artifact')
     parser.add_argument("--json", action="store_true", help="machine-readable auditor report")
     parser.add_argument("--self-test", action="store_true", help="hermetic offline self-test suite")
     args = parser.parse_args()
@@ -744,6 +917,36 @@ def main() -> int:
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
 
+    if args.board_sweep:
+        if not args.queue_file:
+            _evidence('FAIL board-sweep: --queue-file required — capture bridge_work_queue '
+                      '{"limit": 200} filer-side; the guard binary is network-free (Never-do)')
+            return 1
+        try:
+            queue = json.loads(Path(args.queue_file).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            _evidence(f"FAIL board-sweep: unreadable queue artifact {args.queue_file}: {exc}")
+            return 1
+        idx_text = (REPO_ROOT / INDEX_REL).read_text(encoding="utf-8", errors="replace")
+        pointer = parse_pointer(idx_text)
+        token = args.token if args.token is not None else (pointer + 1 if pointer is not None else None)
+        if token is None:
+            _evidence("FAIL board-sweep: no --token and the index advertises no pointer")
+            return 1
+        allow = set(args.allow or [])
+        findings = board_sweep(queue, token, allow)
+        for f in findings:
+            _evidence(f"BOARD-FAIL title-citation: #{f['issue']} cites {f['token']} — '{f['title']}'")
+        n_rows = len(queue) if isinstance(queue, list) else len(
+            queue.get("workOrders") or queue.get("rows") or [])
+        if findings:
+            _evidence(f"FAIL board-sweep: R{token} cited by {len(findings)} open title(s) outside "
+                      f"allow={sorted(allow)} — never advertise dirty (auto-advance out of scope v1)")
+            return 1
+        _evidence(f"OK board-sweep: R{token} zero title citations outside allow={sorted(allow)} "
+                  f"over {n_rows} captured row(s) — advertisable per the #2392 predicate")
+        return 0
+
     only = None
     if args.files:
         only = [p if p.is_absolute() else root / p for p in args.files]
@@ -755,6 +958,9 @@ def main() -> int:
         return 1
 
     baseline = load_baseline(root)
+    # #2392 invariant E: roster regression (pointer revert / row eviction) —
+    # the pass-23 deferred check. Structural, never floorable.
+    e_findings, e_ran = invariant_e(r["pointer"], r["row_tokens"], baseline)
     # #2187: invariant D joins the SAME shrink-only ratchet — commit-subject
     # keys are never in the born-empty floor, so any ghost is fresh drift,
     # and a registered row (base now in the registry) makes it vanish.
@@ -765,14 +971,15 @@ def main() -> int:
             "guard": GUARD_TAG, "pointer": r["pointer"],
             "a": r["a"], "b": r["b"], "citationGhosts": r["cits"],
             "commitSubjectGhosts": r["d"], "commitPlaneScanned": r["d_ran"],
+            "rosterRegressions": e_findings, "rosterChecked": e_ran,
             "reportOnly": r["report_only"], "drift": drift,
             "improvements": improvements,
-            "verdict": "fail" if (r["a"] or r["b"] or drift) else "pass",
+            "verdict": "fail" if (r["a"] or r["b"] or drift or e_findings) else "pass",
         }, indent=2, ensure_ascii=False))
     else:
         render(r["a"], r["b"], r["cits"], r["report_only"], drift, improvements, r["pointer"],
-               d=r["d"], d_ran=r["d_ran"])
-    return 1 if (r["a"] or r["b"] or drift) else 0
+               d=r["d"], d_ran=r["d_ran"], e=e_findings, e_ran=e_ran)
+    return 1 if (r["a"] or r["b"] or drift or e_findings) else 0
 
 
 if __name__ == "__main__":
