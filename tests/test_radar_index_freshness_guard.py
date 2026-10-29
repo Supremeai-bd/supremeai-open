@@ -282,7 +282,12 @@ def test_invariant_e_forward_motion_and_v1_skip() -> None:
     """Forward motion (advance + additions) never fails; /1 baselines honest-skip."""
     base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
              "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
-    findings, ran = guard.invariant_e(66, {"R1", "R63", "R64", "R66"}, base2)
+    # Fixture token R96: a neutral synthetic successor (pass-4/22 standard,
+    # one horizon after pass-25 neutralized its own fixtures) — the suite
+    # never embeds the live next-free token in fixture strings, so the next
+    # registry pass's tracked-scan for R66 advertisability stays zero-hit
+    # here (#2447 Finding 4).
+    findings, ran = guard.invariant_e(96, {"R1", "R63", "R64", "R96"}, base2)
     assert ran and findings == []
     findings, ran = guard.invariant_e(None, set(),
                                       {"schema": "radar-index-freshness-baseline/1", "floor": []})
