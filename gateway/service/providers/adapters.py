@@ -244,7 +244,7 @@ async def forward_chat_completion(
         headers["HTTP-Referer"] = (
             os.getenv("OPENROUTER_REFERER")
             or os.getenv("RENDER_EXTERNAL_URL")
-            or "https://supremeai-api.onrender.com"
+            or "https://supremeai-api-ulw0.onrender.com"
         )
         headers["X-Title"] = "SupremeAI Gateway"
 
