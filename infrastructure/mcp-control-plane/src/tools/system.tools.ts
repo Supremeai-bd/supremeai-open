@@ -552,6 +552,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "system.summary",
     "Get a high-level summary of all SupremeAI services — availability, roles, and capabilities",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const store = RequestContextStore.get();
       const registry = getAccountsForRole(store?.role);
@@ -598,6 +599,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "system.health",
     "Ping all backend services and report their HTTP health status",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const store = RequestContextStore.get();
       const registry = getAccountsForRole(store?.role);
@@ -694,6 +696,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "resource.list",
     "List all discovered resources across all configured providers.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const resources = await listResources();
       return {
@@ -721,6 +724,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     {
       resourceId: z.string().describe("The ID of the resource (e.g. render/render-primary)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ resourceId }) => {
       const status = await getResourceStatus(resourceId);
       return {

@@ -828,6 +828,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     "bridge.guide",
     "Zero-credential onboarding contract for external agents working from the public open-source repo: lifecycle, branch convention, diff caps, protected paths and the submission flow. No network required.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       return { content: [{ type: "text", text: JSON.stringify(bridgeGuide(), null, 2) }] };
     }
@@ -1012,6 +1013,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return when viewing queue (default: 20)."),
       label: z.string().optional().describe("Optional label filter for queue."),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ view, taskId, limit, label }) => {
       const repo = bridgeOpenRepo();
       if (view === "guide") {
@@ -1629,6 +1631,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     "bridge.submit_patch",
     "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
     submitPatchSchema,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     submitPatchHandler as any
   );
 
@@ -1637,6 +1640,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     "bridge.submit",
     "Unified patch submission endpoint (S0.4 canonical alias of bridge.submit_patch). Submits work to the public repo atomically with automatic branch creation, commit, and PR generation.",
     submitPatchSchema,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     submitPatchHandler as any
   );
 
@@ -1841,6 +1845,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Task issue number to claim"),
       agentId: z.string().optional().describe("Optional caller identity (defaults to authenticated client or contributor)"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     claimHandler
   );
 
@@ -1851,6 +1856,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     {
       number: z.number().int().positive().describe("Work-order issue number in the public open-source repo"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ number }) => {
       const repo = bridgeOpenRepo();
       try {
@@ -1951,6 +1957,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Claimed task issue number"),
       agentId: z.string().optional().describe("Caller identity — must match the claiming agent"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ issueNumber, agentId }) => {
       const repo = bridgeOpenRepo();
       const agent = resolveIssueAgent(agentId);
@@ -2009,6 +2016,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Claimed task issue number"),
       agentId: z.string().optional().describe("Caller identity — must match the claiming agent"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ issueNumber, agentId }) => {
       const repo = bridgeOpenRepo();
       const agent = resolveIssueAgent(agentId);

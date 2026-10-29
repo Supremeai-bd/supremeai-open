@@ -157,6 +157,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.actions_op",
     {
       description: "Unified GitHub Actions diagnostic tool (list workflow runs or fetch failed job logs).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
@@ -197,6 +198,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.workflow_runs",
     {
       description: "List recent GitHub Actions workflow runs for any repository across Supremeai-bd.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
@@ -230,6 +232,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.get_failed_logs",
     {
       description: "Get trailing logs for failed jobs in a workflow run for any repository across Supremeai-bd.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
@@ -261,6 +264,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.list_secrets",
     {
       description: "List GitHub Actions secret names for any repository across Supremeai-bd (names only).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
@@ -291,6 +295,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.read_file",
     {
       description: "Read the content of any file from any repository across the organization (Read-Only).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'"),
@@ -323,6 +328,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.list_prs",
     {
       description: "List pull requests for any repository across Supremeai-bd (Read-Only).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
@@ -357,6 +363,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.code_search",
     {
       description: "Search code across Supremeai-bd repositories (Read-Only). Useful for finding method/type references without manual tree traversal.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         query: z.string().describe("Search query (code terms, symbol names, etc.)"),
         repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
@@ -386,6 +393,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.search_code",
     {
       description: "Alias of github.code_search — search code across Supremeai-bd repositories (Read-Only).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         query: z.string().describe("Search query (code terms, symbol names, etc.)"),
         repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
@@ -414,6 +422,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     "github.create_issue",
     {
       description: "Create a new issue in a SupremeAI repository (e.g. supremeai-open). Zero-credential self-serve for autonomous auditor/scout agents.",
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
       inputSchema: {
         title: z.string().min(5).max(250).describe("Issue title"),
         body: z.string().min(10).describe("Issue description / markdown body"),
