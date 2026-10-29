@@ -7,6 +7,8 @@ Key Components:
 - `record_error_report()`: Records details about an error encountered within the system, including its message and context.
 - `metrics()`: Returns the current aggregated performance metrics, such as counts of edits, accepts, rejects, and errors.
 - `events()`: Returns a list of all recorded feedback events, with an option to filter by event type.
+- `record_correction()`: Records a user correction event with free-form detail text.
+- `record_issue_report()`: Records a user-filed issue report (title + detail), distinct from system error reports.
 - `handle_feedback()`: A central dispatcher that processes incoming generic feedback payloads and routes them to the appropriate internal recording methods.
 
 Dependencies:
@@ -30,6 +32,8 @@ class FeedbackLoop:
             "accepts": 0,
             "rejects": 0,
             "errors_reported": 0,
+            "corrections": 0,
+            "issue_reports": 0,
         }
 
     def record_edit(self, file_path: str, diff_summary: str) -> dict[str, Any]:
@@ -73,6 +77,33 @@ class FeedbackLoop:
         logger.debug("Recorded error report: %s", error)
         return event
 
+    def record_correction(self, detail: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+        event = {
+            "type": "correction",
+            "detail": detail,
+            "context": context or {},
+            "timestamp": time.time(),
+        }
+        self._events.append(event)
+        self._metrics["corrections"] = self._metrics.get("corrections", 0) + 1
+        logger.debug("Recorded correction event")
+        return event
+
+    def record_issue_report(
+        self, title: str, detail: str = "", context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        event = {
+            "type": "issue_report",
+            "title": title,
+            "detail": detail,
+            "context": context or {},
+            "timestamp": time.time(),
+        }
+        self._events.append(event)
+        self._metrics["issue_reports"] = self._metrics.get("issue_reports", 0) + 1
+        logger.debug("Recorded issue report: %s", title)
+        return event
+
     def metrics(self) -> dict[str, Any]:
         return dict(self._metrics)
 
@@ -106,6 +137,28 @@ class FeedbackLoop:
             error = Exception(payload.get("message") or "Unknown error")
             context = payload.get("context") or payload
             event = self.record_error_report(error=error, context=context)
+            return {"stored": True, "event": event}
+        # User-feedback taxonomy (#1363 contract item 1): the route's
+        # learning-store mapper already declares thumbs_up/thumbs_down/
+        # correction, but the loop rejected them at the door (400), so
+        # user ratings and reports never persisted. Thumbs map onto the
+        # existing accepts/rejects aggregation; the wire type is kept in
+        # context for downstream triage. Unknown types still fail closed.
+        if feedback_type in ("thumbs_up", "thumbs_down"):
+            context = dict(payload.get("context") or payload)
+            context.setdefault("wire_type", feedback_type)
+            event = self.record_suggestion_feedback(
+                accepted=feedback_type == "thumbs_up", context=context
+            )
+            return {"stored": True, "event": event}
+        if feedback_type == "correction":
+            detail = str(payload.get("detail") or payload.get("message") or "")
+            event = self.record_correction(detail=detail, context=payload)
+            return {"stored": True, "event": event}
+        if feedback_type == "issue_report":
+            title = str(payload.get("title") or payload.get("message") or "Issue report")
+            detail = str(payload.get("detail") or "")
+            event = self.record_issue_report(title=title, detail=detail, context=payload)
             return {"stored": True, "event": event}
         return {
             "stored": False,
