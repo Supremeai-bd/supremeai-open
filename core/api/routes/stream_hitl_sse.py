@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from api.deps import get_current_user_token
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.messaging.event_bus import ErrorEvent, error_event_bus
 
 router = APIRouter(prefix="/api/v1/stream", tags=["SSE HITL Stream"])
