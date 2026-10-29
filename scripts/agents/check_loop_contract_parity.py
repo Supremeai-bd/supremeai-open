@@ -16,6 +16,21 @@ makes the drift machine-visible:
   6. Every ``.github/workflows/*.yml`` reference in the loop code or the SPEC
      must resolve to an existing workflow file on disk (the deleted
      ``open-guards.yml`` drift class — #214).
+  7. The ``pipeline.yml`` board pre-check's CLAIMABLE exclusion label array
+     must not hide claimable work from the dispatcher: any label it excludes
+     that the loop's ``EXCLUDED_LABELS`` frozenset (SSOT) does not, fails the
+     guard (starvation direction). The opposite lag (the pre-check missing
+     SSOT labels, dispatcher burning a job the loop then refuses) is reported
+     as a warning line — the workflow file is admin-lane (``.github/`` is
+     bridge-protected), so waste-direction drift cannot be fixed agent-side.
+  8. The integration contract doc (``docs/AUTONOMY_LOOP_CONTRACT.md``) must
+     keep its claim-exclusion story SSOT-first: it must point at the loop's
+     ``EXCLUDED_LABELS`` frozenset instead of hand-copying the label list
+     (the copy had drifted to 5 of 12 labels), and any label it still names
+     must be a real loop exclusion — a doc-only label tells integrators to
+     skip claimable work (starvation, fail-closed); an enumeration lagging
+     the SSOT merely wastes integrator claims (waste, warn — the doc is
+     bridge-editable, so agents can sync it, unlike ``pipeline.yml``).
 
 Exit codes: 0 = parity held · 1 = drift detected · 2 = guard environment error.
 """
@@ -40,6 +55,7 @@ ROOT = Path(__file__).resolve().parents[2]
 LOOP = ROOT / "scripts" / "agents" / "continuous_agent_loop.py"
 SPEC = ROOT / "docs" / "AGENT_LOOP_SPEC.md"
 CONTRIB = ROOT / "docs" / "CONTRIBUTING.md"
+CONTRACT_DOC = ROOT / "docs" / "AUTONOMY_LOOP_CONTRACT.md"
 GUARDS_WF = ROOT / ".github" / "workflows" / "pipeline.yml"
 # The open-guards.yml fallback was removed with the #155 workflow diet: a
 # missing guard workflow is now a fail-closed guard-environment error, not a
@@ -47,7 +63,7 @@ GUARDS_WF = ROOT / ".github" / "workflows" / "pipeline.yml"
 
 
 def main() -> int:
-    for path in (LOOP, SPEC, CONTRIB, GUARDS_WF):
+    for path in (LOOP, SPEC, CONTRIB, GUARDS_WF, CONTRACT_DOC):
         if not path.is_file():
             print(f"GUARD-ENV-ERROR: missing required file: {path.relative_to(ROOT)}")
             return 2
@@ -130,6 +146,134 @@ def main() -> int:
                     f".github/workflows/{wf_name}"
                 )
 
+    # 7. Board pre-check claim-exclusion set vs the loop EXCLUDED_LABELS SSOT.
+    #    The pre-check hand-copies pick_next_issue()'s exclusion set inside a
+    #    jq filter (#88/#222). Asymmetric severity: a label the pipeline
+    #    excludes but the loop doesn't means real claimable work is hidden
+    #    from the dispatcher (starvation — fail-closed). The opposite lag only
+    #    burns a dispatcher job on a board the loop refuses (waste — warn:
+    #    pipeline.yml is admin-lane, agents cannot sync it).
+    warnings: list[str] = []
+    loop_labels_m = re.search(
+        r"EXCLUDED_LABELS\s*=\s*frozenset\(\{(.*?)\}\)", code, re.S
+    )
+    pipe_lines = [
+        ln
+        for ln in GUARDS_WF.read_text(encoding="utf-8").splitlines()
+        if "CLAIMABLE=" in ln and "select((" in ln
+    ]
+    if loop_labels_m is None:
+        failures.append(
+            "loop code lost the EXCLUDED_LABELS frozenset "
+            "(claim-exclusion SSOT, guard 7)"
+        )
+    elif len(pipe_lines) != 1:
+        failures.append(
+            "pipeline.yml must contain exactly one CLAIMABLE claim-exclusion "
+            f"jq filter for guard 7, found {len(pipe_lines)}"
+        )
+    else:
+        loop_labels = {
+            s.lower() for s in re.findall(r'"([^"]+)"', loop_labels_m.group(1))
+        }
+        labels_m = re.search(r"select\(\(\[([^\]]*)\]", pipe_lines[0])
+        if labels_m is None:
+            failures.append(
+                "pipeline.yml CLAIMABLE filter lost the exclusion label array "
+                "(select(([...]) shape, guard 7)"
+            )
+        else:
+            pipe_labels = {
+                s.strip().strip('"\'').lower()
+                for s in labels_m.group(1).split(",")
+                if s.strip()
+            }
+            starvation = pipe_labels - loop_labels
+            waste = loop_labels - pipe_labels
+            if starvation:
+                failures.append(
+                    "claim-exclusion drift (guard 7, starvation): "
+                    "pipeline.yml board pre-check excludes label(s) the loop "
+                    f"EXCLUDED_LABELS SSOT does not: {sorted(starvation)} — "
+                    "claimable work is hidden from the dispatcher; remove them "
+                    "from the CLAIMABLE jq array or add them to the loop SSOT "
+                    "deliberately"
+                )
+            elif waste:
+                warnings.append(
+                    "claim-exclusion lag (guard 7, waste direction): "
+                    "pipeline.yml board pre-check is missing loop "
+                    f"EXCLUDED_LABELS SSOT label(s) {sorted(waste)} — the "
+                    "dispatcher burns a job on a board the loop then refuses; "
+                    "admin-lane fix: extend the CLAIMABLE jq array with the "
+                    "loop SSOT set (workflow is .github/, bridge-protected)"
+                )
+
+    # 8. Contract-doc claim-exclusion parity. AUTONOMY_LOOP_CONTRACT.md §1 is
+    #    the surface integrators read INSTEAD of the loop source, so its
+    #    exclusion-label enumeration is a third hand-copy of the
+    #    EXCLUDED_LABELS SSOT (it drifted to 5 of 12 labels while the doc's
+    #    own anti-drift scope note forbids duplication). The doc must point
+    #    at the SSOT frozenset; any label it still names must be a real loop
+    #    exclusion. Asymmetric severity, same doctrine as guard 7: a
+    #    doc-only label hides claimable work from integrators (starvation —
+    #    fail-closed); an enumeration lagging the SSOT only wastes
+    #    integrator claims the loop refuses (waste — warn; docs/ is
+    #    bridge-editable, so agents can sync it).
+    doc_labels: set = set()
+    doc_text = CONTRACT_DOC.read_text(encoding="utf-8")
+    if "EXCLUDED_LABELS" not in doc_text:
+        failures.append(
+            "AUTONOMY_LOOP_CONTRACT.md lost the EXCLUDED_LABELS SSOT pointer "
+            "(integrators read this doc instead of the loop source, guard 8)"
+        )
+    else:
+        ssot_m8 = re.search(
+            r"EXCLUDED_LABELS\s*=\s*frozenset\(\{(.*?)\}\)", code, re.S
+        )
+        if ssot_m8 is None:
+            failures.append(
+                "loop code lost the EXCLUDED_LABELS frozenset "
+                "(claim-exclusion SSOT, guard 8 cannot verify the contract doc)"
+            )
+        else:
+            loop_labels_8 = {
+                s.lower() for s in re.findall(r'"([^"]+)"', ssot_m8.group(1))
+            }
+            # Namespaced label shape covers 10 of the 12 SSOT labels;
+            # non-colon SSOT labels (admin-only, anchor-hub,
+            # blocked-by-upstream) count only when the loop really has
+            # them, so doc tokens like task-envelope-v1 never false-positive.
+            for tok in re.findall(r"`([^`]+)`", doc_text):
+                tok = tok.strip().lower()
+                if re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*:[a-z0-9-]+", tok):
+                    doc_labels.add(tok)
+                elif tok in loop_labels_8:
+                    doc_labels.add(tok)
+            starve8 = doc_labels - loop_labels_8
+            waste8 = loop_labels_8 - doc_labels if doc_labels else set()
+            if starve8:
+                failures.append(
+                    "contract-doc exclusion drift (guard 8, starvation): "
+                    "AUTONOMY_LOOP_CONTRACT.md names exclusion label(s) the "
+                    f"loop EXCLUDED_LABELS SSOT does not have: {sorted(starve8)} "
+                    "— integrators will skip claimable work; point the doc at "
+                    "the SSOT frozenset instead of enumerating labels"
+                )
+            elif waste8:
+                warnings.append(
+                    "contract-doc exclusion lag (guard 8, waste direction): "
+                    "AUTONOMY_LOOP_CONTRACT.md enumerates only "
+                    f"{sorted(doc_labels)} of the loop EXCLUDED_LABELS SSOT "
+                    f"({sorted(waste8)} missing) — integrators attempt claims "
+                    "the loop refuses; fix: replace the enumeration with the "
+                    "EXCLUDED_LABELS SSOT pointer (doc is bridge-editable)"
+                )
+
+    if warnings:
+        for warning in warnings:
+            print(f"⚠ {warning}")
+
     if failures:
         print("❌ Loop-contract parity FAILED:")
         for failure in failures:
@@ -141,7 +285,11 @@ def main() -> int:
         f"(code == SPEC §4 declared 1..{declared}), "
         f"{len(job_names)} guards (workflow == SPEC §5), "
         "no flag-table copy, SSOT pointers present, "
-        "all workflow references resolve."
+        "all workflow references resolve, "
+        f"claim-exclusion parity ({len(loop_labels)} labels pipeline, "
+        f"{len(doc_labels) if doc_labels else 'SSOT-pointer'} doc)"
+        + ("" if not warnings else ", waste-direction lag warned above")
+        + ")."
     )
     return 0
 

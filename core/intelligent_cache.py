@@ -24,7 +24,7 @@ from enum import Enum
 from functools import wraps
 from typing import Any, Optional
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     import redis
@@ -468,7 +468,7 @@ class IntelligentCache:
                 base_stats["redis_memory_used_bytes"] = info.get("used_memory", 0)
                 base_stats["redis_total_keys"] = info.get("db0", {}).get("keys", 0)
             except Exception:
-                from core.logging_config import logger
+                from core.monitoring.logging_config import logger
 
                 logger.warning("Ignored exception")
 

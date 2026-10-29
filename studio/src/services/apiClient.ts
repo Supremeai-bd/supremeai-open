@@ -6,7 +6,7 @@
 import { getApiBaseUrl } from '../utils/api';
 import { buildUrl } from '@supremeai/shared-services';
 import { getDeviceFingerprint } from '../utils/deviceFingerprint';
-import { clearAdminToken, clearUserToken, getAdminToken, getTrustedBrowserToken, getUserToken, setUserToken } from './tokenStorage';
+import { clearAdminToken, clearUserToken, getAdminToken, getUserToken, setUserToken } from './tokenStorage';
 import PQueue from 'p-queue';
 
 // বাংলা মন্তব্য: কাস্টম এরর ক্লাস — status প্রপার্টি দিয়ে React Query retry ফাংশন সঠিকভাবে 401/403/429 চিহ্নিত করতে পারে
@@ -139,12 +139,6 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
 
   if (effectiveToken) {
     headers['Authorization'] = `Bearer ${effectiveToken}`;
-  }
-
-  // 🛡️ Trusted browser token for 7-day MFA bypass
-  const trustedBrowserToken = getTrustedBrowserToken();
-  if (trustedBrowserToken) {
-    headers['X-Trusted-Browser'] = trustedBrowserToken;
   }
 
   // 🔐 CSRF Protection
@@ -314,6 +308,16 @@ const throttledFetch = async (url: string, options: RequestInit): Promise<Respon
         // Issue #2522: কলার abort (stop button / unmount) হলে retry অর্থহীন ও
         // ক্ষতিকর — বাতিল করা অনুরোধ ৪ বার পাঠানো হতো। সঙ্গে সঙ্গে ছড়িয়ে দিই।
         if (fetchOptions.signal?.aborted) throw e;
+        // supremeai-studio#1 (CORS residual): a network-layer failure surfaces as
+        // TypeError per the fetch spec (CORS origin-policy rejection, DNS, refused
+        // connection). Unlike a Render cold start (hang → timeout, or a 50x after
+        // wake — both still retried below), an origin-policy rejection is
+        // DETERMINISTIC: re-firing the same request 4× over ~30s of backoff cannot
+        // succeed and only multiplies the browser's un-suppressable console errors
+        // (2 lines per attempt) plus pointless queue occupancy. Recovery from a
+        // genuinely transient outage rides the existing 'online' event listeners
+        // and caller-level polling instead of same-context retries.
+        if (e instanceof TypeError) throw e;
         attempts++;
         if (attempts >= MAX_ATTEMPTS) {
           if (isDev()) console.error(`[Queue Interceptor] Network failure for ${currentUrl} after ${MAX_ATTEMPTS} attempts:`, e);

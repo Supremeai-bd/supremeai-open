@@ -224,7 +224,7 @@ def tower_tools(timeout: int = 20):
         1,
         "initialize",
         {
-            "protocolVersion": "2025-03-26",
+            "protocolVersion": "2025-11-25",
             "capabilities": {},
             "clientInfo": {"name": "s01-contract-test", "version": "1.0.0"},
         },

@@ -30,7 +30,7 @@ except ImportError:
     Image: Any = None  # type: ignore
 from pydantic import BaseModel
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter()
 
@@ -105,11 +105,11 @@ class ScreencastStreamer:
                     await asyncio.sleep(target_frame_time - frame_time)
 
         except WebSocketDisconnect:
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.info("Screencast client disconnected")
         except Exception as e:
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.info(f"Screencast error: {e}")
             await self.websocket.send_json(

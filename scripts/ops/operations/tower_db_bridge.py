@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from mcp_tower_client import McpTowerClient  # noqa: E402
+from mcp_tower_client import McpTowerClient, strip_endpoint_suffixes  # noqa: E402
 from operational_truth_db import (  # noqa: E402
     connect,
     ensure_schema,
@@ -86,7 +86,9 @@ def _resolve_tower_url() -> str:
             "Tower URL পাওয়া যায়নি — MCP_TOWER_URL env var সেট করুন "
             "(fail-closed, scripts/agents/mcp_tower_client.py চুক্তি)"
         )
-    return url.rstrip("/").removesuffix("/sse")
+    # #2317: shared helper — the private duplicate drifted from the client
+    # contract (kept /mcp, producing GET /mcp/sse = live 404).
+    return strip_endpoint_suffixes(url)
 
 
 def _tool_text(result: Any) -> str:

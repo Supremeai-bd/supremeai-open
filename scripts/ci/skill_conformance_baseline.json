@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "seeded_at": "2026-10-29",
+  "seed_commit": "961e2be (issue #1672 adoption landing)",
+  "note": "Shrink-only floor: entries may be removed when fixed, never added by hand. Regenerate only via `--baseline` at a state you are willing to pin.",
+  "errors": {
+    "developing-genkit-python": [
+      "E1"
+    ]
+  }
+}

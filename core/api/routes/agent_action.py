@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user_token
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security.security_vault import decrypt_token
 from core.security.tool_gateway import ToolPolicyViolation, tool_policy_gateway
 from core.zero_cost_architecture.swarm_orchestrator_integration import ZeroCostSwarmOrchestrator

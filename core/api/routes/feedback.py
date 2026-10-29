@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from core.degraded_mode import sqlite_fallback_allowed
 from core.feedback_loop import FeedbackLoop
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 def _get_db_path() -> Path:

@@ -65,7 +65,6 @@
     "scripts/ci/check_config_control_plane.py",
     "scripts/ci/check_critical_invariants.py",
     "scripts/ci/check_database_schema.py",
-    "scripts/ci/check_dockerfile_security.py",
     "scripts/ci/check_free_tier_limits.py",
     "scripts/ci/check_frontend_secrets.py",
     "scripts/ci/check_gateway_bypass.py",

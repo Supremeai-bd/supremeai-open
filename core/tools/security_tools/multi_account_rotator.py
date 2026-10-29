@@ -18,7 +18,7 @@ from typing import Any
 
 from core.config import settings
 from core.config_cache import config_cache
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.utils.time_utils import utc_now
 
 # Security: Allowed providers whitelist (Issue #776 / MA-11: synchronized with vault providers)

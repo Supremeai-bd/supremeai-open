@@ -3,7 +3,7 @@
 # GitHub Copilot-এর মত ডাইনামিক ইনলাইন কোড কমপ্লিশন জেনারেট করে।
 
 from core.llm.llm_gateway import GatewayManager
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class LanguageServerBridge:

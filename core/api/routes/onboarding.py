@@ -13,7 +13,7 @@ import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 

@@ -11,7 +11,7 @@
 # ============================================================================
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 MANIFEST="$ROOT/deployments/render.yaml"
 INVENTORY="$ROOT/deployments/secrets-inventory.json"
 DOCKERFILE="$ROOT/deployments/Dockerfile"

@@ -54,6 +54,12 @@ except Exception:
     pass
 
 
+# Targets where automated CI/deployment workflows should run on sync push
+# (e.g. Cloudflare Pages deploy in supremeai-studio)
+DEPLOY_TARGETS: set[str] = {
+    "Supremeai-bd/supremeai-studio",
+}
+
 # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
 # (source_rel_in_open, target_repo, target_rel_in_satellite)
 CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
@@ -268,12 +274,21 @@ def sync_satellite(
                 sub_src = repo_root / sub_source
                 if sub_src.exists():
                     copy_tree_contents(sub_src, tmp_repo / sub_name, prune=True)
-            # Sync service/ directly into root of supremeai-api for Render runtime (python -m service.app)
-            service_src = repo_root / "gateway" / "service"
-            if service_src.exists():
-                copy_tree_contents(service_src, tmp_repo / "service", prune=True)
+            # (#1772 root cause) Retire the legacy flat 'service/' sync: the app
+            # imports its own code as the 'gateway.*' package namespace (16+ import
+            # sites incl. gateway.middleware.correlation_id / security_headers), so
+            # 'uvicorn service.app:app' over a flat copy crashed at boot — every
+            # deploy since 09dec15 (2026-10-27) died as Render update_failed while
+            # the edge froze on a pre-09:14Z build. The package-true layout ships
+            # gateway/ as a package (block above) and the Dockerfile CMD runs
+            # 'uvicorn gateway.service.app:app'. One-time cleanup of the stale
+            # flat tree this sync used to create:
+            legacy_service = tmp_repo / "service"
+            if legacy_service.exists():
+                shutil.rmtree(legacy_service, ignore_errors=True)
                 print(
-                    f"📋 Synced runtime service 'gateway/service' -> 'service' in {target_repo}"
+                    "🧹 Removed legacy flat 'service/' tree in satellite "
+                    f"({target_repo}) — package-true layout is 'gateway/' (#1772)"
                 )
             # Sync workflows cleanly with pruning for supremeai-api
             api_wf_src = repo_root / "gateway" / ".github" / "workflows"
@@ -299,6 +314,15 @@ def sync_satellite(
             if schemas_src.exists():
                 copy_tree_contents(schemas_src, tmp_repo / "contracts" / "schemas", prune=True)
                 print(f"📋 Synced API schemas -> contracts/schemas in {target_repo}")
+            # Sync gateway Dockerfile & requirements.txt directly to satellite root for Render builds
+            df_src = repo_root / "gateway" / "Dockerfile"
+            if df_src.exists():
+                shutil.copy2(df_src, tmp_repo / "Dockerfile")
+                print(f"📋 Synced Dockerfile -> Dockerfile (root) in {target_repo}")
+            req_src = repo_root / "gateway" / "requirements.txt"
+            if req_src.exists():
+                shutil.copy2(req_src, tmp_repo / "requirements.txt")
+                print(f"📋 Synced requirements.txt -> root in {target_repo}")
         elif target_repo == "Supremeai-bd/supremeai-studio":
             # Copy domain files into the satellite root (non-destructive)
             copy_tree_contents(src_path, tmp_repo, prune=False)
@@ -365,7 +389,8 @@ def sync_satellite(
             cwd=str(tmp_repo),
         )
         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
-        msg = f"sync(open->{slug}): {commit_msg} [skip ci]"
+        ci_tag = "" if target_repo in DEPLOY_TARGETS else " [skip ci]"
+        msg = f"sync(open->{slug}): {commit_msg}{ci_tag}"
         res = subprocess.run(
             ["git", "commit", "--no-verify", "-m", msg],
             cwd=str(tmp_repo),
@@ -408,9 +433,11 @@ def sync_satellite(
                     subprocess.run(["git", "rebase", "--abort"], cwd=str(tmp_repo), capture_output=True, check=False)
                     subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=str(tmp_repo), capture_output=True, check=False)
                     if target_repo == "Supremeai-bd/supremeai-api":
-                        service_src = repo_root / "gateway" / "service"
-                        if service_src.exists():
-                            copy_tree_contents(service_src, tmp_repo / "service")
+                        # (#1772) Package-true reconcile: restore the gateway/
+                        # package copy, never the retired flat service/ tree.
+                        gw_src = repo_root / "gateway"
+                        if gw_src.exists():
+                            copy_tree_contents(gw_src, tmp_repo / "gateway", prune=True)
                     else:
                         copy_tree_contents(src_path, tmp_repo)
                     subprocess.run(["git", "add", "-A"], cwd=str(tmp_repo), capture_output=True, check=False)

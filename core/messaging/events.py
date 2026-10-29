@@ -1,8 +1,9 @@
-"""Backward compatibility shim for core.messaging.events.
+"""Canonical domain module for events.
 
-Canonical domain module: core.firebase_auth
+Firebase Auth has been removed (Zero-Firebase Native Auth); `auth` is None.
 """
 
-from core.firebase_auth import auth, get_firebase_auth  # noqa: F401
+auth = None
+get_firebase_auth = lambda: None
 
 __all__ = ["auth", "get_firebase_auth"]

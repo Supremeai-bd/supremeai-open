@@ -106,6 +106,7 @@ describe('application route smoke tests', () => {
     ['/docs', '/docs page'],
     ['/about', 'Our story page'],
     ['/contact', 'contact page'],
+    ['/playground', 'ইন্টারেক্টিভ মাল্টি-ডিভাইস লাইভ কোড স্যান্ডবক্স'],
     ['/login', 'Login page'],
     ['/register', 'Register page'],
   ])('renders the public route %s', async (path, expectedText) => {

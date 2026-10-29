@@ -18,7 +18,7 @@ Dependencies:
 
 import os
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Safe import to handle missing packages or environments
 try:

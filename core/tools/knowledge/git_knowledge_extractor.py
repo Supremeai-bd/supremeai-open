@@ -18,7 +18,7 @@ import subprocess
 import time
 import uuid
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     from core.feedback_loop import FeedbackLoop

@@ -174,7 +174,7 @@ async def admin_health_v1(admin: dict = Depends(get_current_admin)) -> dict[str,
 @router.get("/admin/system-status")
 async def admin_system_status_v1(admin: dict = Depends(get_current_admin)) -> dict[str, Any]:
     """Real process-level system status (collector summary, no fabrications)."""
-    from core._monitoring_legacy import get_metrics_collector
+    from core.monitoring import get_metrics_collector
 
     summary = get_metrics_collector().get_summary()
     return {

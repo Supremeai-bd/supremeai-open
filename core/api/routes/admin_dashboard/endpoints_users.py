@@ -6,7 +6,7 @@ from fastapi import HTTPException
 
 from api.routes.admin_dashboard import load_users, router, save_users
 from api.routes.admin_dashboard._models import UserUpdate
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 @router.get("/users")

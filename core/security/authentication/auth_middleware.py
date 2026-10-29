@@ -15,7 +15,7 @@ from jwt import ExpiredSignatureError
 from jwt import PyJWTError as JWTError
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from utils.environment import is_test_environment
 
 ASGIScope = dict[str, Any]

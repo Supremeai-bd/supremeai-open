@@ -1,4 +1,4 @@
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class IPBlocklistManager:

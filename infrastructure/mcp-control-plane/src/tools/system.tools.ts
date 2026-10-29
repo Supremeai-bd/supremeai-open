@@ -7,6 +7,7 @@ import { env } from "../lib/env.js";
 import { RequestContextStore } from "../policy/auth.context.js";
 import { activeAccountChain, getActiveRedisAccount, markAccountQuotaExhausted, responseIndicatesQuotaExhaustion } from "../lib/redis_chain.js";
 import { pingRedis } from "../adapters/redis/index.js";
+import { getServiceHealth } from "../adapters/render/index.js";
 
 /**
  * System-level MCP tools: summary, health, dependencies, and resource discovery.
@@ -29,6 +30,10 @@ interface HealthProbe {
   status: HealthStatus;
   httpStatus: number | null;
   latencyMs: number | null;
+  deployStatus?: string;
+  monthlyBuildMinutes?: number;
+  freeLimitRemainingMinutes?: number;
+  freeLimitExhausted?: boolean;
   error?: string;
 }
 
@@ -281,9 +286,41 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
     }
   }
 
+  // ── Render services: cross-check deployment status and free tier build limit ──
+  let renderDeployStatus: string | undefined;
+  let renderMonthlyBuildMinutes: number | undefined;
+  let renderFreeLimitRemaining: number | undefined;
+  let renderFreeLimitExhausted: boolean | undefined;
+
+  if (svc.provider === "render" && svc.serviceId) {
+    try {
+      const renderHealth = (await getServiceHealth(svc.id, svc.serviceId)) as {
+        lastDeployStatus?: string;
+        monthlyBuildMinutes?: number;
+        freeLimitRemaining?: number;
+        freeLimitExhausted?: boolean;
+      };
+      if (renderHealth) {
+        if (renderHealth.lastDeployStatus) renderDeployStatus = renderHealth.lastDeployStatus;
+        renderMonthlyBuildMinutes = renderHealth.monthlyBuildMinutes;
+        renderFreeLimitRemaining = renderHealth.freeLimitRemaining;
+        renderFreeLimitExhausted = renderHealth.freeLimitExhausted;
+      }
+    } catch {
+      // Fallback to container probe if Render API key is unconfigured or throttled
+    }
+  }
+
+  const renderQuotaProps = {
+    deployStatus: renderDeployStatus,
+    monthlyBuildMinutes: renderMonthlyBuildMinutes,
+    freeLimitRemainingMinutes: renderFreeLimitRemaining,
+    freeLimitExhausted: renderFreeLimitExhausted,
+  };
+
   // ── HTTP services (render et al.): explicit path → /health → /api/v1/health ──
   if (!svc.url) {
-    return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, error: `no probeable URL for provider '${svc.provider}'` };
+    return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, ...renderQuotaProps, error: `no probeable URL for provider '${svc.provider}'` };
   }
   const candidates = [
     ...(svc.healthPath ? [svc.healthPath] : []),
@@ -294,7 +331,30 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
   for (const url of candidates) {
     const out = await probeHttp(url);
     if (out !== "unreachable" && out !== "degraded") {
-      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
+      // If free build minutes limit exhausted or deployment failed, flag as degraded
+      if (renderFreeLimitExhausted) {
+        return {
+          ...base,
+          url,
+          status: "degraded",
+          httpStatus: out.status,
+          latencyMs: out.latencyMs,
+          ...renderQuotaProps,
+          error: `Render monthly free build minutes quota exhausted (${renderMonthlyBuildMinutes}/500 mins)`,
+        };
+      }
+      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded" || renderDeployStatus === "update_failed")) {
+        return {
+          ...base,
+          url,
+          status: "degraded",
+          httpStatus: out.status,
+          latencyMs: out.latencyMs,
+          ...renderQuotaProps,
+          error: `Container running previous build, but latest deployment ${renderDeployStatus}`,
+        };
+      }
+      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, ...renderQuotaProps };
     }
   }
 
@@ -302,22 +362,198 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
   for (const url of candidates) {
     const out = await probeHttp(url);
     if (out === "degraded") {
-      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, error: "health endpoint responded non-2xx" };
+      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, ...renderQuotaProps, error: "health endpoint responded non-2xx" };
     }
     if (out !== "unreachable") {
-      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
+      if (renderFreeLimitExhausted) {
+        return {
+          ...base,
+          url,
+          status: "degraded",
+          httpStatus: out.status,
+          latencyMs: out.latencyMs,
+          ...renderQuotaProps,
+          error: `Render monthly free build minutes quota exhausted (${renderMonthlyBuildMinutes}/500 mins)`,
+        };
+      }
+      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded" || renderDeployStatus === "update_failed")) {
+        return {
+          ...base,
+          url,
+          status: "degraded",
+          httpStatus: out.status,
+          latencyMs: out.latencyMs,
+          ...renderQuotaProps,
+          error: `Container running previous build, but latest deployment ${renderDeployStatus}`,
+        };
+      }
+      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, ...renderQuotaProps };
     }
   }
-  return { ...base, url: candidates[0], status: "unreachable", httpStatus: null, latencyMs: null, error: "no health endpoint answered" };
+  return { ...base, url: candidates[0], status: "unreachable", httpStatus: null, latencyMs: null, ...renderQuotaProps, error: "no health endpoint answered" };
 }
 
 export async function registerSystemTools(server: McpServer): Promise<void> {
+  const getSystemSummary = async () => {
+    const store = RequestContextStore.get();
+    const registry = getAccountsForRole(store?.role);
+    const byProvider = registry.reduce(
+      (acc, r) => {
+        const key = r.provider;
+        if (!acc[key]) acc[key] = [];
+        acc[key]!.push({
+          id: r.id,
+          displayName: r.displayName,
+          role: r.role,
+          available: r.available,
+          capabilities: r.capabilities,
+        });
+        return acc;
+      },
+      {} as Record<string, unknown[]>
+    );
+
+    const available = registry.filter((r) => r.available).length;
+    const total = registry.length;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              summary: `${available}/${total} services available`,
+              timestamp: new Date().toISOString(),
+              byProvider,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  };
+
+  const getSystemHealth = async () => {
+    const store = RequestContextStore.get();
+    const registry = getAccountsForRole(store?.role);
+
+    const results = await mapConcurrentSettled(
+      registry,
+      8,
+      async (svc) => {
+        if (!svc.available) {
+          return {
+            id: svc.id,
+            displayName: svc.displayName,
+            url: svc.url ?? "—",
+            status: "unconfigured" as const,
+            httpStatus: null,
+            latencyMs: null,
+            error: `${svc.apiKeyRef} missing in tower env`,
+          };
+        }
+        return probeServiceHealth(svc);
+      }
+    );
+
+    const { globalHealthCache } = await import("../health/snapshot.js");
+    for (const entry of results) {
+      if (entry.status === "fulfilled") {
+        const val = entry.value as HealthProbe;
+        const status = val.status === "healthy" ? "healthy" : val.status === "degraded" ? "degraded" : val.status === "unconfigured" ? "unknown" : "down";
+        globalHealthCache.setSnapshot({
+          provider: val.id,
+          status,
+          lastCheckMs: Date.now(),
+          checkedAt: new Date().toISOString(),
+          latencyMs: val.latencyMs ?? 0,
+          evidence: { kind: val.error ? "error" : "provider_response", summary: val.error ?? "probed" },
+          impactedServices: [],
+          consecutiveFailures: status === "down" ? 1 : 0,
+        });
+      }
+    }
+
+    const health = results.map((r) => (r.status === "fulfilled" ? r.value : r.reason));
+    const count = (s: string) => health.filter((h: Record<string, unknown>) => h.status === s).length;
+    const healthy = count("healthy");
+    const degraded = count("degraded");
+    const unreachable = count("unreachable");
+    const unconfigured = count("unconfigured");
+
+    const includeNetworkDetails = RequestContextStore.get()?.role === "admin";
+    const services = includeNetworkDetails
+      ? health
+      : health.map((entry) => {
+          const safe = { ...(entry as Record<string, unknown>) };
+          delete safe["url"];
+          delete safe["httpStatus"];
+          delete safe["error"];
+          return safe;
+        });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              summary: `${healthy} healthy · ${degraded} degraded · ${unreachable} unreachable · ${unconfigured} unconfigured (of ${health.length})`,
+              timestamp: new Date().toISOString(),
+              services,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  };
+
+  // ── Unified Consolidated System Tool ──
+  (server as any).tool(
+    "system.inspect",
+    "Unified system diagnostic, telemetry, and service observability tool.",
+    {
+      scope: z.enum(["summary", "health", "dependencies", "dashboard", "resources"]).describe("Aspect of system state to inspect"),
+    },
+    { readOnlyHint: true, idempotentHint: true },
+    async ({ scope }: { scope: string }) => {
+      try {
+        if (scope === "summary") {
+          return await getSystemSummary();
+        }
+        if (scope === "health") {
+          return await getSystemHealth();
+        }
+        if (scope === "dependencies") {
+          const { globalDependencyGraph } = await import("../health/dependency.js");
+          const deps = globalDependencyGraph.getRawMap();
+          return { content: [{ type: "text", text: JSON.stringify(deps, null, 2) }] };
+        }
+        if (scope === "dashboard") {
+          const { globalHealthCache } = await import("../health/snapshot.js");
+          const snapshots = globalHealthCache.getAllSnapshots();
+          return { content: [{ type: "text", text: JSON.stringify(snapshots, null, 2) }] };
+        }
+        if (scope === "resources") {
+          const resources = await listResources();
+          return { content: [{ type: "text", text: JSON.stringify({ total: resources.length, resources }, null, 2) }] };
+        }
+        return { isError: true, content: [{ type: "text", text: `Unknown scope: ${scope}` }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+      }
+    }
+  );
 
   // ── system.summary
   server.tool(
     "system.summary",
     "Get a high-level summary of all SupremeAI services — availability, roles, and capabilities",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const store = RequestContextStore.get();
       const registry = getAccountsForRole(store?.role);
@@ -364,6 +600,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "system.health",
     "Ping all backend services and report their HTTP health status",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const store = RequestContextStore.get();
       const registry = getAccountsForRole(store?.role);
@@ -460,6 +697,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "resource.list",
     "List all discovered resources across all configured providers.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const resources = await listResources();
       return {
@@ -487,6 +725,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     {
       resourceId: z.string().describe("The ID of the resource (e.g. render/render-primary)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ resourceId }) => {
       const status = await getResourceStatus(resourceId);
       return {

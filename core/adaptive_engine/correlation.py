@@ -12,7 +12,6 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
-from adaptive_engine._store import get_conn, jdump, jload
 
 # বাংলা: ContextVar দিয়া same async task-এর ভেতরে correlation স্বয়ংক্রিয়ভাবে প্রবাহিত।
 _current: ContextVar[CorrelationContext | None] = ContextVar(

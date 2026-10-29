@@ -3,6 +3,12 @@
 /health     https://supremeai-api-ulw0.onrender.com/healthz        200
 /healthz    https://supremeai-api-ulw0.onrender.com/healthz        200
 
+# Well-known exclusion (#2561): absent /.well-known/* paths must degrade to a
+# clean 404 so A2A discovery clients read "absent capability", not "broken
+# endpoint" — stale/deployed Pages builds mask these as 200 text/html SPA
+# fallback while vercel/render 404 clean. Rule precedes the SPA catch-all.
+/.well-known/*   /404.html    404
+
 # Cloudflare Pages SPA rewrite: fallback all non-file routes to index.html
 # Use 200! force rewrite so /admin never serves stale cached redirect files
 /admin      /index.html                                            200!

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter()
 

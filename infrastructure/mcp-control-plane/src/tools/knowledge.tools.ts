@@ -24,6 +24,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
         payload: z.record(z.string(), z.unknown()).optional().describe("Metadata payload"),
       })).describe("Points to upsert"),
     },
+    { readOnlyHint: false },
     async ({ collection, points }) => {
       try {
         const result = await qdrantUpsert(collection, points);
@@ -42,6 +43,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
       vector: z.array(z.number()).describe("Query embedding"),
       limit: z.number().int().min(1).max(50).optional().describe("Max results (default: 5)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ collection, vector, limit }) => {
       try {
         const result = await qdrantSearch(collection, vector, limit ?? 5);
@@ -60,6 +62,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
       vectorSize: z.number().int().min(64).max(4096).describe("Embedding dimension"),
       distance: z.enum(["Cosine", "Euclid", "Dot"]).optional().describe("Distance metric (default: Cosine)"),
     },
+    { readOnlyHint: false },
     async ({ collection, vectorSize, distance }) => {
       try {
         const result = await qdrantEnsureCollection(collection, vectorSize, distance ?? "Cosine");
@@ -74,6 +77,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
     "qdrant.collections",
     "List all Qdrant collections.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const result = await qdrantListCollections();
@@ -92,6 +96,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
       table: z.string().describe("Table name, e.g. 'best_practices'"),
       data: z.record(z.string(), z.unknown()).describe("Row data"),
     },
+    { readOnlyHint: false },
     async ({ accountId, table, data }) => {
       try {
         const result = await insertRow(accountId, table, data);
@@ -111,6 +116,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
       data: z.record(z.string(), z.unknown()).describe("Update payload"),
       filter: z.string().describe("PostgREST filter, e.g. 'id=eq.123'"),
     },
+    { readOnlyHint: false },
     async ({ accountId, table, data, filter }) => {
       try {
         const result = await updateRows(accountId, table, data, filter);

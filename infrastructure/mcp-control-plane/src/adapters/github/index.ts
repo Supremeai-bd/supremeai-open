@@ -155,6 +155,8 @@ export async function listPullRequests(accountId: string, state: string = "open"
     number: pr.number,
     title: pr.title,
     state: pr.state,
+    merged: pr.merged,
+    mergedAt: pr.merged_at,
     user: pr.user?.login,
     htmlUrl: pr.html_url,
     createdAt: pr.created_at,

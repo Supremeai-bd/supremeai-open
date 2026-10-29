@@ -2,8 +2,8 @@
 
 from api.routes.admin_dashboard import router
 from core.config import settings
-from core.logging_config import logger
-from core._monitoring_legacy import get_metrics_collector
+from core.monitoring.logging_config import logger
+from core.monitoring import get_metrics_collector
 from core.observability.metrics_registry import get_window_metrics, metrics_engine
 
 

@@ -3,7 +3,7 @@
 
 import sys
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -76,7 +76,7 @@ class TestKaggleOrchestratorDualBrain(unittest.TestCase):
 
     def test_lru_round_robin_account_rotation(self):
         """Verify accounts rotate using Least-Recently-Used and remaining hours."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         # Set different last_used times for accounts
         for i, acc in enumerate(self.accounts):
             acc.last_used = now - timedelta(hours=(6 - i))  # worker_1 oldest, worker_6 newest
@@ -96,7 +96,7 @@ class TestKaggleOrchestratorDualBrain(unittest.TestCase):
         self.assertEqual(selected.account_id, "worker_1")
 
         # Simulate worker_1 just finished
-        selected.last_used = datetime.utcnow()
+        selected.last_used = datetime.now(timezone.utc).replace(tzinfo=None)
         selected2 = asyncio.run(self.orchestrator.select_account_for_job(job))
         # Next oldest should be worker_2
         self.assertEqual(selected2.account_id, "worker_2")

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.errors.error_bus import with_error_bus
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.mcp_client import control_tower
 from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
 

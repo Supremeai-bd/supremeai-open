@@ -6,6 +6,7 @@ export async function registerInfisicalTools(server: McpServer): Promise<void> {
     "infisical.audit_secrets",
     "Audit Infisical vault inventory via the v3 RAW path (metadata/keys only, no values); the standard-API status is reported separately in `standardPath` (vendor defect #434).",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const secrets = await auditSecrets();
@@ -25,6 +26,7 @@ export async function registerInfisicalTools(server: McpServer): Promise<void> {
     "infisical.sync_status",
     "Get the status of Infisical secret integrations/syncs.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const syncs = await getSyncStatus();

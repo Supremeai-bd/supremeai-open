@@ -76,6 +76,29 @@ ALLOWLIST: dict[str, tuple[str, str]] = {
         "enforcement",
         "pins the guard contract with fixture citations",
     ),
+    # -- enforcement: R42 interop consumers (#2031) --------------------------
+    # The docs-link-integrity lane does NOT cite the deleted file as authority;
+    # it ROUTES those ghost citations to this guard: EXCLUDED_TARGET_SUBSTR
+    # declares the exclusion pattern, the baseline JSON is the machine-readable
+    # debt ledger (10 knownExcluded), and the tests pin that contract. Their
+    # citations are pattern/contract definitions, not drift — same class as
+    # this guard's own registry source.
+    "scripts/ci/docs_link_integrity_guard.py": (
+        "enforcement",
+        "R42 gate (#2031): EXCLUDED_TARGET_SUBSTR routes AGENT_RULES.md ghost citations to THIS guard's debt class (#1642->#1708); the citation is the interop routing definition, not drift",
+    ),
+    ".githooks/pre-push": (
+        "enforcement",
+        "R42 gate wiring (#2031, section 15): comment documents that AGENT_RULES.md ghost citations are excluded debt owned by THIS guard (#1642->#1708)",
+    ),
+    "scripts/ci/docs_link_integrity_baseline.json": (
+        "enforcement",
+        "R42 baseline (#2031): knownExcluded is the machine-readable ledger of the 10 AGENT_RULES.md ghost entries this guard owns (#1642->#1708)",
+    ),
+    "tests/test_docs_link_integrity_guard.py": (
+        "enforcement",
+        "R42 gate tests (#2031): fixture + knownExcluded==10 assertion pin the ghost-debt routing contract",
+    ),
     # -- historical: the deletion is documented here BY DESIGN --------------
     "scripts/agents/continuous_agent_loop.py": (
         "historical",
@@ -132,6 +155,10 @@ ALLOWLIST: dict[str, tuple[str, str]] = {
     ),
     "docs/AUDIT_2026-10-27.md": ("historical", "audit record — never rewritten"),
     "docs/AUDIT_2026-10-28.md": ("historical", "audit record — never rewritten"),
+    "docs/reports/CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md": (
+        "historical",
+        "case file quotes the duplicate-pr-guard's verbatim error line — which still cites the deleted path (pipeline.yml L362 drift, receipt 6g footnote); citation is the evidence record, never rewritten",
+    ),
     "docs/adrs/README.md": ("historical", "ADR index — decision records"),
     "docs/PROJECT_FULL_AUDIT_BN.md": ("historical", "audit snapshot (BN)"),
     # -- protected: admin-owned .github/ ------------------------------------

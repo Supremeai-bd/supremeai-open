@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import re
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
 
 # ── Explicit Allowlist for Evolution Target Namespaces ──────────────────────

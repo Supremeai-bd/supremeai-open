@@ -19,7 +19,7 @@ from core.config import settings
 def get_headless_agent_configs() -> dict[str, dict[str, Any]]:
     """বাংলা মন্তব্য: সব হেডলেস এজেন্টের কনফিগারেশন রিটার্ন করে। (ডাটাবেস থেকে)"""
     try:
-        from core.logging_config import logger
+        from core.monitoring.logging_config import logger
         from tools.mcp.mcp_supabase import _get_connection
 
         conn = _get_connection()

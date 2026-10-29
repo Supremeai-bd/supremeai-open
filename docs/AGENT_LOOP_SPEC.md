@@ -88,7 +88,7 @@ must track this registry — keep the two in sync when the taxonomy changes.
 
 **Relationship to `AGENTS.md` (Single Door SSOT):** the constitution is
 `AGENTS.md` — the Single Door SSOT (the former `AGENT_RULES.md` was deleted by
-#1526; citing it is a dangling reference). It defines the 4 Universal
+#1526; citing it is a dangling reference). It defines the 5 Universal
 Invariants and the Single Door execution surface — it defines no group
 taxonomy. The execution registry below is the authoritative group surface for
 dispatch; no constitutional section substitutes for a registry group. Changing
@@ -137,7 +137,7 @@ parity contract:
    | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
    | `--auto-pr` | shared | accepted for pipeline parity (#89); honest stderr note; the minimal loop opens no PR itself |
    | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
-   | `--offline` | shared (mirror port pending) | honest offline mode: board query honestly skipped (dispatch path + rules gate via `_offline_requested`), cadence roles still evaluated; env equivalents `SUPREMEAI_OFFLINE` / `AGENT_LOOP_OFFLINE` / `CI_OFFLINE` |
+   | `--offline` | shared (mirror port pending) | honest offline mode: board query honestly skipped (dispatch path) and the `--verify-only` constitution-freshness boot smoke honestly skipped (report-only rules gate via `_offline_requested`); cadence roles still evaluated; env equivalents `SUPREMEAI_OFFLINE` / `AGENT_LOOP_OFFLINE` / `CI_OFFLINE` |
    | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role; `--loop` runs a single dispatch cycle per invocation (scheduler/orchestrator is the outer loop) |
    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
     | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private agent-loop workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
@@ -176,6 +176,49 @@ Honest limitations, documented rather than hidden:
 - **No completion signal**: a task still running past 30 minutes re-becomes
   claimable — the window is a fixed guess, not lease renewal (the bridge's own
   lease allows renewal up to 180 minutes; the loop's local store cannot renew).
+
+**P0 Drainage gate (Universal Invariant 5, AGENTS.md):** the cadence path is
+not free-running. After a successful board query and before the due-role loop,
+`has_open_p0_blocker` scans the raw board items: any open item whose lowercased
+labels include `p0`, `p0-*`, or `p0 ` holds every routine cadence role (warning
+log + early return) — except items labeled `blocked-by-upstream`, which the gate
+skips: such P0s sit in `pick_next_issue`'s `EXCLUDED_LABELS`, so no agent in this
+lane can ever claim them, and counting them as blockers would starve cadence
+forever (eternally-open, unclaimable P0). `status:claimed` P0s still block —
+another runner is actively on them, the invariant's intended behavior. Held
+roles never reach `mark_role_run`, so they do not
+consume their cadence window — once the board drains, the due role dispatches
+immediately. The gate is board-availability-gated (skipped when both the gh
+query and the tower board fallback fail — fail-open to the pre-Rule-5 cadence
+path) and sits below the
+issue-solver path, which runs earlier in the cycle. `COMMON_RULES` injects the
+invariant text into every dispatched mandate; the invariant's
+idempotency/anti-stampede half is enforced by the §5 Anti-Duplicate PR Guard
+and Claim Gate Guard. The stale-label freeze the gate is exposed to is not
+hypothetical: `P0-critical` labels on already-resolved incidents (#1788/#1772)
+held cadence while main CI was green (#1804/#1840) until admin hygiene closed
+both issues (2026-10-28); label hygiene stays an admin action outside the agent
+surface.
+
+**Tower board fallback (R78/J484751, gh-absent runtimes).** The documented
+external-agent runtime has no `gh` CLI, which used to leave the dispatch path
+dead exactly where the loop actually runs: solver dispatch skipped, the P0
+gate dark (fail-open), and the dispatch window capped at 100 rows while the
+live board exceeded it. The dispatch board query now falls back to the Tower's
+zero-credential `bridge.work_queue` (`_tower_board_rows()`: lazy sibling
+`mcp_tower_client` import for URL resolution — env / workspace `mcp.json` /
+documented default — then a stdlib-urllib streamable POST; large single-line
+SSE payloads are extracted bytes-safe because `requests.iter_lines` splits
+~134 KB lines at chunk boundaries). Fallback rows are mapped to gh shape
+(`{"name": …}` label dicts), so solver dispatch, `has_open_p0_blocker`, and
+priority sorting all operate on live data; the fallback runs only when gh
+failed (never on `--offline`, never on gh-present runtimes) and every failure
+mode degrades to the pre-existing honest skip line + gh-absent honesty floor.
+The `--verify-only` boot smoke additionally displays the five Universal
+Invariant Pillars and the fail-closed invariant checklist on stderr (rule-1
+contract was half-implemented: `_print_rule_version_and_checklist` was a
+silent stub and `mandatory_invariant_checklist` had no runtime consumer;
+stdout contracts — tier evidence + exactly-once final marker — unchanged).
 
 ## 5. Open Guards — shift-left on free public runtime
 

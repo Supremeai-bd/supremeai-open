@@ -35,6 +35,21 @@ except ImportError:  # pragma: no cover - package-relative fallback
     from gateway.service.branding import build_brand
 
 try:
+    from service.status_publication import (
+        assert_no_operator_fields,
+        build_liveness_payload,
+        build_public_root_payload,
+        build_readiness_payload,
+    )
+except ImportError:  # pragma: no cover - package-relative fallback
+    from gateway.service.status_publication import (
+        assert_no_operator_fields,
+        build_liveness_payload,
+        build_public_root_payload,
+        build_readiness_payload,
+    )
+
+try:
     from service.keygen import verify_key
     try:
         from service.pool import squad
@@ -222,7 +237,7 @@ STEALTH_WEBHOOK_URL = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHO
 STEALTH_WEBHOOK_SECRET = os.getenv("STEALTH_WEBHOOK_SECRET", os.getenv("UPSTREAM_WEBHOOK_SECRET", "")).strip()
 STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "28.0"))
 
-app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None, openapi_url=None)  # docs lockdown completion: the openapi_url default served the full route inventory (incl. admin route names) unauthenticated.
 
 # CORS setup for Studio and web agents - Restricted origins (no wildcard with credentials)
 _default_cors = [
@@ -427,6 +442,38 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
     return token in valid_keys
 
 
+def _require_operator_key(request: Request, x_supremeai_key: Optional[str] = None) -> bool:
+    """Strict credential gate for operator-grade surfaces (#1729).
+
+    Unlike _verify_client_auth this deliberately has NO guest pass-through:
+    _is_guest_request trusts spoofable client headers (x-guest-mode, Origin/
+    Referer containing the Studio host, well-known demo tokens), which is fine
+    for chat-rate-limiting but must never gate operator fleet detail.
+    Fails closed: no key configured -> False (set SUPREMEAI_API_KEY / SUPREMEAI_API_KEYS
+    / SUPREMEAI_SUPERADMIN_KEY to enable operator access).
+    """
+    token = _extract_token(request, x_supremeai_key)
+    if not token:
+        return False
+    if token.startswith("sk-supreme-"):
+        try:
+            if verify_key(token):
+                return True
+        except Exception:  # noqa: BLE001 - fail closed on keygen errors
+            return False
+    valid_keys = set()
+    master = os.getenv("SUPREMEAI_API_KEY", "").strip()
+    if master:
+        valid_keys.add(master)
+    pool_str = os.getenv("SUPREMEAI_API_KEYS", "").strip()
+    for k in pool_str.split(","):
+        if k.strip():
+            valid_keys.add(k.strip())
+    if SUPERADMIN_KEY:
+        valid_keys.add(SUPERADMIN_KEY)
+    return token in valid_keys
+
+
 def _extract_user_id(request: Request) -> str:
     """Resolve caller user ID from a VERIFIED session token only.
 
@@ -515,17 +562,72 @@ async def _stealth_dns_snapshot(force: bool = False) -> dict:
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
+async def public_root():
+    """Public landing status (#1729): exactly the four consumer-relevant fields.
+
+    HEAD support on this route predates this slice (#1728's header lane) and is
+    preserved. The former root payload doubled as an operator dashboard (key
+    inventory, provider topology, stealth posture, per-account web-session
+    detail) - a reconnaissance gift on the advertised public hostname. Fleet
+    detail moved to GET /internal/status behind a strict credential gate;
+    contracts that only check HTTP 200 are unaffected (status contract:
+    docs/CONSUMERS.md).
+    """
+    return assert_no_operator_fields(
+        build_public_root_payload(chat_ready=bool(STEALTH_WEBHOOK_URL))
+    )
+
+
 @app.get("/health")
 @app.get("/healthz")
 @app.get("/api/health")
 @app.get("/api/v1/health")
 @app.get("/v1/health")
 async def health_check():
-    """Unauthenticated liveness probe. Always 200 OK when service is running."""
+    """Unauthenticated liveness probe. Always 200 OK when service is running.
+
+    Redacted (#1729): fleet inventory, stealth posture and web-session detail no
+    longer ship on the public probe surface - only the liveness fields watchdogs
+    consume. Probe contract preserved: HTTP 200, no auth, status="healthy",
+    chat_ready semantics unchanged (docs/CONSUMERS.md pins HTTP-status branching,
+    not body fields). Full operator detail: GET /internal/status with a key.
+    """
+    return assert_no_operator_fields(
+        build_liveness_payload(
+            status="healthy",
+            service_name="supremeai-api",
+            version="2.0.0",
+            chat_ready=bool(STEALTH_WEBHOOK_URL),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+    )
+
+
+@app.get("/internal/status")
+async def internal_status(
+    request: Request, x_supremeai_key: Optional[str] = Header(default=None)
+):
+    """Operator-grade fleet status (#1729) - requires a valid gateway key.
+
+    Same payload shape the public root used to leak, so existing operator
+    dashboards only change the URL. Gate is _require_operator_key: HMAC
+    sk-supreme-... keys or configured env keys, NO guest pass-through,
+    fail-closed when no keys are configured.
+    """
+    if not _require_operator_key(request, x_supremeai_key):
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": {
+                    "message": "operator fleet status requires a valid gateway key",
+                    "type": "authentication_error",
+                }
+            },
+        )
     telemetry = squad.stats() if squad else {"total_keys": 0, "total_healthy_keys": 0, "providers": {}}
     try:
         stealth_dns = await _stealth_dns_snapshot()
-    except Exception:  # noqa: BLE001 — liveness must never fail because of a probe
+    except Exception:  # noqa: BLE001 - operator status must not crash on probe errors
         stealth_dns = {"ok": None, "checked_at": 0.0, "detail": "probe error"}
     return {
         "status": "healthy",
@@ -549,8 +651,25 @@ async def health_check():
 
 @app.get("/webhook/scout/status")
 @app.get("/api/v1/webhook/scout")
-async def webhook_scout_status():
-    """Returns live fleet status of all Webhook & Multi-AI Session slots."""
+async def webhook_scout_status(
+    request: Request, x_supremeai_key: Optional[str] = Header(default=None)
+):
+    """Returns live fleet status of all Webhook & Multi-AI Session slots.
+
+    Auth-gated (#1729): this sibling route leaked the same operator-grade
+    fleet detail as the old public root; the same strict key gate applies
+    (no guest pass-through, fail-closed).
+    """
+    if not _require_operator_key(request, x_supremeai_key):
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": {
+                    "message": "webhook scout fleet status requires a valid gateway key",
+                    "type": "authentication_error",
+                }
+            },
+        )
     if not webhook_scout:
         return {"status": "unavailable", "detail": "Webhook Scout not initialized"}
     return webhook_scout.get_status()
@@ -562,42 +681,45 @@ async def readiness_check():
     is configured AND its host resolves. Monitors should target /readyz — /health
     alone cannot detect a relay outage because API fallback is disabled by mandate
     (single reply path). A configured-but-unresolvable host (the Oct-23 failure:
-    [Errno -2] on every chat call while /health reported healthy) now fails this
-    probe loudly with the masked host + fix hint instead of reporting ready."""
+    [Errno -2] on every chat call while /health reported healthy) fails this probe
+    loudly with a 503.
+
+    Redacted (#1902, closing the #1729 class): the loud-failure design used to
+    ship the stealth posture block (stealth_dns detail with the masked relay
+    host + stealth_priority1_configured) to unauthenticated callers. The
+    capability semantics are preserved — HTTP 200/503 + chat_ready branching,
+    unchanged for monitors — while the posture detail moved behind the operator
+    gate: GET /internal/status with a key carries the full stealth_dns block.
+    Body built by build_readiness_payload (operator-field guard, structural).
+    """
     timestamp = datetime.now(timezone.utc).isoformat()
     if STEALTH_WEBHOOK_URL:
         stealth_dns = await _stealth_dns_snapshot()
         if stealth_dns.get("ok") is False:
             return JSONResponse(
                 status_code=503,
-                content={
-                    "status": "degraded",
-                    "chat_ready": False,
-                    "stealth_priority1_configured": True,
-                    "stealth_dns": stealth_dns,
-                    "reason": (
-                        f"STEALTH_WEBHOOK_URL host does not resolve ({stealth_dns.get('detail')}). "
-                        "Chat cannot reply (webhook-only mandate): fix the Infisical value to a live "
-                        "OpenAI-compatible /v1/chat/completions relay."
+                content=build_readiness_payload(
+                    "degraded",
+                    False,
+                    timestamp,
+                    reason=(
+                        "chat reply path host does not resolve — "
+                        "operator detail behind the key-gated /internal/status"
                     ),
-                    "timestamp": timestamp,
-                },
+                ),
             )
-        return {
-            "status": "ready",
-            "chat_ready": True,
-            "stealth_priority1_configured": True,
-            "stealth_dns": stealth_dns,
-            "timestamp": timestamp,
-        }
+        return build_readiness_payload("ready", True, timestamp)
     return JSONResponse(
         status_code=503,
-        content={
-            "status": "degraded",
-            "chat_ready": False,
-            "reason": "STEALTH_WEBHOOK_URL not configured — no chat reply path (API fallback disabled per mandate)",
-            "timestamp": timestamp,
-        },
+        content=build_readiness_payload(
+            "degraded",
+            False,
+            timestamp,
+            reason=(
+                "chat reply path not configured — no chat reply path "
+                "(API fallback disabled per mandate)"
+            ),
+        ),
     )
 
 

@@ -3,7 +3,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security import is_safe_url
 
 

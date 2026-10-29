@@ -74,11 +74,13 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
   "bridge_work",
   "bridge_submit",
   // system / observability
+  "system_inspect",
   "system_summary",
   "system_health",
   "system_dependencies",
   "health_dashboard",
   // github (read)
+  "github_actions_op",
   "github_read_file",
   "github_read_external_file",
   "github_repo_info",
@@ -89,21 +91,27 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
   "github_search_repos",
   "github_collect_highlights",
   // render (read)
+  "render_manage",
   "render_list_services",
   "render_service_health",
   "render_get_logs",
-  // supabase (read)
+  // database (read)
+  "db_inspect",
   "supabase_read_table",
   "supabase_health",
   "supabase_schema_inspect",
   "db_schema_inspect",
+
   // redis (read)
+  "redis_op",
   "redis_ping",
   "redis_read_key",
   "redis_stats",
   // cloudflare (read)
+  "cloudflare_manage",
   "cloudflare_worker_status",
   "cloudflare_analytics",
+
   // ai
   "ai_analyze_code",
   "ai_list_providers",
@@ -118,6 +126,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
   "agent_review_workflow_execute",
   "guardian_evaluate_pr",
   // bridge onboarding (public front door — zero-credential external agents)
+  "bridge_lease_manage",
   "bridge_guide",
   "bridge_work_queue",
   "bridge_work_order",
@@ -128,6 +137,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
   "bridge_work_renew",
   "bridge_work_release",
   // docs
+  "docs_query",
   "docs_search",
   "docs_list",
   // the single sanctioned outbound notify channel

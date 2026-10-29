@@ -23,7 +23,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class Severity(Enum):
@@ -431,7 +431,7 @@ class SecurityAuditor:
                 return current >= min_ver
 
         except Exception as exc:
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.warning(
                 f"[SecurityAuditor] Version parsing failed for range '{range_spec}': {exc}"
@@ -472,7 +472,7 @@ class SecurityAuditor:
                                         base_module = imp.split(".")[0].lower()
                                         imported_modules.add(base_module)
                         except Exception as exc:
-                            from core.logging_config import logger
+                            from core.monitoring.logging_config import logger
 
                             logger.debug(
                                 f"[SecurityAuditor] Could not scan imports in {filepath}: {exc}"
@@ -674,54 +674,54 @@ def run_security_audit(project_root: str | None = None) -> dict[str, Any]:
 
 def print_security_report(report: dict[str, Any]) -> None:
     """Pretty-print security report to console"""
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info("\n" + "=" * 70)
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info("🔒 SUPREMEAI SECURITY AUDIT REPORT")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info("=" * 70)
 
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"\n📊 Overall Score: {report['score']}/100 (Grade: {report['grade']})")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"   Timestamp: {report['timestamp']}")
 
     summary = report["summary"]
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info("\n📋 Summary:")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"   Total Vulnerabilities: {summary['total_vulnerabilities']}")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"   🚨 Critical: {summary['critical']}")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"   ⚠️  High: {summary['high']}")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"   📋 Medium: {summary['medium']}")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"   ℹ️  Low: {summary['low']}")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"   Dependencies Scanned: {summary['dependencies_scanned']}")
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info(f"   Unused Dependencies: {summary['unused_dependencies']}")
 
     if report["vulnerabilities"]:
-        from core.logging_config import logger
+        from core.monitoring.logging_config import logger
 
         logger.info("\n🐛 Vulnerabilities Found:")
-        from core.logging_config import logger
+        from core.monitoring.logging_config import logger
 
         logger.info("-" * 70)
 
@@ -734,29 +734,29 @@ def print_security_report(report: dict[str, Any]) -> None:
                 "INFO": "💡",
             }.get(vuln["severity"], "❓")
 
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.info(f"\n{severity_icon} [{vuln['severity']}] {vuln['title']}")
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.info(f"   Location: {vuln['location']}")
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.info(f"   Issue: {vuln['description']}")
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.info(f"   Fix: {vuln['remediation']}")
 
     if report["recommendations"]:
-        from core.logging_config import logger
+        from core.monitoring.logging_config import logger
 
         logger.info("\n💡 Recommendations:")
         for rec in report["recommendations"]:
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.info(f"   • {rec}")
 
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     logger.info("\n" + "=" * 70 + "\n")
 

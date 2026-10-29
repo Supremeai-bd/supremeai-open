@@ -18,7 +18,7 @@ from typing import Any
 
 from core.config import settings
 from core.llm.llm_gateway import GatewayManager
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 CONSTITUTIONAL_PRINCIPLES: list[str] = [
     "Avoid generating harmful or dangerous content",

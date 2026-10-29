@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime, timezone
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.supabase_client import db
 from services.render_account_service import RenderAccountService
 

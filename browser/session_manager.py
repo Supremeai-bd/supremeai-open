@@ -28,7 +28,7 @@ from browser.browser_session import (
     BrowserSession,
     SessionStatus,
 )
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 __all__ = [
     "BrowserSessionManager",

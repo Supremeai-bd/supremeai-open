@@ -38,7 +38,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 __all__ = [
     "DEFAULT_IN_MEMORY_MAXLEN",

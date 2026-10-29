@@ -1,5 +1,4 @@
-# বাংলা মন্তব্য: core.idempotency_middleware কে middleware প্যাকেজে সরানো হয়েছে;
-# এখান থেকে সরাসরি re-export করে unified idempotency module তৈরি করা হলো।
-from .idempotency_middleware import IdempotencyMiddleware
+"""Canonical re-export from core.middleware.idempotency (Single Source of Truth)."""
+from __future__ import annotations
 
-__all__ = ["IdempotencyMiddleware"]
+from core.middleware.idempotency import *  # noqa: F401, F403

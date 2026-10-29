@@ -14,7 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.cache.redis_manager import redis_manager
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.resilience.circuit_breaker import CircuitBreaker
 from core.security import API_KEY_PREFIX, hash_api_key, mask_api_key
 from database.pgbouncer_pool import get_db_pool

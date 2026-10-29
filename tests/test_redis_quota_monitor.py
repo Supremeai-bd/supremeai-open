@@ -94,6 +94,42 @@ class TestDedupStateMachine(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    # ── #1839: persistent default state contract ─────────────────────────────
+
+    def test_default_state_path_is_persistent_not_tmp(self):
+        """The /tmp default starved [BURN] history; default must be home-relative (#1839)."""
+        p = rqm.default_state_path()
+        self.assertEqual(p.name, "redis_quota_alert_state.json")
+        self.assertTrue(str(p).startswith(str(rqm.Path.home())))
+        self.assertNotIn(str(rqm.tempfile.gettempdir()), str(p))
+
+    def test_env_override_wins_over_default(self):
+        """REDIS_QUOTA_STATE_FILE must keep precedence over the new home default (#1839)."""
+        import os as _os
+        from unittest import mock
+
+        with mock.patch.dict("os.environ", {"REDIS_QUOTA_STATE_FILE": "/x/y/state.json"}):
+            self.assertEqual(
+                _os.environ.get(rqm.STATE_ENV, str(rqm.default_state_path())),
+                "/x/y/state.json",
+            )
+
+    def test_save_state_creates_missing_parent_dirs(self):
+        """~/.supremeai may not exist on a fresh host; save_state must not fail silently (#1839)."""
+        import os
+        import tempfile
+
+        base = tempfile.mkdtemp()
+        nested = os.path.join(base, "lv1", "lv2", "state.json")
+        try:
+            self.assertFalse(os.path.isdir(os.path.dirname(nested)))
+            self.assertTrue(rqm.save_state(nested, {"k": 1}))
+            self.assertEqual(rqm.load_state(nested), {"k": 1})
+        finally:
+            import shutil
+
+            shutil.rmtree(base, ignore_errors=True)
+
 
 class TestMessageComposition(unittest.TestCase):
     def test_message_contains_facts(self):
@@ -132,6 +168,131 @@ class TestSseParser(unittest.TestCase):
         canned = 'data: {"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"bad"}}'
         with self.assertRaises(RuntimeError):
             rqm.parse_tool_response_text(canned)
+
+
+class TestIsoParsing(unittest.TestCase):
+    def test_z_suffix_and_garbage(self):
+        self.assertIsNotNone(rqm.parse_iso_ts("2026-11-01T00:01:00Z"))
+        self.assertIsNone(rqm.parse_iso_ts("not-a-date"))
+        self.assertIsNone(rqm.parse_iso_ts(None))
+        self.assertIsNone(rqm.parse_iso_ts(12345))
+
+
+class TestBurnProjection(unittest.TestCase):
+    """#1698 D1: the active link's burn rate must be projected, never guessed."""
+
+    PRIOR = {"used": 50000, "ts": "2026-10-28T00:00:00Z"}
+    CURRENT = {"used": 98000, "ts": "2026-10-28T01:00:00Z"}  # 48000 cmds/h
+
+    def test_honest_skips(self):
+        cases = [
+            (None, self.CURRENT, 500000),                     # no history
+            (self.CURRENT, {"used": 98001, "ts": "2026-10-28T01:00:10Z"}, 500000),  # dt < 600s
+            (self.CURRENT, {"used": 10, "ts": "2026-10-28T03:00:00Z"}, 500000),     # counter reset
+            (self.PRIOR, self.CURRENT, 0),                    # invalid limit
+            ({"used": 1000, "ts": "garbage"}, self.CURRENT, 500000),                # bad ts
+        ]
+        for prior, current, limit in cases:
+            result = rqm.project_burn(prior, current, limit, None, "2026-11-01T00:01:00Z")
+            self.assertIsNotNone(result["skip"], "case must skip honestly: %r" % (prior,))
+
+    def test_projection_math(self):
+        proj = rqm.project_burn(self.PRIOR, self.CURRENT, 500000, 480000, "2026-11-01T00:01:00Z")
+        self.assertIsNone(proj["skip"])
+        self.assertEqual(proj["burn_per_hour"], 48000)
+        self.assertAlmostEqual(proj["projected_pct"], 931.76, places=2)
+        self.assertIsNotNone(proj["soft_crossed_at"])
+
+    def test_under_soft_projection_is_quiet(self):
+        calm = rqm.project_burn(
+            {"used": 96000, "ts": "2026-10-28T00:00:00Z"},
+            self.CURRENT, 500000, 480000, "2026-11-01T00:01:00Z",
+        )
+        self.assertIsNone(calm["skip"])
+        self.assertIsNone(rqm.compose_burn_line(calm, "tertiary", "2026-11-01T00:01:00Z"))
+
+    def test_burn_line_fires_when_crossing_soft(self):
+        proj = rqm.project_burn(self.PRIOR, self.CURRENT, 500000, 480000, "2026-11-01T00:01:00Z")
+        line = rqm.compose_burn_line(proj, "tertiary", "2026-11-01T00:01:00Z")
+        self.assertIn("[BURN]", line)
+        self.assertIn("tertiary", line)
+        self.assertIn("#1698", line)
+
+    def test_snapshots_are_window_scoped(self):
+        state = {}
+        self.assertIsNone(rqm.prior_usage_snapshot(state, "tertiary", "W1"))
+        rqm.record_usage_snapshot(state, "tertiary", "W1", 55000, "2026-10-28T00:00:00Z")
+        self.assertEqual(rqm.prior_usage_snapshot(state, "tertiary", "W1")["used"], 55000)
+        self.assertIsNone(rqm.prior_usage_snapshot(state, "tertiary", "W2"))
+
+
+class TestChainCapacity(unittest.TestCase):
+    """#1698 D1/D4: chain-depth must be visible; failover behavior itself untouched."""
+
+    NOW = rqm.parse_iso_ts("2026-10-28T02:00:00Z")
+
+    def test_incident_shape_is_one_deep(self):
+        chain = [
+            {"label": "primary", "usage": {"estimatedCommands": 480000, "limit": 500000},
+             "cooldownUntil": "2026-11-01T00:01:00Z"},
+            {"label": "secondary", "usage": {"estimatedCommands": 500001, "limit": 500000},
+             "cooldownUntil": "2026-11-01T00:01:00Z"},
+            {"label": "tertiary", "usage": {"estimatedCommands": 55, "limit": 500000},
+             "cooldownUntil": None},
+        ]
+        cap = rqm.chain_capacity(chain, "tertiary", now_dt=self.NOW)
+        self.assertTrue(cap["one_deep"])
+        self.assertEqual(cap["blocked"], ["primary", "secondary"])
+        self.assertEqual(cap["available"], [])
+        self.assertIn("[DEPTH]", rqm.compose_depth_line(cap))
+
+    def test_healthy_chain_is_quiet(self):
+        chain = [
+            {"label": "primary", "usage": {"estimatedCommands": 100, "limit": 500000}, "cooldownUntil": None},
+            {"label": "tertiary", "usage": {"estimatedCommands": 55, "limit": 500000}, "cooldownUntil": None},
+        ]
+        cap = rqm.chain_capacity(chain, "tertiary", now_dt=self.NOW)
+        self.assertFalse(cap["one_deep"])
+        self.assertIsNone(rqm.compose_depth_line(cap))
+
+    def test_blocked_active_link_is_not_usable(self):
+        chain = [{"label": "primary", "usage": {"estimatedCommands": 500001, "limit": 500000},
+                  "cooldownUntil": None}]
+        cap = rqm.chain_capacity(chain, "primary", now_dt=self.NOW)
+        self.assertTrue(cap["none_available"])
+        self.assertFalse(cap["one_deep"])
+        self.assertIn("[DEPTH-CRITICAL]", rqm.compose_depth_line(cap))
+
+    def test_empty_chain_is_critical(self):
+        cap = rqm.chain_capacity([], None, now_dt=self.NOW)
+        self.assertTrue(cap["none_available"])
+
+    def test_expired_cooldown_is_available(self):
+        chain = [
+            {"label": "primary", "usage": {"estimatedCommands": 480000, "limit": 500000},
+             "cooldownUntil": "2026-01-01T00:00:00Z"},  # long expired
+            {"label": "tertiary", "usage": {"estimatedCommands": 55, "limit": 500000},
+             "cooldownUntil": None},
+        ]
+        cap = rqm.chain_capacity(chain, "tertiary", now_dt=self.NOW)
+        self.assertIn("primary", cap["available"])
+        self.assertFalse(cap["one_deep"])
+
+
+class TestD1MessageComposition(unittest.TestCase):
+    def test_extras_only_message_is_sent(self):
+        """Burn/depth alerts must fire even when no pct threshold is crossed."""
+        msg = rqm.compose_message(
+            [], active_primary="tertiary", next_reset="2026-11-01T00:01:00Z",
+            extra_lines=["[DEPTH] chain one deep"],
+        )
+        self.assertIsNotNone(msg)
+        self.assertIn("[DEPTH]", msg)
+        self.assertIn("tertiary", msg)
+
+    def test_quiet_chain_with_no_extras_is_none(self):
+        self.assertIsNone(rqm.compose_message([], extra_lines=[]))
+        self.assertIsNone(rqm.compose_message([], extra_lines=None))
 
 
 if __name__ == "__main__":
