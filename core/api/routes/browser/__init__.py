@@ -63,7 +63,7 @@ from core.config import settings  # noqa: F401  (module-attr parity with pre-spl
 from core.effective_policy import get_effective_policy, policy_store  # noqa: F401  (parity)
 from core.errors.error_bus import with_error_bus  # noqa: F401  (module-attr parity)
 from core.kernel.audit_logger import AuditLogger  # noqa: F401  (module-attr parity)
-from core.logging_config import logger  # noqa: F401  (module-attr parity)
+from core.monitoring.logging_config import logger  # noqa: F401  (module-attr parity)
 from core.neon_repository import (  # noqa: F401  (module-attr parity)
     create_task as create_neon_task,
 )
