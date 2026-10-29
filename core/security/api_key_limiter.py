@@ -12,7 +12,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 API_KEY_LIMIT_PREFIX = "apikey:rate:"
 DEFAULT_MAX_REQUESTS_PER_MINUTE = 60

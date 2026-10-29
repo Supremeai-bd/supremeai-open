@@ -23,7 +23,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.utils.time_utils import utc_now
 
 

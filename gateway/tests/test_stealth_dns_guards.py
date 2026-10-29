@@ -18,9 +18,11 @@ Guards (dual-mode: pytest OR plain `python3 test_stealth_dns_guards.py`):
   G7  forward_stealth_webhook refused connection -> reason=refused (class split)
   G8  reply-wrapping path still works and emits exactly one \"id\" key (P3 pin)
   G9  workers.dev APEX config raises a one-shot CRITICAL log
-  G10 /readyz -> 503 with fix hint when configured host does not resolve
-  G11 /readyz -> 200 ready when DNS ok; /readyz -> 503 when unconfigured
-  G12 /health stays 200 (liveness) and exposes stealth_dns block
+  G10 /readyz -> 503 when configured host does not resolve, with a GENERIC reason
+      (redaction contract #1902: no env-var name, no Infisical, no host detail)
+  G11 /readyz -> 200 ready when DNS ok; /readyz -> 503 when unconfigured;
+      body is the redacted readiness contract (status/chat_ready/timestamp)
+  G12 /health stays 200 (liveness) and REDACTED (#1729): stealth_dns absent
 Run layouts: satellite (service.*) — mirrors gateway/service.* byte-for-byte.
 """
 from __future__ import annotations
@@ -223,16 +225,28 @@ def test_endpoints() -> None:
         r = client.get("/readyz")
         check("G10a readyz 503 on unresolvable host", r.status_code == 503, str(r.status_code))
         j = r.json()
-        check("G10b reason names the env var + fix", "STEALTH_WEBHOOK_URL" in j.get("reason", "") and "Infisical" in j.get("reason", ""), j.get("reason", "")[:120])
-        check("G10c stealth_dns detail surfaced", j.get("stealth_dns", {}).get("ok") is False)
+        # Redaction contract (#1902): the Oct-23 fix hint shipped the env-var name,
+        # the secret store and the masked host to unauthenticated callers; the
+        # capability semantics stay loud via the 503, the posture detail is
+        # operator-gated (/internal/status).
+        reason = j.get("reason", "")
+        check("G10b reason is generic (no env var / store / host detail)",
+              "STEALTH_WEBHOOK_URL" not in reason and "Infisical" not in reason
+              and "invalid" not in reason, reason[:120])
+        check("G10c readyz ships NO stealth posture unauth",
+              "stealth_dns" not in j and "stealth_priority1_configured" not in j,
+              str(sorted(j.keys())))
         rh = client.get("/health")
         check("G12a /health stays 200 (liveness)", rh.status_code == 200, str(rh.status_code))
-        check("G12b /health exposes stealth_dns block", rh.json().get("stealth_dns", {}).get("ok") is False)
+        check("G12b /health REDACTED: stealth_dns absent (#1729)",
+              "stealth_dns" not in rh.json(), str(sorted(rh.json().keys())))
 
         appmod._stealth_dns_snapshot = _good  # type: ignore[assignment]
         r2 = client.get("/readyz")
         check("G11a readyz 200 ready when DNS ok", r2.status_code == 200 and r2.json().get("status") == "ready", str(r2.status_code))
-        check("G11b readyz carries stealth_dns ok", r2.json().get("stealth_dns", {}).get("ok") is True)
+        check("G11b readyz body is the redacted readiness contract",
+              set(r2.json().keys()) == {"status", "chat_ready", "timestamp"},
+              str(sorted(r2.json().keys())))
     finally:
         appmod.STEALTH_WEBHOOK_URL = real_url
         appmod._stealth_dns_snapshot = real  # type: ignore[assignment]

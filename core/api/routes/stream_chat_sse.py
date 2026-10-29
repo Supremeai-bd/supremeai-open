@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from core.llm.llm_gateway import llm_gateway
 from core.llm.llm_gateway.context import InferenceContext
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.memory.auto_rag_injector import auto_rag_injector
 from core.security import verify_token_async
 

@@ -45,5 +45,9 @@ class TestFederationSatelliteSync(unittest.TestCase):
         self.assertFalse(umbrella)
 
 
+    def test_deploy_targets_omits_skip_ci(self):
+        self.assertIn("Supremeai-bd/supremeai-studio", sync_mod.DEPLOY_TARGETS)
+
+
 if __name__ == "__main__":
     unittest.main()

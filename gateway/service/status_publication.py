@@ -10,6 +10,12 @@ fleet detail on every public probe route) into three tiers:
     (docs/CONSUMERS.md) branches on HTTP status, not body fields, and the
     SEQ453 watchdog + federation CI consume status/chat_ready semantics,
     which are preserved
+  - readiness/capability probe (GET /readyz): HTTP-200/503 capability signal
+    only — status + chat_ready + timestamp (plus a generic reason on 503).
+    #1902: the Oct-23 loud-failure design shipped the stealth posture block
+    (stealth_dns detail + stealth_priority1_configured) unauthenticated;
+    the 503-on-unresolvable semantics are preserved via status code, the
+    posture detail moved behind the operator gate (/internal/status)
   - operator fleet detail (GET /internal/status, GET /webhook/scout/status):
     full inventory behind the strict key gate (_require_operator_key in
     service/app.py — no guest pass-through, fail-closed)
@@ -69,6 +75,30 @@ def build_liveness_payload(
         "chat_ready": bool(chat_ready),
         "timestamp": timestamp,
     }
+
+
+def build_readiness_payload(
+    status: str,
+    chat_ready: bool,
+    timestamp: str,
+    reason: str | None = None,
+) -> dict:
+    """Capability-probe body (#1902): capability signal without infra posture.
+
+    200-ready carries exactly (status, chat_ready, timestamp); 503-degraded
+    adds one generic `reason` (no env-var names, no host resolution detail —
+    operators read the stealth_dns block behind /internal/status). Guarded by
+    assert_no_operator_fields so a future posture field cannot silently
+    re-appear here (same structural guarantee as the root/liveness tiers).
+    """
+    payload: dict = {
+        "status": status,
+        "chat_ready": bool(chat_ready),
+        "timestamp": timestamp,
+    }
+    if reason:
+        payload["reason"] = reason
+    return assert_no_operator_fields(payload)
 
 
 def assert_no_operator_fields(payload: dict) -> dict:

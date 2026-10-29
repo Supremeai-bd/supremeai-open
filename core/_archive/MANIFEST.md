@@ -1,7 +1,7 @@
 # backend/_archive — Archived Dead Modules
 
-Per [MAINTAINABILITY_PLAN.md §2](../../docs/plan-network/MAINTAINABILITY_PLAN.md)
-(rule 3: **archive first, delete after 1 sprint**) and issue #1340.
+Per the archived `MAINTAINABILITY_PLAN.md` §2 (rule 3: **archive first, delete after 1 sprint**; the plan
+itself was pruned by #1909 and is preserved in the supremeai-archive satellite) and issue #1340.
 
 Original subpaths are preserved under each batch directory. Nothing imports
 these modules (AST import graph + repo-wide textual reference scan + runtime

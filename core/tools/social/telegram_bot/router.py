@@ -21,7 +21,7 @@ import hmac
 from fastapi import APIRouter, Request, Response  # FIX: must be module-level — see below
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from .handler import TelegramBotHandler
 

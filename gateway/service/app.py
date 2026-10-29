@@ -39,12 +39,14 @@ try:
         assert_no_operator_fields,
         build_liveness_payload,
         build_public_root_payload,
+        build_readiness_payload,
     )
 except ImportError:  # pragma: no cover - package-relative fallback
     from gateway.service.status_publication import (
         assert_no_operator_fields,
         build_liveness_payload,
         build_public_root_payload,
+        build_readiness_payload,
     )
 
 try:
@@ -235,7 +237,7 @@ STEALTH_WEBHOOK_URL = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHO
 STEALTH_WEBHOOK_SECRET = os.getenv("STEALTH_WEBHOOK_SECRET", os.getenv("UPSTREAM_WEBHOOK_SECRET", "")).strip()
 STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "28.0"))
 
-app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None, openapi_url=None)  # docs lockdown completion: the openapi_url default served the full route inventory (incl. admin route names) unauthenticated.
 
 # CORS setup for Studio and web agents - Restricted origins (no wildcard with credentials)
 _default_cors = [
@@ -679,42 +681,45 @@ async def readiness_check():
     is configured AND its host resolves. Monitors should target /readyz — /health
     alone cannot detect a relay outage because API fallback is disabled by mandate
     (single reply path). A configured-but-unresolvable host (the Oct-23 failure:
-    [Errno -2] on every chat call while /health reported healthy) now fails this
-    probe loudly with the masked host + fix hint instead of reporting ready."""
+    [Errno -2] on every chat call while /health reported healthy) fails this probe
+    loudly with a 503.
+
+    Redacted (#1902, closing the #1729 class): the loud-failure design used to
+    ship the stealth posture block (stealth_dns detail with the masked relay
+    host + stealth_priority1_configured) to unauthenticated callers. The
+    capability semantics are preserved — HTTP 200/503 + chat_ready branching,
+    unchanged for monitors — while the posture detail moved behind the operator
+    gate: GET /internal/status with a key carries the full stealth_dns block.
+    Body built by build_readiness_payload (operator-field guard, structural).
+    """
     timestamp = datetime.now(timezone.utc).isoformat()
     if STEALTH_WEBHOOK_URL:
         stealth_dns = await _stealth_dns_snapshot()
         if stealth_dns.get("ok") is False:
             return JSONResponse(
                 status_code=503,
-                content={
-                    "status": "degraded",
-                    "chat_ready": False,
-                    "stealth_priority1_configured": True,
-                    "stealth_dns": stealth_dns,
-                    "reason": (
-                        f"STEALTH_WEBHOOK_URL host does not resolve ({stealth_dns.get('detail')}). "
-                        "Chat cannot reply (webhook-only mandate): fix the Infisical value to a live "
-                        "OpenAI-compatible /v1/chat/completions relay."
+                content=build_readiness_payload(
+                    "degraded",
+                    False,
+                    timestamp,
+                    reason=(
+                        "chat reply path host does not resolve — "
+                        "operator detail behind the key-gated /internal/status"
                     ),
-                    "timestamp": timestamp,
-                },
+                ),
             )
-        return {
-            "status": "ready",
-            "chat_ready": True,
-            "stealth_priority1_configured": True,
-            "stealth_dns": stealth_dns,
-            "timestamp": timestamp,
-        }
+        return build_readiness_payload("ready", True, timestamp)
     return JSONResponse(
         status_code=503,
-        content={
-            "status": "degraded",
-            "chat_ready": False,
-            "reason": "STEALTH_WEBHOOK_URL not configured — no chat reply path (API fallback disabled per mandate)",
-            "timestamp": timestamp,
-        },
+        content=build_readiness_payload(
+            "degraded",
+            False,
+            timestamp,
+            reason=(
+                "chat reply path not configured — no chat reply path "
+                "(API fallback disabled per mandate)"
+            ),
+        ),
     )
 
 

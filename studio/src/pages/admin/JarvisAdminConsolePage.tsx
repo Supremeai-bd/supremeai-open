@@ -5,6 +5,7 @@ import { JarvisAdminGate, JarvisBootSequence } from '../../components/admin/jarv
 import { TwoFASentinelModal } from '../../components/admin/jarvis/TwoFASentinelModal';
 import { useAdminVoice } from '../../components/admin/jarvis/useAdminVoice';
 import { controlPlane } from '../../services/controlPlane';
+import { jarvisService } from '../../services/JarvisService';
 import { authService } from '../../services/authService';
 import { detectDestructiveReason } from '../../components/admin/jarvis/jarvisPersona';
 
@@ -97,7 +98,11 @@ export function JarvisAdminConsolePage() {
         let reply = '';
         const lower = text.toLowerCase();
         try {
-          if (lower.includes('status') || lower.includes('health') || lower.includes('obostha')) {
+          // Prefer live LLM orchestration when available (issue #1520).
+          const llmReply = await jarvisService.ask(text, { source: 'admin-console' });
+          if (llmReply?.text) {
+            reply = llmReply.text;
+          } else if (lower.includes('status') || lower.includes('health') || lower.includes('obostha')) {
             const h = await controlPlane.health();
             const unhealthy = h.services.filter((s) => s.status !== 'healthy');
             reply = `Control plane ${h.overall_status}. ${h.services.length} services probed; ${unhealthy.length} unhealthy. ${unhealthy.length ? 'Unhealthy: ' + unhealthy.map((s) => s.display_name).join(', ') + '.' : 'All services nominal.'} Standing by, Sir.`;

@@ -14,7 +14,7 @@ from core.i18n.language_directive import (
 )
 from core.llm.llm_gateway import llm_gateway
 from core.llm.llm_gateway.context import InferenceContext
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.orchestration.conversation_orchestrator import (
     ConversationCommand,
     get_conversation_orchestrator,

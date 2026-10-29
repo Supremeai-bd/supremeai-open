@@ -21,7 +21,7 @@ from typing import Any
 from core.adaptive_optimizer import AdaptiveOptimizer, get_optimizer
 from core.config import Settings, settings
 from core.integration_layer import SupremeAIIntegrator
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.provider_rate_limiter import IntelligentRateLimiter, get_provider_rate_limiter
 from core.self_benchmark import SelfBenchmarkEngine
 from core.task_contract import RiskLevel, TaskBudget, TaskContract, VerificationPolicy

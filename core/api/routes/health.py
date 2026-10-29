@@ -20,7 +20,7 @@ from core.cache import get_cache
 from core.cache.redis_manager import redis_manager
 from core.db_schema_gate import check_schema_status, production_schema_incompatible
 from core.degraded_mode import db_degraded
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter()
 

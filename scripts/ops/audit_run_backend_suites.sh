@@ -7,7 +7,7 @@
 # Logs land in /tmp/suites/<suite>.log with exit codes in /tmp/suites/_exitcodes.txt.
 set -u
 BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../backend" && pwd)"
-cd "$BACKEND_DIR"
+cd "$BACKEND_DIR" || exit 1
 mkdir -p /tmp/suites
 export TESTING=true ENV=test
 export TEST_DATABASE_URL="sqlite+aiosqlite:///./test.db"

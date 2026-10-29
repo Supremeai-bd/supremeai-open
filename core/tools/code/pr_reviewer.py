@@ -3,7 +3,7 @@ import re
 from typing import Any
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     from github import Github

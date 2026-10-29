@@ -10,10 +10,48 @@ import { cacheLookup, cacheStore, cacheConfigStatus } from "../lib/semantic_cach
 const quotaAlertSent = new Map<string, string>();
 
 export async function registerRedisTools(server: McpServer): Promise<void> {
+  // ── Unified Consolidated Redis Tool ──
+  server.tool(
+    "redis.op",
+    "Unified Redis diagnostic and cache operations (ping, stats, read_key).",
+    {
+      action: z.enum(["ping", "stats", "read_key"]).describe("The Redis operation to perform"),
+      key: z.string().optional().describe("Key name to read (required when action='read_key')"),
+    },
+    { readOnlyHint: true, idempotentHint: true },
+    async ({ action, key }) => {
+      try {
+        if (action === "ping") {
+          const res = await pingRedis();
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        if (action === "stats") {
+          const stats = await getRedisStats();
+          return { content: [{ type: "text", text: JSON.stringify(stats, null, 2) }] };
+        }
+        if (action === "read_key") {
+          if (!key) {
+            return {
+              isError: true,
+              content: [{ type: "text", text: "Error: 'key' parameter is required when action='read_key'" }],
+            };
+          }
+          const res = await readRedisKey(key);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        return { isError: true, content: [{ type: "text", text: `Unknown action: ${action}` }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+      }
+    }
+  );
+
   server.tool(
     "redis.ping",
+
     "Ping the Redis cache/queue to verify connectivity.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const res = await pingRedis();
@@ -33,6 +71,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
     "redis.stats",
     "Get basic statistics from Redis via the INFO command.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const stats = await getRedisStats();
@@ -54,6 +93,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
     {
       key: z.string().describe("The Redis key to read"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ key }) => {
       try {
         const res = await readRedisKey(key);
@@ -73,6 +113,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
     "redis.rotation_status",
     "Inspect the Upstash Redis auto-rotation chain status, active primary, and quota cooldowns (#26).",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const { quotaChainStatus, getActiveRedisAccount, nextQuotaResetEpochMs } = await import("../lib/redis_chain.js");
@@ -117,6 +158,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
       thresholdPct: z.number().min(1).max(100).optional().describe("Warning threshold percent (default 80, env REDIS_QUOTA_ALERT_PCT)"),
       chatId: z.string().optional().describe("Optional Telegram chat id override"),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ thresholdPct, chatId }) => {
       try {
         const warnPct = thresholdPct ?? quotaWarnPct();
@@ -201,6 +243,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
     {
       question: z.string().min(1).describe("The user question to look up"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     async ({ question }) => {
       try {
         const result = await cacheLookup(question);
@@ -221,6 +264,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
       question: z.string().min(1).describe("The user question"),
       answer: z.string().min(1).describe("The grounded answer to cache"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     async ({ question, answer }) => {
       try {
         const result = await cacheStore(question, answer);
@@ -238,6 +282,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
     "cache.status",
     "Report the semantic cache configuration honestly: embedder tier (gemini vs trigram-lexical-fallback), collection, hit threshold, caps.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         return { content: [{ type: "text", text: JSON.stringify(cacheConfigStatus(), null, 2) }] };

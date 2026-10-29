@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { UnifiedChatPanel, listStoredConversations, type DockAction, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
-import { Bot, Code, Globe, MessageSquarePlus, Smartphone } from 'lucide-react';
+import { Bot, Code, Columns, Globe, MessageSquarePlus, Smartphone, Sparkles } from 'lucide-react';
+import { JarvisLivingHologram } from '../../components/jarvis/JarvisLivingHologram';
+import { SplitStudioView } from '../../components/studio/SplitStudioView';
 import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
 import { MobileSimulator } from '../../components/customer/MobileSimulator';
 import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/BrowserPreview';
@@ -144,7 +146,7 @@ const MobileEmptyState: React.FC<{
 export const AIStudio: React.FC = () => {
   const [input, setInput] = useState('');
   const [resumeConvId, setResumeConvId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'chat' | 'preview' | 'mobile'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'split' | 'preview' | 'mobile'>('split');
   // CHAT LANDING (owner decision 2026-10-24): Chat is the landing tab with a
   // local history sidebar (mainstream-AI pattern). Home and Prompt Library
   // left the rail; users enable features from Settings/Profile.
@@ -202,6 +204,8 @@ export const AIStudio: React.FC = () => {
     document.querySelector<HTMLInputElement>('[data-testid="chat-input"]')?.focus();
   }, [searchParams, setSearchParams]);
 
+  const [isHoloOpen, setIsHoloOpen] = useState(false);
+
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[var(--sa-canvas)] text-[var(--sa-ink)]">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.12),transparent_64%)]" aria-hidden="true" />
@@ -210,10 +214,17 @@ export const AIStudio: React.FC = () => {
         <div className="flex items-center gap-4 text-xs font-medium">
           <button 
             type="button"
+            onClick={() => setActiveTab('split')}
+            className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'split' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)] font-semibold' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
+          >
+            <Columns size={14} /> Split Cockpit (45/55)
+          </button>
+          <button 
+            type="button"
             onClick={() => setActiveTab('chat')}
             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'chat' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
           >
-            <Bot size={14} /> Conversation
+            <Bot size={14} /> Chat Focused
           </button>
           <button 
             type="button"
@@ -229,6 +240,17 @@ export const AIStudio: React.FC = () => {
           >
             <Smartphone size={14} /> Mobile Simulator
           </button>
+
+          {/* 3D Sci-Fi Hologram Video Call Button */}
+          <button
+            type="button"
+            onClick={() => setIsHoloOpen(true)}
+            className="flex items-center gap-2 rounded-full border border-cyan-500/40 bg-gradient-to-r from-cyan-950/70 to-indigo-950/70 px-3.5 py-1.5 text-xs font-semibold text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition hover:border-cyan-400 hover:shadow-[0_0_20px_rgba(6,182,212,0.45)]"
+          >
+            <Sparkles size={13} className="text-cyan-400 animate-pulse" />
+            <span>3D Living Holo-Call</span>
+            <span className="size-1.5 rounded-full bg-cyan-400 animate-ping" />
+          </button>
         </div>
         
         <div className="hidden items-center gap-4 text-[10px] uppercase tracking-widest text-[var(--sa-ink-muted)] sm:flex">
@@ -239,6 +261,12 @@ export const AIStudio: React.FC = () => {
       </div>
 
       <div className="flex-1 min-h-0 relative">
+        {activeTab === 'split' && (
+          <div className="absolute inset-0">
+            <SplitStudioView language="bn" />
+          </div>
+        )}
+
         {activeTab === 'chat' && (
           <div className="absolute inset-0 flex gap-4 p-4">
             {/* Unified Chat Phase 2: uses the canonical UnifiedChatPanel with live streaming,
@@ -353,6 +381,18 @@ export const AIStudio: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 3D Holographic Living Video Call Modal */}
+      <JarvisLivingHologram
+        isOpen={isHoloOpen}
+        onClose={() => setIsHoloOpen(false)}
+        language="bn"
+        personaName="Jarvis Living Holo-Core"
+        onJumpToPreview={() => {
+          setIsHoloOpen(false);
+          setActiveTab('preview');
+        }}
+      />
     </div>
   );
 };

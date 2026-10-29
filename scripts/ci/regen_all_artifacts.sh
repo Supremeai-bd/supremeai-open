@@ -30,7 +30,7 @@ if [[ -z "${REPO_ROOT}" ]]; then
   echo "ERROR: must run inside a git worktree/clone of supremeai" >&2
   exit 3
 fi
-cd "${REPO_ROOT}"
+cd "${REPO_ROOT}" || exit 3
 
 CHECK_MODE=0
 if [[ "${1:-}" == "--check" ]]; then

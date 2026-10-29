@@ -35,6 +35,7 @@ export async function registerUnifiedStatusTool(server: McpServer): Promise<void
         .optional()
         .describe("Optional target ID or agent slot to filter (e.g., 'agent-1', 'render-primary')."),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ scope, targetId }) => {
       const store = RequestContextStore.get();
       const role = store?.role;

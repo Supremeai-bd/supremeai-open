@@ -46,7 +46,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.presence_registry import (
     DEFAULT_STALE_AFTER_SECONDS,
     VALID_NODE_TYPES,

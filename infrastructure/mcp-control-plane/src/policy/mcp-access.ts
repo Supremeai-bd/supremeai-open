@@ -124,7 +124,7 @@ export function isPublicSafeResource(uri: string): boolean {
  * দেখায়, agent_heartbeat শুধু slot validate করে ও Redis-এ heartbeat লেখে।
  */
 export function classifyToolCapability(name: string): McpCapabilityMetadata {
-  if (name === "system_summary" || name === "system_health" || name === "status") {
+  if (name === "system_inspect" || name === "system_summary" || name === "system_health" || name === "status") {
     return {
       name,
       kind: "tool",
@@ -163,6 +163,7 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
   }
   // #123 / S0.4: Bridge onboarding & unified tools — zero-credential front door for external agents.
   if (
+    name === "bridge_lease_manage" ||
     name === "bridge_work" ||
     name === "bridge_submit" ||
     name === "bridge_guide" ||

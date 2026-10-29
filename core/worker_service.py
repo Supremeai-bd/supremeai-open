@@ -36,7 +36,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from core.automation.models import ExecutionEnvelope
-from database.session import get_db_session_context
+try:
+    from database.session import get_db_session_context
+except ImportError:
+    from core.database.session import get_db_session_context
 
 SUPPORTED_CAPABILITIES = frozenset({"acknowledge", "scrape"})
 MAX_METADATA_BYTES = 32_768
@@ -45,10 +48,21 @@ logger = logging.getLogger(__name__)
 
 PORT = int(os.getenv("PORT", "8080"))
 ROLE = os.getenv("SUPREMEAI_SERVICE_ROLE", "worker")
+SUPREME_COMMIT_SHA = os.getenv("SUPREME_COMMIT_SHA", "unknown")
+SUPREME_BUILD_TIME = os.getenv("SUPREME_BUILD_TIME", "unknown")
+SUPREME_VERSION = "worker"
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = FastAPI(title="SupremeAI Worker", docs_url=None, redoc_url=None, openapi_url=None)
 _state: dict[str, Any] = {"celery_proc": None, "degraded": False, "detail": ""}
+
+@app.middleware("http")
+async def supreme_build_metadata(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Supreme-Commit-Sha"] = os.getenv("SUPREME_COMMIT_SHA", "unknown")
+    response.headers["X-Supreme-Build-Time"] = os.getenv("SUPREME_BUILD_TIME", "unknown")
+    response.headers["X-Supreme-Version"] = "worker"
+    return response
 _idempotency_lock = asyncio.Lock()
 _idempotency_records: dict[str, tuple[str, str]] = {}
 MAX_IDEMPOTENCY_RECORDS = 10_000

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, Field
 
 from api.dependencies import get_project_admin
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.repo_manager import repo_manager
 from core.target_registry import (
     PermissionScope,

@@ -1,7 +1,7 @@
 # SupremeAI — বাংলা README (Way 16: Bangla-First Docs)
 
 > ইংরেজি README-র সহোদর — বাংলাভাষী ডেভেলপারদের জন্য। ইংরেজি সংস্করণ:
-> [README.md](./README.md) · পরিকল্পনা: [INFINITY_TECHSTACK_FOLLOW_PLAN.md](./docs/INFINITY_TECHSTACK_FOLLOW_PLAN.md)
+> [README.md](../README.md) · পরিকল্পনা: [INFINITY_TECHSTACK_FOLLOW_PLAN.md](./INFINITY_TECHSTACK_FOLLOW_PLAN.md)
 
 **SupremeAI** হলো একটি autonomous AI agent platform — federation মডেলে চলে:
 একটি private core, একটি public open mirror, এবং ১২টি satellite repo।
@@ -69,7 +69,7 @@ python scripts/ci/boundary_sanitization_guard.py --files <আপনার ফা
 
 ## লাইসেন্স ও অবদান
 
-MIT — বিস্তারিত [LICENSE](./LICENSE)। অবদানের আগে AGENTS.md ও
+MIT — বিস্তারিত [LICENSE](../LICENSE)। অবদানের আগে AGENTS.md ও
 AGENT_RULES.md পড়ুন; সব PR bridge pipeline দিয়ে যায়, constitutional gates ছাড়া
 কিছুই main-এ যায় না।
 

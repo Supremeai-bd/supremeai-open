@@ -1,0 +1,21 @@
+{
+  "known_failing": {
+    "ignored_auth": 2719,
+    "missing_required_header": 1,
+    "negative_data_rejection": 1,
+    "status_code_conformance": 2719
+  },
+  "provenance": {
+    "app": "gateway/service/app.py (in-memory ASGI)",
+    "generated_at": "2026-10-28T02:42:54Z",
+    "interactions_at_generation": 8165,
+    "issue": "1898",
+    "max_time": 60,
+    "pinned_schemathesis": "4.32.7",
+    "radar": "R40",
+    "ratchet": "failing-class-set shrink-only; counts are watermarks, not gates",
+    "schemathesis_at_generation": "4.32.7",
+    "seed": 42,
+    "spec": "api-schemas/gateway.openapi.yaml"
+  }
+}

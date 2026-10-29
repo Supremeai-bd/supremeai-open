@@ -167,7 +167,7 @@ class AutoDoctor:
                     severity="P2_MEDIUM",
                     root_cause="No recognized pattern in snippet",
                     healable=False,
-                    suggested_action="Inspect full raw run logs via github_get_failed_logs.",
+                    suggested_action="Inspect full raw run logs via github.get_failed_logs.",
                     remedy_blueprint="Escalate to operator or human supervisor.",
                 )
             )

@@ -56,6 +56,9 @@ const RegisterPage = React.lazy(() =>
 // OWNER DECISION (2026-10-24, 3-tab progressive disclosure): UserDashboard is
 // no longer the landing route — /workspace now renders the Chat tab (AI
 // Studio). The component file is kept per the no-delete doctrine.
+const GuestDashboard = React.lazy(() =>
+  import("./components/guest/GuestDashboard").then((m) => ({ default: m.GuestDashboard }))
+);
 const AIStudio = React.lazy(() =>
   import("./pages/user/AIStudio").then((m) => ({ default: m.AIStudio }))
 );
@@ -207,6 +210,18 @@ export const App: React.FC = () => {
               {/* Way 5: interactive academies (localStorage progress) */}
               <Route path="/academies" element={<PublicPageShell><AcademyHubPage /></PublicPageShell>} />
               <Route path="/knowledge" element={<KnowledgePage />} />
+              {/* Way 6: interactive guest code sandbox (zero sign-up) */}
+              <Route
+                path="/playground"
+                element={
+                  <PublicPageShell>
+                    <GuestDashboard
+                      language="bn"
+                      onSwitchToUser={() => { window.location.href = '/register'; }}
+                    />
+                  </PublicPageShell>
+                }
+              />
 
               {/* Split auth — /login + /register render immediately with zero blocking */}
               <Route path="/login" element={<LoginPage />} />

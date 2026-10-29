@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from api.dependencies import get_current_user_token
 from core.connection_registry import connection_registry
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/api/v1/workspace", tags=["Workspace Capabilities"])
 

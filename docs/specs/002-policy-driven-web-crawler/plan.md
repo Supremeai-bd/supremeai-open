@@ -1,6 +1,6 @@
 # Implementation Plan: Policy-Driven Web Crawler Upgrade
 
-**Branch**: `002-policy-driven-web-crawler` | **Date**: 2026-09-05 | **Spec**: [spec.md](file:///f:/supremeai/specs/002-policy-driven-web-crawler/spec.md)
+**Branch**: `002-policy-driven-web-crawler` | **Date**: 2026-09-05 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `specs/002-policy-driven-web-crawler/spec.md`
 

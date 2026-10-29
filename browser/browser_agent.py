@@ -45,6 +45,17 @@ except ImportError:  # embedded in main backend
             is_safe_url_resolved,
         )
 
+# Issue #1665: prompt-injection screening seam for the Playwright content
+# path. Optional import — the agent keeps running (unscreened) if the module
+# is unavailable, exactly like the security imports above.
+try:
+    from browser.runtime.content_screen import screen_page  # monorepo layout
+except ImportError:  # satellite layouts
+    try:
+        from runtime.content_screen import screen_page  # type: ignore[no-redef]
+    except ImportError:  # screening unavailable — content path continues unscreened
+        screen_page = None  # type: ignore[assignment]
+
 try:
     from web_scraper import WebScraper  # standalone scraper microservice
 except ImportError:  # embedded in main backend
@@ -180,7 +191,18 @@ class BrowserAgent:
                     links = []
 
                 current_url = page.url
-                return {
+                # Issue #1665: screen the page (raw HTML catches comment/meta/
+                # alt/hidden-span payloads that get_text drops or keeps
+                # invisibly). Additive only — never alters action success.
+                screen = screen_page(content_html) if screen_page is not None else None
+                if screen is not None and screen.is_injection:
+                    logger.warning(
+                        "Prompt-injection patterns matched on %s (matched=%s, sources=%s)",
+                        current_url,
+                        screen.matched,
+                        screen.sources,
+                    )
+                result = {
                     "success": True,
                     "url": current_url,
                     "title": title,
@@ -188,6 +210,14 @@ class BrowserAgent:
                     "links": links,
                     "action": action,
                 }
+                if screen is not None:
+                    result["injection_screen"] = {
+                        "is_injection": screen.is_injection,
+                        "score": screen.score,
+                        "matched": screen.matched,
+                        "sources": screen.sources,
+                    }
+                return result
             except (TimeoutError, Exception) as e:
                 logger.error(f"Playwright action failed: {e}")
                 return {"success": False, "error": str(e), "url": url}

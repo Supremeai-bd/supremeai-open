@@ -2,7 +2,7 @@ import json
 import os
 from typing import Any, ClassVar
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.supabase_client import db
 
 

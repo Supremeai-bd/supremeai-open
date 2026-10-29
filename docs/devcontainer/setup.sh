@@ -13,7 +13,7 @@ echo "🚀 [SupremeAI Codespace] Initializing development environment..."
 echo "===================================================================="
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${REPO_ROOT}"
+cd "${REPO_ROOT}" || exit 1
 
 # 1. Display Environment Information
 echo "📦 Toolchain versions:"
@@ -25,7 +25,7 @@ ruff --version 2>&1 || true
 # 2. Setup Python / Poetry Virtualenv
 if [ -d "backend" ] && [ -f "backend/pyproject.toml" ]; then
     echo "🐍 Configuring backend Poetry environment..."
-    cd "${REPO_ROOT}/backend"
+    cd "${REPO_ROOT}/backend" || exit 1
     poetry config virtualenvs.in-project true --local 2>/dev/null || poetry config virtualenvs.in-project true
     
     echo "📦 Installing backend dependencies via Poetry (non-interactive)..."
@@ -37,7 +37,7 @@ if [ -d "backend" ] && [ -f "backend/pyproject.toml" ]; then
     if [ -f ".venv/bin/python" ]; then
         echo "✅ Backend virtualenv created at backend/.venv"
     fi
-    cd "${REPO_ROOT}"
+    cd "${REPO_ROOT}" || exit 1
 fi
 
 # 3. Setup Frontend Node Dependencies

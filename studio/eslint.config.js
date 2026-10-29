@@ -61,8 +61,7 @@ export default tseslint.config({ ignores: ['dist', 'dist-admin', 'dist-user', 's
   // Issue #2522: justified bare-fetch allowlist — এই ফাইলগুলোতে raw fetch সচেতনভাবে রাখা হয়েছে:
   //  - apiClient.ts: ক্লায়েন্ট নিজেই প্রিমিটিভ লেয়ার
   //  - utils/api.ts: fetchWithRetry foundation (apiClient এই মডিউল import করে — circular এড়াতে)
-  //  - firebase.ts: Firebase Hosting-এর নিজস্ব init endpoint (backend API নয়)
-  //  - mcpViewer.ts: ইউজার-কনফিগার করা external MCP সার্ভার URL
+//  - storageApi.ts: Cloudflare R2 pre-signed PUT (external storage, backend বাইপাস)
   //  - storageApi.ts: Cloudflare R2 pre-signed PUT (external storage, backend বাইপাস)
   //  - GlobalErrorBoundary/RouteBoundary: keepalive unload-beacon (queue-তে গেলে unload-এ হারায়)
   files: [
@@ -71,7 +70,6 @@ export default tseslint.config({ ignores: ['dist', 'dist-admin', 'dist-user', 's
     '**/services/TelemetryTracker.ts',
     '**/services/CrossAiObserverService.ts',
     '**/packages/shared-services/**',
-    '**/firebase.ts',
     '**/services/mcpViewer.ts',
     '**/services/storageApi.ts',
     '**/components/GlobalErrorBoundary.tsx',

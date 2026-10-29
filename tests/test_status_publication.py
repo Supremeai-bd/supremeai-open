@@ -76,6 +76,21 @@ class PayloadContract(unittest.TestCase):
         p = sp.build_liveness_payload("healthy", "s", "v", True, "ts-123")
         self.assertEqual(p["timestamp"], "ts-123")
 
+    def test_readiness_ready_is_exactly_three_fields(self):
+        p = sp.build_readiness_payload("ready", True, "ts-123")
+        self.assertEqual(tuple(sorted(p)), ("chat_ready", "status", "timestamp"))
+        self.assertTrue(p["chat_ready"])
+
+    def test_readiness_degraded_adds_generic_reason_only(self):
+        p = sp.build_readiness_payload("degraded", False, "ts-123", reason="generic")
+        self.assertEqual(tuple(sorted(p)), ("chat_ready", "reason", "status", "timestamp"))
+        self.assertEqual(p["reason"], "generic")
+
+    def test_readiness_rejects_operator_fields(self):
+        for field in ("stealth_dns", "stealth_priority1_configured"):
+            with self.assertRaises(ValueError):
+                sp.assert_no_operator_fields({"status": "ready", field: "x"})
+
 
 class AppRegressionPins(unittest.TestCase):
     """AST-level pins on app.py (no fastapi import needed)."""
@@ -120,6 +135,40 @@ class AppRegressionPins(unittest.TestCase):
         for field in sp.OPERATOR_ONLY_FIELDS:
             self.assertNotIn(field, body_src, f"operator field {field} in health_check")
         self.assertIn("build_liveness_payload", body_src)
+
+    def _payload_keys(self, fn):
+        """String keys the handler can ship: dict-literal keys + call kwargs.
+
+        #1902 lesson: a substring scan over the handler body cannot distinguish
+        'mentions stealth state' (legitimate — /readyz must consult the DNS
+        snapshot for its 503 capability decision) from 'ships the field'.
+        Structural key extraction pins what the payload can contain.
+        """
+        keys = set()
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Dict):
+                for k in node.keys:
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                        keys.add(k.value)
+            elif isinstance(node, ast.keyword) and node.arg:
+                keys.add(node.arg)
+        return keys
+
+    def test_readiness_check_is_redacted(self):
+        # #1902: the capability probe was the last public surface shipping the
+        # stealth posture block. The handler still CONSULTS _stealth_dns_snapshot
+        # for its 503 capability decision (that is the probe's job); the pin is
+        # structural — no operator-only field may appear as a payload key.
+        fn = self.handlers.get("readiness_check")
+        self.assertIsNotNone(fn, "readiness_check handler missing")
+        body_src = ast.unparse(fn)
+        self.assertIn("build_readiness_payload", body_src)
+        leaked = self._payload_keys(fn) & set(sp.OPERATOR_ONLY_FIELDS)
+        self.assertEqual(leaked, set(), f"operator fields shipped by readiness_check: {leaked}")
+
+    def test_readyz_route_preserved(self):
+        routes = self._route_decorators(self.handlers["readiness_check"])
+        self.assertIn("/readyz", routes, f"readyz route lost, got {routes}")
 
     def test_liveness_routes_preserved(self):
         routes = self._route_decorators(self.handlers["health_check"])
