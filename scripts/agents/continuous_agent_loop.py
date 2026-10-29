@@ -387,6 +387,48 @@ def pick_next_issue(
     return None
 
 
+def action_instruction(picked: str | int) -> str:
+    """#2738 evidence lane — boundary-honest ACTION template for the solver pick.
+
+    The pre-#2738 template unconditionally granted every pick an on-merge
+    auto-close: a PR-description "Closes #N" line whose merge closes the issue,
+    printed for EVERY pick regardless of where the remedy lives. An agent that
+    followed it against a row whose remedy lives outside the open repo auto-closed
+    the issue on merge with zero recovery — the documented false-closure family:
+    #2211 was
+    closed "completed" while 2 of 3 named services were still broken (the residual
+    became #2225); #2225 was then closed under materially identical conditions and
+    is now challenged by #2738 (27th hourly tower proof: render-primary +
+    render-worker lastDeployStatus=update_failed, updatedAt frozen since
+    2026-10-24T08:32:4xZ, latestVerdict null); #2608's zero-verdict false close is
+    flagged by #2615. GitHub auto-close fires on the Closes line regardless of
+    whether the remedy actually landed, so the printed instruction must scope the
+    auto-close grant to remedies that are fully inside this open repo, and route
+    out-of-envelope remedies to evidence-only submission with the closure decision
+    left to the verdict plane/admin.
+
+    Scope note: this is TEMPLATE honesty only. It deliberately does NOT implement
+    the lane-classification convention proposed by #2794 item (2) (lane:admin
+    labels + pick exclusion) — that item is owner-pending ("needs the convention
+    blessed first" per the filer). The pick surface, label semantics, and dispatch
+    flow are unchanged; only the instruction text stops granting blanket auto-close
+    authority. audit:finding rows must stay dispatchable — #2794 itself carried
+    that label and was legitimately fixed in-repo (#2815). The U3 two-layer pattern
+    is preserved: the STALE-CLAIM/boundary prose guards remain the agent-side
+    second layer.
+    """
+    return (
+        f"ACTION: Highest-priority unclaimed issue = #{picked}. Solve root cause and submit PR. "
+        f"Include 'Closes #{picked}' in the PR description ONLY when the remedy is fully inside "
+        "this open repo — the merge then closes the issue truthfully. If the remedy lives outside "
+        "the agent envelope (tower policy/HITL approval, service redeploys, satellite repos, "
+        "protected paths such as .github/ or docs/master_docs/) or the row is report-only evidence "
+        "(audit:finding challenge/note), submit evidence via the bridge and do NOT auto-close: "
+        "leave the closure decision to the verdict plane/admin — a Closes line on an un-remedied "
+        "issue is a false closure (#2211/#2225 family; #2738 challenge; #2608 flagged by #2615)."
+    )
+
+
 DEFAULT_CADENCE_HOURS: dict[str, int] = {
     "ecosystem-scout": 12,
     "auditor": 12,
@@ -1591,7 +1633,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             suffix = f" (classified specialist: {classified})" if classified not in ("coder", "solver") and dispatch_role in ("solver", "coder") else ""
             mark_issue_leased(picked)
             print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
-            print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Solve root cause and submit PR with 'Closes #{picked}' in PR description to close it on merge.")
+            print(action_instruction(picked))
             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
             print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
             # বাংলা: STALE-CLAIM GUARD — envelope-এর specialist_prompt-এর সাথে সমান্তরাল
