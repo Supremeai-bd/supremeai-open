@@ -39,7 +39,9 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
     try {
       const saved = localStorage.getItem('supremeai_avatar_settings');
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch (_err) {
+      /* ignore invalid JSON in storage */
+    }
     return DEFAULT_AVATAR_SETTINGS;
   });
 
@@ -150,7 +152,9 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
   const handleSave = () => {
     try {
       localStorage.setItem('supremeai_avatar_settings', JSON.stringify(avatar));
-    } catch {}
+    } catch (_err) {
+      /* ignore storage quota/security error */
+    }
 
     if (onSaveAvatarSettings) {
       onSaveAvatarSettings(avatar);

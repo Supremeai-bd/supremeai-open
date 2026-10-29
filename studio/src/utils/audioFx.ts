@@ -54,7 +54,9 @@ class JarvisAudioEngine {
       osc2.start(now + 0.1);
       osc1.stop(now + 0.35);
       osc2.stop(now + 0.35);
-    } catch {}
+    } catch (_err) {
+      /* AudioContext unavailable or autoplay blocked */
+    }
   }
 
   /**
@@ -83,7 +85,9 @@ class JarvisAudioEngine {
         osc.start(now + i * 0.08);
         osc.stop(now + i * 0.08 + 0.2);
       });
-    } catch {}
+    } catch (_err) {
+      /* AudioContext unavailable or autoplay blocked */
+    }
   }
 
   /**
@@ -110,7 +114,9 @@ class JarvisAudioEngine {
 
       osc.start(now);
       osc.stop(now + 0.2);
-    } catch {}
+    } catch (_err) {
+      /* AudioContext unavailable or autoplay blocked */
+    }
   }
 
   /**
@@ -137,7 +143,9 @@ class JarvisAudioEngine {
 
       osc.start(now);
       osc.stop(now + 0.25);
-    } catch {}
+    } catch (_err) {
+      /* AudioContext unavailable or autoplay blocked */
+    }
   }
 
   /**

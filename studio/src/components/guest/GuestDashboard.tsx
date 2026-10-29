@@ -398,7 +398,9 @@ export const GuestDashboard: React.FC<GuestDashboardProps> = ({
           const count = iframeRef.current.contentDocument.querySelectorAll('*').length;
           if (count > 0) setDomCount(count);
         }
-      } catch {}
+      } catch (_err) {
+        /* cross-origin or detached iframe */
+      }
     }, 600);
     return () => clearTimeout(timer);
   }, [liveRenderHtml]);

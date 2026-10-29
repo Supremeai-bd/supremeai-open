@@ -116,13 +116,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setAutonomyLevel('L0');
       try {
         await onExecuteTool('autonomy_kill_switch', {});
-      } catch {}
+      } catch (_err) {
+        /* ignore */
+      }
       logAction('EMERGENCY_KILL_SWITCH', 'failed', 'CRITICAL: L2 Autonomy suspended. System placed into L0 Manual lockdown.');
     } else {
       setAutonomyLevel('L2');
       try {
         await onExecuteTool('autonomy_enable', {});
-      } catch {}
+      } catch (_err) {
+        /* ignore */
+      }
       logAction('EMERGENCY_KILL_SWITCH', 'success', 'Autonomy re-armed to L2 (Autonomous). Guardian review active.');
     }
   };
@@ -142,7 +146,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       let parsed = {};
       try {
         parsed = JSON.parse(toolArgs);
-      } catch {}
+      } catch (_err) {
+        /* fallback to empty */
+      }
       const res = await onExecuteTool(selectedTool, parsed);
       setTerminalOutput(res);
       jarvisAudio.playSuccess();
