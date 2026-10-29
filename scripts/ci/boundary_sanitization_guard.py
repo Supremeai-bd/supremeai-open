@@ -127,6 +127,7 @@ APPROVED_SUBTREES = {
         "tower",
         "bridge",
         "knowledge",
+        "eval",  # feedback-to-eval + cost-per-task scripts (issue #1363, AIQ-090/AIQ-107)
         "validate_schemas.py",
     },
     ".github": {
