@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.upload_validator import validate_upload
 from tools.learning.style_learner import StyleLearner
 

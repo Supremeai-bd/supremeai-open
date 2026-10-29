@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/pair", tags=["ai-pair-programmer"])
 
