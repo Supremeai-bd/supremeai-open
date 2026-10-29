@@ -59,6 +59,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       serviceId: z.string().optional().describe("Render service ID (required for service_health and get_logs)"),
       ...renderLogFiltersSchema,
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId, serviceId, action, startTime, endTime, level, type, text, limit, cursor }) => {
       const denial = assertRenderAccess("render.manage", "agent");
       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
@@ -96,6 +97,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
     {
       accountId: z.string().describe("The account ID (e.g. render-primary)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId }) => {
       const denial = assertRenderAccess("render.list_services", "agent");
       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
@@ -120,6 +122,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       accountId: z.string().describe("The account ID (e.g. render-primary)"),
       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId, serviceId }) => {
       const denial = assertRenderAccess("render.service_health", "agent");
       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
@@ -145,6 +148,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
       ...renderLogFiltersSchema,
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId, serviceId, startTime, endTime, level, type, text, limit, cursor }) => {
       const denial = assertRenderAccess("render.get_logs", "agent");
       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
@@ -171,6 +175,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
       keysOnly: z.boolean().optional().describe("When true, return only the set of KEY names (no values)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId, serviceId, keysOnly }) => {
       const denial = assertRenderAccess("render.get_env_vars", "admin");
       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
@@ -195,6 +200,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
       accountId: z.string().describe("The account ID (e.g. render-primary)"),
       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ accountId, serviceId }) => {
       const denial = assertRenderAccess("render.get_env_var_keys", "admin");
       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
