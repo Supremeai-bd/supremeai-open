@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from core.llm.advanced_model_router import ExpertType
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from services.intent_deciphering import IntentAnalysis
 
 

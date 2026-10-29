@@ -21,7 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 from core.code_validator import AICodeValidator
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Executor চুক্তি: payload → execution-result dict। যেকোনো ব্যর্থতা
 # exception দিয়ে loud — কখনো {"status": "failed"} ফেরত দিয়ে ভান নয়।

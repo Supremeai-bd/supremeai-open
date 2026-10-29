@@ -29,7 +29,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from core.health.proactive_healer import get_proactive_healer
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.resilience.circuit_breaker import CircuitBreakerState
 
 proactive_healer_instance = get_proactive_healer()

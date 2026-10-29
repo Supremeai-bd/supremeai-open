@@ -4,7 +4,7 @@ from typing import Any
 from docker.errors import ContainerError
 
 import docker
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class SandboxService:

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from core.cache import get_cache
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ── Constants ────────────────────────────────────────────────────────────────
 URL_CACHE_TTL = 3600  # 1 hour

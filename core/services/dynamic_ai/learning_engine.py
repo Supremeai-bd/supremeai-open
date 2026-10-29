@@ -19,7 +19,7 @@ tests/services/dynamic_ai/test_learning_engine_shim.py — DO NOT break):
 from __future__ import annotations
 
 from core.learning import get_learning_store
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # বাংলা মন্তব্য (ROOT-CAUSE FIX 2): কীওয়ার্ড-ভিত্তিক হালকা task detector।
 # এখানে `.orchestrator` মডিউলের `TaskType`-কে import করা যাবে না (circular

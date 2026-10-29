@@ -26,7 +26,7 @@ from fastapi import APIRouter
 
 from brain.model_router import ModelRouter
 from core.cache import get_cache
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from services.config_service import ConfigService
 
 # ── Constants ────────────────────────────────────────────────────────────────

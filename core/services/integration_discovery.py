@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # বাংলা: SSRF প্রোটেকশন — এই রেঞ্জগুলোতে কখনোই আউটবাউন্ড রিকোয়েস্ট যেতে দেওয়া
 # যাবে না (loopback, RFC1918 প্রাইভেট রেঞ্জ, link-local, এবং ক্লাউড মেটাডেটা

@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class ProviderStatus(Enum):

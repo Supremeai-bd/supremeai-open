@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security.cryptographic_ledger import CryptographicLedger
 from database.tenant_db import TenantAwareFirestore
 

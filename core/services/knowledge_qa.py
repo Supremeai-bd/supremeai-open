@@ -12,7 +12,7 @@ from fastapi import HTTPException, status
 
 from core.kernel.audit_logger import AuditLogger
 from core.llm.llm_gateway import GatewayManager
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from memory.chromadb_store import ChromaDBStore
 
 MANIFEST_PATH = (
