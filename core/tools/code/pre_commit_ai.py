@@ -3,7 +3,7 @@ import re
 import subprocess
 from typing import Any, ClassVar
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     from tools.code.pr_reviewer import PRReviewer

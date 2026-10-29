@@ -209,4 +209,15 @@ for file in $staged_files; do
     fi
 done
 
+# 8. Lockfile parity check for studio/package.json
+if echo "$staged_files" | grep -q 'studio/package\.json'; then
+    if ! echo "$staged_files" | grep -q 'studio/pnpm-lock\.yaml'; then
+        reject "studio/package.json modified without staged studio/pnpm-lock.yaml" \
+            "Dependencies in studio/package.json were updated but pnpm-lock.yaml was not." \
+            "CI runs pnpm with --frozen-lockfile and will fail if the lockfile is outdated." \
+            "Run 'cd studio && pnpm install --lockfile-only' and stage studio/pnpm-lock.yaml before committing." \
+            "Deliberate admin bypass: git commit --no-verify."
+    fi
+fi
+
 exit 0

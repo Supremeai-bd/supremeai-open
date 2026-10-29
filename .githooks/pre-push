@@ -280,13 +280,28 @@ for line in $updates; do
         done
     fi
 
-    # 8. MCP Tower & Studio TypeScript Typecheck
+    # 8. MCP Tower & Studio TypeScript Typecheck + Lockfile check
     if command -v npm >/dev/null 2>&1; then
         if [ -d "infrastructure/mcp-control-plane" ]; then
             if ! npm --prefix infrastructure/mcp-control-plane run typecheck >/dev/null 2>&1; then
                 reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
                     "Run 'npm --prefix infrastructure/mcp-control-plane run typecheck' to inspect errors." \
                     "Ensure all exported tools and adapters have strict TypeScript types." \
+                    "Deliberate admin bypass: git push --no-verify."
+            fi
+        fi
+    fi
+    if [ -f "studio/package.json" ] && [ -f "studio/pnpm-lock.yaml" ]; then
+        if ZERO_TEST "$remote_sha"; then
+            pkg_diff=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" -- studio/ 2>/dev/null || git diff --name-only "origin/main...$local_sha" -- studio/ 2>/dev/null || true)
+        else
+            pkg_diff=$(git diff --name-only "$remote_sha..$local_sha" -- studio/ 2>/dev/null || true)
+        fi
+        if echo "$pkg_diff" | grep -q 'studio/package\.json'; then
+            if ! echo "$pkg_diff" | grep -q 'studio/pnpm-lock\.yaml'; then
+                reject "STUDIO LOCKFILE OUTDATED: studio/package.json modified without studio/pnpm-lock.yaml" \
+                    "CI runs pnpm install with --frozen-lockfile and will fail (ERR_PNPM_OUTDATED_LOCKFILE)." \
+                    "Run 'cd studio && pnpm install --lockfile-only' and commit studio/pnpm-lock.yaml before pushing." \
                     "Deliberate admin bypass: git push --no-verify."
             fi
         fi
@@ -357,6 +372,329 @@ for line in $updates; do
                         "The push introduces NEW license drift against the ECOSYSTEM_MAP §2.3 declared-vs-actual SSOT." \
                         "Fix the finding above (missing license field / LICENSE file, or a declared-model contradiction)." \
                         "Evidence lines carry the [license-ssot-guard] tag. Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+    # 11. CONTRACT CODEGEN GUARD (#1846).
+    # Contract -> generated-consumer viability gate for the stable external
+    # contract (api-schemas/gateway.openapi.yaml). Engages ONLY when the push
+    # touches the contract or its generated surface (api-schemas/generated/).
+    # Regenerates the committed artifact with the pinned datamodel-codegen in
+    # a tempdir and byte-compares (CRLF-normalized): any drift = the contract
+    # changed without regenerating its consumer surface. Honest skip when the
+    # pinned binary is absent or the installed version differs from the pin.
+    # Self-contained under `set -u`; never touches the YAML or the artifact.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/contract_codegen_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            codegen_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            codegen_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        if printf '%s\n' "$codegen_changed" | grep -qE '(^api-schemas/gateway\.openapi\.yaml$|^api-schemas/generated/)'; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/contract_codegen_guard.py --check; then
+                    reject "CONTRACT CODEGEN GUARD (#1846) FAILED" \
+                        "The push drifts the contract from its committed consumer artifact (api-schemas/generated/gateway_models.py)." \
+                        "Regenerate the artifact with the pinned generator and commit it (never hand-edit)." \
+                        "Evidence lines carry the [contract-codegen-guard] tag. Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+    # 12. BANDIT SAST GUARD (#1809).
+    # Python source static-security ratchet over the non-test surface
+    # (core scripts gateway browser skills examples infrastructure evals).
+    # Engages ONLY when the push touches .py files inside the scan targets.
+    # Shrink-only baseline (scripts/ci/bandit_sast_baseline.json): NEW or
+    # GROWN (path, test_id) findings under scripts/** fail-close the push
+    # (agent-bridge-able); drift under the satellite mirrors is report-only
+    # routing to the owning domain. Skips-with-evidence when bandit is not
+    # installed (honest degradation, #1760 oasdiff pattern). Self-contained
+    # under `set -u`.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/bandit_sast_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            sast_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            sast_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        sast_py_files=$(printf '%s\n' "$sast_changed" | grep -E '\.py$' | grep -E '^(core|scripts|gateway|browser|skills|examples|infrastructure|evals)/' || true)
+        if [ -n "$sast_py_files" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/bandit_sast_guard.py --files $sast_py_files; then
+                    reject "BANDIT SAST GUARD (#1809) FAILED" \
+                        "The push introduces NEW or GROWN Python-source security findings under scripts/." \
+                        "Fix the finding (see the [bandit-sast-guard] evidence lines above) — the baseline may never grow." \
+                        "Satellite-mirror findings are report-only and route to their owning domain." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+    # 13. JS-DEP CVE GUARD (#1913).
+    # JavaScript dependency vulnerability ratchet over studio/pnpm-lock.yaml
+    # (the unique (name, version) pin set, both lockfile sections, deduped).
+    # Engages ONLY when the push touches the studio dependency surface
+    # (studio/package.json or studio/pnpm-lock.yaml). Shrink-only baseline
+    # (scripts/ci/js_dep_cve_baseline.json): a NEW advisory pair or a NEW
+    # advisory id fail-closes the push; resolved ids route to baseline-shrink
+    # hints. Skips-with-evidence when the OSV API (api.osv.dev, zero-
+    # credential SSOT) is unreachable (honest degradation, #1760 pattern).
+    # Self-contained under `set -u`.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/js_dep_cve_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            jsdep_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            jsdep_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        jsdep_surface=$(printf '%s\n' "$jsdep_changed" | grep -E '^studio/(package\.json|pnpm-lock\.yaml)$' || true)
+        if [ -n "$jsdep_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/js_dep_cve_guard.py --files $jsdep_surface; then
+                    reject "JS-DEP CVE GUARD (#1913) FAILED" \
+                        "The push introduces NEW JavaScript dependency advisories on the studio plane." \
+                        "Resolve it (pin bumps are studio-owner decisions) or re-floor the baseline deliberately — the baseline may never grow." \
+                        "See the [js-dep-cve-guard] evidence lines above; OSV-unreachable runs skip with evidence." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+
+    # 14. PY-DEP CVE GUARD (#1969).
+    # Python dependency vulnerability ratchet over every tracked
+    # requirements*.txt manifest (pip-audit requirements mode, PyPA
+    # zero-credential SSOT). Engages ONLY when the push touches a
+    # requirements manifest OR a pyproject.toml (poetry runtime plane,
+    # #2101). Shrink-only baseline
+    # (scripts/ci/py_dep_cve_baseline.json): a NEW advisory pair or a NEW
+    # advisory id fail-closes the push; resolved ids route to baseline-shrink
+    # hints. Skips-with-evidence when pip-audit is not installed or PyPI is
+    # unreachable (honest degradation, #1760 pattern). Self-contained under
+    # `set -u`.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/py_dep_cve_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            pydep_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            pydep_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        pydep_surface=$(printf '%s\n' "$pydep_changed" | grep -E 'requirements[^/]*\.txt$|pyproject\.toml$' || true)
+        if [ -n "$pydep_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/py_dep_cve_guard.py --files $pydep_surface; then
+                    reject "PY-DEP CVE GUARD (#1969/#2101) FAILED" \
+                        "The push introduces NEW Python dependency advisories on a requirements or poetry runtime plane." \
+                        "Resolve it (pin/range bumps are maintainer decisions) or re-floor the baseline deliberately — the baseline may never grow." \
+                        "See the [py-dep-cve-guard] evidence lines above; pip-audit-absent or offline runs skip with evidence." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+    # 14b. NPM-DEP CVE GUARD (#2059).
+    # npm dependency vulnerability ratchet over the two Tower buildCommand
+    # lockfiles (infrastructure/mcp-control-plane/package-lock.json via
+    # `npm install`, .agents/skills/devtools-audit/package-lock.json via
+    # `npm ci --prefix`), the control plane every agent loop and bridge
+    # handshake runs through. Letter-suffixed section number: the numeric
+    # sections are load-bearing cross-references in landed commit messages
+    # (e.g. #2044 cites section 15) — renumbering would break that trail.
+    # Engages ONLY when the push touches the npm dependency surface (the
+    # two package-lock paths or the Tower render.yaml, whose buildCommand
+    # supply-chain claims live here). Shrink-only baseline
+    # (scripts/ci/npm_dep_cve_baseline.json, seeded from the LIVE
+    # 2026-10-28 OSV audit — 8 production pairs / 19 advisory ids incl.
+    # @modelcontextprotocol/sdk 1.30.0): a NEW advisory pair or a NEW
+    # advisory id fail-closes the push; resolved ids route to
+    # baseline-shrink hints. Dev-only lock entries are outside the deploy
+    # surface (skipped). Skips-with-evidence when the OSV API
+    # (api.osv.dev, zero-credential SSOT) is unreachable (honest
+    # degradation, #1760 pattern). Self-contained under `set -u`.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/npm_dep_cve_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            npmdep_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            npmdep_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        npmdep_surface=$(printf '%s\n' "$npmdep_changed" | grep -E '^(infrastructure/mcp-control-plane/(package-lock\.json|render\.yaml)|\.agents/skills/devtools-audit/package-lock\.json)$' || true)
+        if [ -n "$npmdep_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/npm_dep_cve_guard.py --files $npmdep_surface; then
+                    reject "NPM-DEP CVE GUARD (#2059) FAILED" \
+                        "The push introduces NEW npm dependency advisories on the Tower control plane." \
+                        "Resolve it (pin bumps are maintainer decisions on the owning lockfile) or re-floor the baseline deliberately — the baseline may never grow." \
+                        "See the [npm-dep-cve-guard] evidence lines above; OSV-unreachable runs skip with evidence." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+    # 15. DOCS LINK INTEGRITY GUARD (#1938).
+    # Markdown internal-link integrity ratchet over every tracked .md surface.
+    # Engages ONLY when the push touches .md files; sweeps the surviving
+    # changed files (links OUT of them) against the shrink-only baseline
+    # scripts/ci/docs_link_integrity_baseline.json. NEW or GROWN ratcheted
+    # (file, target, reason) findings fail-close the push (writable lanes);
+    # vendored .agents/skills findings are report-only (routed to the #1725
+    # lane, never asserted by agents); AGENT_RULES.md ghost citations are
+    # excluded debt owned by constitution_pointer_guard (#1642->#1708).
+    # Deleted files are skipped with evidence; the roster full-sweep owns
+    # stranded targets. Fully offline stdlib; no external-URL checking.
+    # Self-contained under `set -u`. Wired additively after the two CVE
+    # guards (js_dep #1913, py_dep #1969) — neither CVE plane is touched.
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/docs_link_integrity_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            links_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            links_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        links_md_files=$(printf '%s\n' "$links_changed" | grep -E '\.md$' || true)
+        if [ -n "$links_md_files" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/docs_link_integrity_guard.py --files $links_md_files; then
+                    reject "DOCS LINK INTEGRITY GUARD (#1938) FAILED" \
+                        "The push introduces NEW or GROWN broken internal markdown links in writable lanes." \
+                        "Fix the finding (see the [docs-link-integrity-guard] evidence lines above) — the baseline may never grow." \
+                        "Vendored .agents/skills findings are report-only and route to the #1725 lane." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+    # 16. RADAR INDEX FRESHNESS GUARD (#2091).
+    # Mechanical backstop for the R-number allocation contract whose SSOT is
+    # docs/SCOUT_RADAR_INDEX.md (rule 7: "the index is the only counter").
+    # Three same-day collision-imminent drifts (index passes 3/4/6) showed the
+    # self-policing contract fails structurally: a scout taking the advertised
+    # next-free number would double-allocate. Engages ONLY when the push
+    # touches the index or a radar doc; runs the guard's invariant battery
+    # (A registry-completeness, B pointer-truth incl. the pass-3/4/6
+    # pointer-taken collision class, C docs/** citation existence) with
+    # content scans scoped to the changed radar surfaces; pointer and
+    # tracked-filename scans stay global (cheap). Ghost-citation debt is
+    # pinned shrink-only via scripts/ci/radar_index_freshness_baseline.json
+    # (the floor may never grow); A/B violations are never floorable.
+    # Wired additively after the docs-link guard (#1938) — no existing
+    # section is renumbered (the #2044 section-trail rule).
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/radar_index_freshness_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            radar_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            radar_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        radar_surface=$(printf '%s\n' "$radar_changed" | grep -E '^docs/SCOUT_RADAR_2026-10-28.*\.md$' || true)
+        if [ -n "$radar_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/radar_index_freshness_guard.py --files $radar_surface; then
+                    reject "RADAR INDEX FRESHNESS GUARD (#2091) FAILED" \
+                        "The push breaks the R-number allocation contract (docs/SCOUT_RADAR_INDEX.md is the only counter)." \
+                        "Fix the invariant violation named in the [radar-index-freshness-guard] evidence lines above — the advertised next-free number must never collide with a registry row." \
+                        "Ghost-citation debt is pinned shrink-only; the baseline may never grow." \
+                        "Deliberate admin bypass: git push --no-verify."
+                fi
+            fi
+        fi
+    fi
+
+    # 17. AGENT SKILLS CONFORMANCE GUARD (#1672).
+    # Mechanical backstop for the file plane of the Agent Skills open standard
+    # (.agents/skills/*/SKILL.md): name==directory, required frontmatter,
+    # description 1-1024, and the discovery entry's existence (E1 — a skill
+    # folder without SKILL.md is invisible to every client; the seed instance
+    # developing-genkit-python is pinned shrink-only in
+    # scripts/ci/skill_conformance_baseline.json, the #2081 floors-are-real
+    # lesson). Warnings are inventory, never failures. Mapping contract for
+    # the registry plane (skills/schema.py SkillMetadata) lives in
+    # docs/AGENT_SKILLS_CONFORMANCE.md. Engages ONLY when the push touches
+    # .agents/skills/; also wired into the every-push CI guard roster for
+    # roster-mode coverage. Wired additively after section 16 — no existing section is
+    # renumbered (the #2044 section-trail rule).
+    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/skill_conformance_guard.py ]; then
+        if ZERO_TEST "$remote_sha"; then
+            skills_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            skills_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+        skills_surface=$(printf '%s\n' "$skills_changed" | grep -E '^\.agents/skills/' || true)
+        if [ -n "$skills_surface" ]; then
+            hook_py=""
+            if python3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="python3"
+            elif python -c "import sys" >/dev/null 2>&1; then
+                hook_py="python"
+            elif py -3 -c "import sys" >/dev/null 2>&1; then
+                hook_py="py -3"
+            fi
+            if [ -n "$hook_py" ]; then
+                if ! $hook_py scripts/ci/skill_conformance_guard.py; then
+                    reject "SKILL CONFORMANCE GUARD (#1672) FAILED" \
+                        "The push breaks the Agent Skills file-plane contract (.agents/skills/*/SKILL.md)." \
+                        "Fix the structural error named in the [skill-conformance-guard] evidence lines above — a skill folder without a discoverable SKILL.md, name/directory drift, or an over-cap description." \
+                        "Pre-existing floors are pinned shrink-only in scripts/ci/skill_conformance_baseline.json; the baseline may never grow by hand." \
+                        "Deliberate admin bypass: git push --no-verify."
                 fi
             fi
         fi

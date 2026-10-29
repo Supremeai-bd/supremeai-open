@@ -19,7 +19,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from adaptive_engine._store import get_conn, jdump, jload
-from adaptive_engine.correlation import CorrelationContext, current_correlation
+from adaptive_engine.correlation import current_correlation
 
 
 class TaskState(enum.StrEnum):

@@ -25,7 +25,7 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 from core.security.secret_vault import get_secret_vault
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 def generate_secure_token(length: int = 32) -> str:

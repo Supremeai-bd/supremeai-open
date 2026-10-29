@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import defusedxml.ElementTree as ET  # -- standard idiom (mirrors stdlib xml.etree.ElementTree as ET)
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 @dataclass

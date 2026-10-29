@@ -1,0 +1,78 @@
+{
+  "schema": "docs-link-integrity-baseline/1",
+  "generatedAt": "2026-10-28",
+  "headAtGeneration": "10a4727 (feat(bridge): docs(scout): register R52 row + next-free R53 (#2172). #2161 landed via #2165 (622)",
+  "probe": "scripts/ci/docs_link_integrity_guard.py",
+  "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): pinned core/_archive/MANIFEST.md as satellite-lane debt while its fix shipped via bridge-20261028-r42-manifest-satellite-fix. SHRUNK TO 0 same day: the satellite fix landed as bc810e7 (PR #2028) and mirrored to this tree before the r3 landing CI window closed — floor is EMPTY, the original r3 empty-floor endgame reached by the routing-legal route.",
+  "ratchetedFloor": [],
+  "knownReportOnly": [
+    {
+      "file": ".agents/skills/developing-genkit-python/references/agents-http.md",
+      "target": "agents.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": ".agents/skills/developing-genkit-python/references/dev-workflow.md",
+      "target": "agents.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": ".agents/skills/github-actions-debugger/SKILL.md",
+      "target": "file:///f:/supremeai%20backup/docs/devops/CI_DEBUGGING_ROADMAP.md",
+      "reason": "file-uri"
+    }
+  ],
+  "knownExcluded": [
+    {
+      "file": "docs/AUDIT_2026-10-15.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/AUDIT_2026-10-16-external-audit.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/AUTONOMY_LOOP_CONTRACT.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/CI_MINIMUM_PIPELINE_STANDARD.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/CONTRIBUTING_BN.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/FAQ.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/GUARDIAN_EVALUATION.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/INGRESS_SECURITY_POLICY.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/ZERO_ADMIN_GUIDE.md",
+      "target": "../AGENT_RULES.md",
+      "reason": "missing-file"
+    },
+    {
+      "file": "docs/adrs/README.md",
+      "target": "../../AGENT_RULES.md",
+      "reason": "missing-file"
+    }
+  ],
+  "checkedAtGeneration": 268
+}

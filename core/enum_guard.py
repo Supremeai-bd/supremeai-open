@@ -1,7 +1,7 @@
 import enum
 from typing import Any, TypeVar
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 T = TypeVar("T", bound=enum.Enum)
 

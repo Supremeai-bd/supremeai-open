@@ -22,7 +22,7 @@ Exit codes (fail-closed, matching repo doctrine):
 Usage:
   python3 scripts/ci/probe_live_status_453.py --selftest        # offline
   python3 scripts/ci/probe_live_status_453.py                    # probe now
-  GATEWAY_URL=https://supremeai-api.onrender.com \
+  GATEWAY_URL=https://supremeai-api-ulw0.onrender.com \
   CORS_ORIGINS="https://studio.example,https://a.example2" \
       python3 scripts/ci/probe_live_status_453.py --json-out probe.json
 
@@ -40,7 +40,7 @@ import urllib.request
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-DEFAULT_GATEWAY_URL = "https://supremeai-api.onrender.com"
+DEFAULT_GATEWAY_URL = "https://supremeai-api-ulw0.onrender.com"
 PROBE_PATHS = ("/health", "/healthz")
 USER_AGENT = "supremeai-probe-453/1.0 (autonomous contributor)"
 TIMEOUT_S = 20

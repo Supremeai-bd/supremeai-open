@@ -19,7 +19,7 @@ from adapters.dev_adapter import DevAdapter
 from adapters.ux_adapter import UXAdapter
 from core.advanced_reasoning import AdvancedReasoningEngine
 from core.evolution_module import EvolutionModule
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.resilience.safety_rollback_manager import SafetyRollbackManager
 from evolution.auto_evolution_controller import AutoEvolutionController
 from learning.pattern_recognizer import PatternRecognizer

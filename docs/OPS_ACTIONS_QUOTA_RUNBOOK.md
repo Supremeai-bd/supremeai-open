@@ -120,3 +120,21 @@ Link the ticket back into issue #68 when filed.
 - PR #64 (task envelope + open guards) · Issue #63 (taxonomy drift fix)
 - Issue #155 (Federation Workflow Diet — public 5→2 workflows, private 18→4)
 - `docs/AGENT_LOOP_SPEC.md §4b` (CONTRACT_VERSION parity contract)
+
+## 9. Satellite main CI red — first triage (added 2026-10-28, audit #2111)
+
+Row: **satellite repo main CI RED → check here first, before touching product code.**
+
+1. **Event plane.** Pull the run's `event` field. On `Supremeai-bd/supremeai-core`, schedule
+   runs execute ONLY the PyErrorFix autofix job (ci.yml job-split: `test` = push/PR only,
+   `autofix` = schedule-only). Same-sha push-green + schedule-red = disjoint job planes,
+   not a product regression (live proof: runs 35 success vs 36 failure on sha 419a838).
+2. **Trigger filter.** Read `.github/workflows/ci.yml` at HEAD. A corrupted `push.branches`
+   silently kills push-CI (observed 2026-10-28: literal `ain]` at bot commit feda45e →
+   product CI dark on core main until admin fixes it).
+3. **Watchdog plane.** Both core CI jobs dispatch `federation_ci_failed` to supremeai-open
+   on failure — check the open repo for the filed issue (e.g. #2053) before declaring a
+   detection blind spot; the residual gap is closed-lane invisibility, not absence of
+   detection.
+
+Full RCA: `docs/reports/AUDIT_2111_CORE_CI_SCHEDULE_POLARITY_2026-10-28.md`.

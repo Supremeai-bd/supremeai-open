@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.dependencies import get_current_platform_admin
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from tools.code.code_smell_detector import CodeSmellDetector
 from tools.devops.on_premise_deployer import OnPremiseDeployer
 from tools.learning.domain_adapter import DomainAdapter

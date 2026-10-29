@@ -57,6 +57,9 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - script-mode fal
     )
 
 GATEWAY_VERSION = "1.0.0"
+SUPREME_COMMIT_SHA = __import__("os").getenv("SUPREME_COMMIT_SHA", "unknown")
+SUPREME_BUILD_TIME = __import__("os").getenv("SUPREME_BUILD_TIME", "unknown")
+SUPREME_VERSION = GATEWAY_VERSION
 
 try:
     from .sanitization import *  # noqa: F401,F403
@@ -393,7 +396,11 @@ def create_app(
             return await _fwd(url, secret, body, timeout)
 
     app = FastAPI(
-        title="SupremeAI API", version=GATEWAY_VERSION, docs_url=None, redoc_url=None
+        title="SupremeAI API",
+        version=GATEWAY_VERSION,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,  # docs lockdown completion: /openapi.json served the full 70-path route inventory (incl. admin route names) to unauthenticated callers.
     )
 
     import os as _cors_os
@@ -431,6 +438,18 @@ def create_app(
             "x-supremeai-key",
         ],
     )
+
+    @app.middleware("http")
+    async def supreme_build_metadata(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Supreme-Commit-Sha"] = __import__("os").getenv(
+            "SUPREME_COMMIT_SHA", "unknown"
+        )
+        response.headers["X-Supreme-Build-Time"] = __import__("os").getenv(
+            "SUPREME_BUILD_TIME", "unknown"
+        )
+        response.headers["X-Supreme-Version"] = GATEWAY_VERSION
+        return response
 
     # ---- Native Admin Auth Endpoints (Zero-Firebase) ----
     try:
@@ -486,7 +505,26 @@ def create_app(
             },
         )
 
-    # ---- Unified Submodule Endpoints ----
+    # ---- Prometheus metrics exporter (#1934) ----
+    try:
+        from .metrics_exporter import record_request, render_metrics
+    except (ImportError, ModuleNotFoundError):
+        from metrics_exporter import record_request, render_metrics
+
+    @app.middleware("http")
+    async def _metrics_recorder(request: Request, call_next):
+        start = time.time()
+        response = await call_next(request)
+        try:
+            record_request(request.method, request.url.path, response.status_code, time.time() - start)
+        except Exception:  # noqa: BLE001
+            pass
+        return response
+
+    @app.get("/metrics")
+    async def _prometheus_metrics() -> Response:
+        body, ctype = render_metrics()
+        return Response(content=body, media_type=ctype)
     @app.get("/command/health")
     async def command_health() -> dict[str, Any]:
         import os

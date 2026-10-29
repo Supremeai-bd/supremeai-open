@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 # বাংলা মন্তব্য: UP042 ফিক্স — Role এর জন্য StrEnum ব্যবহার করা হয়েছে

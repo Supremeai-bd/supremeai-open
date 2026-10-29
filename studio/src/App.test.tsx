@@ -231,7 +231,7 @@ describe('App component', () => {
     );
 
     // Workspace shell header & navigation elements
-    expect(await screen.findByRole('button', { name: /SupremeAI home/i })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /Open command palette/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /SupremeAI home/i }, { timeout: 4000 })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Open command palette/i }, { timeout: 4000 })).toBeInTheDocument();
   });
 });

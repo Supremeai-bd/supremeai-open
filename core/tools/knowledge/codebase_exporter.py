@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import tempfile
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 IGNORE_DIRS: set[str] = {
     ".git",

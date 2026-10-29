@@ -115,33 +115,19 @@ LICENSE_CANDIDATES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "NOTICE", "NOTICE.
 
 # ---------------------------------------------------------------------------
 # Known-drift baseline (shrink-only ratchet, dead-import #1598 pattern).
-# Dated 2026-10-28 on main 203a562. (code, normalized path) pairs. When one of
+# Dated 2026-10-29 on main a996d30. (code, normalized path) pairs. When one of
 # these is FIXED, delete the line and lower the test pin — never add entries
 # for new drift; new drift must be fixed, not baselined.
+# History: baseline entered at 15 entries (#1773); the 9 PACKAGE_LICENSE_MISSING
+# entries were fixed and shrunk out in the same change (issue #1621, the
+# #1621<->#1678 class), landing the field-level license floor repo-wide;
+# the 4 LICENSE-absent proprietary mirrors and infrastructure/mcp-control-plane
+# package.json contradiction were fixed in #1640/#1691 (shrink 6 -> 1).
 # ---------------------------------------------------------------------------
 KNOWN_DRIFTS: frozenset[tuple[str, str]] = frozenset(
     {
-        # -- 9 tracked package.json files with no `license` field (#1621<->#1678 class)
-        ("PACKAGE_LICENSE_MISSING", ".agents/skills/devtools-audit/package.json"),
-        ("PACKAGE_LICENSE_MISSING", "studio/package.json"),
-        ("PACKAGE_LICENSE_MISSING", "studio/packages/shared-types/package.json"),
-        ("PACKAGE_LICENSE_MISSING", "studio/packages/design-tokens/package.json"),
-        ("PACKAGE_LICENSE_MISSING", "vscode/package.json"),
-        ("PACKAGE_LICENSE_MISSING", "vscode/mobile/package.json"),
-        ("PACKAGE_LICENSE_MISSING", "vscode/desktop/package.json"),
-        ("PACKAGE_LICENSE_MISSING", "browser/cloudflare-worker/package.json"),
-        ("PACKAGE_LICENSE_MISSING", "infrastructure/cloudflare-studio-proxy/package.json"),
-        # -- LICENSE-absent proprietary mirror surfaces (#1640/#1691 class).
-        #    The WO acceptance named 3 (core, browser, mcp-control-plane); the
-        #    guard's surface model also correctly flags the infrastructure/
-        #    mirror root itself — same class, same dated provenance.
-        ("LICENSE_FILE_ABSENT", "core"),
-        ("LICENSE_FILE_ABSENT", "browser"),
-        ("LICENSE_FILE_ABSENT", "infrastructure"),
-        ("LICENSE_FILE_ABSENT", "infrastructure/mcp-control-plane"),
-        # -- 2 model contradictions (the #1690 declared-vs-actual class)
+        # -- 1 model contradiction (the #1690 declared-vs-actual class)
         ("MODEL_CONTRADICTION", "gateway/LICENSE"),
-        ("MODEL_CONTRADICTION", "infrastructure/mcp-control-plane/package.json"),
     }
 )
 

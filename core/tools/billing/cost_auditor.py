@@ -1,6 +1,6 @@
 import os
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from memory.sqlite_store import SQLiteMemoryStore
 
 

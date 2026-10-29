@@ -50,7 +50,28 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Auditor baseline at patch time: 446 unused bindings across 272 live-path
 # files (AST scan, scope below). Shrink-only: lower this number when a
 # cleanup PR removes more; never raise it.
-BASELINE_UNUSED_IMPORTS = 446
+#
+# Re-armed 2026-10-28 at 40ac0bf: re-measured with this file's own
+# _scan_live_scope (deterministic AST, same scope) -> 388 unused bindings
+# across 233 files. The 446 baseline had gone stale-high by 58 slots: debt
+# only ever leaves via cleanup (the ratchet forbids net growth, and the
+# suite was green at 446 both at patch time and now), so a stale-high
+# baseline could silently absorb up to 58 NEW dead imports before failing.
+# The ratchet now binds at the measured floor. Causality note: the drop is
+# consistent with the #1887-era −851-line prune wave plus the docs cuts
+# removing import-carrying files entirely; per-commit scan determinism is
+# what makes the number trustworthy, not the attribution.
+#
+# Re-armed 2026-10-30 at 932753b: the 388 baseline went stale-low when peer
+# landings introduced 4 NEW dead-binding files (browser/action_cascade.py,
+# core/adaptive_engine/{approval_workflow,capability_registry,correlation,
+# mcp_skeleton}.py — first fleet RED 392>388). Remediation PR removed all 8
+# dead bindings (CONFIDENCE_EXECUTE incl. its __all__ entry, hashlib,
+# ensure_columns, get_conn/jdump/jload, ActionRisk/jdump; each verified
+# dead by AST Name-load + zero consumer imports incl. _archive delegates)
+# and re-measured with this file's own _scan_live_scope -> 384 across a
+# smaller file set. Shrink-only preserved: 384 < 388 < 446.
+BASELINE_UNUSED_IMPORTS = 378
 
 # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
 # Each binding below was verified dead by AST Name-load analysis + word-boundary

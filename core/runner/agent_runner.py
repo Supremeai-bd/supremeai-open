@@ -5,8 +5,9 @@ Spec SSOT chain:
   - docs/AGENT_LOOP_SPEC.md (task-envelope-v1, §2 envelope, §4 verification tiers)
   - AGENTS.md §3 8-step table: Understand → Rules → Inspect → Claim → Work
     → Verify → Record → Return
-  - AGENTS.md (Single Door SSOT): 4 Universal Invariants — Dual-Rebase,
-    Boundary, Superior Replacement, Verification & PR Blueprint
+  - AGENTS.md (Single Door SSOT): 5 Universal Invariants — Dual-Rebase,
+    Boundary, Superior Replacement, Verification & PR Blueprint, P0
+    Drainage & Anti-Stampede
     (``Closes #N`` rides in the PR description — squash auto-close doctrine)
 
 The runner CONSUMES the canonical task envelope emitted by
@@ -993,7 +994,7 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "AGENTS.md").write_text(
-            "# AGENTS\n## The Single Door\n## The 4 Universal Invariants (Must Follow vs Must Avoid)\n",
+            "# AGENTS\n## The Single Door\n## The 5 Universal Invariants (Must Follow vs Must Avoid)\n",
             encoding="utf-8",
         )
         pass_cmd = [sys.executable, "-c", "print('tier ok')"]

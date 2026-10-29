@@ -206,6 +206,36 @@ def gh_paged(path: str, token: str, max_pages: int = 10) -> list[dict]:
     return items
 
 
+def gh_first_page(path: str, token: str) -> tuple[list[dict], bool]:
+    """Single-page GitHub list fetch — cap-tolerant `(items, has_more)` (#2265).
+
+    বাংলা: `gh_paged`-এর cap-raise ইচ্ছাকৃত fail-honest (E5, #58) — কিন্তু
+    landing probe-এর স্তর-২ চুক্তি আলাদা: একটি বাউন্ডেড recent-commit window
+    যা পাওয়া ১০০টি commit স্ক্যান করবেই, আর window-এর সীমা সৎভাবে evidence-এ
+    যাবে। পুরনো `max_pages=1` আচরণে raise-টি fetch-এর *পরে* হত → স্ক্যান-ই
+    হওয়ার আগে ১০০টি commit ফেলে যেত (dead code on high-volume repos —
+    লাইভ-প্রমাণিত #2212/#2228 blank verdict)। এই helper raise করে না —
+    has_more বুলিয়ান ফেরত দেয়, সিদ্ধান্ত কলারের।
+    """
+    url: str = path if path.startswith("http") else f"https://api.github.com{path}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "supremeai-bridge-intake",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            body = json.loads(resp.read().decode() or "[]")
+            items = body if isinstance(body, list) else []
+            has_more = _next_link(resp.headers.get("Link", "")) is not None
+            return items, has_more
+    except urllib.error.HTTPError as exc:
+        raise BridgeError(f"github GET {url} → HTTP {exc.code}: {exc.read().decode()[:200]}")
+
+
 # ---------------------------------------------------------------------------
 # Work-order parsing + validators (pure — unit-tested)
 # ---------------------------------------------------------------------------
@@ -436,6 +466,87 @@ def already_intaked(token: str, task_id: str) -> bool:
     return intake_marker_state(token, task_id) != "absent"
 
 
+def landing_truth_probe(token: str, task_id: str) -> tuple[str, str]:
+    """Landing-সত্য প্রোব (#2158 fallback protocol) — branch-মৃত্যু ≠ rejection-প্রমাণ।
+
+    বাংলা: squash-merge হলে patch branch মুছে যায় (post-merge branch delete)।
+    ওই অবস্থায় intake-এর `fetch_patch` "not found" দেখে terminal
+    `bridge:rejected` স্ট্যাম্প করত, অথচ কাজটা আগেই ল্যান্ডেড থাকত (লাইভ-প্রমাণিত
+    2026-10-28: landed #2020/#2056 ভুলভাবে rejected হলো, 13:07Z sweep)।
+    reject-এর আগে দুই-স্তরের landing-প্রমাণ প্রোব (#2158-এর fallback protocol):
+
+      স্তর ১ (PR-state lookup): repo তালিকা OPEN_REPO প্রথমে + BRIDGE_TARGET_REPOS;
+        প্রতিটিতে closed PR, head-filter দুইটি — `bridge-land/<task_id>` (v2 lane)
+        ও `bridge/<task_id>` (direct solver lane, #2265); `merged_at` সেট থাকলে
+        landing প্রমাণিত (এই প্রোবে কোনো history-জানালা নেই — পুরোনো PR-ও ধরা পড়ে)।
+      স্তর ২ (squash detection): একই repo তালিকার main-এর সাম্প্রতিক commit-message-এর
+        প্রথম লাইনে task_id — private PR title (`feat(bridge): {task_id} —
+        external work order #N`) ও commit msg (`bridge({task_id}): ...`) দুটোই
+        task_id বহন করে, তাই squash ও merge-commit দুই ধারাতেই প্রথম লাইনে
+        মেলে। fetch এক পেজ (নতুন ১০০); window-সীমা evidence-এ নোট হয় (#2265)।
+
+    রিটার্ন তিন-অবস্থা (E8-এর `intake_marker_state` চুক্তির সমান্তরাল):
+      ("landed", evidence) — landing প্রমাণিত; ("absent", "") — দুই স্তরই
+      নিশ্চিতভাবে নেতিবাচক (rejection সৎ); ("unknown", reason) — API-ব্যর্থতা,
+      fail-closed: terminal-rejected নয়, পরের রান আবার প্রোব করবে।
+    """
+    land_ref_v2 = f"bridge-land/{task_id}"
+    land_ref_solver = f"bridge/{task_id}"
+    owner = OPEN_REPO.split("/")[0]
+    # (#2265) probe-স্থানীয় repo তালিকা: OPEN_REPO প্রথমে — direct solver lane
+    # (bridge.tools.ts Step B) `bridge/<taskId>` head-এ open repo-তেই land করে,
+    # আর সেটাই আজকের stranded cohort-এর পথ (15 WOs, PRs #2194…#2261)।
+    # BRIDGE_TARGET_REPOS অপরিবর্তিত থাকে — ওর sync/routing অর্থ আলাদা।
+    probe_repos: tuple[str, ...] = (OPEN_REPO,) + BRIDGE_TARGET_REPOS
+    errors: list[str] = []
+    # স্তর ১: PR-state lookup — head-filtered তালিকা সস্তা ও সুনির্দিষ্ট।
+    # দুইটি head-prefix: v2 lane `bridge-land/<task_id>` (private targets) +
+    # direct solver lane `bridge/<task_id>` (open repo, #2265 blindness fix)।
+    for repo in probe_repos:
+        # (#2265 option A) open repo-তে solver head আগে — v2 lane open repo-তে
+        # bridge-land/ তৈরিই করে না; প্রথম কলটিই stranded cohort-এর পথ ধরে।
+        prefixes = (
+            (land_ref_solver, land_ref_v2) if repo == OPEN_REPO else (land_ref_v2, land_ref_solver)
+        )
+        for land_ref in prefixes:
+            try:
+                pulls = gh_paged(
+                    f"/repos/{repo}/pulls?state=closed&head={owner}:{land_ref}&per_page=20",
+                    token,
+                    max_pages=1,
+                )
+            except BridgeError as exc:
+                errors.append(f"{repo}: pulls {str(exc)[:60]}")
+                continue
+            for pr in pulls:
+                if (pr.get("head") or {}).get("ref") == land_ref and pr.get("merged_at"):
+                    return "landed", (
+                        f"merged PR #{pr.get('number')} @ {repo} "
+                        f"(merge {(pr.get('merge_commit_sha') or '')[:10]})"
+                    )
+    # স্তর ২: squash detection — head-filter কোনো কারণে PR মিস করলেও main-এর
+    # commit-history-তে প্রমাণ থাকে (সাম্প্রতিক ১০০ commit-এর জানালা)।
+    # (#2265) OPEN_REPO এখানেও অন্তর্ভুক্ত; gh_first_page ব্যবহার করে পাওয়া
+    # পেজটি স্ক্যান হয়ই — window-সীমা evidence-এ সৎভাবে নোট হয়, dead-code নয়।
+    for repo in probe_repos:
+        try:
+            commits, has_more = gh_first_page(f"/repos/{repo}/commits?per_page=100", token)
+        except BridgeError as exc:
+            errors.append(f"{repo}: commits {str(exc)[:60]}")
+            continue
+        for c in commits:
+            first_line = (((c.get("commit") or {}).get("message") or "").split("\n", 1)[0])
+            if task_id in first_line:
+                window_note = " (newest-100 window)" if has_more else ""
+                return "landed", (
+                    f"squash/merge commit {(c.get('sha') or '')[:10]} @ {repo} "
+                    f"carries task{window_note}"
+                )
+    if errors:
+        return "unknown", "; ".join(errors[:3])
+    return "absent", ""
+
+
 def route_files(files: list[str], explicit_target: str | None = None) -> tuple[str | None, dict[str, str]]:
     """প্রতিটি পাবলিক path → (target repo, canonical path)।
 
@@ -583,6 +694,47 @@ def process_issue(issue: dict, token: str, work: Path, results: list[str]) -> No
     try:
         diff, files = fetch_patch(public_dir, branch, token)
     except BridgeError as exc:
+        # বাংলা (#2158): branch-অনুপস্থিতি নিজে rejection-প্রমাণ নয় — squash-merge-এর
+        # পরে patch branch মুছে যায়, আর marker-জানালার বাইরে থাকা landed WO আবার
+        # প্রসেস হয়ে ভুল `bridge:rejected` খেত (লাইভ-প্রমাণিত: #2020/#2056, 13:07Z
+        # sweep)। তাই reject-এর আগে landing-সত্য প্রোব: প্রমাণিত landed →
+        # verdict-history সত্যে ফিরিয়ে দিই; API-অনিশ্চয়তা → fail-closed
+        # পুনর্যাত্রাযোগ্য স্কিপ (E8-সমান্তরাল); দুই স্তরই নিশ্চিতভাবে নেতিবাচক
+        # হলেই কেবল সৎ rejection — ভুল terminal-label আর হবে না।
+        probe_state, probe_ev = landing_truth_probe(token, task_id)
+        if probe_state == "landed":
+            comment_issue(
+                OPEN_REPO, token, num,
+                sanitize_public_comment(
+                    "## ✅ Bridge — **LANDED** (truth-restored by intake probe, #2158)\n\n"
+                    f"- task: `{task_id}`\n"
+                    f"- evidence: {probe_ev}\n"
+                    f"- probe trigger: patch branch missing ({str(exc)[:120]})\n\n"
+                    "branch-মুছে-যাওয়া rejection নয় — merged-PR/squash-প্রমাণ অনুযায়ী "
+                    "কাজটি আগেই ল্যান্ডেড; ভুল terminal-label সংশোধন করা হলো।",
+                    token,
+                ),
+            )
+            set_labels(OPEN_REPO, token, num, [LABEL_LANDED])
+            gh("PATCH", f"/repos/{OPEN_REPO}/issues/{num}", token,
+               {"state": "closed", "state_reason": "completed"})
+            results.append(f"#{num} → landed (probe: {probe_ev[:90]})")
+            return
+        if probe_state == "unknown":
+            comment_issue(
+                OPEN_REPO, token, num,
+                sanitize_public_comment(
+                    "## 🌉 Bridge Intake — **IN-GATES** (skip)\n\n"
+                    f"- task: `{task_id}`\n"
+                    f"- reason: patch branch missing, landing-probe inconclusive — {probe_ev[:140]}\n\n"
+                    "fail-closed (E8-সমান্তরাল): rejection-সিদ্ধান্তের আগে landing-প্রমাণ "
+                    "দরকার — পরের intake রানে আবার প্রোব হবে।",
+                    token,
+                ),
+            )
+            set_labels(OPEN_REPO, token, num, [LABEL_INGATES])
+            results.append(f"#{num} → skip (landing-probe unknown: {probe_ev[:70]})")
+            return
         reject(str(exc)[:300])
         return
 

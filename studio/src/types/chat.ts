@@ -27,3 +27,24 @@ export {
   isAssistantMessage,
   hasAttachments,
 } from '@supremeai/shared-types';
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  model?: string;
+  thinkingTrace?: string[];
+  codeArtifacts?: {
+    filename?: string;
+    language: string;
+    code: string;
+  }[];
+  toolCalls?: {
+    name: string;
+    args: Record<string, any>;
+    status: 'calling' | 'success' | 'failed';
+    resultSummary?: string;
+  }[];
+}
+

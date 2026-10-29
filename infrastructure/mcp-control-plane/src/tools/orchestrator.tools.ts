@@ -40,6 +40,7 @@ export async function registerOrchestratorTools(server: McpServer): Promise<void
         .optional()
         .describe("handoff:<role> label signal — overrides the default event→role map"),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ issueRef, event, action, handoffLabel }) => {
       const context = RequestContextStore.get();
       if (!context?.authenticated) {

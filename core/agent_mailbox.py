@@ -44,7 +44,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ── Constants ────────────────────────────────────────────────────────────────
 # ডিফল্ট TTL — ২৪ ঘণ্টা (roadmap issue #927 spec)।

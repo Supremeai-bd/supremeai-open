@@ -52,7 +52,7 @@ except ImportError:
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     from brain.model_router import ModelRouter

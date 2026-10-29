@@ -29,7 +29,7 @@ from typing import Any
 import yaml  # type: ignore  # house pattern (cf. agents/syncguard)
 from pydantic import BaseModel, Field
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "config" / "agent_roles.yaml"
 

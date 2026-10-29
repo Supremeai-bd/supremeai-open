@@ -29,7 +29,6 @@ agent-[0-9]*) ;;
 *) echo "invalid slot '$SLOT' — must match agent-N" >&2; exit 2 ;;
 esac
 AGENT_ID="${AGENT_ID:-$SLOT}"
-KEY="supremeai:agent-heartbeat:${SLOT}"
 
 build_args_json() {
   # Emits the exact Upstash REST pipeline body: ["SET", key, payload, "EX", ttl]

@@ -1,6 +1,7 @@
 {
   "name": "@supremeai/design-tokens",
   "version": "1.0.0",
+  "license": "MIT",
   "type": "module",
   "description": "Single source of truth for SupremeAI 2.0 design tokens",
   "main": "outputs/tokens.js",

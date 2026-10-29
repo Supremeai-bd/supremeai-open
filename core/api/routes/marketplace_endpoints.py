@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from api.deps import get_current_user_token
 from core.degraded_mode import sqlite_fallback_allowed
 from core.errors.error_bus import with_error_bus
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.supabase_client import db
 from tools.resource_catalog import ResourceCatalog
 from tools.social.marketplace_agent import MarketplaceAgent

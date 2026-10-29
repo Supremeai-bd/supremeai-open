@@ -1,4 +1,4 @@
-﻿import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 /**
@@ -30,6 +30,38 @@ const BUILTIN_DOC_SOURCES: DocSource[] = [
  * Register Context7 documentation tools and resources
  */
 export async function registerContext7Adapter(server: McpServer): Promise<void> {
+  // ── Unified Documentation Query Tool ──
+  (server as any).tool(
+    "docs.query",
+    "Unified documentation search and discovery tool. If query is provided, searches doc snippets; if omitted, lists available doc sources.",
+    {
+      query: z.string().optional().describe("Search query string (optional — omit to list all available sources)"),
+      source: z.string().optional().describe("Specific doc source to filter"),
+      limit: z.number().optional().describe("Max search results (default: 5)"),
+    },
+    { readOnlyHint: true, idempotentHint: true },
+    async ({ query, source, limit }: { query?: string; source?: string; limit?: number }) => {
+      try {
+        if (query && query.trim().length > 0) {
+          const results = await searchDocs(query, source, limit ?? 5);
+          return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }] };
+        }
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              sources: BUILTIN_DOC_SOURCES,
+              count: BUILTIN_DOC_SOURCES.length,
+              categories: [...new Set(BUILTIN_DOC_SOURCES.map(s => s.category))],
+            }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }] };
+      }
+    }
+  );
+
   // Documentation Search Tool
   server.tool(
     "docs.search",
@@ -39,6 +71,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void> 
       source: z.string().optional().describe("Specific doc source to search"),
       limit: z.number().optional().describe("Max results to return"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ query, source, limit }) => {
       const results = await searchDocs(query, source, limit ?? 5);
       return {
@@ -55,6 +88,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void> 
       url: z.string().describe("Full URL of the documentation page"),
       topic: z.string().optional().describe("Topic to fetch"),
     },
+    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     async ({ url, topic }) => {
       const content = await fetchDocPage(url, topic);
       return {
@@ -68,6 +102,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void> 
     "docs.list",
     "List all available documentation sources",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       return {
         content: [{

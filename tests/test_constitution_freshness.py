@@ -33,6 +33,7 @@ Run: python3 -m unittest tests.test_constitution_freshness -v
 
 from __future__ import annotations
 
+import ast
 import inspect
 import os
 import subprocess
@@ -450,6 +451,28 @@ class VerifyOnlyExitContract(unittest.TestCase):
             1,
             "marker must print exactly once",
         )
+
+    def test_27_verify_only_boot_smoke_wiring_pin(self):
+        # বাংলা: #567 Tier-1 গেটের শেষ কলার #1551-এ dead-cluster removal-এ হারিয়ে
+        # গিয়েছিল — গেট নির্মিত ও ২৬-টেস্ট যাচাইকৃত হয়েও কেউই ডাকত না (ড্রিফটেড
+        # AGENTS.md-সহ --verify-only নিঁখোচ পাস করত, live main-এ প্রমাণিত)।
+        # VerifyOnlyExitContract-এর নিজের ভয় ("silently lost twice before") এখানেও
+        # প্রযোজ্য — এই সোর্স-পিন পরের নীরব হারিয়ে-যাওয়া জোরে চিৎকার করায়।
+        # চুক্তি: report-only (auto_sync=False — গাছ কখনো মিউটেট হয় না) এবং
+        # _offline_requested-রুটেড (offline escape hatch সৎ)।
+        source = inspect.getsource(cal.main)
+        self.assertIn("step_2_rules(", source)
+        self.assertIn("auto_sync=False", source)
+        self.assertIn("_offline_requested(", source)
+        # dispatch-পথ অস্পৃষ্ট থাকবে (owner-level সিদ্ধান্ত, #1551) — AST-স্তরের
+        # পিন (কমেন্ট-ইমিউন; run_dispatch_cycle-এর বাংলা কমেন্টে step_2_rules-এর
+        # উল্লেখ থাকলেও কোনো কল নেই — string-grep সেখানে মিথ্যা পজিটিভ দেয়)।
+        calls = {
+            node.func.id
+            for node in ast.walk(ast.parse(inspect.getsource(cal.run_dispatch_cycle)))
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        self.assertNotIn("step_2_rules", calls)
 
 
 if __name__ == "__main__":

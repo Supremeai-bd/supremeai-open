@@ -2,7 +2,7 @@ import asyncio
 import random
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     from playwright.async_api import ElementHandle, Page

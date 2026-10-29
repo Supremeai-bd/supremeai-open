@@ -6,7 +6,7 @@ import os
 import sys
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Add backend directory to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +23,7 @@ try:
     from ldclient.context import Context
     from ldobserve import ObservabilityConfig, ObservabilityPlugin, observe
 
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     INTEGRATION_OK = True
 except ImportError as e:

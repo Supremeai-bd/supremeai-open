@@ -1,11 +1,36 @@
 # S05 — Unified Queue Listing Spec (bridge.work_queue, #474)
 
-Status: r1 · 2026-10-17 · Author: Z.ai Code (session web-26454b1b)
+Status: r2 · 2026-10-28 · Author: Z.ai Code (session web-b5fa5c9d, Job 478316)
+r1 · 2026-10-17 · Author: Z.ai Code (session web-26454b1b)
 Scope: `infrastructure/mcp-control-plane/src/tools/bridge.tools.ts`
-(+ `test_bridge_onboarding.ts`, `docs/TOOL-EXPOSURE.md` in the same
-subsystem). Reference implementation + offline contract tests ship with
-this spec (pure-new-file lane). The TS edit itself follows the exact
-hunks in §4.
+(+ `test_bridge_onboarding.ts`, `test_queue_fidelity.ts`,
+`docs/TOOL-EXPOSURE.md` in the same subsystem). Reference implementation
++ offline contract tests ship with this spec (pure-new-file lane). The
+TS edit itself follows the exact hunks in §4.
+
+## r2 addendum — completeness contract (#2115/#2123)
+
+r1 fixed label-blindness but kept a single-page fetch. Live evidence
+2026-10-28 (jobs 478316/478712): one page of the newest **creations**
+(issues and PRs share the feed) made the queue a creation-rank window —
+98 open issues read as 20–35 rows; rows vanished as they fell past the
+window (~2.5h during fleet storms, ~6.5h later the same day — an age
+cutoff was falsified; it is creation rank, not age) while
+`bridge.read_feedback` still resolved the dropped rows by number.
+Unclaimed P2s (#1912, #1769) were invisible to the whole fleet.
+
+Contract additions (both planes, TS + reference, now enforced):
+
+1. **Paginate until complete**: walk pages 1..`QUEUE_MAX_PAGES` (5) at
+   `per_page=QUEUE_PAGE_SIZE` (100); stop at the first short page.
+2. **Merge with dedupe** by issue number (first occurrence wins) before
+   normalization, so GitHub pagination races cannot double-count.
+3. **Ordering after merge**: number-descending sort stays post-merge —
+   ordering must never reintroduce truncation.
+4. **`limit` range**: 1..`QUEUE_LIMIT_MAX` (200), default 20 unchanged —
+   reconciliation consumers can request a full board; the default
+   surface stays small.
+5. 401/403 anonymous fallback applies per page.
 
 ## 1. Problem
 

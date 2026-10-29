@@ -42,7 +42,7 @@ from pydantic import BaseModel
 # used across the admin surface (decodes the Bearer token + enforces the admin
 # role) — use it so /api/living-brain/* behaves like the rest.
 from api.dependencies import get_current_admin
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Import brain components
 # UNIFY FIX: removed 'backend.' prefix from imports — they were silently
