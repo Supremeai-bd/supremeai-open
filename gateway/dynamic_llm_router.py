@@ -91,6 +91,24 @@ PROVIDER_DEFAULTS: dict[str, dict[str, Any]] = {
         "baseline_latency_ms": 1400.0,
         "env_pattern": re.compile(r"^MISTRAL_API_KEY(?:_.*)?$"),
     },
+    "deepinfra": {
+        "tier": 2,
+        "default_model": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+        "baseline_latency_ms": 1100.0,
+        "env_pattern": re.compile(r"^DEEPINFRA_API_KEY(?:_.*)?$"),
+    },
+    "together": {
+        "tier": 2,
+        "default_model": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        "baseline_latency_ms": 1200.0,
+        "env_pattern": re.compile(r"^TOGETHER_API_KEY(?:_.*)?$"),
+    },
+    "xai": {
+        "tier": 2,
+        "default_model": "grok-beta",
+        "baseline_latency_ms": 1450.0,
+        "env_pattern": re.compile(r"^XAI_API_KEY(?:_.*)?$"),
+    },
     "openai": {
         "tier": 3,
         "default_model": "gpt-4o-mini",

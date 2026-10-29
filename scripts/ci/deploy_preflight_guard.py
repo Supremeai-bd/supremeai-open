@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import py_compile
@@ -94,6 +95,97 @@ def _script_index_freshness() -> list[str]:
     return errors
 
 
+def _provenance_digest(receipts_dir: Path | None = None) -> list[str]:
+    """#1674 minimal provenance lane: verify bridge patch digest receipts.
+
+    Bridge-submitted agent patches are the federation's autonomous supply
+    chain, and trust today is narrative (agentIdentity prose), not
+    cryptographic. Minimal lane (EXTRACT_PATTERNS_ONLY — sigstore is NOT
+    vendored): a submission that wants tamper-evidence ships a
+    machine-readable receipt at docs/provenance/bridge-<taskId>.json listing
+    per-file sha256 digests of the full_file contents AS SUBMITTED. This
+    sub-check recomputes the digests on the checked-out branch and fails
+    closed on mismatch: any post-receipt edit of a listed file breaks the
+    match, detecting post-review mutation of agent patches.
+
+    Honest limitation (mirrors the issue): the receipt travels with the
+    patch over the same automated channel, so the bar rises from narrative
+    trust to tamper-evidence — a compromised submitter is not eliminated,
+    and attestation proves provenance, not code correctness. The full lane
+    (actions/attest-build-provenance under .github/) is admin-owned and out
+    of scope for this guard.
+
+    Only invoked in full-repo mode (targets=None); the offline self-test
+    path passes explicit targets and stays deterministic/fast. An absent or
+    empty receipts dir is a no-op (additive; zero false positives for
+    layouts without receipts). ``receipts_dir`` is injectable so offline
+    tests can exercise the verifier without touching tracked files; target
+    paths always resolve against REPO_ROOT (the checked-out branch).
+    """
+    root = receipts_dir if receipts_dir is not None else REPO_ROOT / "docs" / "provenance"
+    errors: list[str] = []
+    if not root.is_dir():
+        return errors
+    repo_resolved = str(REPO_ROOT.resolve())
+    for receipt_path in sorted(root.glob("*.json")):
+        try:
+            rel = receipt_path.relative_to(REPO_ROOT)
+        except ValueError:
+            # Injected out-of-repo receipts dir (offline tests): label by path.
+            rel = receipt_path
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            errors.append(f"{rel}: unreadable/malformed provenance receipt: {e}")
+            continue
+        if not isinstance(receipt, dict):
+            errors.append(f"{rel}: receipt must be a JSON object")
+            continue
+        algorithm = receipt.get("algorithm")
+        if algorithm != "sha256":
+            errors.append(
+                f"{rel}: unsupported algorithm {algorithm!r} (only sha256 verifiable)"
+            )
+            continue
+        entries = receipt.get("files")
+        if not isinstance(entries, list) or not entries:
+            errors.append(f"{rel}: receipt 'files' must be a non-empty list")
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                errors.append(f"{rel}: file entry must be an object: {entry!r}")
+                continue
+            path_str = entry.get("path")
+            claimed = entry.get("sha256")
+            if not isinstance(path_str, str) or not path_str:
+                errors.append(f"{rel}: file entry missing 'path'")
+                continue
+            if (
+                not isinstance(claimed, str)
+                or len(claimed) != 64
+                or any(c not in "0123456789abcdef" for c in claimed.lower())
+            ):
+                errors.append(f"{rel}: entry '{path_str}' has an invalid sha256 digest")
+                continue
+            target = (REPO_ROOT / path_str).resolve()
+            if not str(target).startswith(repo_resolved + os.sep):
+                errors.append(
+                    f"{rel}: entry '{path_str}' escapes the repo (path traversal rejected)"
+                )
+                continue
+            if not target.is_file():
+                errors.append(f"{rel}: listed file missing on branch: {path_str}")
+                continue
+            actual = hashlib.sha256(target.read_bytes()).hexdigest()
+            if actual != claimed.lower():
+                errors.append(
+                    f"{rel}: PROVENANCE MISMATCH for {path_str} — receipt "
+                    f"{claimed.lower()} vs branch {actual} "
+                    "(post-receipt mutation of an agent patch?)"
+                )
+    return errors
+
+
 def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]]:
     """Step 1 (< 10s): Fast lint and syntax compilation across all target code."""
     errors: list[str] = []
@@ -126,8 +218,10 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
 
     # #1630: index freshness rides the full-repo scan (CI Step 1); skipped for
     # explicit-target invocations (offline self-test keeps its fixtures).
+    # #1674: provenance digest receipts verify on the same full-repo-only path.
     if targets is None:
         errors.extend(_script_index_freshness())
+        errors.extend(_provenance_digest())
 
     py_count = 0
     json_count = 0
@@ -310,6 +404,72 @@ def run_step3_quota(
         return True, {"service": target, "error": str(e)}
 
 
+def run_step4_migrations() -> tuple[bool, list[str]]:
+    versions_dir = REPO_ROOT / "core" / "alembic_migrations" / "versions"
+    errors = []
+    if not versions_dir.is_dir():
+        print("[Step 4: Migration Guard] Skipped: versions dir not found.")
+        return True, []
+    files = sorted(f for f in versions_dir.glob("*.py") if not f.name.startswith("__"))
+    revisions = {}
+    down_revisions = {}
+    import ast
+    for f in files:
+        try:
+            py_compile.compile(str(f), doraise=True)
+        except py_compile.PyCompileError as e:
+            errors.append("compile error in %s: %s" % (f.name, e))
+            continue
+        try:
+            tree = ast.parse(f.read_text(encoding="utf-8"))
+        except (SyntaxError, OSError) as e:
+            errors.append("parse error in %s: %s" % (f.name, e))
+            continue
+        rev = None
+        down = None
+        for node in ast.walk(tree):
+            targets = []
+            value = None
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+                value = node.value
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+                value = node.value
+            for t in targets:
+                if isinstance(t, ast.Name) and t.id == "revision":
+                    if isinstance(value, ast.Constant):
+                        rev = value.value
+                if isinstance(t, ast.Name) and t.id == "down_revision":
+                    if isinstance(value, ast.Constant):
+                        down = value.value
+                    elif isinstance(value, ast.Tuple):
+                        down = tuple((e.value if isinstance(e, ast.Constant) else None) for e in value.elts)
+        if rev is None:
+            errors.append("%s: missing revision assignment" % f.name)
+            continue
+        if rev in revisions:
+            errors.append("duplicate revision id %r" % rev)
+        revisions[rev] = f
+        down_revisions[rev] = down
+    for rev, down in down_revisions.items():
+        if down is None:
+            continue
+        if isinstance(down, tuple):
+            for d in down:
+                if d is not None and d not in revisions:
+                    errors.append("revision %r references unknown down_revision %r" % (rev, d))
+        else:
+            if down not in revisions:
+                errors.append("revision %r references unknown down_revision %r" % (rev, down))
+    if errors:
+        for e in errors:
+            print("[Step 4: Migration Guard] %s" % e)
+        return False, errors
+    print("[Step 4: Migration Guard] OK: %d migration files, %d revisions, chain consistent" % (len(files), len(revisions)))
+    return True, []
+
+
 def run_self_test() -> int:
     """Offline self-test for all preflight functions."""
     print("Running deploy_preflight_guard offline self-test...")
@@ -365,6 +525,11 @@ def main() -> int:
         help="Build minutes threshold (default: 450.0)",
     )
     parser.add_argument(
+        "--step4-migrations",
+        action="store_true",
+        help="Run Step 4 (DB migration chain check, #1691)",
+    )
+    parser.add_argument(
         "--self-test", action="store_true", help="Run offline deterministic self-test"
     )
     parser.add_argument(
@@ -403,6 +568,13 @@ def main() -> int:
             target_service=args.service, threshold=args.threshold
         )
         results["step3_quota"] = s3_data
+
+    # Step 4: Migrations
+    if run_all or args.step4_migrations:
+        s4_pass, s4_errs = run_step4_migrations()
+        results["step4_migrations"] = {"passed": s4_pass, "errors": s4_errs}
+        if not s4_pass:
+            overall_pass = False
 
     if args.json:
         print(json.dumps(results, indent=2))

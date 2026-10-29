@@ -505,7 +505,26 @@ def create_app(
             },
         )
 
-    # ---- Unified Submodule Endpoints ----
+    # ---- Prometheus metrics exporter (#1934) ----
+    try:
+        from .metrics_exporter import record_request, render_metrics
+    except (ImportError, ModuleNotFoundError):
+        from metrics_exporter import record_request, render_metrics
+
+    @app.middleware("http")
+    async def _metrics_recorder(request: Request, call_next):
+        start = time.time()
+        response = await call_next(request)
+        try:
+            record_request(request.method, request.url.path, response.status_code, time.time() - start)
+        except Exception:  # noqa: BLE001
+            pass
+        return response
+
+    @app.get("/metrics")
+    async def _prometheus_metrics() -> Response:
+        body, ctype = render_metrics()
+        return Response(content=body, media_type=ctype)
     @app.get("/command/health")
     async def command_health() -> dict[str, Any]:
         import os

@@ -148,6 +148,13 @@ jobs:
           set -euo pipefail
           python scripts/ci/satellite_board_guard.py --check --via-tower
 
+      - name: Prune Stale Remote Branches
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/cleanup_stale_branches.py || true
+
 
   # ---------------------------------------------------------------------------
   # 🛡️ Zero-checkout fast guards (PR-only, ~5s each)
@@ -992,6 +999,16 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/ci/auto_bridge_pr_opener.py --auto-open
+
+      # Autonomous Stale Remote Branch Cleaner:
+      # Prunes orphan remote branches (closed/rejected PRs, merged PR remnants,
+      # and abandoned bridge branches) that have no active open PR.
+      - name: Prune Stale Remote Branches
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/cleanup_stale_branches.py || true
 
       # AGENTS.md §10 — "A job that runs but produces no expected result
       # is actionable when evidence confirms it… No-actionable-finding must be

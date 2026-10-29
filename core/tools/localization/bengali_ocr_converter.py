@@ -15,7 +15,7 @@ except ImportError:
     vision = None
     service_account = None
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 def setup_google_vision(credentials_path=None):
