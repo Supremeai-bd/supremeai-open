@@ -24,7 +24,7 @@ from api.dependencies import get_current_user_token
 # STABILIZE FIX: PromptAction now lives in core.intent_router_v2 (canonical).
 # core.intent_router re-exports it for backwards compat.
 from core.intent_router import PromptAction
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.prompt_handler import format_unified_chat_prompt
 from engine.memory_middleware import memory_mw
 
