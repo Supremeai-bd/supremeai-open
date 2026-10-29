@@ -16,15 +16,15 @@ ErrorEvents (see verify_autonomous_agent_token).
 
 from __future__ import annotations
 
-from api.dependencies import (
-    get_ai_integrator,
-    get_current_admin,
-    get_current_tenant,
-    get_current_user_token,
-    get_fitness_engine,
-    get_rate_limiter,
-    get_tenant_db,
-    verify_autonomous_agent_token,
+from api.dependencies import (  # noqa: F401 — canonical re-export module (__all__ below)
+    get_ai_integrator,  # noqa: F401
+    get_current_admin,  # noqa: F401
+    get_current_tenant,  # noqa: F401
+    get_current_user_token,  # noqa: F401
+    get_fitness_engine,  # noqa: F401
+    get_rate_limiter,  # noqa: F401
+    get_tenant_db,  # noqa: F401
+    verify_autonomous_agent_token,  # noqa: F401
 )
 
 __all__ = [
