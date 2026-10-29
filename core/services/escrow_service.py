@@ -19,7 +19,7 @@ from enum import StrEnum
 from typing import Any
 
 from core.cache import get_cache
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ── Constants ────────────────────────────────────────────────────────────────
 ESCROW_TTL = 30 * 24 * 3600  # 30 days
