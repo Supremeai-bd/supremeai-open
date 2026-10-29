@@ -48,7 +48,7 @@ def post(url: str, payload: dict, session_id: str | None = None, timeout: int = 
 def initialize(url: str) -> str:
     sid, resps = post(url, {
         "jsonrpc": "2.0", "id": 1, "method": "initialize",
-        "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+        "params": {"protocolVersion": "2025-11-25", "capabilities": {},
                    "clientInfo": {"name": "mcp-conformance-selftest", "version": "1.0"}},
     })
     post(url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
