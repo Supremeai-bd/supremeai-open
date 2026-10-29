@@ -16,11 +16,10 @@ from __future__ import annotations
 import enum
 from typing import Any
 
-from adaptive_engine._store import jdump
 from adaptive_engine.capability_registry import get_capability_registry
 from adaptive_engine.correlation import current_correlation
 from adaptive_engine.deployment_tracker import get_deployment_tracker
-from adaptive_engine.governance import ActionRisk, get_governance_engine
+from adaptive_engine.governance import get_governance_engine
 from adaptive_engine.health_model import get_health_aggregator
 from adaptive_engine.resource_registry import get_resource_registry
 

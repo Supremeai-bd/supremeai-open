@@ -25,12 +25,11 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
-from browser.semantic_dom import CONFIDENCE_EXECUTE, CONFIDENCE_VERIFY, confidence_band
+from browser.semantic_dom import CONFIDENCE_VERIFY, confidence_band
 from browser.vision_grounding import LowConfidenceGrounding, VisionGrounding
 from core.monitoring.logging_config import logger
 
 __all__ = [
-    "CONFIDENCE_EXECUTE",
     "CONFIDENCE_VERIFY",
     "confidence_band",
     "execute_click_cascade",
