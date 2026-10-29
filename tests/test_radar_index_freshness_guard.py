@@ -320,7 +320,17 @@ def test_live_repo_sweep_passes() -> None:
     # free: word-boundary tree scan zero hits — lockfile substring hits
     # are mid-hash, not citations; subject scan zero hits; label-sliced
     # queue capture zero R77 citations).
-    assert r["pointer"] == 77, "pointer drifted — regenerate expectation with the index"
+    # and after pass 35 (cycle-47, Job 478338) registered the R77 row
+    # (open/claimed, peer scout #2718 — row-state truthfulness, filed
+    # 18:37:02Z; pass-26 precedent fifth application; row-status refreshes
+    # left to that lane's own fix surface) PRE-EMPTIVELY before any landing
+    # cited the token (guard green at registration time) and advanced it
+    # R77 -> R78 (verified free: word-boundary tree scan zero hits; subject
+    # scan zero hits; FULL single-capture queue 69,421ch 115/115 zero
+    # R78/R79 citations — the same capture falsified the pass-33/34
+    # ~4000ch tower-truncation attribution as observer-side clipping, see
+    # docs/reports/QUEUE_TRUNCATION_FALSIFICATION_2026-10-30.md).
+    assert r["pointer"] == 78, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
