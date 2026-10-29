@@ -16,11 +16,9 @@ Revises: 358bcbe79a4a
 Create Date: 2026-08-30
 """
 
-from typing import Union
 from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
 
 revision: str = "f1a2b3c4d5e6"
 down_revision: str | Sequence[str] | None = "358bcbe79a4a"
