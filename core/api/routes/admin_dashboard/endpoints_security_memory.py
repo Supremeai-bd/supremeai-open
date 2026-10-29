@@ -13,7 +13,7 @@ now exist and read ONLY from real sources:
 """
 
 from api.routes.admin_dashboard import router
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.utils.background_tasks import safe_create_task, security_memory_snapshot, snapshot_tasks
 
 

@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 
 from api.routes.admin_dashboard import router
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Same known-weak set the security-scan endpoint enforces (single source of
 # truth duplicated structurally on purpose: both surfaces must stay in sync
