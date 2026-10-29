@@ -4,7 +4,7 @@ import logging
 
 import json
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 with open("coverage.json") as f:
     data = json.load(f)

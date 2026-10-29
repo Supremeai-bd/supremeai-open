@@ -158,6 +158,30 @@ export default function SharedConversationPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
+  // Noindex guard: shared conversations must never be indexed by search engines
+  // or cached by intermediaries (privacy: prevent share-link leak via referrer).
+  useEffect(() => {
+    const robots = document.createElement('meta');
+    robots.name = 'robots';
+    robots.content = 'noindex, nofollow, noarchive';
+    robots.setAttribute('data-share-guard', '1');
+    document.head.appendChild(robots);
+
+    const referrer = document.createElement('meta');
+    referrer.name = 'referrer';
+    referrer.content = 'no-referrer';
+    referrer.setAttribute('data-share-guard', '1');
+    document.head.appendChild(referrer);
+
+    const prevTitle = document.title;
+    document.title = 'Shared Conversation — SupremeAI';
+
+    return () => {
+      document.head.querySelectorAll('meta[data-share-guard="1"]').forEach((n) => n.remove());
+      document.title = prevTitle;
+    };
+  }, []);
+
   useEffect(() => {
     if (!shareId) {
       setNotFound(true);

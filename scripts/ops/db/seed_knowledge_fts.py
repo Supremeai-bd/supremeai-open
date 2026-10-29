@@ -10,7 +10,7 @@ backend_dir = Path(__file__).resolve().parent.parent.parent / "backend"
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     import chromadb

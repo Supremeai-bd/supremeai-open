@@ -308,9 +308,14 @@ is_excluded() { # $1=relative path -> 0 if excluded
     _p="$1"
     _base="${_p##*/}"
     for ex in $DEFAULT_EXCLUDES $USER_EXCLUDES; do
+        # SC2254 silenced with intent: DEFAULT_EXCLUDES carries glob-class entries
+        # (".env*", "*.env") whose pattern semantics are REQUIRED here — quoting
+        # $ex would degrade secret-file exclusion to literal-only matching.
+        # shellcheck disable=SC2254
         case "$_base" in
             $ex) return 0 ;;
         esac
+        # shellcheck disable=SC2254
         case "$_p" in
             $ex) return 0 ;;
             */$ex) return 0 ;;

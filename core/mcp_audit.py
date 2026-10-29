@@ -18,7 +18,7 @@ import uuid
 from datetime import UTC, datetime, timezone
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 _AUDIT_FLUSH_THRESHOLD = 50
 

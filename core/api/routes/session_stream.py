@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, Path, Request
 from sse_starlette.sse import EventSourceResponse
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.observability.log_batcher import batcher
 
 router = APIRouter()

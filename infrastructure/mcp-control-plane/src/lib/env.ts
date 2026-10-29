@@ -197,6 +197,11 @@ export const env = {
     get toolTimeoutMs(): number { return positiveInt("MCP_TOOL_TIMEOUT_MS", 30_000); },
     get toolRateLimitMax(): number { return positiveInt("MCP_TOOL_RATE_LIMIT_MAX", 20); },
     get toolRateLimitWindowMs(): number { return positiveInt("MCP_TOOL_RATE_LIMIT_WINDOW_MS", 60_000); },
+    /** Anonymous-mutation plane bound (#2363 Option A): per-(caller IP, tool)
+     *  hourly window on the 4 anonymous-reachable mutation tools. Default
+     *  30 writes/hour/tool per IP — writes/hour scale, read plane untouched. */
+    get mutationRateLimitMax(): number { return positiveInt("MCP_MUTATION_RATE_LIMIT_MAX", 30); },
+    get mutationRateLimitWindowMs(): number { return positiveInt("MCP_MUTATION_RATE_LIMIT_WINDOW_MS", 3_600_000); },
     /** HTTP session hygiene: idle reap interval + bounded session tables. */
     get httpSessionIdleMs(): number { return nonNegativeInt("MCP_HTTP_SESSION_IDLE_MS", 3_600_000); },
     get maxSseSessions(): number { return nonNegativeInt("MCP_MAX_SSE_SESSIONS", 100); },
@@ -320,6 +325,15 @@ export const env = {
   firecrawl: {
     get apiKeys(): string[] { return multiKey("FIRECRAWL_API_KEY"); },
   },
+
+  // ── DevTools audit backend (#1673 — chrome-devtools-mcp as tool backend)
+  devtools: {
+    get chromePath(): string { return optional("DEVTOOLS_CHROME_PATH", "chrome"); },
+    get defaultWaitMs(): number { return positiveInt("DEVTOOLS_AUDIT_WAIT_MS", 4000); },
+    get defaultTimeoutMs(): number { return positiveInt("DEVTOOLS_AUDIT_TIMEOUT_MS", 30000); },
+    get slowRequestMs(): number { return positiveInt("DEVTOOLS_SLOW_REQUEST_MS", 1500); },
+    get resultCapBytes(): number { return positiveInt("DEVTOOLS_RESULT_CAP_BYTES", 30000); },
+  },
 };
 
 export type Env = typeof env;
@@ -339,9 +353,16 @@ export function validateRuntimeKnobs(): void {
   void env.runtime.toolTimeoutMs;
   void env.runtime.toolRateLimitMax;
   void env.runtime.toolRateLimitWindowMs;
+  void env.runtime.mutationRateLimitMax;
+  void env.runtime.mutationRateLimitWindowMs;
   void env.runtime.httpSessionIdleMs;
   void env.runtime.maxSseSessions;
   void env.runtime.maxHttpSessions;
+  // #1673 — devtools audit knobs (validated the same loud way on boot)
+  void env.devtools.defaultWaitMs;
+  void env.devtools.defaultTimeoutMs;
+  void env.devtools.slowRequestMs;
+  void env.devtools.resultCapBytes;
   void env.runtime.sessionAdmissionIdleFloorMs;
 }
 

@@ -31,7 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -126,7 +126,7 @@ def guard_added_files(files: Sequence[AddedFile]) -> GuardVerdict:
         )
         offenders.update(f.path for f in oversize)
 
-    by_top: Mapping[str, list[AddedFile]] = {}
+    by_top: dict[str, list[AddedFile]] = {}
     for f in files:
         by_top.setdefault(_top_dir(f.path), []).append(f)
     for top, group in sorted(by_top.items()):

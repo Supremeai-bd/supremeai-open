@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from core.cache.redis_manager import redis_manager
 from core.config import settings
 from core.errors.error_bus import with_error_bus
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security.authentication.rbac import get_current_user_token
 
 router = APIRouter(

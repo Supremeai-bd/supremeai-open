@@ -58,7 +58,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from .config_fields import SettingsFieldsMixin
 from .config_secrets import SettingsSecretsMixin

@@ -16,7 +16,7 @@ from pydantic import (
 )
 
 from core.config_parsers import parse_origin_list
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.secret_policy import JWT_SECRET_DEPRECATED_ENV, JWT_SECRET_ENV
 
 # Public platform apex domains that must NEVER appear as bare entries in

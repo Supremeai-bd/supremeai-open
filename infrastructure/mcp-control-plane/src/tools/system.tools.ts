@@ -394,12 +394,166 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
 }
 
 export async function registerSystemTools(server: McpServer): Promise<void> {
+  const getSystemSummary = async () => {
+    const store = RequestContextStore.get();
+    const registry = getAccountsForRole(store?.role);
+    const byProvider = registry.reduce(
+      (acc, r) => {
+        const key = r.provider;
+        if (!acc[key]) acc[key] = [];
+        acc[key]!.push({
+          id: r.id,
+          displayName: r.displayName,
+          role: r.role,
+          available: r.available,
+          capabilities: r.capabilities,
+        });
+        return acc;
+      },
+      {} as Record<string, unknown[]>
+    );
+
+    const available = registry.filter((r) => r.available).length;
+    const total = registry.length;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              summary: `${available}/${total} services available`,
+              timestamp: new Date().toISOString(),
+              byProvider,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  };
+
+  const getSystemHealth = async () => {
+    const store = RequestContextStore.get();
+    const registry = getAccountsForRole(store?.role);
+
+    const results = await mapConcurrentSettled(
+      registry,
+      8,
+      async (svc) => {
+        if (!svc.available) {
+          return {
+            id: svc.id,
+            displayName: svc.displayName,
+            url: svc.url ?? "—",
+            status: "unconfigured" as const,
+            httpStatus: null,
+            latencyMs: null,
+            error: `${svc.apiKeyRef} missing in tower env`,
+          };
+        }
+        return probeServiceHealth(svc);
+      }
+    );
+
+    const { globalHealthCache } = await import("../health/snapshot.js");
+    for (const entry of results) {
+      if (entry.status === "fulfilled") {
+        const val = entry.value as HealthProbe;
+        const status = val.status === "healthy" ? "healthy" : val.status === "degraded" ? "degraded" : val.status === "unconfigured" ? "unknown" : "down";
+        globalHealthCache.setSnapshot({
+          provider: val.id,
+          status,
+          lastCheckMs: Date.now(),
+          checkedAt: new Date().toISOString(),
+          latencyMs: val.latencyMs ?? 0,
+          evidence: { kind: val.error ? "error" : "provider_response", summary: val.error ?? "probed" },
+          impactedServices: [],
+          consecutiveFailures: status === "down" ? 1 : 0,
+        });
+      }
+    }
+
+    const health = results.map((r) => (r.status === "fulfilled" ? r.value : r.reason));
+    const count = (s: string) => health.filter((h: Record<string, unknown>) => h.status === s).length;
+    const healthy = count("healthy");
+    const degraded = count("degraded");
+    const unreachable = count("unreachable");
+    const unconfigured = count("unconfigured");
+
+    const includeNetworkDetails = RequestContextStore.get()?.role === "admin";
+    const services = includeNetworkDetails
+      ? health
+      : health.map((entry) => {
+          const safe = { ...(entry as Record<string, unknown>) };
+          delete safe["url"];
+          delete safe["httpStatus"];
+          delete safe["error"];
+          return safe;
+        });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              summary: `${healthy} healthy · ${degraded} degraded · ${unreachable} unreachable · ${unconfigured} unconfigured (of ${health.length})`,
+              timestamp: new Date().toISOString(),
+              services,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  };
+
+  // ── Unified Consolidated System Tool ──
+  (server as any).tool(
+    "system.inspect",
+    "Unified system diagnostic, telemetry, and service observability tool.",
+    {
+      scope: z.enum(["summary", "health", "dependencies", "dashboard", "resources"]).describe("Aspect of system state to inspect"),
+    },
+    { readOnlyHint: true, idempotentHint: true },
+    async ({ scope }: { scope: string }) => {
+      try {
+        if (scope === "summary") {
+          return await getSystemSummary();
+        }
+        if (scope === "health") {
+          return await getSystemHealth();
+        }
+        if (scope === "dependencies") {
+          const { globalDependencyGraph } = await import("../health/dependency.js");
+          const deps = globalDependencyGraph.getRawMap();
+          return { content: [{ type: "text", text: JSON.stringify(deps, null, 2) }] };
+        }
+        if (scope === "dashboard") {
+          const { globalHealthCache } = await import("../health/snapshot.js");
+          const snapshots = globalHealthCache.getAllSnapshots();
+          return { content: [{ type: "text", text: JSON.stringify(snapshots, null, 2) }] };
+        }
+        if (scope === "resources") {
+          const resources = await listResources();
+          return { content: [{ type: "text", text: JSON.stringify({ total: resources.length, resources }, null, 2) }] };
+        }
+        return { isError: true, content: [{ type: "text", text: `Unknown scope: ${scope}` }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+      }
+    }
+  );
 
   // ── system.summary
   server.tool(
     "system.summary",
     "Get a high-level summary of all SupremeAI services — availability, roles, and capabilities",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const store = RequestContextStore.get();
       const registry = getAccountsForRole(store?.role);
@@ -446,6 +600,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "system.health",
     "Ping all backend services and report their HTTP health status",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const store = RequestContextStore.get();
       const registry = getAccountsForRole(store?.role);
@@ -542,6 +697,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     "resource.list",
     "List all discovered resources across all configured providers.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       const resources = await listResources();
       return {
@@ -569,6 +725,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
     {
       resourceId: z.string().describe("The ID of the resource (e.g. render/render-primary)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ resourceId }) => {
       const status = await getResourceStatus(resourceId);
       return {

@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 from api.routes.admin_dashboard import router
 from api.routes.admin_dashboard._models import ApprovalActionPayload
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 @router.get("/approvals/mcp")

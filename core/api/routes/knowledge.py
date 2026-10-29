@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from adaptive_engine.learning_loop import EvolutionSignal, get_learning_loop
 from api.dependencies import get_current_user_token
 from core.knowledge_facade import ask_legacy
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from services.knowledge_qa import KnowledgeQAService
 
 router = APIRouter()

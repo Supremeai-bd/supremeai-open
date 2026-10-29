@@ -9,7 +9,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
+    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination && npm run test:marketplace-plugins && npm run test:tool-tombstones && npm run test:devtools-adapter && npm run test:c29-dual-emission",
+    "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+    "test:tool-tombstones": "tsx test_tool_tombstones.ts",
+    "test:devtools-adapter": "tsx test_devtools_adapter.ts",
     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
     "test:smoke": "tsx test_adapters.ts",
     "test:render-logs": "tsx test_render_logs.ts",
@@ -22,6 +25,8 @@
     "test:tool-visibility": "tsx test_tool_visibility.ts",
     "test:access": "tsx test_mcp_access.ts",
     "test:health-history": "tsx test_health_history.ts",
+    "test:health-hollow-guard": "tsx test_health_hollow_guard.ts",
+    "test:health-watchdog": "tsx test_health_watchdog.ts",
     "test:guardian": "tsx test_guardian.ts",
     "test:heartbeat": "tsx test_heartbeat.ts",
     "test:redis-rotation": "tsx test_redis_auto_rotation.ts",
@@ -42,6 +47,7 @@
     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
     "test:task-engine": "tsx scripts/test-runner.ts test_task_engine.ts",
     "test:federation": "tsx scripts/test-runner.ts test/federation.test.ts",
+    "test:descriptor-pinning": "tsx scripts/test-runner.ts test/descriptor-pinning.test.ts",
     "test:memory-fallback": "tsx scripts/test-runner.ts test_memory_fallback.ts",
     "test:memory-adapter": "tsx scripts/test-runner.ts test_memory_adapter.ts",
     "test:memory-sidecar": "tsx scripts/test-runner.ts test_memory_sidecar.ts SUPREMEAI_SIDECAR_TESTS",
@@ -59,10 +65,26 @@
     "test:rate-limit-truncation": "tsx scripts/test-runner.ts test_rate_limit_truncation.ts",
     "test:truncation-live-replay": "tsx scripts/test-runner.ts test_truncation_live_replay.ts",
     "test:intelligence": "tsx scripts/test-runner.ts test_intelligence_tools.ts",
-    "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts"
+    "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts",
+    "test:queue-fidelity": "tsx test_queue_fidelity.ts",
+    "test:bridge-dedup": "tsx test_bridge_dedup.ts",
+    "test:bridge-titles": "tsx test_bridge_titles.ts",
+    "test:bridge-staleness": "tsx test_bridge_staleness.ts",
+    "test:bridge-test-wiring": "tsx test_bridge_test_wiring.ts",
+    "test:mcp-mutation-rate-limit": "tsx test_mcp_mutation_rate_limit.ts",
+    "test:bridge-verdicts": "tsx test_bridge_verdicts.ts",
+    "test:github-pagination": "tsx test_github_pagination.ts",
+    "test:marketplace-plugins": "tsx test_marketplace_plugins.ts",
+    "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+    "test:r66-target-echo": "tsx test_r66_target_echo.ts",
+    "test:annotations-floor": "tsx test_annotations_floor.ts"
   },
-  "keywords": ["mcp", "supremeai", "control-tower"],
-  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "supremeai",
+    "control-tower"
+  ],
+  "license": "LicenseRef-Proprietary",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@upstash/redis": "^1.38.3",
@@ -74,5 +96,8 @@
     "@types/node": "^26.4.0",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
+  },
+  "optionalDependencies": {
+    "@supabase/supabase-js": "^2.118.0"
   }
 }

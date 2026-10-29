@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import WebSocket, status
 from fastapi.websockets import WebSocketDisconnect
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security import verify_token
 
 

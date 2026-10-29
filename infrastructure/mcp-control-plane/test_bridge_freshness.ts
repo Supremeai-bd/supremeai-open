@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   buildBridgePrBody,
   bridgeGuide,
+  detectOriginalIssueFromSummary,
   extractRequiredReflectionFields,
   readPullRequestTemplate,
   reflectionFixSnippet,
@@ -203,6 +204,49 @@ const LIVE_TEMPLATE = [
   assert.match(specOnlyBody, /Refs #888/);
   assert.ok(!specOnlyBody.includes("Closes #888"), "spec-only PR must NEVER auto-close issue");
 
+  // ── #2485: opt-in closesOriginalIssue escape hatch for the receipt-closure class ──
+  // Docs-only + flag true -> Closes for BOTH the original issue and the round's WO,
+  // with no keep-open comment; absent/false preserve the Refs-only contract.
+  const receiptClosureBody = buildBridgePrBody({
+    taskId: "bridge-20261029-receipt",
+    summary: "Closure receipt for a self-healed CI failure",
+    issueNumber: 2465,
+    originalIssueNumber: 2368,
+    scopePaths: ["docs/bridge/bridge-receipt.md"],
+    testsEvidence: "receipt evidence",
+    reflectionWhy: "phantom red pollutes drainage",
+    alternativesRejected: "comment-only closure",
+    closesOriginalIssue: true,
+  });
+  assert.match(receiptClosureBody, /Closes #2368/);
+  assert.match(receiptClosureBody, /Closes #2465/);
+  assert.ok(!receiptClosureBody.includes("keeps #2465 open"), "flagged receipt must NOT carry the keep-open comment");
+
+  const explicitFalseBody = buildBridgePrBody({
+    taskId: "bridge-20261027-spec",
+    summary: "Add spec order",
+    issueNumber: 888,
+    scopePaths: ["docs/bridge/bridge-spec.md"],
+    testsEvidence: "doc valid",
+    reflectionWhy: "Spec needed first",
+    alternativesRejected: "no spec",
+    closesOriginalIssue: false,
+  });
+  assert.match(explicitFalseBody, /Refs #888/);
+  assert.ok(!explicitFalseBody.includes("Closes #888"), "explicit false must equal absent (spec-only keep-open preserved)");
+
+  const flaggedNonDocsBody = buildBridgePrBody({
+    taskId: "bridge-20261017-freshness",
+    summary: "Enforce constitution freshness",
+    issueNumber: 567,
+    scopePaths: ["core/freshness.py"],
+    testsEvidence: "evidence",
+    reflectionWhy: "why",
+    alternativesRejected: "alt",
+    closesOriginalIssue: true,
+  });
+  assert.match(flaggedNonDocsBody, /Closes #567/, "non-docs path unchanged by the flag");
+
   const noIssue = buildBridgePrBody({
     taskId: "bridge-20261017-freshness",
     summary: "Enforce constitution freshness",
@@ -212,6 +256,35 @@ const LIVE_TEMPLATE = [
     alternativesRejected: "alt, rejected because z",
   });
   assert.ok(!noIssue.includes("Linked Work Order"), "no issue -> no linked section");
+
+  // ── #1609 footgun fix: the auto-close detector must fire on VERB INTENT only ──
+  // A bare "#NNN" mention references an open ticket; it does not resolve it.
+  // The old bare-`\#` branch emitted Closes for the FIRST #NNN in any summary,
+  // so radar-registration prose (which cites the tickets it registers) closed
+  // them on merge: PR #2518 -> #2512 (+3s post-merge, 08:46:25Z); PR #2556 ->
+  // #2545 (+3s, 10:50:46Z); PR #2611 -> #2608 (+2s, 13:43:39Z, audit #2615).
+  assert.equal(
+    detectOriginalIssueFromSummary(
+      "docs(radar): pass 32 - register R75 (open/unclaimed #2608, peer scout census)"
+    ),
+    undefined,
+    "bare #mention must NOT auto-detect a resolution target",
+  );
+  assert.equal(
+    detectOriginalIssueFromSummary("fixes #2608 by annotating the residual families"),
+    2608,
+    "verb-intent mention keeps the #1609 auto-link",
+  );
+  assert.equal(
+    detectOriginalIssueFromSummary("register the fresh row (receipt be6e34f/WO #2545) and advance the pointer"),
+    undefined,
+    "receipt-path mention is a reference, not a resolution",
+  );
+  assert.equal(
+    detectOriginalIssueFromSummary("closes #1739 - the evaluation IS the resolution"),
+    1739,
+    "closes-verb still detects",
+  );
 }
 
 // ─── ৭. e2e: submit_patch fail-closes PRE-PUSH (no token, no network) ───────

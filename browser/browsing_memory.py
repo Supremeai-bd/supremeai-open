@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 from core.cache.semantic_cache import semantic_cache
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class BrowsingMemory:

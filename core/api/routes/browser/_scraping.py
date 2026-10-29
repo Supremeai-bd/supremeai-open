@@ -18,7 +18,7 @@ from api.routes.admin_dashboard import require_admin_token
 from api.routes.browser import router
 from core.cache.redis_manager import MultiLevelCache
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from tools.ai_agents.browser_agent import BrowseRequest
 
 

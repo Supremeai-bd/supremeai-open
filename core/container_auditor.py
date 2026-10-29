@@ -19,7 +19,7 @@ import asyncio
 import json
 import subprocess
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
 
 

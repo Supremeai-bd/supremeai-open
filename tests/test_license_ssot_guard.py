@@ -16,10 +16,12 @@ delivered by issue #1773:
     (exit 0), any finding OUTSIDE the baseline is new drift (exit 1), and
     --strict flips every finding fail-closed;
   - live baseline pin: on the real repo the guard reports EXACTLY the
-    baselined drifts (the WO acceptance set: the 9 license-field-missing
-    package.json files + the LICENSE-absent proprietary mirrors + the #1690
-    model-contradiction class) — the shrink-only ratchet: fixing a drift
-    requires shrinking the baseline in the same change;
+    baselined drifts (the WO acceptance set, post-#1621: the LICENSE-absent
+    proprietary mirrors + the #1690 model-contradiction class — the 9
+    license-field-missing package.json files were FIXED and shrunk out of
+    the baseline in the same change, landing the field-level floor) — the
+    shrink-only ratchet: fixing a drift requires shrinking the baseline in
+    the same change;
   - wiring SSOT: the guard is present in the LIVE run_all_guards.py roster
     and the LIVE .githooks/pre-push hook (never duplicated here).
 
@@ -260,11 +262,19 @@ def test_live_repo_reports_exactly_the_baselined_drifts() -> None:
         "shrink KNOWN_DRIFTS in scripts/ci/license_ssot_guard.py in the same "
         "change (shrink-only ratchet); if drift was ADDED, fix it instead."
     )
-    # The WO acceptance core: the 9 package.json fields + the LICENSE-absent mirrors.
+    # The WO acceptance core, post-#1640/#1691: the 4 proprietary mirrors
+    # (core, browser, infrastructure, infrastructure/mcp-control-plane) now
+    # carry §2.3 LICENSE notices and the mcp-control-plane package.json declares
+    # LicenseRef-Proprietary. Zero LICENSE_FILE_ABSENT remains.
     missing = {p for c, p in keys if c == "PACKAGE_LICENSE_MISSING"}
-    assert len(missing) >= 9, f"acceptance: at least the 9 known missing license fields, got {missing}"
-    absent = {p for c, p in keys if c == "LICENSE_FILE_ABSENT"}
-    assert {"core", "browser", "infrastructure/mcp-control-plane"} <= absent
+    assert not missing, (
+        "#1621 acceptance: the 9 package.json license fields were declared; "
+        f"a new PACKAGE_LICENSE_MISSING is a fix-it regression, not baseline material: {missing}"
+    )
+    assert not any(c == "LICENSE_FILE_ABSENT" for c, _ in keys), (
+        "the #1640/#1691 fix wave landed all proprietary mirror LICENSE notices; "
+        "a LICENSE_FILE_ABSENT here means a mirror license was removed — restore it"
+    )
     contradiction = {p for c, p in keys if c == "MODEL_CONTRADICTION"}
     assert "gateway/LICENSE" in contradiction, "the #1690 class must stay visible"
 
@@ -302,7 +312,9 @@ def test_json_report_is_machine_readable() -> None:
     assert report["guard"] == "license_ssot_guard"
     assert report["map"] == MAP
     assert report["mode"] == "ratchet"
-    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 12
+    # Dated floor (post-#1640/#1691 shrink): 6 -> 1 entry (the contested #1690
+    # gateway/LICENSE contradiction).
+    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 1
     assert isinstance(report["findings"], list) and isinstance(report["notes"], list)
     for f in report["findings"]:
         assert set(f) == {"code", "path", "detail"}

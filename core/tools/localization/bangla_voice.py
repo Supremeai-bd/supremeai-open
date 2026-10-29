@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 @dataclass

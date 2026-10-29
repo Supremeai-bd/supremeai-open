@@ -34,6 +34,18 @@ Check reachability first: `curl -s -o /dev/null -m 8 -w "%{http_code}" <url>`.
 - **Reachable (localhost, allowlisted host, or a repo you cloned, built and served in the sandbox):** run the audit here (step 3).
 - **Not reachable (typical for customer sites):** give the user the exact one-liner from `references/run-in-your-system.md` (local machine or GitHub Actions), ask them to upload `audit.raw.json`, then continue from step 4. If they only have a HAR, Lighthouse JSON or pasted console output, analyze that directly; `build_report.py --lighthouse` accepts Lighthouse JSON.
 
+
+**Prefer the Tower's `devtools.*` tools when reachable** (#1673 — they run a real headless Chrome over CDP, no 45 MB setup, and return structured lab data):
+
+| Need | Tower tool |
+|---|---|
+| Console errors, uncaught exceptions, browser log errors | `devtools.console_errors` |
+| 4xx/5xx, CORS/blocked, `net::ERR_*`, slow requests | `devtools.network_failures` (slowMs default 1500) |
+| FCP / LCP / CLS / TTFB — grounds the FCP < 1.0s mandate | `devtools.performance_trace` |
+
+Each returns `{ ok, meta{truncated,durationMs}, data }`; if Chrome is missing on the Tower host you get `{ ok:false, available:false, hint }` — fall through to the local script below instead of retrying. Use these three calls as the evidence source for steps 4–6 (map them into `report.json` fields: console entries → console errors findings, network failures → API/network findings, performance trace → metrics).
+
+Fallback — the portable local script (sandbox cannot reach the target, no Tower access, or you need throttling/axe/Lighthouse the CDP tools do not cover):
 ### 3. Run the audit
 ```bash
 # one-time setup (in .agents/skills/devtools-audit/)

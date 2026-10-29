@@ -1,7 +1,7 @@
 import json
 import os
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # বাংলা মন্তব্য: টেস্ট ও রিলায়েবিলিটি গেটের জন্য environment overrides fallback নির্ধারণ করা হলো
 BASE_DIR = os.getenv("SUPREMEAI_BASE_DIR") or os.path.dirname(

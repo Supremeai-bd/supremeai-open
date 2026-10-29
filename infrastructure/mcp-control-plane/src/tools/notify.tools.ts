@@ -8,6 +8,7 @@ export async function registerNotifyTools(server: McpServer): Promise<void> {
     "notify.telegram",
     "Ping the Telegram Bot API to check bot token validity.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const status = await checkTelegram();
@@ -31,6 +32,7 @@ export async function registerNotifyTools(server: McpServer): Promise<void> {
       chatId: z.string().optional().describe("Override chat id (default: TELEGRAM_CHAT_ID)"),
       parseMode: z.enum(["Markdown", "HTML"]).optional().describe("Optional parse mode"),
     },
+    { readOnlyHint: false, idempotentHint: false },
     async ({ message, chatId, parseMode }) => {
       try {
         const result = await sendTelegram(message, chatId, parseMode);

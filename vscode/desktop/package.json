@@ -1,6 +1,7 @@
 {
   "name": "@supremeai/desktop",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "SupremeAI Desktop Application — Native cross-platform desktop client (Tauri / Electron)",
   "main": "dist/index.js",
   "scripts": {

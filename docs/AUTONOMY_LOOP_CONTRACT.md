@@ -5,7 +5,7 @@ document_role: reference
 status: active
 canonical: true
 owner: coder
-last_verified: 2026-10-15
+last_verified: 2026-10-29
 related_docs:
   - AGENTS.md
   - AGENT_RULES.md
@@ -38,8 +38,11 @@ or hooks on these strings.
 1. **Understand** — load the task contract. An explicit `--issue <n>` is resolved to a
    live board issue; `--pick-next` scans the upstream board (implicit claimable
    lifecycle, #222: any open issue is claimable unless it carries an exclusion
-   label: `status:claimed`, `status:in-progress`, `state:seq-hold`,
-   `blocked-by-upstream`, `mirror:private`; priority from labels
+   label from the SSOT set — the authoritative enumeration is the
+   `EXCLUDED_LABELS` frozenset in `scripts/agents/continuous_agent_loop.py`,
+   deliberately not duplicated here: hand-copies of it drifted twice
+   (pipeline.yml board pre-check, WO #2221/PR #2222; this list, caught by
+   parity guard 8); priority from labels
    P0<P1<P2<P3<unlabeled, oldest issue number breaks ties). Fail-closed: a
    closed issue, an unparseable contract, or a duplicate-PR preflight hit
    aborts the cycle.
@@ -131,7 +134,8 @@ retrying a broken harness unchanged is the wrong response.
   `docs/AGENT_LOOP_SPEC.md` §4b).
 - Drift between docs and code is machine-checked by
   `scripts/agents/check_loop_contract_parity.py` (tier-count parity, guard-set parity
-  against `pipeline.yml`, flag-table copy prohibition, SSOT pointers).
+  against `pipeline.yml`, flag-table copy prohibition, SSOT pointers,
+  claim-exclusion parity for the pipeline pre-check and this document).
 - Changing the cycle (adding/reordering steps, changing tier count, changing the claim
   policy) requires: runner edit + SPEC edit + passing parity guard **in the same PR**.
 

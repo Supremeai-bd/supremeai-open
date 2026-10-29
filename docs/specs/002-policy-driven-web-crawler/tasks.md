@@ -1,7 +1,7 @@
 # Tasks: Policy-Driven Web Crawler Upgrade
 
 **Feature**: `002-policy-driven-web-crawler`  
-**Spec**: [spec.md](file:///f:/supremeai/specs/002-policy-driven-web-crawler/spec.md) | **Plan**: [plan.md](file:///f:/supremeai/specs/002-policy-driven-web-crawler/plan.md)  
+**Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md)  
 **Status**: Ready for Implementation  
 
 ---

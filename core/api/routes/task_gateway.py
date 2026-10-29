@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from api.deps import get_current_tenant, get_current_user_token
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.session import get_db_session_context
 from models.task_record import TaskRecord
 

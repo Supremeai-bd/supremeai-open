@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.contracts.security_policy import SEVERITY_LEVELS
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Issue #684 (H-04): severity ranking now comes from the single canonical
 # ladder in core.contracts.security_policy (ascending: higher == more severe).

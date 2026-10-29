@@ -18,7 +18,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import * as path from "node:path";
 
-const pkgRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+import { fileURLToPath } from "node:url";
+
+const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 type ExemptEntry = { reason: string; trackedBy: string };
 

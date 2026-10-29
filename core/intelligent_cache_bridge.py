@@ -17,7 +17,7 @@ from enum import StrEnum
 from typing import Any, Optional
 
 from core.cache import get_redis_client
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class TaskType(StrEnum):
