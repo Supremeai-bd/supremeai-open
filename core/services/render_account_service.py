@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from core.clients.render_api import render_get_json
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from database.supabase_client import db
 
 DEFAULT_COOLDOWN_DAYS = 10
