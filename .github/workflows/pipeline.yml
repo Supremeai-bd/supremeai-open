@@ -510,10 +510,16 @@ jobs:
           python-version: "3.11"
       - name: Install PyYAML
         run: pip install pyyaml
+      - name: Install import-linter (import-contract gate, #1791)
+        run: pip install -r requirements-dev.txt
       - name: Run Fast Lint & Syntax Guard
         run: |
           set -euo pipefail
           python3 scripts/ci/deploy_preflight_guard.py --step1-syntax
+      - name: Run import-contract guard
+        run: |
+          set -euo pipefail
+          lint-imports
       - name: Evidence Verification Gate (offline self-test)
         run: |
           set -euo pipefail
