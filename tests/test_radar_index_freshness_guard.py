@@ -330,7 +330,17 @@ def test_live_repo_sweep_passes() -> None:
     # R78/R79 citations — the same capture falsified the pass-33/34
     # ~4000ch tower-truncation attribution as observer-side clipping, see
     # docs/reports/QUEUE_TRUNCATION_FALSIFICATION_2026-10-30.md).
-    assert r["pointer"] == 78, "pointer drifted — regenerate expectation with the index"
+    # and after pass 36 (cycle-48, Job 478338) registered the R78 row
+    # (landed-class, peer arc — defining WO #2732, fix bd4d262/PR #2733,
+    # discovery job J484751: gh-absent dispatch revival via tower board
+    # fallback; pass-26 precedent sixth application, post-landing
+    # registration reconciling the same landing's D+C ghosts — the first
+    # born-and-reconciled-inside-one-dispatch red of the pattern) and
+    # advanced it R78 -> R79 (verified free: word-boundary tree hits are
+    # mechanism text inside pointer-phrase parentheticals, stripped by the
+    # guard's own stripper; subject scan zero hits; FULL single-capture
+    # queue 68,341ch 114/114 windowTruncated:false zero hits).
+    assert r["pointer"] == 79, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
