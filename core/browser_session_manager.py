@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.effective_policy import get_effective_policy
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.playwright_manager import get_global_browser
 
 
