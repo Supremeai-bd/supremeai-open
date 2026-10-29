@@ -1,12 +1,12 @@
 {
   "schema": "radar-index-freshness-baseline/2",
   "generatedAt": "2026-10-29",
-  "headAtGeneration": "77ed7fe (feat(bridge): a30: receipts 49-50 - roster reaches TEN: clone-rc128 victim trips via its own sta)",
+  "headAtGeneration": "working tree 2026-10-29 22:45+08 cycle (Job 477792) on origin/main 2e3f6d3",
   "probe": "scripts/ci/radar_index_freshness_guard.py",
   "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes (#2187: D lands first-run-clean — its floor is born empty); key = [kind, file, base] / [kind, base, subject]. A/B invariant violations are NEVER floorable — they are structural and always fail. /2 adds the enforced roster (invariant E, #2392 component 1): a pointer regression or row eviction fails closed — update roster in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline.",
   "floor": [],
   "roster": {
-    "pointer": 73,
+    "pointer": 75,
     "rows": [
       "R1",
       "R2",
@@ -30,10 +30,10 @@
       "R20",
       "R21",
       "R22",
-      "R23-V",
       "R23-VI",
-      "R24-V",
+      "R23-V",
       "R24-VI",
+      "R24-V",
       "R25",
       "R26",
       "R27",
@@ -82,7 +82,9 @@
       "R69",
       "R70",
       "R71",
-      "R72"
+      "R72",
+      "R73",
+      "R74"
     ]
   },
   "pointerAtGeneration": 73,
