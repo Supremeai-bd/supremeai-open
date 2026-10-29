@@ -27,7 +27,7 @@ from typing import Any
 
 from browser.semantic_dom import CONFIDENCE_EXECUTE, CONFIDENCE_VERIFY, confidence_band
 from browser.vision_grounding import LowConfidenceGrounding, VisionGrounding
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 __all__ = [
     "CONFIDENCE_EXECUTE",
