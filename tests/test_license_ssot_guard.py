@@ -9,16 +9,20 @@ delivered by issue #1773:
     boundary must never silently pass unverified);
   - license-expression validation: the pinned SPDX allowlist accepts valid and
     compound expressions, rejects unknown ids and parenthesized sub-expressions;
-  - detection: missing license fields, LICENSE-absent mirror surfaces, and
-    declared-model contradictions (both directions) are flagged on a sandbox
-    tree, with honest skip-with-evidence for absent surfaces;
+  - detection: missing license fields, LICENSE-absent mirror surfaces,
+    notice-less proprietary LICENSE files (the #1640/#1691 fix-wave
+    hardening), and declared-model contradictions (both directions) are
+    flagged on a sandbox tree, with honest skip-with-evidence for absent
+    surfaces;
   - ratchet decision tree: the dated KNOWN_DRIFTS baseline is report-only
     (exit 0), any finding OUTSIDE the baseline is new drift (exit 1), and
     --strict flips every finding fail-closed;
   - live baseline pin: on the real repo the guard reports EXACTLY the
-    baselined drifts (the WO acceptance set: the 9 license-field-missing
-    package.json files + the LICENSE-absent proprietary mirrors + the #1690
-    model-contradiction class) — the shrink-only ratchet: fixing a drift
+    baselined drifts (the WO acceptance set, dated: after the 2026-10-29
+    #1640/#1691 fix wave — four proprietary LICENSE notices + the
+    mcp-control-plane LicenseRef field — the 9 license-field-missing
+    package.json files + the contested #1690 gateway contradiction;
+    15 -> 10 entries) — the shrink-only ratchet: fixing a drift
     requires shrinking the baseline in the same change;
   - wiring SSOT: the guard is present in the LIVE run_all_guards.py roster
     and the LIVE .githooks/pre-push hook (never duplicated here).
@@ -182,6 +186,38 @@ def test_sandbox_honest_skip_notes_for_absent_surfaces() -> None:
         assert not any(k[0] == "MAPPING_DRIFT" for k in keys), keys
 
 
+def test_proprietary_notice_content_check() -> None:
+    # #1640/#1691 fix-wave hardening: a LICENSE present on a PROPRIETARY
+    # surface must carry the SSOT "All Rights Reserved" marker; MIT-text
+    # files stay single-witnessed by MODEL_CONTRADICTION (no double flag).
+    with tempfile.TemporaryDirectory(prefix="license-guard-notice-") as td:
+        root = Path(td)
+        mapping, _ = guard.parse_ssot(SSOT_FIXTURE)
+        assert mapping is not None
+        prop = root / "browser"
+        prop.mkdir()
+        # 1. Marker-less placeholder -> PROPRIETARY_NOTICE_ABSENT.
+        (prop / "LICENSE").write_text("Copyright someone. Be nice.\n", encoding="utf-8")
+        findings, _ = guard.classify_findings(root, mapping)
+        flagged = [f for f in findings if f["path"] == "browser/LICENSE"]
+        assert [f["code"] for f in flagged] == ["PROPRIETARY_NOTICE_ABSENT"], flagged
+        # 2. A real §2.3-style notice (marker inside the first-400-char
+        #    window the guard reads) -> clean.
+        (prop / "LICENSE").write_text(
+            "SupremeAI Proprietary License Notice\n"
+            "Copyright (c) 2026 SaifulHaque Niloy. All Rights Reserved.\n",
+            encoding="utf-8",
+        )
+        findings2, _ = guard.classify_findings(root, mapping)
+        assert not any(f["path"] == "browser/LICENSE" for f in findings2), findings2
+        # 3. MIT text keeps the single MODEL_CONTRADICTION witness and must
+        #    NOT additionally fire PROPRIETARY_NOTICE_ABSENT.
+        (prop / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+        findings3, _ = guard.classify_findings(root, mapping)
+        codes3 = [f["code"] for f in findings3 if f["path"] == "browser/LICENSE"]
+        assert codes3 == ["MODEL_CONTRADICTION"], codes3
+
+
 def test_surface_assignment_longest_prefix_wins() -> None:
     with tempfile.TemporaryDirectory(prefix="license-guard-prefix-") as td:
         root = Path(td)
@@ -260,11 +296,22 @@ def test_live_repo_reports_exactly_the_baselined_drifts() -> None:
         "shrink KNOWN_DRIFTS in scripts/ci/license_ssot_guard.py in the same "
         "change (shrink-only ratchet); if drift was ADDED, fix it instead."
     )
-    # The WO acceptance core: the 9 package.json fields + the LICENSE-absent mirrors.
+    # The WO acceptance core, dated 2026-10-29 after the #1640/#1691 fix wave:
+    # the 9 package.json fields remain visible; the four proprietary mirrors
+    # (core, browser, infrastructure, infrastructure/mcp-control-plane) now
+    # carry §2.3 LICENSE notices and MUST be clean — the mirror surfaces'
+    # presence + notice-marker compliance is asserted, not their absence.
     missing = {p for c, p in keys if c == "PACKAGE_LICENSE_MISSING"}
     assert len(missing) >= 9, f"acceptance: at least the 9 known missing license fields, got {missing}"
-    absent = {p for c, p in keys if c == "LICENSE_FILE_ABSENT"}
-    assert {"core", "browser", "infrastructure/mcp-control-plane"} <= absent
+    assert not any(c == "LICENSE_FILE_ABSENT" for c, _ in keys), (
+        "the #1640/#1691 fix wave landed all proprietary mirror LICENSE notices; "
+        "a LICENSE_FILE_ABSENT here means a mirror license was removed (e.g. by "
+        "mirror sync) — restore it, do not re-baseline"
+    )
+    assert not any(c == "PROPRIETARY_NOTICE_ABSENT" for c, _ in keys), (
+        "a proprietary mirror LICENSE lost its 'All Rights Reserved' marker — "
+        "restore the §2.3 notice, do not re-baseline"
+    )
     contradiction = {p for c, p in keys if c == "MODEL_CONTRADICTION"}
     assert "gateway/LICENSE" in contradiction, "the #1690 class must stay visible"
 
@@ -302,7 +349,11 @@ def test_json_report_is_machine_readable() -> None:
     assert report["guard"] == "license_ssot_guard"
     assert report["map"] == MAP
     assert report["mode"] == "ratchet"
-    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 12
+    # Dated floor (2026-10-29, #1640/#1691 shrink): 15 -> 10 entries. It can
+    # only go DOWN as the remaining #1690/#1621-class drifts are fixed — a
+    # floor of 9 catches both an accidental re-grow and a wholesale baseline
+    # wipe (which would silently un-watch live findings).
+    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 9
     assert isinstance(report["findings"], list) and isinstance(report["notes"], list)
     for f in report["findings"]:
         assert set(f) == {"code", "path", "detail"}
