@@ -83,6 +83,7 @@ The only merge authority on `main`: squash-only, PR-title/body preservation, `Cl
 - `scripts/ci/stale_claim_releaser.py` — 2-stage graduated lease (10 min claim→branch, 30 min branch→PR) with documented env-skip semantics and offline self-test.
 - Command Router — post-merge head-branch auto-deletion + task-issue close verification.
 - `scripts/agents/continuous_agent_loop.py` — the single dispatcher (AGENTS.md §0): claim → implement → verify (8 tiers) → submit, with `--verify-only` as the 3-tier contract entry.
+- `scripts/setup_git_hooks.sh` — one-time per-clone activation of the shipped `.githooks/` suite (R63): git never auto-activates a versioned hooks directory, so unactivated clones push with the Board-Freshness pre-push gate (#4177) dark. Idempotent apply + fail-closed verification that git resolves the hooks through the configured path; `--check` verifies without mutating. The agent loop prints a start-of-run advisory when `core.hooksPath` is unset on a clone that ships the suite (#2343).
 
 ### 3.4 Contract schemas (clickable references)
 
