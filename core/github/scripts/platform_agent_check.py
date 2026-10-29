@@ -198,11 +198,11 @@ def probe_tower(sec: dict) -> None:
         headers={
             "Authorization": f"Bearer {api_key}" if api_key else "",
             "Content-Type": "application/json",
-            "MCP-Protocol-Version": "2025-03-26",
+            "MCP-Protocol-Version": "2025-11-25",
             "Accept": "application/json, text/event-stream",
         },
         body=json_body({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "protocolVersion": "2025-03-26",
+            "protocolVersion": "2025-11-25",
             "capabilities": {},
             "clientInfo": {"name": "platform-agent-sweep", "version": "1.0"},
         }}),
