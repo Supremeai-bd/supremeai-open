@@ -269,8 +269,14 @@ def test_live_repo_sweep_passes() -> None:
     # class caught PRE-emptively before the guard ran, no red occurred) and
     # advanced it R68 -> R69 (verified free: tracked scan zero hits; subject
     # scan zero hits; 100-row tower queue capture zero citations).
+    # and after pass 29 (cycle-40, Job 478338) registered the R69 row
+    # (radar-doc be6e34f / receipt WO #2545 — pass-27 registration-default
+    # class recurred, guard RED at HEAD: citation-ghost + subject-ghost pair)
+    # and advanced it R69 -> R70 (verified free: tracked scan zero token hits
+    # outside hash-substring false positives; tower queue capture zero
+    # citations).
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 69, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 70, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
