@@ -27,7 +27,7 @@ from enum import Enum
 from typing import Any
 
 from core.llm.llm_gateway.errors import GatewayUnavailableError
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     import httpx as requests
@@ -888,7 +888,7 @@ class CitationVerifier:
             return citation
 
         except Exception as e:
-            from core.logging_config import logger
+            from core.monitoring.logging_config import logger
 
             logger.warning(f"Error: {e}")
             return VerifiedCitation(
