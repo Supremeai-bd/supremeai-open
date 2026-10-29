@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/tts", tags=["multilingual-tts"])
 

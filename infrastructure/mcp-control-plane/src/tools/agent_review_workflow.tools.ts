@@ -47,6 +47,7 @@ export async function registerAgentReviewWorkflowTools(server: McpServer): Promi
       context: contextSchema,
       idempotencyKey: z.string().min(8).max(128).optional(),
     },
+    { readOnlyHint: false, idempotentHint: false },
     async ({ prompt, language, context, idempotencyKey }) => {
       try {
         const denied = accessError("agent");
@@ -81,6 +82,7 @@ export async function registerAgentReviewWorkflowTools(server: McpServer): Promi
     "agent_review_workflow.status",
     "Report runtime availability of the Agent Review Workflow and its configured capabilities.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const denied = accessError("viewer");

@@ -29,6 +29,7 @@ import { registerAgentReviewWorkflowTools } from "./agent_review_workflow.tools.
 import { registerGuardianTools } from "./guardian.tools.js";
 import { registerAgentTools } from "./agent.tools.js";
 import { registerOrchestratorTools } from "./orchestrator.tools.js";
+import { registerDevtoolsTools } from "./devtools.tools.js";
 import { registerIntelligenceTools } from "./intelligence.tools.js";
 import type { MemorySubAdapter } from "../adapters/memory/index.js";
 
@@ -103,6 +104,9 @@ export async function registerAllTools(
 
   // ── Intelligence & Diagnostics (Graphify Codebase AST & DevTools Audit)
   await registerIntelligenceTools(server);
+  // ── DevTools lab backend (#1673 — CDP-backed performance/console/network)
+  await registerDevtoolsTools(server);
+
 
   // ── Multi-Platform Parity & Drift Sentinel
   await registerParityTools(server);

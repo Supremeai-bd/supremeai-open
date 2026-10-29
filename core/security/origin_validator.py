@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.config import settings
 from core.config_parsers import parse_origin_list
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from middleware.cors_policy import (
     ADMIN_ORIGIN_DENYLIST,
     USER_ORIGIN_DENYLIST,

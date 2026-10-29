@@ -19,7 +19,7 @@ from typing import Any, ClassVar
 import httpx
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from .admin_handlers import AdminHandlersMixin
 from .ai_assignment_handler import AIAssignmentHandlerMixin

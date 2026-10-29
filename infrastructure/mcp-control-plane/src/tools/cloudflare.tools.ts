@@ -9,6 +9,7 @@ export async function registerCloudflareTools(server: McpServer): Promise<void> 
     {
       action: z.enum(["worker_status", "analytics"]),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ action }) => {
       if (action === "worker_status") {
         const status = await getWorkerStatus();
@@ -24,6 +25,7 @@ export async function registerCloudflareTools(server: McpServer): Promise<void> 
 
     "Ping the deployed Cloudflare Worker to check its availability and latency.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const status = await getWorkerStatus();
@@ -43,6 +45,7 @@ export async function registerCloudflareTools(server: McpServer): Promise<void> 
     "cloudflare.analytics",
     "Get basic analytics/details from the Cloudflare account.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         const analytics = await getAnalytics();

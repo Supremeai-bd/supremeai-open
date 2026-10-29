@@ -74,7 +74,7 @@ export async function registerParityTools(server: McpServer): Promise<void> {
   // server.tool() call throws "already registered" at startup - which crashed the
   // whole registerAllTools chain and left Render deploys update_failed (WO #2211,
   // live 2026-10-28: build succeeds, container boot crashes, Render rolls back).
-  server.tool("system_parity_audit", "Run a multi-platform commit/schema/secret parity audit", {}, handler as any);
+  server.tool("system_parity_audit", "Run a multi-platform commit/schema/secret parity audit", {}, { readOnlyHint: true, idempotentHint: true }, handler as any);
 }
 
 export { runParityAudit };

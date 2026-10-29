@@ -188,8 +188,9 @@ forever (eternally-open, unclaimable P0). `status:claimed` P0s still block —
 another runner is actively on them, the invariant's intended behavior. Held
 roles never reach `mark_role_run`, so they do not
 consume their cadence window — once the board drains, the due role dispatches
-immediately. The gate is board-availability-gated (skipped when the query
-failed — fail-open to the pre-Rule-5 cadence path) and sits below the
+immediately. The gate is board-availability-gated (skipped when both the gh
+query and the tower board fallback fail — fail-open to the pre-Rule-5 cadence
+path) and sits below the
 issue-solver path, which runs earlier in the cycle. `COMMON_RULES` injects the
 invariant text into every dispatched mandate; the invariant's
 idempotency/anti-stampede half is enforced by the §5 Anti-Duplicate PR Guard
@@ -198,6 +199,26 @@ hypothetical: `P0-critical` labels on already-resolved incidents (#1788/#1772)
 held cadence while main CI was green (#1804/#1840) until admin hygiene closed
 both issues (2026-10-28); label hygiene stays an admin action outside the agent
 surface.
+
+**Tower board fallback (R78/J484751, gh-absent runtimes).** The documented
+external-agent runtime has no `gh` CLI, which used to leave the dispatch path
+dead exactly where the loop actually runs: solver dispatch skipped, the P0
+gate dark (fail-open), and the dispatch window capped at 100 rows while the
+live board exceeded it. The dispatch board query now falls back to the Tower's
+zero-credential `bridge.work_queue` (`_tower_board_rows()`: lazy sibling
+`mcp_tower_client` import for URL resolution — env / workspace `mcp.json` /
+documented default — then a stdlib-urllib streamable POST; large single-line
+SSE payloads are extracted bytes-safe because `requests.iter_lines` splits
+~134 KB lines at chunk boundaries). Fallback rows are mapped to gh shape
+(`{"name": …}` label dicts), so solver dispatch, `has_open_p0_blocker`, and
+priority sorting all operate on live data; the fallback runs only when gh
+failed (never on `--offline`, never on gh-present runtimes) and every failure
+mode degrades to the pre-existing honest skip line + gh-absent honesty floor.
+The `--verify-only` boot smoke additionally displays the five Universal
+Invariant Pillars and the fail-closed invariant checklist on stderr (rule-1
+contract was half-implemented: `_print_rule_version_and_checklist` was a
+silent stub and `mandatory_invariant_checklist` had no runtime consumer;
+stdout contracts — tier evidence + exactly-once final marker — unchanged).
 
 ## 5. Open Guards — shift-left on free public runtime
 

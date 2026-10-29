@@ -24,6 +24,7 @@ export async function registerMiscTools(server: McpServer): Promise<void> {
       t.name,
       t.desc,
       {},
+      { readOnlyHint: true, idempotentHint: true },
       async () => {
         try {
           const status = await t.fn();
@@ -50,6 +51,7 @@ export async function registerMiscTools(server: McpServer): Promise<void> {
       code: z.string().describe("Python code or notebook JSON string"),
       isNotebook: z.boolean().optional().describe("True if code is notebook JSON (default false)"),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ username, slug, title, code, isNotebook }) => {
       try {
         const result = await pushKaggleKernel(username, slug, title, code, isNotebook ?? false);
@@ -67,6 +69,7 @@ export async function registerMiscTools(server: McpServer): Promise<void> {
       username: z.string().describe("Kaggle username"),
       slug: z.string().describe("Kernel slug"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ username, slug }) => {
       try {
         const result = await getKaggleKernelStatus(username, slug);

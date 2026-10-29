@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Explicit opt-in env var. Default (unset/empty/any non-truthy value) = OFF.
 ALLOW_INPROCESS_CODEGEN_ENV = "SUPREMEAI_ALLOW_INPROCESS_CODEGEN"

@@ -11,7 +11,7 @@ from api.dependencies import get_current_user_token
 from core.automation.dispatcher import automation_dispatcher
 from core.automation.models import AutomationEvent, ExecutionEnvelope
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security.authentication.auth_middleware import AuthMiddleware
 from middleware.rate_limiter import AsyncRateLimiter
 

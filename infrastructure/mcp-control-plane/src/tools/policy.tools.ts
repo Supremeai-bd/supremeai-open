@@ -13,6 +13,7 @@ export async function registerPolicyTools(server: McpServer): Promise<void> {
       provider: z.string().describe("The provider, e.g., 'render', 'supabase', 'system'"),
       action: z.string().describe("The action, e.g., 'deploy', 'restart', 'delete'"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ provider, action }) => {
       try {
         const result = globalPolicyEngine.evaluateAction({ provider, action });
@@ -48,6 +49,7 @@ export async function registerPolicyTools(server: McpServer): Promise<void> {
       requestId: z.string().describe("The Request ID, e.g., REQ-123"),
       decision: z.enum(["APPROVED", "REJECTED"]).describe("The decision to make.")
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ requestId, decision }) => {
       try {
         const callerRole = RequestContextStore.getRole();
@@ -81,6 +83,7 @@ export async function registerPolicyTools(server: McpServer): Promise<void> {
     "policy.list_pending",
     "List all currently pending approval requests.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
        const pending = globalApprovalManager.getPendingRequests();
        return {

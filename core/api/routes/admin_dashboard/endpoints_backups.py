@@ -9,7 +9,7 @@ import shutil
 from fastapi import HTTPException
 
 from api.routes.admin_dashboard import router
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.utils.time_utils import utc_now
 
 

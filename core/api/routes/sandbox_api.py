@@ -96,7 +96,7 @@ def _get_manager():
         except ValueError as exc:
             if not _sandbox_unavailable_announced:
                 _sandbox_unavailable_announced = True
-                from core.logging_config import logger
+                from core.monitoring.logging_config import logger
 
                 logger.critical(
                     "Sandbox API unavailable: %s. Configure a real sandbox provider "

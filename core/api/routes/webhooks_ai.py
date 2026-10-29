@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 router = APIRouter(prefix="/api/v1/webhooks/telegram", tags=["Webhooks AI"])
 

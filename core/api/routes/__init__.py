@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 _safe_imports: dict[str, Any] = {}
 

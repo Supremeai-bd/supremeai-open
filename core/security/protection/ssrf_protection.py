@@ -35,7 +35,7 @@ import time
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 # Cloud metadata IPs that should never be accessible

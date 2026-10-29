@@ -24,6 +24,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
       sort: z.enum(["stars", "forks", "updated"]).optional().describe("Sort order (default: stars)"),
       limit: z.number().int().min(1).max(50).optional().describe("Max results (default: 10)"),
     },
+    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     async ({ query, sort, limit }) => {
       try {
         const result = await searchRepos(query, sort ?? "stars", limit ?? 10);
@@ -38,6 +39,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
     "github.repo_info",
     "Get metadata about any public repo: stars, forks, license verdict (MIT/Apache=accept, GPL=reject), default branch.",
     { repo: z.string().describe("Repo as owner/repo, e.g. 'vercel/next.js'") },
+    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     async ({ repo }) => {
       try {
         const ref = parseRepoRef(repo);
@@ -56,6 +58,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
       repo: z.string().describe("Repo as owner/repo, e.g. 'shadcn/ui'"),
       maxFiles: z.number().int().min(1).max(50).optional().describe("Max selected files (default: 30)"),
     },
+    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     async ({ repo, maxFiles }) => {
       try {
         const ref = parseRepoRef(repo);
@@ -74,6 +77,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
       repo: z.string().describe("Repo as owner/repo, e.g. 'vercel/next.js'"),
       path: z.string().describe("File path inside the repo, e.g. 'packages/next/src/server/index.ts'"),
     },
+    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     async ({ repo, path }) => {
       try {
         const ref = parseRepoRef(repo);
@@ -92,6 +96,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
       repo: z.string().describe("Repo as owner/repo, e.g. 'sindresorhus/awesome'"),
       maxFiles: z.number().int().min(1).max(20).optional().describe("Max files (default: 10)"),
     },
+    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     async ({ repo, maxFiles }) => {
       try {
         const ref = parseRepoRef(repo);
@@ -111,6 +116,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
       onlyMainContent: z.boolean().optional().describe("Strip nav/ads (default: true)"),
       maxTokens: z.number().int().min(100).max(20000).optional().describe("Output cap in tokens (default: 8000)"),
     },
+    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     async ({ url, onlyMainContent, maxTokens }) => {
       try {
         const result = await scrapeUrl(url, {

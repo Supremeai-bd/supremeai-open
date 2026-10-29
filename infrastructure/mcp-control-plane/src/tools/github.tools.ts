@@ -128,19 +128,46 @@ export function repoUrlFor(accountId?: string, repo?: string): string {
   return `https://api.github.com/repos/Supremeai-bd/${clean}`;
 }
 
+/** R66 option A — derive the honest target echo from the resolved URL.
+ * The value repoUrlFor already computes; parsing it here keeps the echo and
+ * the actual request target from ever drifting apart (single producer). */
+export function describeTarget(targetUrl: string): { targetRepo: string; targetUrl: string } {
+  const m = /\/repos\/([^/]+)\/([^/?#]+)/.exec(targetUrl);
+  if (m) return { targetRepo: `${m[1]}/${m[2].replace(/\.git$/, "")}`, targetUrl };
+  return { targetRepo: targetUrl, targetUrl };
+}
+
+/** R66 echo schemas: repo-targeted tools always resolve a repo; the search
+ * pair resolves org-wide when repo is omitted (null = org-wide, honest). */
+const targetEchoSchema = {
+  targetRepo: z.string(),
+  targetUrl: z.string(),
+};
+const targetEchoSearchSchema = {
+  targetRepo: z.string().nullable(),
+  targetUrl: z.string().nullable(),
+};
+
 export async function registerGitHubTools(server: McpServer): Promise<void> {
   // ── Unified GitHub Actions Tool ──
-  (server as any).tool(
+  // R66 option A (radar): every github_* result echoes its resolved target —
+  // targetRepo/targetUrl ride in structuredContent (schema-required), the
+  // TextContent block stays byte-identical (R65 dual-emission discipline).
+  server.registerTool(
     "github.actions_op",
-    "Unified GitHub Actions diagnostic tool (list workflow runs or fetch failed job logs).",
     {
-      action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
-      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-      repo: z.string().optional().describe("Target repository name"),
-      per_page: z.number().int().min(1).max(100).optional().describe(
-        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
-      limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
-      runId: z.string().optional().describe("Run ID (required for get_failed_logs)"),
+      description: "Unified GitHub Actions diagnostic tool (list workflow runs or fetch failed job logs).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
+        accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+        repo: z.string().optional().describe("Target repository name"),
+        per_page: z.number().int().min(1).max(100).optional().describe(
+          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+        limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+        runId: z.string().optional().describe("Run ID (required for get_failed_logs)"),
+      },
+      outputSchema: targetEchoSchema,
     },
     async ({ action, accountId, repo, per_page, limit, runId }: { action: string; accountId?: string; repo?: string; per_page?: number; limit?: number; runId?: string }) => {
       const target = repo || accountId || "github-primary";
@@ -151,14 +178,14 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       try {
         if (action === "list_runs") {
           const runs = await getWorkflowRuns(target, resolvePerPage(per_page, limit));
-          return { content: [{ type: "text", text: JSON.stringify(runs, null, 2) }] };
+          return { content: [{ type: "text", text: JSON.stringify(runs, null, 2) }], structuredContent: describeTarget(targetUrl) };
         }
         if (action === "get_failed_logs") {
           if (!runId) {
             return { isError: true, content: [{ type: "text", text: "Error: 'runId' is required for get_failed_logs" }] };
           }
           const logs = await getFailedLogs(target, runId);
-          return { content: [{ type: "text", text: JSON.stringify(logs, null, 2) }] };
+          return { content: [{ type: "text", text: JSON.stringify(logs, null, 2) }], structuredContent: describeTarget(targetUrl) };
         }
         return { isError: true, content: [{ type: "text", text: `Unknown action: ${action}` }] };
       } catch (err) {
@@ -167,15 +194,19 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "github.workflow_runs",
-    "List recent GitHub Actions workflow runs for any repository across Supremeai-bd.",
     {
-      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
-      per_page: z.number().int().min(1).max(100).optional().describe(
-        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
-      limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+      description: "List recent GitHub Actions workflow runs for any repository across Supremeai-bd.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+        per_page: z.number().int().min(1).max(100).optional().describe(
+          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+        limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+      },
+      outputSchema: targetEchoSchema,
     },
     async ({ accountId, repo, per_page, limit }) => {
       const target = repo || accountId || "github-primary";
@@ -186,6 +217,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         const runs = await getWorkflowRuns(target, resolvePerPage(per_page, limit));
         return {
           content: [{ type: "text", text: JSON.stringify(runs, null, 2) }],
+          structuredContent: describeTarget(targetUrl),
         };
       } catch (err) {
         return {
@@ -196,13 +228,17 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "github.get_failed_logs",
-    "Get trailing logs for failed jobs in a workflow run for any repository across Supremeai-bd.",
     {
-      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
-      runId: z.string().describe("The GitHub Actions run ID"),
+      description: "Get trailing logs for failed jobs in a workflow run for any repository across Supremeai-bd.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+        runId: z.string().describe("The GitHub Actions run ID"),
+      },
+      outputSchema: targetEchoSchema,
     },
     async ({ accountId, repo, runId }) => {
       const target = repo || accountId || "github-primary";
@@ -213,6 +249,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         const logs = await getFailedLogs(target, runId);
         return {
           content: [{ type: "text", text: JSON.stringify(logs, null, 2) }],
+          structuredContent: describeTarget(targetUrl),
         };
       } catch (err) {
         return {
@@ -223,12 +260,16 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "github.list_secrets",
-    "List GitHub Actions secret names for any repository across Supremeai-bd (names only).",
     {
-      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+      description: "List GitHub Actions secret names for any repository across Supremeai-bd (names only).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+      },
+      outputSchema: targetEchoSchema,
     },
     async ({ accountId, repo }) => {
       const target = repo || accountId || "github-primary";
@@ -239,6 +280,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         const secrets = await listSecrets(target);
         return {
           content: [{ type: "text", text: JSON.stringify(secrets, null, 2) }],
+          structuredContent: describeTarget(targetUrl),
         };
       } catch (err) {
         return {
@@ -249,14 +291,18 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "github.read_file",
-    "Read the content of any file from any repository across the organization (Read-Only).",
     {
-      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'"),
-      path: z.string().describe("Relative path to the file (e.g. 'package.json', 'backend/main.py')"),
-      ref: z.string().optional().describe("Branch, tag or commit SHA (default: 'main')"),
+      description: "Read the content of any file from any repository across the organization (Read-Only).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'"),
+        path: z.string().describe("Relative path to the file (e.g. 'package.json', 'backend/main.py')"),
+        ref: z.string().optional().describe("Branch, tag or commit SHA (default: 'main')"),
+      },
+      outputSchema: targetEchoSchema,
     },
     async ({ accountId, repo, path, ref }) => {
       const target = repo || accountId || "github-primary";
@@ -267,6 +313,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         const fileData = await readFile(target, path, ref ?? "main");
         return {
           content: [{ type: "text", text: JSON.stringify(fileData, null, 2) }],
+          structuredContent: describeTarget(targetUrl),
         };
       } catch (err) {
         return {
@@ -277,16 +324,20 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "github.list_prs",
-    "List pull requests for any repository across Supremeai-bd (Read-Only).",
     {
-      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
-      state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
-      per_page: z.number().int().min(1).max(100).optional().describe(
-        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
-      limit: z.number().optional().describe("Max number of PRs (default: 5)"),
+      description: "List pull requests for any repository across Supremeai-bd (Read-Only).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+        state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
+        per_page: z.number().int().min(1).max(100).optional().describe(
+          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+        limit: z.number().optional().describe("Max number of PRs (default: 5)"),
+      },
+      outputSchema: targetEchoSchema,
     },
     async ({ accountId, repo, state, per_page, limit }) => {
       const target = repo || accountId || "github-primary";
@@ -297,6 +348,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         const prs = await listPullRequests(target, state ?? "open", resolvePerPage(per_page, limit));
         return {
           content: [{ type: "text", text: JSON.stringify(prs, null, 2) }],
+          structuredContent: describeTarget(targetUrl),
         };
       } catch (err) {
         return {
@@ -307,23 +359,29 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "github.code_search",
-    "Search code across Supremeai-bd repositories (Read-Only). Useful for finding method/type references without manual tree traversal.",
     {
-      query: z.string().describe("Search query (code terms, symbol names, etc.)"),
-      repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
-      limit: z.number().int().min(1).max(30).optional().describe("Max results (default: 10)"),
+      description: "Search code across Supremeai-bd repositories (Read-Only). Useful for finding method/type references without manual tree traversal.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        query: z.string().describe("Search query (code terms, symbol names, etc.)"),
+        repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
+        limit: z.number().int().min(1).max(30).optional().describe("Max results (default: 10)"),
+      },
+      outputSchema: targetEchoSearchSchema,
     },
     async ({ query, repo, limit }) => {
+      let echo: { targetRepo: string | null; targetUrl: string | null } = { targetRepo: null, targetUrl: null };
       if (repo) {
         const targetUrl = repoUrlFor(undefined, repo);
         const deny = assertRepoReadAccess("github.code_search", repo, targetUrl);
         if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+        echo = describeTarget(targetUrl);
       }
       try {
         const results = await searchCode(query, repo, limit ?? 10);
-        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }], structuredContent: echo };
       } catch (err) {
         return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
       }
@@ -331,37 +389,47 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
   );
 
   // Alias for clients expecting the alternate name.
-  server.tool(
+  server.registerTool(
     "github.search_code",
-    "Alias of github.code_search — search code across Supremeai-bd repositories (Read-Only).",
     {
-      query: z.string().describe("Search query (code terms, symbol names, etc.)"),
-      repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
-      limit: z.number().int().min(1).max(30).optional().describe("Max results (default: 10)"),
+      description: "Alias of github.code_search — search code across Supremeai-bd repositories (Read-Only).",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        query: z.string().describe("Search query (code terms, symbol names, etc.)"),
+        repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
+        limit: z.number().int().min(1).max(30).optional().describe("Max results (default: 10)"),
+      },
+      outputSchema: targetEchoSearchSchema,
     },
     async ({ query, repo, limit }) => {
+      let echo: { targetRepo: string | null; targetUrl: string | null } = { targetRepo: null, targetUrl: null };
       if (repo) {
         const targetUrl = repoUrlFor(undefined, repo);
         const deny = assertRepoReadAccess("github.search_code", repo, targetUrl);
         if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+        echo = describeTarget(targetUrl);
       }
       try {
         const results = await searchCode(query, repo, limit ?? 10);
-        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }], structuredContent: echo };
       } catch (err) {
         return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
       }
     }
   );
 
-  server.tool(
+  server.registerTool(
     "github.create_issue",
-    "Create a new issue in a SupremeAI repository (e.g. supremeai-open). Zero-credential self-serve for autonomous auditor/scout agents.",
     {
-      title: z.string().min(5).max(250).describe("Issue title"),
-      body: z.string().min(10).describe("Issue description / markdown body"),
-      repo: z.string().optional().describe("Repository name (default: supremeai-open)"),
-      labels: z.array(z.string()).optional().describe("Labels to apply (e.g. ['audit:finding', 'P1-major', 'status:unclaimed'])"),
+      description: "Create a new issue in a SupremeAI repository (e.g. supremeai-open). Zero-credential self-serve for autonomous auditor/scout agents.",
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      inputSchema: {
+        title: z.string().min(5).max(250).describe("Issue title"),
+        body: z.string().min(10).describe("Issue description / markdown body"),
+        repo: z.string().optional().describe("Repository name (default: supremeai-open)"),
+        labels: z.array(z.string()).optional().describe("Labels to apply (e.g. ['audit:finding', 'P1-major', 'status:unclaimed'])"),
+      },
+      outputSchema: targetEchoSchema,
     },
     async ({ title, body, repo, labels }) => {
       const targetRepo = repo || "supremeai-open";
@@ -384,6 +452,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
               ),
             },
           ],
+          structuredContent: describeTarget(repoUrlFor(undefined, targetRepo)),
         };
       } catch (err) {
         return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };

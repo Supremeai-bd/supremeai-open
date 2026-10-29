@@ -18,7 +18,7 @@ import logging
 import os
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     from loguru import logger
@@ -193,7 +193,11 @@ class LoggingConfig:
 
         # Create structured log entry
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            # audit #2564: datetime.utcnow() is deprecated (removal slated
+            # post-3.12). now(timezone.utc).replace(tzinfo=None) keeps the
+            # naive-UTC ISO shape byte-identical for log consumers while
+            # dropping the DeprecationWarning.
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             "level": record["level"].name,
             "message": record["message"],
             "module": record["name"],

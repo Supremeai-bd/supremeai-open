@@ -12,8 +12,8 @@ Traffic-police logic:
 6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
 """
 from __future__ import annotations
-import argparse, json, os, subprocess, sys, time
-from collections.abc import Iterable
+import argparse, json, os, re, subprocess, sys, threading, time, urllib.request
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -164,15 +164,127 @@ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
             return True
     return False
 
+# #2794 fix (1) — live-claim pre-verify depth: only the top-N sorted candidates
+# are probed against the feedback plane. Bounded so the dispatch hot path stays
+# O(N) tower reads (<=5 small bridge_read_feedback calls, each degrade-safe);
+# beyond-window rows are NOT dispatched blind — an exhausted window returns
+# None with an honest note instead (see pick_next_issue).
+FEEDBACK_PREVERIFY_TOPN = 5
+
+def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> tuple[bool, str]:
+    """#2794 fix (1) — live-plane claim pre-verify for the dispatch pick.
+
+    বাংলা: কিউ-লেবেল লাইভ tower claim-কে ৩০-মিনিট claim TTL পর্যন্ত পিছিয়ে থাকে
+    (#2100/#2111 arc; #2794-এর লাইভ প্রমাণ 2026-10-29: ১ ঘণ্টায় ৩টি live-claimed
+    রো dispatch হয়েছে — #1776/#2597/#2738) — ফলে label-only pick অন্য এজেন্টের
+    মালিকানাধীন রো পুনঃ-এমিট করে এবং এজেন্টের পুরো সাইকেল atomic-claim rejection-
+    এ পোড়ে যায়। এই প্রোব bridge_read_feedback-এর latestClaim জিজ্ঞেস করে জানায়
+    সক্রিয় (মেয়াদ-অপ্রাপ্ত) claim আছে কি না — claim-lag অর্ধেক-চার্ন স্ট্রাকচারালি
+    বন্ধ করতে (#2794 proposed fix (1); item (2)-র lane:admin convention আলাদা,
+    owner-blessing অপেক্ষায়)।
+
+    Transport mirrors _tower_queue_floor's never-raise contract: lazy sibling
+    import, daemon probe thread + hard join, and every failure mode degrades to
+    (False, honest-note) — a dark feedback plane must NOT silently change pick
+    behavior (label-only dispatch proceeds; the STALE-CLAIM advisory prose stays
+    as the agent-side second layer — U3 two-layer pattern preserved). Small
+    payloads ride the sibling client's call_tool (the urllib transport split in
+    _tower_board_rows is only needed for the giant queue payload).
+
+    Returns (claim_active, note): True ⇒ row owned right now (note carries
+    agent/at/ttl/remaining); False ⇒ no active claim OR plane dark (note says
+    which — callers log it honestly). Decision logic is exercised with injected
+    probes by tests/test_pick_feedback_preverify.py (zero network).
+    """
+    outcome: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            client = _mtc.McpTowerClient()
+            client.connect()
+            # Live-registry name (underscore form) — the dotted bridge.read_feedback
+            # is dead since #2454-r3; same pin the STALE-CLAIM advisory text follows (#2775).
+            fb = client.call_tool("bridge_read_feedback", {"number": int(issue_number)})
+            # call_tool returns the raw MCP envelope ({"content": [{"text": ...}]});
+            # the feedback dict rides as JSON inside content[0].text — tolerate both
+            # envelope and already-parsed shapes (same extraction as _tower_queue_floor).
+            if isinstance(fb, dict) and isinstance(fb.get("content"), list) and fb["content"]:
+                first = fb["content"][0]
+                txt = first.get("text") if isinstance(first, dict) else None
+                if isinstance(txt, str):
+                    try:
+                        fb = json.loads(txt)
+                    except Exception:
+                        fb = None
+            if isinstance(fb, dict):
+                outcome["fb"] = fb
+            else:
+                outcome["error"] = "feedback payload not parseable"
+        except Exception as exc:  # noqa: BLE001 — probe must never raise
+            outcome["error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — floor must never raise
+        return False, f"feedback probe error ({type(exc).__name__})"
+    if t.is_alive():
+        return False, f"feedback probe timed out after {timeout_s:.0f}s"
+    if "error" in outcome:
+        return False, f"feedback plane dark ({outcome['error']})"
+
+    fb = outcome.get("fb")
+    claim = fb.get("latestClaim") if isinstance(fb, dict) else None
+    if not isinstance(claim, dict) or not claim:
+        return False, "no active claim on the feedback plane"
+
+    agent = str(claim.get("agent") or "unknown-agent")
+    at_raw = claim.get("at")
+    ttl_raw = claim.get("ttlMinutes")
+    if not isinstance(at_raw, str) or not isinstance(ttl_raw, (int, float)):
+        return False, (
+            f"latestClaim present but unparseable (at={at_raw!r}, ttl={ttl_raw!r})"
+        )
+
+    import datetime as _dt  # local import — the shared import lines are #2796-conflict surfaces
+
+    try:
+        claimed_at = _dt.datetime.fromisoformat(str(at_raw).replace("Z", "+00:00"))
+    except ValueError:
+        return False, f"latestClaim timestamp unparseable ({at_raw!r})"
+
+    age_s = max(0.0, time.time() - claimed_at.timestamp())  # clock skew ⇒ just-claimed
+    ttl_s = float(ttl_raw) * 60.0
+    if age_s < ttl_s:
+        remaining_m = (ttl_s - age_s) / 60.0
+        return True, (
+            f"live claim by {agent} at {at_raw} (ttl {ttl_raw:g}m, {remaining_m:.0f}m remaining)"
+        )
+    return False, (
+        f"latestClaim by {agent} expired ({age_s / 60.0:.0f}m age > {ttl_raw:g}m ttl)"
+    )
+
 def pick_next_issue(
     exclude: set[str] | list[str] | None = None,
     issues: list[dict[str, Any]] | None = None,
+    claim_probe: Callable[[int | str], tuple[bool, str]] | None = None,
 ) -> str | None:
     """বাংলা: priority-অনুসারে পরবর্তী claimable issue বাছাই (P0 আগে, তারপর নম্বর)।
 
     আগের সংস্করণে এই ফাংশনটিই একমাত্র priority-sorter ছিল কিন্তু main() কখনো ডাকতই না
     (dead code) — ফলে লুপ P0 আগে দেবে এই প্রতিশ্রুতি কোডে কখনো কার্যকর হয়নি। এখন
     main() pre-fetched board এখানে পাঠায় (issues=...) — এক সাইকেলে দুবার gh query হয় না।
+
+    #2794 fix (1): claim_probe দিলে top-FEEDBACK_PREVERIFY_TOPN প্রার্থী bridge_read_feedback
+    দিয়ে live-claim যাচাই হয় — সক্রিয় claim-পত রো একই রানে স্কিপ হয়ে পরের প্রার্থীতে
+    এগোয় (এজেন্টকে পুরো লুপ পুনঃরান করতে বলা হয় না); প্রোব-ডার্ক হলে label-only
+    আচরণ (আচরণ অপরিবর্তিত, সৎ নোট); উইন্ডো শেষ হলে সৎ None — জানা-মালিকানাধীন রো
+    এক র‍্যাঙ্ক নিচে দিয়ে অন্ধ dispatch নয়। claim_probe=None মানে pure mode —
+    label-only pick, আগের চুক্তি অক্ষত (হারমেটিক টেস্ট এভাবেই ডাকে)।
     """
     if issues is None:
         code, out, _ = run_cmd([
@@ -222,8 +334,38 @@ def pick_next_issue(
         excluded_set = {str(e) for e in exclude}
         candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
     sorted_issues = sorted(candidates, key=priority_key)
+    if claim_probe is None:
+        # Pure mode — label-only pick, exactly the pre-#2794 contract (hermetic
+        # tests and opt-out callers ride this path; zero network, zero behavior change).
+        if sorted_issues:
+            return str(sorted_issues[0].get("number"))
+        return None
+
+    # #2794 fix (1) — live-plane pre-verify before ACTION: queue labels lag live
+    # claims by up to the 30-min claim TTL, so the label-only pick re-emits rows
+    # another agent already owns (live 2026-10-29: #1776/#2597/#2738 dispatched
+    # while live-claimed). An active claim skips the row IN THE SAME RUN; a dark
+    # probe degrades to label-only (behavior unchanged, honest note); an exhausted
+    # window returns None instead of dispatching a known-owned row one rank lower.
+    for item in sorted_issues[:FEEDBACK_PREVERIFY_TOPN]:
+        num = str(item.get("number", ""))
+        try:
+            active, note = claim_probe(item.get("number"))
+        except Exception as exc:  # noqa: BLE001 — a broken probe must not break the pick
+            active, note = False, f"probe raised {type(exc).__name__}"
+        if active:
+            log("!", f"pick pre-verify: #{num} skipped — {note}; advancing to next candidate (#2794 fix (1))")
+            continue
+        if note and not note.startswith("no active claim"):
+            log("!", f"pick pre-verify: #{num} {note} — proceeding on labels (live advisory to the agent stays in force)")
+        return num
     if sorted_issues:
-        return str(sorted_issues[0].get("number"))
+        log(
+            "!",
+            f"pick pre-verify: top {min(FEEDBACK_PREVERIFY_TOPN, len(sorted_issues))} candidates live-claimed — "
+            "no clean pick this run (rerun later or dispatch explicitly via --issue N); "
+            "dispatching a known-owned row would burn the cycle on atomic-claim rejection",
+        )
     return None
 
 
@@ -264,6 +406,333 @@ def log(icon: str, msg: str) -> None:
     except UnicodeEncodeError:
         print(f"[*] {msg}")
 
+def _tower_queue_floor(timeout_s: float = 12.0) -> str:
+    """R61/#2318 option B — honesty floor for the gh-absent skip line.
+
+    On the documented external-agent runtime (no gh CLI) the skip line used to
+    say only "issue board unavailable", which reads as an EMPTY board while the
+    Tower queue is in fact reachable zero-credential — and the P0-drainage gate
+    (Universal Invariant 5) is dark there BY CONSTRUCTION (AGENT_LOOP_SPEC
+    scans the same gh-derived items). This best-effort probe appends the live
+    queue depth so the skip line stops lying by omission (the R61 body's live
+    quantification: 93 open rows incl. a P1 invisible to this runtime).
+
+    Never raises, never hangs: lazy sibling import (same sys.path pattern as
+    tests/test_tower_url_resolution.py), daemon probe thread + hard join, and
+    every failure mode degrades to the plain P0-dark note. Runs ONLY on the
+    gh-absent path, so gh-present runtimes (CI) are untouched."""
+    outcome: dict[str, str] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            client = _mtc.McpTowerClient()
+            client.connect()
+            # 2026-10-29: the tower renamed bridge_work_queue -> bridge.work_queue
+            # (#2454 r3 deploy; old name absent from the live registry) — use the
+            # dotted name or the P0-drainage probe stays dark (#2457).
+            q = client.call_tool("bridge.work_queue", {})
+            # call_tool returns the raw MCP envelope ({"content":[{"text": ...}]});
+            # the queue dict rides as JSON inside content[0].text (same extraction
+            # the client's own CLI does). Tolerate both envelope and parsed shapes.
+            if isinstance(q, dict) and isinstance(q.get("content"), list) and q["content"]:
+                first = q["content"][0]
+                txt = first.get("text") if isinstance(first, dict) else None
+                if isinstance(txt, str):
+                    try:
+                        q = json.loads(txt)
+                    except Exception:
+                        q = None
+            total = q.get("totalOpen") if isinstance(q, dict) else None
+            if isinstance(total, int):
+                outcome["note"] = (
+                    f"tower board reachable: {total} open work orders — "
+                    "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+                )
+            else:
+                outcome["note"] = (
+                    "tower board probe returned no totalOpen — "
+                    "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+                )
+        except Exception as exc:  # noqa: BLE001 — floor must never raise
+            outcome["note"] = (
+                f"tower board probe failed ({type(exc).__name__}) — "
+                "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+            )
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — floor must never raise
+        return f"tower board probe error ({type(exc).__name__}) — P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+    if t.is_alive():
+        return "tower board probe timed out — P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+    return outcome.get("note", "P0-drainage gate (Invariant 5) is dark on this gh-less runtime")
+
+def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], str]:
+    """R78/J484751 — gh-absent tower board fallback (revives the dispatch path).
+
+    বাংলা: gh CLI নেই এমন ডকুমেন্টেড external-agent runtime-এ ডিসপ্যাচ পথের
+    বোর্ড-কোয়েরি সবসময় ব্যর্থ হয় — ফলে solver dispatch ও P0-drainage গেট (Invariant
+    ৫) দুটোই অন্ধকার থাকে, অথচ tower queue zero-credential থেকেই reachable (live
+    প্রমাণ 2026-10-30: bridge.work_queue, totalOpen=115)। R61 floor-প্রোব শুধু একটা
+    সত্য-নোট যোগ করত — বোর্ড-ডেটা নিজে ফেরত দিত না; ফলে লুপ যেখানে
+    আসলেই চলে সেখানে solver-পথ মৃত ছিল এবং P0-অবস্থা যাচাই অসম্ভব ছিল। এই fallback
+    সেই একই lazy sibling import প্যাটার্ন (daemon thread + hard join, কখনো raise/
+    hang নয় — প্রতিটি ব্যর্থতা সৎ নোটে নামে) দিয়ে bridge.work_queue-র সারিগুলোকে
+    gh-shaped বোর্ড আইটেমে ম্যাপ করে; একই পেলোড এখন দুই ভোক্তা পায় (floor-নোট +
+    বোর্ড-ডেটা)। gh-present runtime-এ এই ফাংশন ডাকা হয় না (CI অস্পৃষ্ট)।
+
+    Shape contract: workOrders[].labels স্ট্রিং-তালিকা, কিন্তু label_names() dict-শেপ
+    আশা করে — তাই {"name": l} এ মোড়া হয় (EXCLUDED_LABELS/P0-গেট/priority-scan
+    তিনটিই এভাবে কাজ করে); body অনুপস্থিত রাখা হয় — envelope hydrate-পথ (title/body
+    অনুপস্থিতিতে gh issue view + সৎ board_note) এটাকেই সামলায়। ফেরত: (rows, note) —
+    rows খালি মানে fallback-ব্যর্থতা, note-এ সৎ কারণ।
+
+    Transport note (live 2026-10-30): পুরো বোর্ডের (limit=200) tools/call রেসপন্স
+    একটাই ~১৩৪ KB-র SSE data-লাইন; সিবলিং ক্লায়েন্টের call_tool পথ requests-
+    এর iter_lines(decode_unicode=True) ব্যবহার করে, যা chunk-boundary-তে বড়
+    single-line পেলোড মাঝপথে ভেঙে দেয় (fragment 63,624 chars — id-match ব্যর্থ,
+    McpTowerTimeoutError)। তাই এই প্রোব urllib-এ (stdlib) raw streamable POST
+    করে এবং পুরো body থেকে bytes-স্তরে data-line এক্সট্র্যাক্ট করে — যেকোনো সাইজে
+    নিরাপদ (প্রমাণিত: একই পেলোড json.loads 134,253 bytes-এ পাস)। সিবলিং ক্লায়েন্ট
+    থেকে শুধু MCP_SERVER_URL রেজোলিউশন ধার নেওয়া হয় (env/mcp.json/default —
+    operator-এর mcp.json চুক্তি অক্ষত); heartbeat/status-এর মতো ছোট পেলোডে
+    ক্লায়েন্টের call_tool অক্ষত।
+    """
+    outcome: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            base = _mtc.MCP_SERVER_URL.rstrip("/")
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+                hdrs = dict(headers)
+                if sid:
+                    hdrs["mcp-session-id"] = sid
+                req = urllib.request.Request(
+                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
+
+            # 1) initialize (handshake) 2) initialized notification 3) tools/call
+            init_id = "cal-board-fallback-1"
+            sid, _ = _post({
+                "jsonrpc": "2.0", "id": init_id, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05", "capabilities": {},
+                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                },
+            }, None)
+            # বাংলা: initialize-থেকে mcp-session-id ধরে রাখা বাধ্যতামূলক — tower
+            # notification/call-এ header ছাড়া 4xx দেয় (live 2026-10-30, HTTPError);
+            # কিছু ডিপ্লয়মেন্ট session-id ছাড়াই চলে, তাই sid=None হলেও এগোনো নিরাপদ।
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            call_id = "cal-board-fallback-2"
+            _, body = _post({
+                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                "params": {"name": "bridge.work_queue", "arguments": {"limit": 200}},
+            }, sid, timeout=45)
+
+            # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত।
+            # limit=200-এর মতো বড় single-line পেলোড splitlines/iter_lines-এ ভাঙে,
+            # তাই regex পুরো body-র উপর চলে (mcp_call.py-এর প্রমাণিত প্যাটার্ন)।
+            envelopes: list[dict[str, Any]] = []
+            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+                try:
+                    envelopes.append(json.loads(m.group(1)))
+                except json.JSONDecodeError:
+                    pass
+            if not envelopes:
+                try:
+                    envelopes.append(json.loads(body))
+                except json.JSONDecodeError:
+                    pass
+            result: Any = None
+            for env in envelopes:
+                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+                    result = env.get("result")
+                    break
+            text = ""
+            if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+                first = result["content"][0]
+                txt = first.get("text") if isinstance(first, dict) else None
+                if isinstance(txt, str):
+                    text = txt
+            q: Any = None
+            if text:
+                try:
+                    q = json.loads(text)
+                except json.JSONDecodeError:
+                    q = None
+            rows = q.get("workOrders") if isinstance(q, dict) else None
+            if not isinstance(rows, list):
+                outcome["error"] = "tower queue payload carried no workOrders list"
+                return
+            board: list[dict[str, Any]] = []
+            for row in rows:
+                if not isinstance(row, dict) or row.get("number") is None:
+                    continue
+                raw_labels = row.get("labels")
+                labels: list[Any] = []
+                if isinstance(raw_labels, list):
+                    labels = [{"name": str(l)} for l in raw_labels]
+                board.append(
+                    {
+                        "number": row.get("number"),
+                        "title": row.get("title"),
+                        "state": row.get("state") or "open",
+                        "labels": labels,
+                    }
+                )
+            outcome["rows"] = board
+            detail = ""
+            if isinstance(q, dict) and isinstance(q.get("totalOpen"), int):
+                detail += f" (totalOpen={q['totalOpen']}"
+                if q.get("windowTruncated"):
+                    detail += ", window truncated"
+                detail += ")"
+            elif isinstance(q, dict) and q.get("windowTruncated"):
+                detail = " (window truncated)"
+            outcome["note"] = f"tower board fallback: {len(board)} rows{detail}"
+        except Exception as exc:  # noqa: BLE001 — fallback must never raise
+            outcome["error"] = f"tower board fallback failed ({type(exc).__name__})"
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — fallback must never raise
+        return [], f"tower board fallback error ({type(exc).__name__})"
+    if t.is_alive():
+        return [], "tower board fallback timed out"
+    if outcome.get("error"):
+        return [], str(outcome["error"])
+    return outcome.get("rows", []), str(outcome.get("note", "tower board fallback returned no rows"))
+
+def _tower_issue_hydrate(number: int | str, timeout_s: float = 75.0) -> dict[str, Any] | None:
+    """Per-issue tower hydration fallback — the mirror of _tower_board_rows (R78).
+
+    বাংলা: R78 বোর্ড-fallback বোর্ড জীবিত রাখে (number/title/labels), কিন্তু
+    envelope-মোডের hydrate-পথ body-র জন্য কেবল gh issue view-এর উপর দাঁড়িয়ে ছিল।
+    gh-absent রানটাইমে ফল দুটো: auto-pick এনভেলপে problem_statement.body="" (এজেন্ট
+    acceptance-criteria ছাড়া অন্ধকারে কাজ করে — SPEC §2 body-গ্যারান্টি ভাঙে), আর
+    --issue N পথ সম্পূর্ণ ad-hoc এনভেলপে পতিত হয় (issue=null) — অথচ বোর্ড তখন
+    tower-fallback-এ জেগে থাকে (asymmetry: বোর্ড revive আছে, hydrate নেই)। এই
+    fallback একই lazy-sibling/never-raise প্যাটার্নে tower-এর live tool
+    bridge.work_order দিয়ে per-issue title/body/labels/state hydrate করে।
+    Transport: R78-এর urllib প্রোবই বাহক — live 2026-10-30 প্রমাণ: সিবলিং ক্লায়েন্টের
+    call_tool RESPONSE_WAIT=15s-এ bridge.work_order-এর tower-side GitHub-fetch
+    (>15s, Render cold tier) McpTowerTimeoutError দেয়, আর iter_lines বড়
+    single-line পেলোড chunk-boundary-তে ভাঙে; urllib raw-body data-line
+    এক্সট্র্যাকশন যেকোনো সাইজে/দেরিতে নিরাপদ (R78-এ ১৩৪KB-তে প্রমাণিত)। সততা:
+    sanitization tower-side (bridge.work_order-এর নিজস্ব চুক্তি) — এনভেলপে
+    বোর্ড-নোট সেটাই বলে।
+    ফেরত: gh-shaped dict (number/title/labels/state/body) বা None — কখনো raise নয়,
+    ব্যর্থতায় কলার-সাইটের আগের সৎ note অক্ষত থাকে।
+    """
+    outcome: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            base = _mtc.MCP_SERVER_URL.rstrip("/")
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+                hdrs = dict(headers)
+                if sid:
+                    hdrs["mcp-session-id"] = sid
+                req = urllib.request.Request(
+                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
+
+            sid, _ = _post({
+                "jsonrpc": "2.0", "id": "cal-hydrate-1", "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05", "capabilities": {},
+                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                },
+            }, None)
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            call_id = "cal-hydrate-2"
+            _, body = _post({
+                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                "params": {"name": "bridge.work_order", "arguments": {"number": int(number)}},
+            }, sid, timeout=60)
+
+            # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত;
+            # regex পুরো body-র উপর চলে (splitlines/iter_lines বড় single-line-এ ভাঙে)।
+            envelopes: list[dict[str, Any]] = []
+            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+                try:
+                    envelopes.append(json.loads(m.group(1)))
+                except json.JSONDecodeError:
+                    pass
+            if not envelopes:
+                try:
+                    envelopes.append(json.loads(body))
+                except json.JSONDecodeError:
+                    pass
+            result: Any = None
+            for env in envelopes:
+                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+                    result = env.get("result")
+                    break
+            text = ""
+            if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+                first = result["content"][0]
+                if isinstance(first, dict):
+                    text = first.get("text") or ""
+            if not text:
+                outcome["error"] = "tower work-order payload carried no text"
+                return
+            wo = json.loads(text)
+            if not isinstance(wo, dict) or wo.get("number") is None:
+                outcome["error"] = "tower work-order payload carried no number"
+                return
+            raw_labels = wo.get("labels")
+            labels: list[Any] = []
+            if isinstance(raw_labels, list):
+                labels = [{"name": str(l)} for l in raw_labels]
+            outcome["issue"] = {
+                "number": wo.get("number"),
+                "title": wo.get("title"),
+                "state": wo.get("state") or "open",
+                "labels": labels,
+                "body": wo.get("body") or "",
+            }
+        except Exception as exc:  # noqa: BLE001 — hydration must never raise
+            outcome["error"] = f"tower issue hydration failed ({type(exc).__name__})"
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception:  # noqa: BLE001 — hydration must never raise
+        return None
+    if t.is_alive():
+        return None
+    return outcome.get("issue")
+
 def run_cmd(
     cmd: list[str], cwd: Path | None = None, check: bool = False, timeout: int = 300
 ) -> tuple[int, str, str]:
@@ -296,6 +765,40 @@ def run_cmd(
         if check:
             raise RuntimeError(err) from exc
         return 1, "", err
+
+def hooks_path_advisory() -> str | None:
+    """R63/#2343 option B — start-of-run local-enforcement probe (agent-plane lane).
+
+    বাংলা: রিপো যে `.githooks/` স্যুট (Board-Freshness pre-push গেট, #4177) শিপ করে
+    সেটি git-এর ডিফল্টে কখনো সক্রিয় হয় না — সক্রিয় হতে প্রতি-ক্লোনে
+    `git config core.hooksPath .githooks` দরকার (git-এর নিজস্ব anti-malware
+    নীতি; Documentation/githooks.adoc), আর রিপোর কোনো পৃষ্ঠই সেই কনফিগ-লাইন
+    বুটস্ট্র্যাপ করে না (R63 স্ক্যান: hooksPath/githooks শূন্য হিট)। ফলে
+    Universal Invariant 1 (Dual-Rebase "0 behind pre-push")-এর স্থানীয়-স্তর
+    প্রয়োগ প্রতিটি স্ট্যান্ডার্ড ক্লোনে অন্ধকার — #2322-শ্রেণির stale-base
+    clobber ঠেকানোর প্রথম স্তরটাই ডিফল্টে বন্ধ। এই প্রোব সত্যিকারের worktree-তে
+    unset hooksPath দেখলে ঠিক এক লাইনের সত্য-সতর্কতা stderr-এ দেয় (লুপের বিদ্যমান
+    advisory-নোট শৈলী: --loop/--auto-pr নোটের মতোই; stdout-চুক্তি অস্পৃষ্ট —
+    envelope-মোডের SPEC §4b stdout-purity ও dispatch stdout মার্কার-গণনা দুটোই
+    অক্ষত)। git-কনফিগ মিউটেশন করে না (option D প্রত্যাখ্যাত — অপারেটর-সম্মতি);
+    worktree না হলে নীরব; নেটওয়ার্ক-মুক্ত তাই offline-এও সৎ।
+
+    Returns:
+        str | None: stderr-এ মুদ্রণযোগ্য এক-লাইন advisory, বা None (সক্রিয়/প্রযোজ্য নয়)।
+    """
+    rc, out, _ = run_cmd(["git", "config", "--get", "core.hooksPath"], timeout=10)
+    if rc == 0 and out.strip():
+        return None  # বাংলা: হুক-পাথ সক্রিয় — কিছু বলার নেই।
+    # বাংলা: git-রিপোজিটরি নয় এমন ডিরেক্টরিতে মিথ্যা সতর্কতা নয় — নীরব।
+    rc_repo, _, _ = run_cmd(["git", "rev-parse", "--is-inside-work-tree"], timeout=10)
+    if rc_repo != 0:
+        return None
+    return (
+        "hooks-path probe: core.hooksPath is unset in this worktree — the shipped "
+        ".githooks/ enforcement suite (Board-Freshness pre-push gate, #4177) stays dark "
+        "by git default ($GIT_DIR/hooks). One-line activation: "
+        "git config core.hooksPath .githooks"
+    )
 
 def diff_rule_freshness(
     local_shas: dict[str, str | None], remote_shas: dict[str, str | None]
@@ -332,7 +835,27 @@ def _offline_requested(flag: bool) -> bool:
     )
 
 def _print_rule_version_and_checklist() -> None:
-    pass
+    """R78/J484751 — rule-1 contract surface (was a silent `pass` stub).
+
+    বাংলা: traffic-police নিয়ম ১ বলে "Always display the 5 Universal Invariant
+    Pillars (Common Rules)" — অথচ এই ফাংশনটি ছিল `pass` স্টাব; step_2_rules()
+    (freshness গেট) একে ডাকত কিন্তু কিছুই দৃশ্যমান হত না — চুক্তির অর্ধেক নীরব।
+    সাথে mandatory_invariant_checklist() নির্মিত ও টেস্ট-পিন্ড হয়েও (test_02/03/04)
+    কোনো রানটাইম ভোক্তা ছিল না — dead surface। এখন গেট-যাচাইকৃত রানে ৫টি পিলার
+    (COMMON_RULES) + চুক্তি-ভার্সন + fail-closed guard চেকলিস্ট stderr-এ দৃশ্যমান হয়।
+    stderr-ই চ্যানেল: --verify-only-র stdout চুক্তি পিন্ড (tier-এভিডেন্স + final
+    CONTRACT_VERSION marker exactly-once, test_23/26) — সেখানে নতুন stdout লাইন
+    parity-grep ভাঙত; dispatch-পথে COMMON_RULES আগের মতোই stdout-এ যায় (এই স্টাব
+    dispatch-পথে ডাকা হয় না — test_27 AST-পিন)। advisory সারফেস — প্রিন্ট-ব্যর্থতা
+    কখনো গেট ফেল করাবে না।
+    """
+    try:
+        print(COMMON_RULES, file=sys.stderr)
+        print(f"RULE SURFACE: {CONTRACT_VERSION} — fail-closed invariant checklist:", file=sys.stderr)
+        for entry in mandatory_invariant_checklist():
+            print(f"  - {entry['id']}: {entry['rule']}", file=sys.stderr)
+    except Exception:  # noqa: BLE001 — advisory surface must never break the gate
+        pass
 
 def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
     """Step 2: Constitution freshness gate + governing-rules loading (#567)."""
@@ -538,7 +1061,7 @@ def build_task_envelope(
             # scripts/queue_consistency_probe.py R2)। ভুল লেবেল-ডেটা লুপের কোডে ঠিক হয়
             # না (b3dfbbe ব্রিজ-স্টেট বাদ দেয়, ভুল ডেটা নয়) — তাই সৎ প্রতিকার:
             # এজেন্টকে claim-এর আগে feedback-plane যাচাইয়ের নির্দেশ।
-            "STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge.read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.",
+            "STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge_read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.",
         ]
     )
 
@@ -809,12 +1332,22 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
     বাংলা: একক সাইকেলের পরিষ্কার ডিসপ্যাচ এক্সিকিউশন। বাহ্যিক শিডিউলার বা রানার
     দ্বারা সাইকেল পরিচালিত হয়।
     """
+    # বাংলা: R63/#2343 option B — start-of-run স্থানীয়-প্রয়োগ প্রোব। ডিসপ্যাচ-পথের
+    # একেবারে শুরুতে একবার; সতর্কতাটি সবসময় stderr-এ (envelope-মোডের stdout-purity
+    # ও dispatch stdout মার্কার-গণনা অস্পৃষ্ট)। --verify-only পথ এখানে পৌঁছায় না
+    # (main()-এ আগেই রিটার্ন করে) — তাই বুট-স্মোকের stderr-চুক্তিও বাইট-অপরিবর্তিত।
+    advisory = hooks_path_advisory()
+    if advisory:
+        print(advisory, file=sys.stderr)
     cmd = [
         "gh", "issue", "list",
         "--repo", UPSTREAM_REPO,
         "--json", "number,labels",
         "--state", "open",
-        "--limit", "100",
+        # R78/J484751: 100 → 200 — pick_next_issue()-র নিজস্ব gh-কোয়েরির সাথে উইন্ডো
+        # SSOT-প্যারিটি; লাইভ বোর্ডে ১১৫+ খোলা সারি থাকায় ১০০-র জানালা নীরবে
+        # প্রাপ্য-তালিকা কেটে দিত (P1/P2 সারি পুরো দেখার আগেই উইন্ডো শেষ)।
+        "--limit", "200",
     ]
     # বাংলা: main() এখানে run_cmd() বাইপাস করে সরাসরি subprocess.run() ডাকছিল —
     # gh CLI অনুপস্থিত মেশিনে FileNotFoundError ছুঁড়ে পুরো লুপ crash করত
@@ -848,6 +1381,27 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         except FileNotFoundError:
             board_unavailable = True
             board_error = "gh CLI not found on PATH"
+
+        # বাংলা: R78/J484751 — gh ব্যর্থ/অনুপস্থিত হলে tower-বোর্ড fallback। বোর্ড
+        # তখন খালি নয়, অদৃশ্য ছিল; tower queue zero-credential reachable হওয়ায়
+        # solver dispatch ও P0-গেট দুটোই প্রাণ ফিরে পায় (বিস্তারিত
+        # _tower_board_rows()-এর ডকস্ট্রিং-এ)। --offline পথ এই else-ব্রাঞ্চে আসেই না
+        # (offline মানে নেটওয়ার্ক নেই — fallback সেখানে অবাঞ্ছিত)। fallback সফল হলে
+        # board_unavailable=False; দুই প্লেনই অন্ধকার হলে আগের সৎ skip-লাইন ও
+        # gh-absent honesty floor (test-pinned) অপরিবর্তিত থাকে।
+        if board_unavailable and not raw:
+            fb_rows, fb_note = _tower_board_rows()
+            if fb_rows:
+                raw = fb_rows
+                board_unavailable = False
+                board_error = f"gh board query failed ({board_error}); revived via {fb_note}"
+                # বাংলা: fallback-নোট stderr-এ — dispatch-stdout মার্কার-গণনা ও
+                # envelope-মোডের stdout-purity অস্পৃষ্ট (hooks_path_advisory-এর
+                # একই চ্যানেল-শৃঙ্খলা)।
+                print(
+                    f"! board query revived: {board_error}",
+                    file=sys.stderr,
+                )
 
     envelope_mode = args.task_envelope or args.emit_prompt or args.emit_contract
 
@@ -886,10 +1440,22 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                     note = "gh CLI not found on PATH"
                 except Exception as exc:
                     note = f"gh issue view error: {exc}"
+                if target_issue is None and note:
+                    # বাংলা: R78 board-fallback-এর আয়না — gh অনুপস্থিত/ব্যর্থ হলে
+                    # tower bridge.work_order দিয়ে per-issue hydrate। এর আগে --issue N
+                    # পথ gh-absent মেশিনে সম্পূর্ণ ad-hoc এনভেলপে পতিত হত (task-adhoc,
+                    # issue=null) — বোর্ড tower-fallback-এ জীবিত থাকলেও। hydrate সফল
+                    # হলে সত্যিকারের issue-বাউন্ড এনভেলপ যায় ও lease mark কাজ করে;
+                    # ব্যর্থ হলে আগের সৎ note অক্ষত থাকে (নীরব স্টাব নয়)।
+                    hydrated = _tower_issue_hydrate(args.issue)
+                    if hydrated is not None:
+                        target_issue = hydrated
+                        note = (f"gh issue view unavailable; hydrated via tower work-order "
+                                f"fallback (issue {args.issue})")
         elif board_unavailable:
             note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
         else:
-            picked = pick_next_issue(issues=raw)
+            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)
             if picked:
                 target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
                 # বাংলা: board query-র list payload-এ title থাকে না (gh issue list
@@ -926,6 +1492,18 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                         note = "gh CLI not found on PATH; envelope emitted without title/body"
                     except Exception as exc:
                         note = f"gh issue view error: {exc}; envelope emitted without title/body"
+                    # বাংলা: SPEC §2 body-গ্যারান্টি — auto-pick পথে hydrate-ট্রিগার
+                    # (title/body অনুপস্থিতি) gh ব্যর্থ হলে এতদিন শুধু খালি body-র
+                    # এনভেলপ রেখে দিত; tower work-order fallback সেটাই পূরণ করে
+                    # (একই চুক্তি: note সৎ, objective খালি নয়)।
+                    if target_issue is not None and (
+                        target_issue.get("title") is None or target_issue.get("body") is None
+                    ):
+                        hydrated = _tower_issue_hydrate(picked)
+                        if hydrated is not None:
+                            target_issue = hydrated
+                            note = (f"gh issue view unavailable; hydrated via tower "
+                                    f"work-order fallback (issue {picked})")
             elif not args.allow_adhoc:
                 print(
                     "No claimable issue on the board. Pass --allow-adhoc to emit an ad-hoc envelope.",
@@ -963,8 +1541,14 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         )
     if board_unavailable:
         log("!", f"issue board unavailable ({board_error}) — skipping solver dispatch. Cadence roles still evaluated.")
+        if board_error == "gh CLI not found on PATH":
+            # R61/#2318 option B honesty floor — on a gh-less runtime the board
+            # is not empty, it is UNSEEN: report the dark P0 gate + live tower
+            # queue depth instead of implying an empty board. Best-effort,
+            # never raises/hangs (see _tower_queue_floor).
+            log("!", _tower_queue_floor())
     else:
-        picked = pick_next_issue(issues=raw)
+        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)
         if picked:
             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
             # status:runway → ci-fixer, gate:pre-landing → task-auditor হলেও
@@ -995,9 +1579,9 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # বাংলা: STALE-CLAIM GUARD — envelope-এর specialist_prompt-এর সাথে সমান্তরাল
             # (U3-র দুই-স্তর প্যাটার্ন)। কিউ-লেবেল লাইভ claim-কে পিছিয়ে থাকায়
             # status:unclaimed পরামর্শ মাত্র, সত্য নয়; work_claim-এর আগে
-            # bridge.read_feedback দিয়ে latestClaim যাচাই বাধ্যতামূলক, আর
+            # bridge_read_feedback দিয়ে latestClaim যাচাই বাধ্যতামূলক, আর
             # atomic-claim rejection হলে একই সারি রিট্রাই নয় — পরের প্রার্থী।
-            print("STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge.read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.")
+            print("STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge_read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.")
             return 0
 
     cfg = load_cadence_config()

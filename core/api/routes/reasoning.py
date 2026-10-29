@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from api.deps import get_current_user_token
 from core.llm.llm_gateway.context import InferenceContext
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from engine.debate_engine import ConsensusOrchestrator, Proposal
 from engine.tree_of_thought import TreeOfThoughtReasoner
 

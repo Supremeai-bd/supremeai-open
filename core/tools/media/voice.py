@@ -4,7 +4,7 @@ import os
 import httpx
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class VoiceInterface:

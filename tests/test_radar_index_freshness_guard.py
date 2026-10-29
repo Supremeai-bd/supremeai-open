@@ -252,11 +252,154 @@ def test_live_repo_sweep_passes() -> None:
     # the disambiguated rows R63-I (#2343 hooks-bootstrap) / R63-II (#2358
     # MCP-Registry) and advanced it R63 -> R64 (the successor slot's only
     # citation is the scout ticket's own title token — pass-15 self-ref class).
+    # and after #2392 (R64 pointer-board agreement guard, pass 25) registered
+    # the R64 row and advanced it R64 -> R65 (verified free: tracked scan
+    # zero hits; 100-row board sweep zero citations outside the self-ref).
+    # and after #2464 (radar-index integrity r2, pass 26) registered the
+    # R65 (landed #2454, receipt-verified #2469) / R66 (claimed #2447,
+    # receipts #2452/#2469) rows and advanced it R65 -> R67 (verified free:
+    # tracked scan zero hits; 112-row board sweep zero citations).
+    # and after #2497 (pass 27) registered the R67 row (landed #2492, closes
+    # #2486 — invariant D's first live ratchet-drift FAIL on main) and
+    # advanced it R67 -> R68 (verified free: tracked scan zero hits; subject
+    # scan zero hits; tower capture zero citations, full 200-capture
+    # rate-limited, disclosed).
+    # and after pass 28 (cycle-35, Job 478344) registered the R68 row
+    # (landed 9a13e19 / #2533, closes #2530 — pass-27 registration-default
+    # class caught PRE-emptively before the guard ran, no red occurred) and
+    # advanced it R68 -> R69 (verified free: tracked scan zero hits; subject
+    # scan zero hits; 100-row tower queue capture zero citations).
+    # and after pass 29 (cycle-40, Job 478338) registered the R69 row
+    # (radar-doc be6e34f / receipt WO #2545 — pass-27 registration-default
+    # class recurred, guard RED at HEAD: citation-ghost + subject-ghost pair)
+    # and advanced it R69 -> R70 (verified free: tracked scan zero token hits
+    # outside hash-substring false positives; tower queue capture zero
+    # citations).
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 64, "pointer drifted — regenerate expectation with the index"
+    # and after pass 30 (cycle-42, Job 478338) registered the R70 row
+    # (landed b6ef339 / #2574, closes #2568 — pass-27 registration-default
+    # class recurred a third time in five passes, guard RED at HEAD:
+    # commit-subject-ghost single, code-plane landing) AND the R71 row
+    # (open/claimed, peer scout #2586 — pass-26 adoption-staleness class
+    # on the advertised-successor slot) and advanced it R70 -> R72
+    # (verified free: tracked scan zero hits; subject scan zero hits;
+    # 7-row tower queue capture windowTruncated false, zero citations).
+    # and after pass 31 (cycle-43, Job 478338) registered the R72 row
+    # (open/unclaimed, peer scout #2608 — annotations residual census,
+    # fix surface tower-owner for the 118 non-repo-reachable tools)
+    # PRE-EMPTIVELY before any landing cited the token (guard green at
+    # registration time — the pass-28 pattern's second application) and
+    # advanced it R72 -> R73 (verified free: tracked scan zero hits;
+    # subject scan zero hits; 127-row tower queue capture windowTruncated
+    # false, zero citations).
+    # and after pass 32 (Job 477792, 22:45+08) registered the R73 row
+    # (open/claimed, peer scout #2627 — annotations phase-3, pass-26
+    # precedent: the advertised R73 was already cited issue-side at
+    # allocation time, predicate failed loud BEFORE consumption) and the
+    # R74 row (#2633, filer same-cycle registration per pass-5 — MCP
+    # 2025-11-25 capability-surface census) and advanced it R73 -> R75 —
+    # a corrected skip: the advertised slot itself was taken, so the
+    # pointer advertises the next fully-clean number (verified free:
+    # tracked scan zero hits; subject scan zero hits; 133-row tower queue
+    # capture windowTruncated false, zero citations).
+    # and after pass 33 (cycle-45, Job 478338) registered the R75 row
+    # (open/claimed, peer scout #2654 — control-plane phantom dependency,
+    # pass-26 precedent third application) PRE-EMPTIVELY before any
+    # landing cited the token (guard green at registration time — the
+    # pass-28 pattern's third application) and advanced it R75 -> R76
+    # (verified free: tracked scan zero hits after defusing the cycle-44
+    # detector pin's R76 scenery token in test_bridge_freshness.ts, same
+    # commit; subject scan zero hits; label-sliced queue capture — the
+    # work_queue response now truncates at ~4000ch, single-capture #2286
+    # unretrievable — zero R76 citations across the captured classes).
+    # and after pass 34 (cycle-46, Job 478338) registered the R76 row
+    # (open/unclaimed, peer scout #2691 — guard capture-contract hardening,
+    # adopting pass-33's drift-log discovery; pass-26 precedent fourth
+    # application) PRE-EMPTIVELY before any landing cited the token (guard
+    # green at registration time) and advanced it R76 -> R77 (verified
+    # free: word-boundary tree scan zero hits — lockfile substring hits
+    # are mid-hash, not citations; subject scan zero hits; label-sliced
+    # queue capture zero R77 citations).
+    # and after pass 35 (cycle-47, Job 478338) registered the R77 row
+    # (open/claimed, peer scout #2718 — row-state truthfulness, filed
+    # 18:37:02Z; pass-26 precedent fifth application; row-status refreshes
+    # left to that lane's own fix surface) PRE-EMPTIVELY before any landing
+    # cited the token (guard green at registration time) and advanced it
+    # R77 -> R78 (verified free: word-boundary tree scan zero hits; subject
+    # scan zero hits; FULL single-capture queue 69,421ch 115/115 zero
+    # R78/R79 citations — the same capture falsified the pass-33/34
+    # ~4000ch tower-truncation attribution as observer-side clipping, see
+    # docs/reports/QUEUE_TRUNCATION_FALSIFICATION_2026-10-30.md).
+    # and after pass 36 (cycle-48, Job 478338) registered the R78 row
+    # (landed-class, peer arc — defining WO #2732, fix bd4d262/PR #2733,
+    # discovery job J484751: gh-absent dispatch revival via tower board
+    # fallback; pass-26 precedent sixth application, post-landing
+    # registration reconciling the same landing's D+C ghosts — the first
+    # born-and-reconciled-inside-one-dispatch red of the pattern) and
+    # advanced it R78 -> R79 (verified free: word-boundary tree hits are
+    # mechanism text inside pointer-phrase parentheticals, stripped by the
+    # guard's own stripper; subject scan zero hits; FULL single-capture
+    # queue 68,341ch 114/114 windowTruncated:false zero hits).
+    assert r["pointer"] == 79, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
+
+
+def test_invariant_e_roster_regressions_fail() -> None:
+    """#2392 component 1: pointer revert / row eviction fail closed (ebe630c class)."""
+    base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
+             "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
+    # Pointer regression: the pass-9/22/23 stale-branch overwrite signature.
+    findings, ran = guard.invariant_e(64, {"R1", "R63", "R64"}, base2)
+    assert ran
+    assert any(f["kind"] == "roster-pointer-regressed" and f["was"] == 65 and f["now"] == 64
+               for f in findings)
+    # Row eviction with the pointer intact — the co-regression blind spot
+    # the pin discipline cannot see, now enforced.
+    findings, ran = guard.invariant_e(65, {"R1", "R63"}, base2)
+    assert ran
+    assert any(f["kind"] == "roster-row-evicted" and f["token"] == "R64" for f in findings)
+
+
+def test_invariant_e_forward_motion_and_v1_skip() -> None:
+    """Forward motion (advance + additions) never fails; /1 baselines honest-skip."""
+    base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
+             "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
+    # Fixture token R96: a neutral synthetic successor (pass-4/22 standard,
+    # one horizon after pass-25 neutralized its own fixtures) — the suite
+    # never embeds the live next-free token in fixture strings, so the next
+    # registry pass's tracked-scan for R66 advertisability stays zero-hit
+    # here (#2447 Finding 4).
+    findings, ran = guard.invariant_e(96, {"R1", "R63", "R64", "R96"}, base2)
+    assert ran and findings == []
+    findings, ran = guard.invariant_e(None, set(),
+                                      {"schema": "radar-index-freshness-baseline/1", "floor": []})
+    assert findings == [] and not ran
+
+
+def test_board_sweep_predicate_offline() -> None:
+    """#2392 component 2 / #2372 option B: the captured-title sweep predicate."""
+    # Fixture token R97: a neutral synthetic successor — the tracked-tree
+    # freeness scan for the REAL advertised successor must stay zero-hit
+    # outside pointer context (pass-4/22 standard), so the suite never
+    # embeds the live next-free token in fixture strings.
+    queue = {"workOrders": [
+        {"number": 2401, "title": "scout(R97): a third-party lane citing the candidate"},
+        {"number": 2402, "title": "guard(docs): register R60 row + next-free R97 (WO mirror)"},
+        {"number": 2403, "title": "unrelated lane with R59 only"},
+        {"number": 2392, "title": "scout(R64): the successor lane's own defining ticket"},
+    ]}
+    # Third-party title citation of the candidate fails, naming the issue.
+    fnd = guard.board_sweep(queue, 97, set())
+    assert any(f["issue"] == 2401 and f["token"] == "R97" for f in fnd)
+    # A WO mirror quoting the allocation rule (pointer phrase) never self-trips.
+    assert not any(f["issue"] == 2402 for f in fnd)
+    # The self-ref exception (a): the successor lane's own defining ticket.
+    assert guard.board_sweep(queue, 97, {2401}) == []
+    # Legacy `issueNumber` key accepted (pre-#2286 shape).
+    legacy = guard.board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())
+    assert len(legacy) == 1 and legacy[0]["issue"] == 9
 
 
 def test_wiring_roster_and_pre_push() -> None:

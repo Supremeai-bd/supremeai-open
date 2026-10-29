@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from pydantic import BaseModel
 
 from core.kaggle_orchestrator import KaggleOrchestrator, KaggleTaskType
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 import os
 import uuid

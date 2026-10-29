@@ -9,10 +9,11 @@ between "bridge accepted the patch" and "CI Guardian lands it", and nothing
 reconciles the two planes. This is the watchdog mirror the triage asked for.
 
 Reconciliation model (three planes, one join key):
-  - board plane   : open WOs labeled `bridge:queued` (Tower bridge_work_queue,
-                    zero-credential; limit ladder 200->50->default crosses the
-                    queue-fidelity deploy window #2115/#2123) — each title
-                    carries the lane slug
+  - board plane   : open WOs labeled `bridge:queued` (Tower bridge.work_queue —
+                    renamed from bridge_work_queue 2026-10-29, #2454 r3 deploy
+                    / #2457 migration; zero-credential; limit ladder
+                    200->50->default crosses the queue-fidelity deploy window
+                    #2115/#2123) — each title carries the lane slug
   - rejected plane: open `bridge:rejected` issues enumerated straight from
                     the GitHub API (zero-credential, S05 query SSOT; #2158) —
                     the queue omits rejected WOs (#1972), so landing truth
@@ -23,7 +24,9 @@ Reconciliation model (three planes, one join key):
                     legitimate unless main history proves otherwise.
   - history plane : landed commit subjects on origin/main (squash-merge
                     convention embeds the same slug and the PR number).
-  - flight plane  : open PR titles (Tower github_list_prs) — same slug token.
+  - flight plane  : open PR titles (Tower github.list_prs — dotted form since
+                    the 2026-10-29 github-family rename wave, #2486) — same
+                    slug token.
   - verdict plane : Tower bridge_read_feedback per WO number — the feedback-
                     plane reader this file's own scope note called for. Used
                     ONLY to enrich MERGED_ON_MAIN rows (tower_verdict /
@@ -37,7 +40,12 @@ Reconciliation model (three planes, one join key):
 
 Verdict per open bridge:queued WO (any-slug match wins):
   MERGED_ON_MAIN   slug found in main history — WO should close; flagged as
-                   bookkeeping lag when it ages past the threshold.
+                   bookkeeping lag when it ages past the threshold. Rows whose
+                   `updatedAt == createdAt` additionally carry the never-touched
+                   close-on-merge flap fingerprint (#2401/#2430 class: the
+                   closure worker never even touched the row — the reconciler's
+                   exact worklist), while touched rows stay untagged and rows
+                   missing timestamps stay honestly untagged (unknown).
   OPEN_PR          slug found in an open PR title — in flight, healthy.
   IN_GATES         no match anywhere, WO younger than the threshold — normal
                    CI-Guardian latency, not a signal.
@@ -65,7 +73,7 @@ Verdict per open bridge:queued WO (any-slug match wins):
                    keeping the strict surface minimal. Honest scope limit:
                    the board plane IS the queue payload, and Tower currently
                    omits some rejected WOs from it entirely (live: #1972 was
-                   absent from bridge_work_queue) — since 2026-10-28 (#2158)
+                   absent from bridge.work_queue) — since 2026-10-28 (#2158)
                    the rejected plane enumerates those rows directly from
                    GitHub, closing the invisible-rejected half of this note
                    (the merged-row half closed with the feedback-plane
@@ -81,7 +89,7 @@ Verdict per open bridge:queued WO (any-slug match wins):
                    work another plane owns. Live motivation (2026-10-28,
                    #2173): a landed-and-merged WO stayed `bridge:queued`
                    yet absent from an untruncated 16-18-row listing while
-                   bridge_work_order confirmed it — the integrity line is
+                   bridge.work_order confirmed it — the integrity line is
                    the only place such a row surfaces.
 
 Modes:
@@ -147,7 +155,12 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
         _id[0] += 1
         payload["id"] = _id[0]
     headers = {"Content-Type": "application/json",
-               "Accept": "application/json, text/event-stream"}
+               "Accept": "application/json, text/event-stream",
+               # Streamable HTTP (spec rev >= 2025-06-18): every post-initialize request
+               # must carry the negotiated version; a missing header makes the server
+               # assume 2025-03-26, voiding the 2025-11-25 floor (#2568, radar R70).
+               # Mirrors PROTOCOL_VERSION_STREAMABLE in scripts/agents/mcp_tower_client.py.
+               "MCP-Protocol-Version": "2025-11-25"}
     if session_id:
         headers["Mcp-Session-Id"] = session_id
     last = None
@@ -183,7 +196,7 @@ def _text_of(res) -> str:
 
 
 def _tower_text(name: str, arguments: dict) -> str:
-    _, sid = _rpc("initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
+    _, sid = _rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                  "clientInfo": {"name": "bridge-landing-watchdog", "version": "1.0"}})
     _rpc("notifications/initialized", {}, session_id=sid, notify=True)
     res, _ = _rpc("tools/call", {"name": name, "arguments": arguments}, session_id=sid)
@@ -198,7 +211,7 @@ QUEUE_LIMIT_LADDER: tuple = (200, 50, None)
 def _fetch_work_orders(fetch_text=_tower_text) -> tuple:
     """Fetch open work orders across the queue-fidelity deploy window.
 
-    r2 (#2115/#2123) makes bridge_work_queue paginate (short-page-stop,
+    r2 (#2115/#2123) makes bridge.work_queue paginate (short-page-stop,
     number-dedupe merge) and raises its limit cap 50 -> 200, but the
     DEPLOYED tower can keep running the pre-r2 single-page handler while
     the redeploy lags — and a single-page window is a creation-rank
@@ -216,7 +229,7 @@ def _fetch_work_orders(fetch_text=_tower_text) -> tuple:
     for limit in QUEUE_LIMIT_LADDER:
         arguments = {} if limit is None else {"limit": limit}
         try:
-            payload = json.loads(fetch_text("bridge_work_queue", arguments))
+            payload = json.loads(fetch_text("bridge.work_queue", arguments))
         except json.JSONDecodeError as err:  # error-envelope text, not JSON
             last_err = err
             continue
@@ -290,7 +303,7 @@ def _fetch_rejected_rows(fetch_json=_github_get_json,
                          max_pages: int | None = None) -> list[dict]:
     """Enumerate open `bridge:rejected` issues straight from GitHub.
 
-    The queue omits rejected WOs (#1972 was absent from bridge_work_queue;
+    The queue omits rejected WOs (#1972 was absent from bridge.work_queue;
     live #2158: landed #2020/#2056 stamped rejected and queue-invisible).
     Rows are ready for run_verdicts' existing rejected-row branch (zero new
     verdict classes)."""
@@ -300,7 +313,7 @@ def _fetch_rejected_rows(fetch_json=_github_get_json,
 
 def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
     """Tower-plane enumeration of open `bridge:rejected` via the
-    label-filtered bridge_work_queue query — the disclosed fallback when the
+    label-filtered bridge.work_queue query — the disclosed fallback when the
     unauthenticated GitHub budget is exhausted (per-IP, shared egress).
 
     #2251 un-self-defeated the tower-side label filter: queueFromIssues had
@@ -325,7 +338,7 @@ def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
         arguments = {"label": REJECTED_LABEL} if limit is None else {
             "label": REJECTED_LABEL, "limit": limit}
         try:
-            payload = json.loads(fetch_text("bridge_work_queue", arguments))
+            payload = json.loads(fetch_text("bridge.work_queue", arguments))
         except json.JSONDecodeError as err:  # error-envelope text, not JSON
             last_err = err
             continue
@@ -333,7 +346,7 @@ def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
             last_err = TypeError(f"rejected rung {limit} answered a non-payload")
             continue
         if not isinstance(payload.get("workOrders"), list):
-            raise TypeError("bridge_work_queue: expected {workOrders: [...]}, got "
+            raise TypeError("bridge.work_queue: expected {workOrders: [...]}, got "
                             f"{type(payload).__name__}")
         return payload["workOrders"]
     raise last_err
@@ -385,7 +398,7 @@ def _check_queue_integrity(listing_numbers: set, label_numbers: set) -> tuple:
     by design: unlike rejected rows (terminal, queue-omitted BY DESIGN), a
     queued row can be mid-transition (claim-label lag is structural per
     the #2182 plane watch), so these rows do NOT join the verdict payload
-    — the line discloses exact numbers; bridge_work_order resolves each.
+    — the line discloses exact numbers; bridge.work_order resolves each.
     """
     missing = sorted(label_numbers - listing_numbers)
     phantom = sorted(listing_numbers - label_numbers)
@@ -468,7 +481,16 @@ def classify(wo: dict, main_subjects: list[str], open_pr_titles: list[str],
 
     merged = [s for s in slugs if any(s in subj for subj in main_subjects)]
     if merged:
-        return {**base, "verdict": "MERGED_ON_MAIN", "evidence": f"slug {merged[0]} in main history"}
+        v = {**base, "verdict": "MERGED_ON_MAIN", "evidence": f"slug {merged[0]} in main history"}
+        ca, ua = wo.get("createdAt") or "", wo.get("updatedAt") or ""
+        if ca and ua and ca == ua:
+            # never-touched close-on-merge flap fingerprint (#2401/#2430):
+            # the closure worker never touched the row post-creation — the
+            # reconciler's exact worklist. Touched rows and rows with missing
+            # timestamps stay untagged (touched-lag vs honest unknown).
+            v["never_touched"] = True
+            v["evidence"] += " — never-touched since creation (close-on-merge flap fingerprint, #2401/#2430)"
+        return v
 
     inflight = [s for s in slugs if any(s in t for t in open_pr_titles)]
     if inflight:
@@ -539,8 +561,11 @@ def _open_pr_titles(fetch_text=_tower_text) -> list[str]:
     # silently ignored and limit fell back to its default 5 (five newest
     # rows only). Neither defect raises; classification just degraded to the
     # age ladder (LANDING_AT_RISK false positives for WOs whose PR was
-    # genuinely in flight).
-    txt = fetch_text("github_list_prs", {"state": "open", "repo": OPEN_REPO, "limit": 50})
+    # genuinely in flight). Third silent mode (cycle 36, #2486): the
+    # github-family dotted-wave rename turned the legacy wire name into a
+    # -32602 error whose text flowed into the classifier as pseudo-titles
+    # (OPEN_PR=0 while PRs were open) — migrated to the dotted name.
+    txt = fetch_text("github.list_prs", {"state": "open", "repo": OPEN_REPO, "limit": 50})
     titles = []
     for line in txt.splitlines():
         line = line.strip()
@@ -553,7 +578,7 @@ def _open_pr_titles(fetch_text=_tower_text) -> list[str]:
 def _fetch_wo_body(number: int) -> str | None:
     """Fetch one WO's full body (read-only tower round-trip) for refinement."""
     try:
-        return json.loads(_tower_text("bridge_work_order", {"number": number})).get("body")
+        return json.loads(_tower_text("bridge.work_order", {"number": number})).get("body")
     except Exception:  # noqa: BLE001 - refinement is best-effort, fail-closed
         return None
 
@@ -753,6 +778,32 @@ def self_test() -> list[tuple[str, bool, str]]:
     cases.append(("open-repo target keeps LANDING_AT_RISK",
                   v["verdict"] == "LANDING_AT_RISK", json.dumps(v)[:160]))
 
+    # 13b. never-touched flap fingerprint (#2401/#2430): MERGED_ON_MAIN rows
+    # whose updatedAt == createdAt carry the close-on-merge flap signature;
+    # touched rows and rows missing timestamps stay untagged (honest unknown);
+    # the tag propagates to FALSE_REJECTION rows (same classify path).
+    merged_hist = [f"feat: landed (bridge-20261028-alpha-lane) (#1905)"]
+    v = classify({"number": 31, "title": f"x {slug_a}", "createdAt": old, "updatedAt": old},
+                 merged_hist, [], now)
+    cases.append(("never-touched merged row carries flap fingerprint",
+                  v["verdict"] == "MERGED_ON_MAIN" and v.get("never_touched") is True
+                  and "flap fingerprint" in v["evidence"], json.dumps(v)[:200]))
+    v = classify({"number": 32, "title": f"x {slug_a}", "createdAt": old, "updatedAt": fresh},
+                 merged_hist, [], now)
+    cases.append(("touched merged row carries no fingerprint",
+                  v["verdict"] == "MERGED_ON_MAIN" and "never_touched" not in v,
+                  json.dumps(v)[:160]))
+    v = classify({"number": 33, "title": f"x {slug_a}", "createdAt": old},
+                 merged_hist, [], now)
+    cases.append(("missing updatedAt -> no fingerprint (honest unknown)",
+                  v["verdict"] == "MERGED_ON_MAIN" and "never_touched" not in v, ""))
+    vs = run_verdicts([{"number": 34, "title": f"rej {slug_a}", "createdAt": old,
+                        "updatedAt": old, "labels": ["bridge:rejected"]}],
+                      merged_hist, [], now)
+    cases.append(("never-touched propagates to FALSE_REJECTION rows",
+                  len(vs) == 1 and vs[0]["verdict"] == "FALSE_REJECTION"
+                  and vs[0].get("never_touched") is True, json.dumps(vs)[:200]))
+
     # 14. refine_satellites: at-risk + satellite body -> downgraded; at-risk +
     # open/absent body -> kept; fetch failure -> kept (fail-closed).
     def _fetch_sat(number):
@@ -884,7 +935,7 @@ def self_test() -> list[tuple[str, bool, str]]:
 
     titles = _open_pr_titles(fetch_text=_cap)
     cases.append(("flight plane pins open repo + schema limit (no per_page)",
-                  sent.get("name") == "github_list_prs"
+                  sent.get("name") == "github.list_prs"
                   and sent.get("args", {}).get("repo") == OPEN_REPO
                   and sent.get("args", {}).get("limit") == 50
                   and "per_page" not in sent.get("args", {})
@@ -1100,8 +1151,9 @@ def main(argv: list[str] | None = None) -> int:
         flag = "!!" if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION") else "  "
         age_s = "?" if v["age_hours"] is None else f"{v['age_hours']:.1f}h"
         tv_s = f" tower_verdict={v['tower_verdict']}" if "tower_verdict" in v else ""
+        nt_s = " never-touched" if v.get("never_touched") else ""
         print(f"{flag} #{v['number']} [{v['verdict']}] age={age_s} "
-              f"slug={v['slug']}{tv_s} — {v['evidence'][:100]}")
+              f"slug={v['slug']}{tv_s}{nt_s} — {v['evidence'][:100]}")
     counts: dict[str, int] = {}
     for v in verdicts:
         counts[v["verdict"]] = counts.get(v["verdict"], 0) + 1
@@ -1113,6 +1165,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"TOWER VERDICT PLANE: {len(unstamped)}/{merged_total} merged WOs carry NO Tower "
               f"verdict stamp" + (f" ({unreadable} unreadable)" if unreadable else "") +
               " — bookkeeping blackout, report-only.")
+    untouched = [v for v in verdicts if v.get("never_touched")]
+    if untouched:
+        print(f"NEVER-TOUCHED SIGNATURE: {len(untouched)} landed WOs untouched since creation — "
+              "close-on-merge flap fingerprint (#2401/#2430 class), the reconciler's "
+              "exact worklist, report-only.")
     risky = [v for v in verdicts
              if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION")
              or (v["verdict"] == "MERGED_ON_MAIN" and (v["age_hours"] or 0) >= args.at_risk_hours)]
