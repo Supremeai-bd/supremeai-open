@@ -312,7 +312,15 @@ def test_live_repo_sweep_passes() -> None:
     # commit; subject scan zero hits; label-sliced queue capture — the
     # work_queue response now truncates at ~4000ch, single-capture #2286
     # unretrievable — zero R76 citations across the captured classes).
-    assert r["pointer"] == 76, "pointer drifted — regenerate expectation with the index"
+    # and after pass 34 (cycle-46, Job 478338) registered the R76 row
+    # (open/unclaimed, peer scout #2691 — guard capture-contract hardening,
+    # adopting pass-33's drift-log discovery; pass-26 precedent fourth
+    # application) PRE-EMPTIVELY before any landing cited the token (guard
+    # green at registration time) and advanced it R76 -> R77 (verified
+    # free: word-boundary tree scan zero hits — lockfile substring hits
+    # are mid-hash, not citations; subject scan zero hits; label-sliced
+    # queue capture zero R77 citations).
+    assert r["pointer"] == 77, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
