@@ -302,7 +302,17 @@ def test_live_repo_sweep_passes() -> None:
     # pointer advertises the next fully-clean number (verified free:
     # tracked scan zero hits; subject scan zero hits; 133-row tower queue
     # capture windowTruncated false, zero citations).
-    assert r["pointer"] == 75, "pointer drifted — regenerate expectation with the index"
+    # and after pass 33 (cycle-45, Job 478338) registered the R75 row
+    # (open/claimed, peer scout #2654 — control-plane phantom dependency,
+    # pass-26 precedent third application) PRE-EMPTIVELY before any
+    # landing cited the token (guard green at registration time — the
+    # pass-28 pattern's third application) and advanced it R75 -> R76
+    # (verified free: tracked scan zero hits after defusing the cycle-44
+    # detector pin's R76 scenery token in test_bridge_freshness.ts, same
+    # commit; subject scan zero hits; label-sliced queue capture — the
+    # work_queue response now truncates at ~4000ch, single-capture #2286
+    # unretrievable — zero R76 citations across the captured classes).
+    assert r["pointer"] == 76, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
