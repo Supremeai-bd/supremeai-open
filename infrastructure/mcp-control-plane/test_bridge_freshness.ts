@@ -203,6 +203,49 @@ const LIVE_TEMPLATE = [
   assert.match(specOnlyBody, /Refs #888/);
   assert.ok(!specOnlyBody.includes("Closes #888"), "spec-only PR must NEVER auto-close issue");
 
+  // ── #2485: opt-in closesOriginalIssue escape hatch for the receipt-closure class ──
+  // Docs-only + flag true -> Closes for BOTH the original issue and the round's WO,
+  // with no keep-open comment; absent/false preserve the Refs-only contract.
+  const receiptClosureBody = buildBridgePrBody({
+    taskId: "bridge-20261029-receipt",
+    summary: "Closure receipt for a self-healed CI failure",
+    issueNumber: 2465,
+    originalIssueNumber: 2368,
+    scopePaths: ["docs/bridge/bridge-receipt.md"],
+    testsEvidence: "receipt evidence",
+    reflectionWhy: "phantom red pollutes drainage",
+    alternativesRejected: "comment-only closure",
+    closesOriginalIssue: true,
+  });
+  assert.match(receiptClosureBody, /Closes #2368/);
+  assert.match(receiptClosureBody, /Closes #2465/);
+  assert.ok(!receiptClosureBody.includes("keeps #2465 open"), "flagged receipt must NOT carry the keep-open comment");
+
+  const explicitFalseBody = buildBridgePrBody({
+    taskId: "bridge-20261027-spec",
+    summary: "Add spec order",
+    issueNumber: 888,
+    scopePaths: ["docs/bridge/bridge-spec.md"],
+    testsEvidence: "doc valid",
+    reflectionWhy: "Spec needed first",
+    alternativesRejected: "no spec",
+    closesOriginalIssue: false,
+  });
+  assert.match(explicitFalseBody, /Refs #888/);
+  assert.ok(!explicitFalseBody.includes("Closes #888"), "explicit false must equal absent (spec-only keep-open preserved)");
+
+  const flaggedNonDocsBody = buildBridgePrBody({
+    taskId: "bridge-20261017-freshness",
+    summary: "Enforce constitution freshness",
+    issueNumber: 567,
+    scopePaths: ["core/freshness.py"],
+    testsEvidence: "evidence",
+    reflectionWhy: "why",
+    alternativesRejected: "alt",
+    closesOriginalIssue: true,
+  });
+  assert.match(flaggedNonDocsBody, /Closes #567/, "non-docs path unchanged by the flag");
+
   const noIssue = buildBridgePrBody({
     taskId: "bridge-20261017-freshness",
     summary: "Enforce constitution freshness",
