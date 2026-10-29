@@ -30,6 +30,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
       maxClients: z.number().int().min(1).max(1000).optional().describe("Client limit override"),
       maxToolsPerMinute: z.number().int().min(1).max(10000).optional().describe("Rate limit override"),
     },
+    { readOnlyHint: false },
     async (args) => {
       try {
         const result = createTenant({
@@ -64,6 +65,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
     "tenant.list",
     "List all tenants (admin & customer) with their status, plan, and limits. Global-admin only.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       try {
         // #698: tenant.list was the only tenant tool without the admin gate.
@@ -90,6 +92,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
       maxClients: z.number().int().min(1).optional().describe("Client limit override"),
       maxToolsPerMinute: z.number().int().min(1).optional().describe("Rate limit override"),
     },
+    { readOnlyHint: false },
     async (args) => {
       try {
         const tenant = updateTenant(args.tenantId, {
@@ -113,6 +116,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
     "tenant.suspend",
     "Suspend a tenant — all its AI clients immediately lose access. Global-admin only.",
     { tenantId: z.string().describe("Tenant ID to suspend") },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ tenantId }) => {
       try {
         const tenant = suspendTenant(tenantId);
@@ -128,6 +132,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
     "tenant.activate",
     "Re-activate a suspended tenant. Global-admin only.",
     { tenantId: z.string().describe("Tenant ID to activate") },
+    { readOnlyHint: false },
     async ({ tenantId }) => {
       try {
         const tenant = activateTenant(tenantId);
@@ -143,6 +148,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
     "tenant.rotate_admin_token",
     "Rotate a tenant's admin token (old token stops working immediately). Global-admin only.",
     { tenantId: z.string().describe("Tenant ID") },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ tenantId }) => {
       try {
         const result = rotateTenantAdminToken(tenantId);
