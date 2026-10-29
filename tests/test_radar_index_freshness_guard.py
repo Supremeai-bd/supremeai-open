@@ -292,7 +292,17 @@ def test_live_repo_sweep_passes() -> None:
     # advanced it R72 -> R73 (verified free: tracked scan zero hits;
     # subject scan zero hits; 127-row tower queue capture windowTruncated
     # false, zero citations).
-    assert r["pointer"] == 73, "pointer drifted — regenerate expectation with the index"
+    # and after pass 32 (Job 477792, 22:45+08) registered the R73 row
+    # (open/claimed, peer scout #2627 — annotations phase-3, pass-26
+    # precedent: the advertised R73 was already cited issue-side at
+    # allocation time, predicate failed loud BEFORE consumption) and the
+    # R74 row (#2633, filer same-cycle registration per pass-5 — MCP
+    # 2025-11-25 capability-surface census) and advanced it R73 -> R75 —
+    # a corrected skip: the advertised slot itself was taken, so the
+    # pointer advertises the next fully-clean number (verified free:
+    # tracked scan zero hits; subject scan zero hits; 133-row tower queue
+    # capture windowTruncated false, zero citations).
+    assert r["pointer"] == 75, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
