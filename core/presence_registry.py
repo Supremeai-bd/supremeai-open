@@ -31,7 +31,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ── Constants ────────────────────────────────────────────────────────────────
 # ডিফল্ট stale threshold — ১০ মিনিট (issue spec অনুযায়ী)।
