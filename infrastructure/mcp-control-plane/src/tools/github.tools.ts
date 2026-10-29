@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, searchCode, createIssue } from "../adapters/github/index.js";
+import { resolvePerPage } from "../lib/github_pagination.js"; // #2311/R62 per_page alias
 import { RequestContextStore, roleRank, type UserRole } from "../policy/auth.context.js";
 import { scopeAllows } from "../policy/client-registry.js";
 import { buildAccountRegistry } from "../registry/account.registry.js";
@@ -136,10 +137,12 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
       accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
       repo: z.string().optional().describe("Target repository name"),
+      per_page: z.number().int().min(1).max(100).optional().describe(
+        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
       limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
       runId: z.string().optional().describe("Run ID (required for get_failed_logs)"),
     },
-    async ({ action, accountId, repo, limit, runId }: { action: string; accountId?: string; repo?: string; limit?: number; runId?: string }) => {
+    async ({ action, accountId, repo, per_page, limit, runId }: { action: string; accountId?: string; repo?: string; per_page?: number; limit?: number; runId?: string }) => {
       const target = repo || accountId || "github-primary";
       const targetUrl = repoUrlFor(accountId, repo);
       const deny = assertRepoReadAccess("github.actions_op", target, targetUrl);
@@ -147,7 +150,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
 
       try {
         if (action === "list_runs") {
-          const runs = await getWorkflowRuns(target, limit || 5);
+          const runs = await getWorkflowRuns(target, resolvePerPage(per_page, limit));
           return { content: [{ type: "text", text: JSON.stringify(runs, null, 2) }] };
         }
         if (action === "get_failed_logs") {
@@ -170,15 +173,17 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
     {
       accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
       repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+      per_page: z.number().int().min(1).max(100).optional().describe(
+        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
       limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
     },
-    async ({ accountId, repo, limit }) => {
+    async ({ accountId, repo, per_page, limit }) => {
       const target = repo || accountId || "github-primary";
       const targetUrl = repoUrlFor(accountId, repo);
       const deny = assertRepoReadAccess("github.workflow_runs", target, targetUrl);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const runs = await getWorkflowRuns(target, limit || 5);
+        const runs = await getWorkflowRuns(target, resolvePerPage(per_page, limit));
         return {
           content: [{ type: "text", text: JSON.stringify(runs, null, 2) }],
         };
@@ -279,15 +284,17 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
       repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
       state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
+      per_page: z.number().int().min(1).max(100).optional().describe(
+        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
       limit: z.number().optional().describe("Max number of PRs (default: 5)"),
     },
-    async ({ accountId, repo, state, limit }) => {
+    async ({ accountId, repo, state, per_page, limit }) => {
       const target = repo || accountId || "github-primary";
       const targetUrl = repoUrlFor(accountId, repo);
       const deny = assertRepoReadAccess("github.list_prs", target, targetUrl);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const prs = await listPullRequests(target, state ?? "open", limit ?? 5);
+        const prs = await listPullRequests(target, state ?? "open", resolvePerPage(per_page, limit));
         return {
           content: [{ type: "text", text: JSON.stringify(prs, null, 2) }],
         };
