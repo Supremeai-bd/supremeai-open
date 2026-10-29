@@ -114,6 +114,35 @@ class TestP0Drainage(unittest.TestCase):
         ]
         self.assertFalse(cal.has_open_p0_blocker(issues))
 
+    def test_has_open_p0_blocker_blocked_by_upstream_excluded(self):
+        # বাংলা: লেনে-অ্যাকশনেবল-নয় P0 ব্লকার-গণনা থেকে বাদ (docstring চুক্তি)।
+        issues = [
+            {"number": 104, "labels": [{"name": "P0-critical"}, {"name": "blocked-by-upstream"}]},
+        ]
+        self.assertFalse(cal.has_open_p0_blocker(issues))
+
+    def test_has_open_p0_blocker_admin_only_excluded(self):
+        # বাংলা: admin-only P0 এই লেনে কখনোই pickযোগ্য নয় (EXCLUDED_LABELS) —
+        # এটিকে ব্লকার গুনলে cadence চিরকাল অবরুদ্ধ (starvation) হত।
+        issues = [
+            {"number": 105, "labels": [{"name": "P0-critical"}, {"name": "admin-only"}]},
+        ]
+        self.assertFalse(cal.has_open_p0_blocker(issues))
+
+    def test_has_open_p0_blocker_mirror_private_excluded(self):
+        # বাংলা: mirror:private P0-ও একই স্থায়ী লেন-সীমা — ব্লকার-গণনা থেকে বাদ।
+        issues = [
+            {"number": 106, "labels": [{"name": "p0"}, {"name": "mirror:private"}]},
+        ]
+        self.assertFalse(cal.has_open_p0_blocker(issues))
+
+    def test_has_open_p0_blocker_claimed_still_blocks(self):
+        # বাংলা: claimed P0 সাময়িক বাধা (সক্রিয় কাজ চলছে) — ব্লক করবেই (নিয়ম ৫)।
+        issues = [
+            {"number": 107, "labels": [{"name": "P0-critical"}, {"name": "status:claimed"}]},
+        ]
+        self.assertTrue(cal.has_open_p0_blocker(issues))
+
     def test_label_names_extraction(self):
         item = {"labels": [{"name": "P0-critical"}, {"name": "Status:Unclaimed"}]}
         self.assertEqual(cal.label_names(item), ["p0-critical", "status:unclaimed"])

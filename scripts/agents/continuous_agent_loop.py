@@ -163,7 +163,15 @@ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
     status:claimed P0 আগের মতোই ব্লক করবে (অন্য রানার সক্রিয়ভাবে কাজ করছে —
     নিয়ম ৫-এর উদ্দিষ্ট আচরণ)।
     """
-    unactionable_in_lane = frozenset({"blocked-by-upstream"})
+    unactionable_in_lane = frozenset({"blocked-by-upstream", "admin-only", "mirror:private"})
+    # বাংলা: admin-only / mirror:private P0-ও একই starvation শ্রেণি —
+    # pick_next_issue()-এর EXCLUDED_LABELS এই দুই লেবেলযুক্ত সারি কখনোই pick করে
+    # না, অর্থাৎ এই লেনের কোনো এজেন্ট সেগুলো চিরকালের জন্য কাজ করতে পারবে না;
+    # অথচ ব্লকার-গণনা সেগুলোকে গুনলে cadence রোল চিরকাল থেমে থাকে — একই SSOT-এর
+    # দুই ভোক্তায় দুই আচরণ, ঠিক এই ফাইলের board-exclusion কমেন্টে নথিভুক্ত
+    # dual-SSOT drift-শ্রেণি। তাই ব্লকার-গণনাও একই লেন-অ্যাকশনেবিলিটি SSOT মানে।
+    # বৈপরীত্যে status:claimed সাময়িক (claim TTL শেষে পুনঃদাবিযোগ্য), লেন-সীমা
+    # লেবেলগুলো স্থায়ী — তাই claimed P0 আগের মতোই ব্লক করবে (নিয়ম ৫-এর অন্তর্গত)।
     for item in issues:
         if not isinstance(item, dict):
             continue
