@@ -6,7 +6,7 @@ only when that attempt fails fall back to the legacy GET+SSE transport.
 The tower already serves both transports, so the client plane was the last
 holdout. These tests pin the contract offline (no network): POST-first,
 session-header capture + propagation, spec Accept header, protocol revision
-2025-03-26 on the streamable path, 2024-11-05 untouched on the SSE path,
+2025-11-25 on the streamable path, 2024-11-05 untouched on the SSE path,
 and the fallback preserving every currently-working configuration.
 """
 from __future__ import annotations
@@ -120,12 +120,12 @@ def test_streamable_happy_path_post_first_json_body():
     assert init_kw["headers"]["Content-Type"] == "application/json"
     payload = init_kw["json"]
     assert payload["method"] == "initialize"
-    assert payload["params"]["protocolVersion"] == "2025-03-26"
+    assert payload["params"]["protocolVersion"] == "2025-11-25"
     # session header propagates to follow-up requests
     assert http.posts[1][1]["headers"]["mcp-session-id"] == "sess-123"
     assert http.posts[2][1]["headers"]["mcp-session-id"] == "sess-123"
     # MCP-Protocol-Version header on post-initialize requests
-    assert http.posts[2][1]["headers"]["MCP-Protocol-Version"] == "2025-03-26"
+    assert http.posts[2][1]["headers"]["MCP-Protocol-Version"] == "2025-11-25"
     # notifications carry no id
     assert "id" not in http.posts[1][1]["json"]
     assert result == []  # list_tools() unwraps .get("tools") internally
@@ -213,7 +213,7 @@ def test_rpc_error_in_streamable_body_raises_mcp_error():
 
 def test_legacy_sse_revision_constant_untouched():
     assert mtc.PROTOCOL_VERSION_SSE == "2024-11-05"
-    assert mtc.PROTOCOL_VERSION_STREAMABLE == "2025-03-26"
+    assert mtc.PROTOCOL_VERSION_STREAMABLE == "2025-11-25"
 
 
 def test_transport_reset_on_close():
