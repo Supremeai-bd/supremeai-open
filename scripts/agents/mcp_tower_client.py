@@ -84,9 +84,10 @@ def resolve_mcp_server_url() -> str:
 MCP_SERVER_URL = resolve_mcp_server_url()
 MCP_SSE_PATH = "/sse"
 MCP_STREAMABLE_PATH = "/mcp"
-# Protocol revisions: 2025-03-26 introduced Streamable HTTP; the legacy SSE
-# transport keeps negotiating the revision the old path always used.
-PROTOCOL_VERSION_STREAMABLE = "2025-03-26"
+# Protocol revisions: 2025-03-26 introduced Streamable HTTP; the streamable
+# floor tracks the tower's verified max (2025-11-25, live ladder probe R68/#2530).
+# The legacy SSE transport keeps negotiating the revision the old path always used.
+PROTOCOL_VERSION_STREAMABLE = "2025-11-25"
 PROTOCOL_VERSION_SSE = "2024-11-05"
 REQUEST_TIMEOUT = 30
 SSE_READ_TIMEOUT = 600

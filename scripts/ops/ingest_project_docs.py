@@ -52,7 +52,7 @@ def post(payload: dict, session_id: str | None = None, timeout: int = 90):
 
 def ensure_session() -> str:
     sid, _ = post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                   "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                   "params": {"protocolVersion": "2025-11-25", "capabilities": {},
                               "clientInfo": {"name": "docs-ingest", "version": "1.0"}}})
     post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
     return sid
