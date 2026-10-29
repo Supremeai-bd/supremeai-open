@@ -248,8 +248,12 @@ def test_live_repo_sweep_passes() -> None:
     # state (pointer R63, R62 row verbatim from 93aa098) and this pin
     # follows the restored pointer per the pass-9 re-head precedent (the
     # pin moves with the pointer on a landed re-head).
+    # and after #2372 (R63 double-adoption reconciliation, pass 24) registered
+    # the disambiguated rows R63-I (#2343 hooks-bootstrap) / R63-II (#2358
+    # MCP-Registry) and advanced it R63 -> R64 (the successor slot's only
+    # citation is the scout ticket's own title token — pass-15 self-ref class).
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 63, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 64, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
