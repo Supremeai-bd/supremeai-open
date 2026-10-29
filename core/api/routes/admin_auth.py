@@ -10,7 +10,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # বাংলা মন্তব্য (JWT-COOKIE-MIGRATION): auto_error=False করা হলো যাতে
 # Authorization header না থাকলে exception না ছুঁড়ে httpOnly cookie
