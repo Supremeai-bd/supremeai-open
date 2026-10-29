@@ -18,7 +18,18 @@ export function consumeSlidingWindow(
   max: number,
   windowMs: number,
 ): { allowed: boolean; retryAfterMs: number } {
-  const now = Date.now();
+  return consumeSlidingWindowAt(buckets, key, max, windowMs, Date.now());
+}
+
+/** Injectable-clock variant (offline test battery); behavior identical. */
+export function consumeSlidingWindowAt(
+  buckets: Map<string, number[]>,
+  key: string,
+  max: number,
+  windowMs: number,
+  nowMs: number,
+): { allowed: boolean; retryAfterMs: number } {
+  const now = nowMs;
   const cutoff = now - windowMs;
   let stamps = buckets.get(key);
   if (!stamps) { stamps = []; buckets.set(key, stamps); }
@@ -53,6 +64,82 @@ export function toolRateLimitIdentity(): string {
 export function consumeToolRateLimit(toolName: string): { allowed: boolean; retryAfterMs: number } {
   const { max, windowMs } = { max: env.runtime.toolRateLimitMax, windowMs: env.runtime.toolRateLimitWindowMs };
   return consumeSlidingWindow(toolIdentityRateBuckets, `${toolRateLimitIdentity()}||${toolName}`, max, windowMs);
+}
+
+// ── Anonymous-mutation plane bound (#2363 Option A) ─────────────────────────
+// The zero-credential protocol is the federation's BY-DESIGN front door
+// (#2082 standing doctrine); this bound keeps it OPEN but BOUNDED. The
+// existing per-(identity, tool) limit collapses every anonymous caller into
+// the shared "default|anon" bucket — one abusive tenant can exhaust it (a
+// DoS against the other anonymous agents) and nothing bounds novel-content
+// spam at writes-per-hour scale from a single IP. The audit (#2363 F-1)
+// observed zero 429s across 27 dispatch cycles on 4 side-effect-capable
+// tools. This plane adds a per-(caller IP, tool) HOURLY window on exactly
+// the anonymous-reachable mutation tools; the read plane and authenticated
+// identity limits are untouched. Fail-open on unparseable payloads —
+// malformed bodies must not widen the blast radius they already have.
+export const MUTATION_TOOLS: ReadonlySet<string> = new Set([
+  "github_create_issue",
+  "memory_remember_fact",
+  "work_claim",
+  "bridge_submit_patch",
+]);
+
+export const mutationRateBuckets = new Map<string, number[]>();
+
+export function mutationRateLimitConfig(): { max: number; windowMs: number } {
+  return { max: env.runtime.mutationRateLimitMax, windowMs: env.runtime.mutationRateLimitWindowMs };
+}
+
+export function consumeMutationRateLimit(
+  callerIp: string, toolName: string, nowMs: number = Date.now(),
+): { allowed: boolean; retryAfterMs: number } {
+  const { max, windowMs } = mutationRateLimitConfig();
+  return consumeSlidingWindowAt(mutationRateBuckets, `${callerIp}||${toolName}`, max, windowMs, nowMs);
+}
+
+/**
+ * Pure gate for the /mcp POST entry: returns the retry-after payload when
+ * the request invokes a mutation tool and the (ip, tool) hourly bucket is
+ * exhausted, else null. Handles JSON-RPC single objects and batch arrays;
+ * anything unparseable/non-tools-call/non-mutation returns null (read plane
+ * untouched, malformed bodies fail open into the downstream RBAC/limits).
+ */
+export function mutationToolGateError(
+  parsedBody: unknown, callerIp: string, nowMs: number = Date.now(),
+): { retryAfterMs: number; tool: string } | null {
+  const calls: string[] = [];
+  if (Array.isArray(parsedBody)) {
+    for (const item of parsedBody) {
+      const name = toolCallName(item);
+      if (name) calls.push(name);
+    }
+  } else {
+    const name = toolCallName(parsedBody);
+    if (name) calls.push(name);
+  }
+  let worst: { retryAfterMs: number; tool: string } | null = null;
+  for (const tool of calls) {
+    if (!MUTATION_TOOLS.has(tool)) continue;
+    const verdict = consumeMutationRateLimit(callerIp, tool, nowMs);
+    if (!verdict.allowed) {
+      // deterministic worst reply: the longest wait among exhausted tools
+      if (worst === null || verdict.retryAfterMs > worst.retryAfterMs) {
+        worst = { retryAfterMs: verdict.retryAfterMs, tool };
+      }
+    }
+  }
+  return worst;
+}
+
+function toolCallName(item: unknown): string | null {
+  if (item === null || typeof item !== "object") return null;
+  const method = (item as { method?: unknown }).method;
+  if (method !== "tools/call") return null;
+  const params = (item as { params?: unknown }).params;
+  if (params === null || typeof params !== "object") return null;
+  const name = (params as { name?: unknown }).name;
+  return typeof name === "string" ? name : null;
 }
 
 export function toolPayloadError(toolName: string, toolArgs: unknown): string | null {

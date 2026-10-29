@@ -197,6 +197,11 @@ export const env = {
     get toolTimeoutMs(): number { return positiveInt("MCP_TOOL_TIMEOUT_MS", 30_000); },
     get toolRateLimitMax(): number { return positiveInt("MCP_TOOL_RATE_LIMIT_MAX", 20); },
     get toolRateLimitWindowMs(): number { return positiveInt("MCP_TOOL_RATE_LIMIT_WINDOW_MS", 60_000); },
+    /** Anonymous-mutation plane bound (#2363 Option A): per-(caller IP, tool)
+     *  hourly window on the 4 anonymous-reachable mutation tools. Default
+     *  30 writes/hour/tool per IP — writes/hour scale, read plane untouched. */
+    get mutationRateLimitMax(): number { return positiveInt("MCP_MUTATION_RATE_LIMIT_MAX", 30); },
+    get mutationRateLimitWindowMs(): number { return positiveInt("MCP_MUTATION_RATE_LIMIT_WINDOW_MS", 3_600_000); },
     /** HTTP session hygiene: idle reap interval + bounded session tables. */
     get httpSessionIdleMs(): number { return nonNegativeInt("MCP_HTTP_SESSION_IDLE_MS", 3_600_000); },
     get maxSseSessions(): number { return nonNegativeInt("MCP_MAX_SSE_SESSIONS", 100); },
@@ -339,6 +344,8 @@ export function validateRuntimeKnobs(): void {
   void env.runtime.toolTimeoutMs;
   void env.runtime.toolRateLimitMax;
   void env.runtime.toolRateLimitWindowMs;
+  void env.runtime.mutationRateLimitMax;
+  void env.runtime.mutationRateLimitWindowMs;
   void env.runtime.httpSessionIdleMs;
   void env.runtime.maxSseSessions;
   void env.runtime.maxHttpSessions;
