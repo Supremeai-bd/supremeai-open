@@ -3,7 +3,9 @@
 Canonical domain module: core.agents.framework.autonomous_task_orchestrator
 """
 
-from core.agents.framework.autonomous_task_orchestrator import (
+# noqa: F401 - deliberate compat facade (docstring-declared backward-compatibility
+# shim; zero in-repo consumers; kept for satellite import surface stability).
+from core.agents.framework.autonomous_task_orchestrator import (  # noqa: F401
     AutonomousTaskOrchestrator,
     SupremeOrchestrator,
 )

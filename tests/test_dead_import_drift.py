@@ -71,7 +71,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # dead by AST Name-load + zero consumer imports incl. _archive delegates)
 # and re-measured with this file's own _scan_live_scope -> 384 across a
 # smaller file set. Shrink-only preserved: 384 < 388 < 446.
-BASELINE_UNUSED_IMPORTS = 384
+#
+# Re-armed 2026-10-30 (2nd) at b884562: peer landings after the #2785 re-arm
+# introduced 8 new dead bindings in 5 files (task_engine CorrelationContext;
+# langgraph_agent AutonomousTaskOrchestrator+SupremeOrchestrator - docstring-
+# declared compat shim, zero in-repo consumers, marked noqa: F401 per the
+# facade pattern; 3 alembic versions Union/op/sa - empty-body merge revision
+# template imports + unused typing imports). Remediation PR removed/annotated
+# all 8 and re-measured via this file's own _scan_live_scope -> 378.
+# Shrink-only preserved: 378 < 384 < 388 < 446.
+BASELINE_UNUSED_IMPORTS = 378
 
 # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
 # Each binding below was verified dead by AST Name-load analysis + word-boundary
