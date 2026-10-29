@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import py_compile
@@ -94,6 +95,97 @@ def _script_index_freshness() -> list[str]:
     return errors
 
 
+def _provenance_digest(receipts_dir: Path | None = None) -> list[str]:
+    """#1674 minimal provenance lane: verify bridge patch digest receipts.
+
+    Bridge-submitted agent patches are the federation's autonomous supply
+    chain, and trust today is narrative (agentIdentity prose), not
+    cryptographic. Minimal lane (EXTRACT_PATTERNS_ONLY — sigstore is NOT
+    vendored): a submission that wants tamper-evidence ships a
+    machine-readable receipt at docs/provenance/bridge-<taskId>.json listing
+    per-file sha256 digests of the full_file contents AS SUBMITTED. This
+    sub-check recomputes the digests on the checked-out branch and fails
+    closed on mismatch: any post-receipt edit of a listed file breaks the
+    match, detecting post-review mutation of agent patches.
+
+    Honest limitation (mirrors the issue): the receipt travels with the
+    patch over the same automated channel, so the bar rises from narrative
+    trust to tamper-evidence — a compromised submitter is not eliminated,
+    and attestation proves provenance, not code correctness. The full lane
+    (actions/attest-build-provenance under .github/) is admin-owned and out
+    of scope for this guard.
+
+    Only invoked in full-repo mode (targets=None); the offline self-test
+    path passes explicit targets and stays deterministic/fast. An absent or
+    empty receipts dir is a no-op (additive; zero false positives for
+    layouts without receipts). ``receipts_dir`` is injectable so offline
+    tests can exercise the verifier without touching tracked files; target
+    paths always resolve against REPO_ROOT (the checked-out branch).
+    """
+    root = receipts_dir if receipts_dir is not None else REPO_ROOT / "docs" / "provenance"
+    errors: list[str] = []
+    if not root.is_dir():
+        return errors
+    repo_resolved = str(REPO_ROOT.resolve())
+    for receipt_path in sorted(root.glob("*.json")):
+        try:
+            rel = receipt_path.relative_to(REPO_ROOT)
+        except ValueError:
+            # Injected out-of-repo receipts dir (offline tests): label by path.
+            rel = receipt_path
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            errors.append(f"{rel}: unreadable/malformed provenance receipt: {e}")
+            continue
+        if not isinstance(receipt, dict):
+            errors.append(f"{rel}: receipt must be a JSON object")
+            continue
+        algorithm = receipt.get("algorithm")
+        if algorithm != "sha256":
+            errors.append(
+                f"{rel}: unsupported algorithm {algorithm!r} (only sha256 verifiable)"
+            )
+            continue
+        entries = receipt.get("files")
+        if not isinstance(entries, list) or not entries:
+            errors.append(f"{rel}: receipt 'files' must be a non-empty list")
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                errors.append(f"{rel}: file entry must be an object: {entry!r}")
+                continue
+            path_str = entry.get("path")
+            claimed = entry.get("sha256")
+            if not isinstance(path_str, str) or not path_str:
+                errors.append(f"{rel}: file entry missing 'path'")
+                continue
+            if (
+                not isinstance(claimed, str)
+                or len(claimed) != 64
+                or any(c not in "0123456789abcdef" for c in claimed.lower())
+            ):
+                errors.append(f"{rel}: entry '{path_str}' has an invalid sha256 digest")
+                continue
+            target = (REPO_ROOT / path_str).resolve()
+            if not str(target).startswith(repo_resolved + os.sep):
+                errors.append(
+                    f"{rel}: entry '{path_str}' escapes the repo (path traversal rejected)"
+                )
+                continue
+            if not target.is_file():
+                errors.append(f"{rel}: listed file missing on branch: {path_str}")
+                continue
+            actual = hashlib.sha256(target.read_bytes()).hexdigest()
+            if actual != claimed.lower():
+                errors.append(
+                    f"{rel}: PROVENANCE MISMATCH for {path_str} — receipt "
+                    f"{claimed.lower()} vs branch {actual} "
+                    "(post-receipt mutation of an agent patch?)"
+                )
+    return errors
+
+
 def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]]:
     """Step 1 (< 10s): Fast lint and syntax compilation across all target code."""
     errors: list[str] = []
@@ -126,8 +218,10 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
 
     # #1630: index freshness rides the full-repo scan (CI Step 1); skipped for
     # explicit-target invocations (offline self-test keeps its fixtures).
+    # #1674: provenance digest receipts verify on the same full-repo-only path.
     if targets is None:
         errors.extend(_script_index_freshness())
+        errors.extend(_provenance_digest())
 
     py_count = 0
     json_count = 0
