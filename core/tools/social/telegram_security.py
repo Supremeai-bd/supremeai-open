@@ -18,7 +18,7 @@ import struct
 import time
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 def _get_base32_totp_secret() -> str:
