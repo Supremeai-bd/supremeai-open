@@ -259,8 +259,13 @@ def test_live_repo_sweep_passes() -> None:
     # R65 (landed #2454, receipt-verified #2469) / R66 (claimed #2447,
     # receipts #2452/#2469) rows and advanced it R65 -> R67 (verified free:
     # tracked scan zero hits; 112-row board sweep zero citations).
+    # and after #2497 (pass 27) registered the R67 row (landed #2492, closes
+    # #2486 — invariant D's first live ratchet-drift FAIL on main) and
+    # advanced it R67 -> R68 (verified free: tracked scan zero hits; subject
+    # scan zero hits; tower capture zero citations, full 200-capture
+    # rate-limited, disclosed).
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 67, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 68, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
