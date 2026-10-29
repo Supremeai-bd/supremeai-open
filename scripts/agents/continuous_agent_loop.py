@@ -12,7 +12,7 @@ Traffic-police logic:
 6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
 """
 from __future__ import annotations
-import argparse, json, os, subprocess, sys, time
+import argparse, json, os, subprocess, sys, threading, time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -263,6 +263,69 @@ def log(icon: str, msg: str) -> None:
         print(f"{icon} {msg}")
     except UnicodeEncodeError:
         print(f"[*] {msg}")
+
+def _tower_queue_floor(timeout_s: float = 12.0) -> str:
+    """R61/#2318 option B — honesty floor for the gh-absent skip line.
+
+    On the documented external-agent runtime (no gh CLI) the skip line used to
+    say only "issue board unavailable", which reads as an EMPTY board while the
+    Tower queue is in fact reachable zero-credential — and the P0-drainage gate
+    (Universal Invariant 5) is dark there BY CONSTRUCTION (AGENT_LOOP_SPEC
+    scans the same gh-derived items). This best-effort probe appends the live
+    queue depth so the skip line stops lying by omission (the R61 body's live
+    quantification: 93 open rows incl. a P1 invisible to this runtime).
+
+    Never raises, never hangs: lazy sibling import (same sys.path pattern as
+    tests/test_tower_url_resolution.py), daemon probe thread + hard join, and
+    every failure mode degrades to the plain P0-dark note. Runs ONLY on the
+    gh-absent path, so gh-present runtimes (CI) are untouched."""
+    outcome: dict[str, str] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            client = _mtc.McpTowerClient()
+            client.connect()
+            q = client.call_tool("bridge_work_queue", {})
+            # call_tool returns the raw MCP envelope ({"content":[{"text": ...}]});
+            # the queue dict rides as JSON inside content[0].text (same extraction
+            # the client's own CLI does). Tolerate both envelope and parsed shapes.
+            if isinstance(q, dict) and isinstance(q.get("content"), list) and q["content"]:
+                first = q["content"][0]
+                txt = first.get("text") if isinstance(first, dict) else None
+                if isinstance(txt, str):
+                    try:
+                        q = json.loads(txt)
+                    except Exception:
+                        q = None
+            total = q.get("totalOpen") if isinstance(q, dict) else None
+            if isinstance(total, int):
+                outcome["note"] = (
+                    f"tower board reachable: {total} open work orders — "
+                    "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+                )
+            else:
+                outcome["note"] = (
+                    "tower board probe returned no totalOpen — "
+                    "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+                )
+        except Exception as exc:  # noqa: BLE001 — floor must never raise
+            outcome["note"] = (
+                f"tower board probe failed ({type(exc).__name__}) — "
+                "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+            )
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — floor must never raise
+        return f"tower board probe error ({type(exc).__name__}) — P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+    if t.is_alive():
+        return "tower board probe timed out — P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+    return outcome.get("note", "P0-drainage gate (Invariant 5) is dark on this gh-less runtime")
 
 def run_cmd(
     cmd: list[str], cwd: Path | None = None, check: bool = False, timeout: int = 300
@@ -963,6 +1026,12 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         )
     if board_unavailable:
         log("!", f"issue board unavailable ({board_error}) — skipping solver dispatch. Cadence roles still evaluated.")
+        if board_error == "gh CLI not found on PATH":
+            # R61/#2318 option B honesty floor — on a gh-less runtime the board
+            # is not empty, it is UNSEEN: report the dark P0 gate + live tower
+            # queue depth instead of implying an empty board. Best-effort,
+            # never raises/hangs (see _tower_queue_floor).
+            log("!", _tower_queue_floor())
     else:
         picked = pick_next_issue(issues=raw)
         if picked:
