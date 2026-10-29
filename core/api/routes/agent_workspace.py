@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from api.dependencies import get_current_user_token
 from core.knowledge_base import get_from_memory, save_to_memory
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security.ws_auth import authenticate_websocket
 
 # 🛡️ SECURITY FIX: এই router-এর কোনো HTTP endpoint-এই আগে কোনো authentication
