@@ -207,6 +207,12 @@ export class HealthEngine {
       overallStatus,
       snapshot: undefined,
     });
+    // #2710 watchdog increment: stamp the completion on the success path so
+    // /health staleness telemetry (lastCompletedSweepAt/stale) and the >10min
+    // sweep-gap alarm see EVERY completion — scheduled or manual. A manual
+    // sweep buys one staleness window of silence; it cannot permanently
+    // silence the alarm (anti-false-clear, the #2665 lesson).
+    globalHealthCache.markSweepCompleted();
     return {
       timestamp: new Date().toISOString(), durationMs: Date.now() - start, incidents, snapshots,
       dependencyImpact, overallStatus,
