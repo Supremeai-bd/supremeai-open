@@ -82,9 +82,9 @@ def find_dockerfiles(root: Path) -> list[Path]:
     dockerfiles = []
     for p in root.rglob("*Dockerfile*"):
         # Ignore test-runners, temporary files, python scripts or virtual environments
-        if any(part.startswith(".") or part in ("node_modules", ".venv", "venv") for part in p.parts):
+        if any(part.startswith(".") or part in ("node_modules", ".venv", "venv", "__pycache__") for part in p.parts):
             continue
-        if p.suffix in (".py", ".sh", ".md", ".json", ".swp", ".bak", ".tmp"):
+        if p.suffix in (".py", ".sh", ".md", ".json", ".swp", ".bak", ".tmp", ".pyc"):
             continue
         if p.is_file() and ("dockerfile" in p.name.lower()):
             dockerfiles.append(p)
@@ -141,12 +141,12 @@ def check_dockerfile(dockerfile: Path) -> list[str]:
             user_instructions.append((idx, match.group(1).strip()))
 
     if not user_instructions:
-        issues.append(f"Missing USER directive in {dockerfile.relative_to(REPO_ROOT)}. Container runs as root by default!")
+        issues.append(f"Missing USER directive in {dockerfile.relative_to(REPO_ROOT).as_posix()}. Container runs as root by default!")
     else:
         last_line_num, last_user = user_instructions[-1]
         if last_user.lower() in ("root", "0"):
             issues.append(
-                f"Dockerfile {dockerfile.relative_to(REPO_ROOT)} specifies USER '{last_user}' on line {last_line_num}. Containers must run as non-root!"
+                f"Dockerfile {dockerfile.relative_to(REPO_ROOT).as_posix()} specifies USER '{last_user}' on line {last_line_num}. Containers must run as non-root!"
             )
 
     return issues
@@ -159,7 +159,7 @@ def collect_from_surface(dockerfiles: list[Path]) -> dict[str, dict]:
     """
     surface: dict[str, dict] = {}
     for df in sorted(dockerfiles):
-        rel = str(df.relative_to(REPO_ROOT))
+        rel = df.relative_to(REPO_ROOT).as_posix()
         if is_allowlisted(rel):
             continue
         content = df.read_text(encoding="utf-8", errors="ignore")
