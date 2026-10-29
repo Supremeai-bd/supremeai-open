@@ -15,7 +15,7 @@ from brain.model_router import ModelRouter
 from core.cache import get_cache
 from core.config_cache import config_cache
 from core.errors.error_bus import with_error_bus
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 BANGLA_CACHE_TTL = 3600
 

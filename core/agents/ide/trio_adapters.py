@@ -23,9 +23,9 @@ from typing import Any
 # loguru is optional — fall back to a lightweight stub so the adapters
 # remain importable in bare / test environments (e.g. CI without backend deps).
 try:
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 except ImportError:  # pragma: no cover
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 
     if not logger.handlers:
         logger.addHandler(logging.NullHandler())

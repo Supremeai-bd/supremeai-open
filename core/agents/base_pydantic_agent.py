@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 
 from core.llm.llm_gateway import get_llm_gateway
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.mcp_client import MCPRegistryClient
 
 

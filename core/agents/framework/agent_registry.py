@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Canonical Agent Registry
 _AGENT_REGISTRY: dict[str, Any] = {}

@@ -9,7 +9,7 @@ except ImportError:
 from pydantic import BaseModel
 
 from core.human_behavior import HumanBehaviorSimulators
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.playwright_manager import get_global_browser
 from core.security import is_safe_url
 
