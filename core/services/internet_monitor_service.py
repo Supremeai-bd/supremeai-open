@@ -8,7 +8,7 @@ import asyncio
 
 # Fixed import path - using absolute import from backend
 from agents.internet_monitor_agent import internet_monitor_agent
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class InternetMonitorService:
