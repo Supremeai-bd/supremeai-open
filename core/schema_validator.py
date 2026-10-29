@@ -4,7 +4,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 T = TypeVar("T", bound=BaseModel)
 
