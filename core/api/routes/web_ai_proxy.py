@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from api.deps import get_current_admin  # ROOT-CAUSE FIX (#2730): admin gate
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.web_ai_session_bridge import (
     WebAISessionError,
     global_session_pool,
