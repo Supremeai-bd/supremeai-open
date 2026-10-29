@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ---------------------------------------------------------------------------
 # Configuration

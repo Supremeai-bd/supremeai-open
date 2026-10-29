@@ -33,7 +33,7 @@ Bengali:
 from typing import Any
 
 try:
-    from core.logging_config import logger
+    from core.monitoring.logging_config import logger
 except ImportError:
     try:
         from logging_config import logger
