@@ -68,7 +68,8 @@
     "test:bridge-test-wiring": "tsx test_bridge_test_wiring.ts",
     "test:mcp-mutation-rate-limit": "tsx test_mcp_mutation_rate_limit.ts",
     "test:bridge-verdicts": "tsx test_bridge_verdicts.ts",
-    "test:github-pagination": "tsx test_github_pagination.ts"
+    "test:github-pagination": "tsx test_github_pagination.ts",
+    "test:c29-dual-emission": "tsx test_c29_dual_emission.ts"
   },
   "keywords": [
     "mcp",
