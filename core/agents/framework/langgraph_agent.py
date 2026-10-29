@@ -3,11 +3,9 @@
 Canonical domain module: core.agents.framework.autonomous_task_orchestrator
 """
 
-# noqa: F401 - deliberate compat facade (docstring-declared backward-compatibility
-# shim; zero in-repo consumers; kept for satellite import surface stability).
-from core.agents.framework.autonomous_task_orchestrator import (  # noqa: F401
-    AutonomousTaskOrchestrator,
-    SupremeOrchestrator,
+from core.agents.framework.autonomous_task_orchestrator import (
+    AutonomousTaskOrchestrator,  # noqa: F401 — deliberate re-export (facade __all__)
+    SupremeOrchestrator,  # noqa: F401 — deliberate re-export (facade __all__)
 )
 
 __all__ = ["SupremeOrchestrator", "AutonomousTaskOrchestrator"]
