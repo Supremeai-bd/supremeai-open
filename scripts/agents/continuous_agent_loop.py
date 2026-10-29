@@ -26,9 +26,12 @@ ISSUE_LEASE_FILE = REPO_ROOT / "scripts" / "agents" / "dispatched_issues_state.j
 # #57 SSOT: the lease length is owned by scripts/agents/claim_thresholds.py.
 # That module was landed to end the release<->re-claim flip-flop war, but the
 # loop kept its own hardcoded copy — the exact dual-SSOT drift #57 documents.
-# Same-dir import works for direct runs (sys.path[0]) and for tests that put
-# scripts/agents on sys.path (mirrors tests/test_agent_cadence.py).
-from claim_thresholds import ORPHAN_RELEASE_MINUTES  # noqa: E402
+# Support both direct repo-root imports (scripts.agents.claim_thresholds) and
+# same-dir execution (claim_thresholds).
+try:
+    from scripts.agents.claim_thresholds import ORPHAN_RELEASE_MINUTES  # noqa: E402
+except ImportError:
+    from claim_thresholds import ORPHAN_RELEASE_MINUTES  # noqa: E402
 
 ISSUE_LEASE_SECONDS = ORPHAN_RELEASE_MINUTES * 60.0  # 30-minute autonomous lease (Rule 9 parity without GitHub claim friction)
 
