@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 _sso_instance = None
 _sso_error = None
