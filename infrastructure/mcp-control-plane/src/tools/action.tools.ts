@@ -14,6 +14,7 @@ export async function registerActionTools(server: McpServer): Promise<void> {
       clearCache: z.boolean().optional().describe("Whether to clear build cache"),
       overrideRequestId: z.string().optional().describe("Approved Request ID to bypass policy engine")
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ serviceId, clearCache, overrideRequestId }) => {
       try {
         const plan = buildRenderDeployAction(serviceId, clearCache);
@@ -32,6 +33,7 @@ export async function registerActionTools(server: McpServer): Promise<void> {
       prefix: z.string().optional().describe("Prefix to match keys. If empty, flushes all."),
       overrideRequestId: z.string().optional().describe("Approved Request ID to bypass policy engine")
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ prefix, overrideRequestId }) => {
       try {
         const plan = buildRedisFlushAction(prefix);
@@ -49,6 +51,7 @@ export async function registerActionTools(server: McpServer): Promise<void> {
     {
       overrideRequestId: z.string().optional().describe("Approved Request ID to bypass policy engine")
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ overrideRequestId }) => {
       try {
         const plan = buildCloudflarePurgeCacheAction();

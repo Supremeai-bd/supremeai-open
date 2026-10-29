@@ -22,7 +22,7 @@ from typing import Any
 from brain.reasoning_orchestrator import ReasoningOrchestrator
 from browser.autonomous_browser import AutonomousBrowserAgent
 from browser.session_manager import BrowserSessionManager
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 __all__ = ["SwarmBrowser"]
 

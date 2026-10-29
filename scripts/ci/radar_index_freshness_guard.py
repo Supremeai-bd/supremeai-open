@@ -49,8 +49,16 @@ offline plane — the guard binary stays network-free per the Never-do):
     doc, issue, or main-history citation fails. Cite found ⇒ fail loud,
     never advertise dirty; auto-advance is out of scope v1 (fail-loud
     first, per the guard genre's ratchet semantics). The IO is the filer's
-    capture step: bridge_work_queue {"limit": 200} saved to a file
-    (permanent contract, #2286), the guard consumes the artifact.
+    capture step: bridge.work_queue {"limit": 200} saved to a file
+    (permanent contract, #2286; tool renamed from bridge_work_queue
+    2026-10-29, #2454 r3 deploy / #2457 migration), the guard consumes
+    the artifact. R76 fail-loud (#2691): that contract is now ENFORCED
+    at ingestion — validate_queue_capture refuses any capture whose
+    completeness cannot be proven (unparseable JSON, count≠rows,
+    windowTruncated:true, rows<totalOpen, missing row list), because a
+    silently under-scanned sweep is worse than a loud failure (pass-33
+    drift log: the tower hard-truncates response bodies at ~4000 chars
+    at board sizes ≥~130, measured 4/10 cut captures against count=136).
 
 Invariant D-এর পুরনো রূপ (issue-body citation scan, "GitHub API চায়") ইতিহাসে
 গেছে — #2127-এর state-plane আর squash subject-এ WO শিরোনাম থাকায় offline
@@ -372,11 +380,105 @@ def invariant_e(
     return findings, True
 
 
+def validate_queue_capture(queue: object, source: str = "queue artifact") -> None:
+    """Fail-loud completeness check on a captured bridge.work_queue artifact
+    (#2691 / R76 — the pass-33 drift-log hardening, own-lane carrier).
+
+    The #2286 capture contract — one bridge.work_queue {"limit": 200} call
+    IS the complete open-issue-title universe — silently degrades at board
+    sizes ≥~130: the tower hard-truncates response bodies at ~4000 chars
+    mid-JSON, and pass 33 measured 4/10 label-sliced requests returning cut
+    JSON against a count=136 board. The last three same-cycle radar
+    pre-emptions (passes 31/32/33) all trusted that board half; the next
+    collision will too. A silently under-scanned sweep is worse than a loud
+    failure, so ingestion refuses any capture that cannot prove it is the
+    whole board:
+
+      (a) unparseable JSON — handled by the caller's json.loads (kept out
+          of here so the parse error message stays verbatim); this function
+          catches the residue: a capture that is neither envelope nor list,
+      (b) envelope `count` ≠ len(workOrders) mismatches,
+      (c) `windowTruncated: true` — with the #2286 limit:200 the whole
+          open board must fit; a truncated window is incomplete BY DEFINITION,
+      (d) a workOrders payload suspiciously small vs `totalOpen` — the
+          #2190 omission class gains its earlier tripwire here,
+      (e) an envelope carrying NO row list at all (workOrders/rows both
+          absent — a schema drift would otherwise sweep zero titles
+          silently). A healthy EMPTY board (workOrders: [] with count=0)
+          still passes: absence of rows is only a crime when the envelope
+          never declared them,
+      (f) a non-empty `label` field — a label-sliced capture is
+          count-complete but UNIVERSE-incomplete; invariant F (#2718)
+          consumes this artifact as the whole open-issue universe, so a
+          slice must never reach it,
+      (g) a `scope` other than the #2286 contract shape `all-open` — same
+          universe-incompleteness class as (f).
+
+    Pre-envelope raw row lists (the F18d shape) carry no contract-bearing
+    fields and pass through untouched. Raises SystemExit(1) after a FAIL
+    evidence line — the guard's standard fail-closed idiom (mirrors
+    load_baseline). Rollback: single-commit revert returns ingestion to
+    parse-what-you-get (the current, silent-on-truncation state).
+    """
+    if isinstance(queue, list):
+        return  # pre-envelope raw capture: nothing contract-bearing to check
+    if not isinstance(queue, dict):
+        _evidence(f"FAIL board-sweep capture contract: {source} is neither a work_queue "
+                  f"envelope nor a row list (got {type(queue).__name__}) — refusing to "
+                  "sweep a capture whose completeness cannot be checked (R76 fail-loud)")
+        raise SystemExit(1)
+    orders = queue.get("workOrders") or queue.get("rows") or []
+    if not isinstance(orders, list):
+        _evidence(f"FAIL board-sweep capture contract: {source} — workOrders is not a list "
+                  f"(got {type(orders).__name__}); a row field the sweep cannot count would "
+                  "scan zero titles silently (R76 fail-loud)")
+        raise SystemExit(1)
+    n = len(orders)
+    count = queue.get("count")
+    if isinstance(count, int) and not isinstance(count, bool) and count != n:
+        _evidence(f"FAIL board-sweep capture contract: {source} captured {n} row(s) but the "
+                  f"envelope advertises count={count} — capture is incomplete (R76 fail-loud; "
+                  "pass-33 ~4000-ch truncation class: a silently under-scanned sweep is "
+                  "worse than a loud failure)")
+        raise SystemExit(1)
+    if queue.get("windowTruncated") is True:
+        _evidence(f"FAIL board-sweep capture contract: {source} captured {n} row(s) with "
+                  "windowTruncated=true — with the #2286 limit:200 capture the whole open "
+                  "board must fit; a truncated window is incomplete by definition "
+                  "(R76 fail-loud)")
+        raise SystemExit(1)
+    total_open = queue.get("totalOpen")
+    if isinstance(total_open, int) and not isinstance(total_open, bool) and n < total_open:
+        _evidence(f"FAIL board-sweep capture contract: {source} captured {n} row(s) but the "
+                  f"envelope advertises totalOpen={total_open} — suspiciously small payload "
+                  "vs the board it names; count reconciliation is also #2190's "
+                  "omission-class tripwire (R76 fail-loud)")
+        raise SystemExit(1)
+    if "workOrders" not in queue and "rows" not in queue:
+        _evidence(f"FAIL board-sweep capture contract: {source} carries no workOrders/rows "
+                  "list at all — a schema drift here would sweep zero titles silently "
+                  "(R76 fail-loud); a healthy empty board declares workOrders: []")
+        raise SystemExit(1)
+    label = queue.get("label")
+    if label:
+        _evidence(f"FAIL board-sweep capture contract: {source} is label-sliced "
+                  f"(label={label!r}) — count-complete but universe-incomplete; invariant F "
+                  "(#2718) consumes this artifact as the WHOLE open-issue universe, so a "
+                  "slice must never reach it (R77 fail-loud)")
+        raise SystemExit(1)
+    scope = queue.get("scope")
+    if scope is not None and scope != "all-open":
+        _evidence(f"FAIL board-sweep capture contract: {source} scope={scope!r} is not the "
+                  "#2286 contract shape 'all-open' — same universe-incompleteness class as "
+                  "a label slice (R77 fail-loud)")
+        raise SystemExit(1)
+
+
 def board_sweep(queue: dict | list, token: int, allow: set[int]) -> list[dict]:
     """Pointer↔board agreement predicate over captured open-issue titles.
 
     (#2372 option B / #2392 component 2, offline plane.) The IO is the
-    filer's capture step — a zero-credential bridge_work_queue
+    filer's capture step — a zero-credential bridge.work_queue
     {"limit": 200} snapshot saved to a file; the GUARD BINARY stays
     network-free (Never-do). Rows are keyed `number`/`title` (post-#2286
     schema; the older `issueNumber` key accepted). Pointer phrases are
@@ -400,6 +502,69 @@ def board_sweep(queue: dict | list, token: int, allow: set[int]) -> list[dict]:
                     "title": " ".join(str(title).split())[:160],
                 })
                 break
+    return findings
+
+
+def row_state_findings(idx_text: str, queue: dict | list) -> list[dict]:
+    """Invariant F — row-state truthfulness (#2718 / R77), index-vs-board plane.
+
+    Invariants A–E verify the index's INTERNAL consistency and #2704's
+    validate_queue_capture verifies the capture input; none verified a row's
+    STATUS CLAIM against the issue state that claim describes. The scout's
+    receipts: 5 recent issue-filed rows asserted `open` while their defining
+    issues were closed-completed (R71/R72/R73/R75/R76 → #2586/#2608/#2627/
+    #2654/#2691); a full pre-flight over the live index found the rot 27 rows
+    deep (doc-filed eras included: R17/R20/R24-VI/R25/R29-R32/R36/R46-R62/R66
+    + R63-I's superseded-PR `in gates` cell). Stale-open is the dominant
+    divergence class — worse than stale-landed because it SUPPRESSES
+    successor work instead of duplicating it (Rule 7: the index is the only
+    counter; a lying counter is not a stale cache).
+
+    Check: for every §1 registry row whose status cell asserts an in-flight
+    state (anything not landed/closed/done/rejected/superseded/withdrawn —
+    `open`, `in gates`, `adopted`, `fixed` all qualify), the row's FILED-cell
+    issue #N must be present in the captured open-issue universe — the same
+    proven-complete artifact --board-sweep already ingests (label-sliced and
+    non-all-open scopes are refused upstream by validate_queue_capture). A
+    cited issue absent from a complete open set means the row claims
+    in-flight work that has actually landed. Scope honesty (the scout's own
+    limitation, kept verbatim): only issues checkable against an open-only
+    universe; landed-row misstatement detection is a non-goal this lane does
+    not claim. Parse honesty: cells are split on `|` naively — a pipe inside
+    a code span would confuse the parse; the live file parses clean (41
+    in-flight rows receipted this cycle), noted as a known limit.
+
+    Pure function — findings only; the caller renders evidence and fails.
+    """
+    rows_q = queue if isinstance(queue, list) else (
+        queue.get("workOrders") or queue.get("rows") or [])
+    open_nums = set()
+    for r in rows_q:
+        if isinstance(r, dict):
+            n = r.get("number", r.get("issueNumber"))
+            if isinstance(n, int):
+                open_nums.add(n)
+    landed_words = ("landed", "closed", "done", "rejected", "superseded", "withdrawn")
+    findings: list[dict] = []
+    for ln in idx_text.splitlines():
+        m = re.match(r"^\|\s*(R\d+[^|]*)\s*\|", ln)
+        if not m:
+            continue
+        cells = [c.strip() for c in ln.split("|")][1:-1]
+        if len(cells) < 6:
+            continue
+        fm = re.search(r"#(\d+)", cells[3])
+        if not fm:
+            continue
+        issue = int(fm.group(1))
+        status = re.sub(r"[*_`]", "", cells[5]).strip()
+        head_w = status.split("(")[0].split()
+        head = head_w[0].lower() if head_w else ""
+        if not head or head.startswith("\u2014") or head in landed_words:
+            continue
+        if issue not in open_nums:
+            findings.append({"kind": "stale-row", "row": re.sub(r"[*_]", "", m.group(1)).strip(),
+                             "issue": issue, "status": " ".join(status.split())[:80]})
     return findings
 
 
@@ -810,6 +975,123 @@ def self_test() -> bool:
           board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())
           and board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())[0]["issue"] == 9)
 
+    # F19: capture-contract fail-loud (#2691 / R76 — the pass-33 drift-log
+    # hardening). The #2286 single-capture contract (limit:200 = the whole
+    # open set) silently degrades at board sizes ≥~130: the tower truncates
+    # response bodies at ~4000 chars mid-JSON, and pass 33 measured 4/10
+    # label-sliced requests returning cut JSON against a count=136 board.
+    # Ingestion must refuse captures whose completeness cannot be proven —
+    # a silently under-scanned sweep is worse than a loud failure. CLI
+    # fixtures run the real binary via subprocess (offline, tempdir) and
+    # require a nonzero exit; F19e is the positive control — a healthy
+    # envelope must still exit 0 end-to-end. R77 canary note: this CLI run also
+    # executes invariant F over the DEPLOYED index, so it passes iff the deployed
+    # index is row-state-clean; a stale deployed index SHOULD redden here (that is
+    # invariant F working — refresh the rows; #2718). The synthetic queue is
+    # deliberately NOT the real open universe, so the canary only stays green when
+    # the index has zero in-flight rows citing issues outside a complete capture —
+    # i.e. after the R77 refresh landed.
+    def queue_file(content: str) -> Path:
+        p = Path(tempfile.mkdtemp(prefix="rifg-f19-")) / "queue.json"
+        p.write_text(content, encoding="utf-8")
+        return p
+
+    def cli_exit(qf: Path) -> int:
+        return subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--board-sweep", "--queue-file", str(qf), "--token", "97"],
+            capture_output=True, text=True, timeout=60).returncode
+
+    trunc = '{"workOrders": [{"number": 2401, "ti'  # pass-33 cut-JSON shape
+    check("F19a-truncated-json-exits-nonzero", cli_exit(queue_file(trunc)) != 0)
+    mismatch = json.dumps({"count": 136, "totalOpen": 136, "windowTruncated": False,
+                           "workOrders": [{"number": 2401, "title": "row one"},
+                                          {"number": 2402, "title": "row two"}]})
+    check("F19b-count-rows-mismatch-exits-nonzero", cli_exit(queue_file(mismatch)) != 0)
+    window = json.dumps({"count": 2, "totalOpen": 2, "windowTruncated": True,
+                         "workOrders": [{"number": 2401, "title": "row one"},
+                                        {"number": 2402, "title": "row two"}]})
+    check("F19c-window-truncated-exits-nonzero", cli_exit(queue_file(window)) != 0)
+    small = json.dumps({"count": 2, "totalOpen": 136, "windowTruncated": False,
+                        "workOrders": [{"number": 2401, "title": "row one"},
+                                       {"number": 2402, "title": "row two"}]})
+    check("F19d-small-payload-vs-totalopen-exits-nonzero", cli_exit(queue_file(small)) != 0)
+    healthy_src = {"count": 2, "totalOpen": 2, "windowTruncated": False,
+                   "workOrders": [{"number": 2401, "title": "row one"},
+                                  {"number": 2402, "title": "row two"}]}
+    # F19e positive control, self-consistent-universe edition (R77): a healthy
+    # envelope must still drive the whole --board-sweep pipeline to exit 0.
+    # The queue universe is DERIVED from the deployed index's own in-flight
+    # filed-issue citations (offline, no network) so the index matches its
+    # queue by construction — invariant F then passes whatever the deployed
+    # row-state is, and this fixture proves the OK-path plumbing, not the
+    # row-state (the LIVE board-sweep against a real capture is where stale
+    # rows redden; the F20 fixtures pin the synthetic red/green semantics).
+    deployed = (REPO_ROOT / INDEX_REL).read_text(encoding="utf-8", errors="replace")
+    cited = set()
+    for ln2 in deployed.splitlines():
+        if not re.match(r"^\|\s*(R\d+[^|]*)\s*\|", ln2):
+            continue
+        cells2 = [c.strip() for c in ln2.split("|")][1:-1]
+        if len(cells2) < 6:
+            continue
+        fm2 = re.search(r"#(\d+)", cells2[3])
+        if fm2:
+            cited.add(int(fm2.group(1)))
+    uni_rows = healthy_src["workOrders"] + [
+        {"number": n, "title": f"universe row #{n}"} for n in sorted(cited - {2401, 2402})]
+    healthy = json.dumps({"count": len(uni_rows), "totalOpen": len(uni_rows),
+                          "windowTruncated": False, "workOrders": uni_rows})
+    check("F19e-healthy-envelope-still-passes", cli_exit(queue_file(healthy)) == 0)
+
+    def exits_loud(fn) -> bool:
+        try:
+            fn()
+        except SystemExit as exc:
+            return int(exc.code or 0) != 0
+        return False
+
+    check("F19f-envelope-without-row-list-fails-loud",
+          exits_loud(lambda: validate_queue_capture(
+              {"count": 0, "totalOpen": 0, "windowTruncated": False})))
+    check("F19g-raw-list-capture-passthrough",
+          not exits_loud(lambda: validate_queue_capture(
+              [{"number": 2401, "title": "pre-envelope raw capture"}])))
+    check("F19h-healthy-empty-board-passes",
+          not exits_loud(lambda: validate_queue_capture(
+              {"count": 0, "totalOpen": 0, "windowTruncated": False, "workOrders": []})))
+
+    # F20: invariant F — row-state truthfulness (#2718 / R77), the index-vs-board
+    # plane. Red-first discipline: the five scout-named rows (R71/R72/R73/R75/R76
+    # → #2586/#2608/#2627/#2654/#2691) are the named fixtures replayed here
+    # synthetically; the live red receipt (27 stale rows over the real index +
+    # real capture) is taken in the landing PR's evidence. Scope honesty is
+    # fixture-pinned: landed rows and no-issue rows must NEVER fire.
+    idx_f = (
+        "| R# | Radar file | Lane | Filed | Verdict | Status |\n"
+        "|----|-----------|------|-------|---------|--------|\n"
+        "| R71 | `a.md` | lane one | #2586 | `adapt` | **open (claimed #2586)** |\n"
+        "| R74 | `b.md` | lane two | #2633 | — | **open (unclaimed)** |\n"
+        "| R70 | `c.md` | lane three | #2500 | `adapt` | **landed (PR #2501 closes #2500)** |\n"
+        "| R90 | `d.md` | lane four | not filed | `adapt` | **open** |\n"
+        "| R63-**I** | `e.md` | lane five | #2343 | — | **in gates (PR #2352; merge closes #2343)** |\n"
+    )
+    q_on = {"workOrders": [{"number": 2633, "title": "the one open lane"}]}
+    st = row_state_findings(idx_f, q_on)
+    check("F20a-stale-open-row-fires", any(f["row"] == "R71" and f["issue"] == 2586 for f in st))
+    check("F20b-healthy-open-row-passes", not any(f["row"] == "R74" for f in st))
+    check("F20c-landed-row-skipped", not any(f["row"] == "R70" for f in st))
+    check("F20d-no-issue-row-skipped", not any(f["row"] == "R90" for f in st))
+    check("F20e-in-gates-cell-fires", any(f["row"] == "R63-I" and f["issue"] == 2343 for f in st))
+    check("F20f-label-sliced-capture-refused",
+          exits_loud(lambda: validate_queue_capture(
+              {"label": "scout", "count": 1, "totalOpen": 1,
+               "workOrders": [{"number": 1, "title": "x"}]})))
+    check("F20g-scoped-capture-refused",
+          exits_loud(lambda: validate_queue_capture(
+              {"scope": "label:scout", "count": 1, "totalOpen": 1,
+               "workOrders": [{"number": 1, "title": "x"}]})))
+
     print(f"{'SELF-TEST OK: radar_index_freshness_guard' if ok else 'SELF-TEST FAILED: radar_index_freshness_guard'}")
     return ok
 
@@ -890,7 +1172,7 @@ def main() -> int:
     parser.add_argument("--allow", nargs="*", type=int, default=[],
                         help="self-ref exception: the successor lane's own defining ticket number(s)")
     parser.add_argument("--queue-file", default=None,
-                        help='captured bridge_work_queue {"limit": 200} JSON artifact')
+                        help='captured bridge.work_queue {"limit": 200} JSON artifact')
     parser.add_argument("--json", action="store_true", help="machine-readable auditor report")
     parser.add_argument("--self-test", action="store_true", help="hermetic offline self-test suite")
     args = parser.parse_args()
@@ -919,7 +1201,7 @@ def main() -> int:
 
     if args.board_sweep:
         if not args.queue_file:
-            _evidence('FAIL board-sweep: --queue-file required — capture bridge_work_queue '
+            _evidence('FAIL board-sweep: --queue-file required — capture bridge.work_queue '
                       '{"limit": 200} filer-side; the guard binary is network-free (Never-do)')
             return 1
         try:
@@ -927,6 +1209,10 @@ def main() -> int:
         except (OSError, json.JSONDecodeError) as exc:
             _evidence(f"FAIL board-sweep: unreadable queue artifact {args.queue_file}: {exc}")
             return 1
+        # R76 fail-loud ingestion (#2691): the #2286 capture contract degrades
+        # silently at board sizes ≥~130 (pass-33 ~4000-ch truncation class);
+        # refuse to sweep a capture that cannot prove it is the whole board.
+        validate_queue_capture(queue, source=args.queue_file)
         idx_text = (REPO_ROOT / INDEX_REL).read_text(encoding="utf-8", errors="replace")
         pointer = parse_pointer(idx_text)
         token = args.token if args.token is not None else (pointer + 1 if pointer is not None else None)
@@ -937,14 +1223,29 @@ def main() -> int:
         findings = board_sweep(queue, token, allow)
         for f in findings:
             _evidence(f"BOARD-FAIL title-citation: #{f['issue']} cites {f['token']} — '{f['title']}'")
+        # R77 invariant F (#2718): row-state truthfulness — the refresh half of
+        # the freshness contract, mechanized. Runs only past validate_queue_capture,
+        # i.e. against a capture proven count- AND universe-complete.
+        stale = row_state_findings(idx_text, queue)
+        for f in stale:
+            _evidence(f"STALE-ROW row-state: {f['row']} cites #{f['issue']} in-flight "
+                      f"('{f['status']}') but #{f['issue']} is absent from the proven-complete "
+                      "open capture — refresh the row (invariant F, #2718/R77)")
         n_rows = len(queue) if isinstance(queue, list) else len(
             queue.get("workOrders") or queue.get("rows") or [])
         if findings:
             _evidence(f"FAIL board-sweep: R{token} cited by {len(findings)} open title(s) outside "
                       f"allow={sorted(allow)} — never advertise dirty (auto-advance out of scope v1)")
             return 1
+        if stale:
+            _evidence(f"FAIL board-sweep: {len(stale)} registry row(s) assert in-flight state for "
+                      f"issue(s) absent from the proven-complete open capture (first few: "
+                      f"{[f['row'] for f in stale[:6]]}) — refresh the rows before advertising "
+                      "(invariant F, #2718/R77): a filer's freeness check must not consume a lying index")
+            return 1
         _evidence(f"OK board-sweep: R{token} zero title citations outside allow={sorted(allow)} "
-                  f"over {n_rows} captured row(s) — advertisable per the #2392 predicate")
+                  f"over {n_rows} captured row(s), 0 stale rows — advertisable per the #2392 "
+                  "predicate + #2718 invariant F")
         return 0
 
     only = None

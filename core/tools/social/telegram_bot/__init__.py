@@ -52,7 +52,7 @@ import httpx  # noqa: F401
 from fastapi import APIRouter, Request, Response  # noqa: F401
 
 from core.config import settings  # noqa: F401
-from core.logging_config import logger  # noqa: F401
+from core.monitoring.logging_config import logger  # noqa: F401
 
 from .handler import TelegramBotHandler
 from .router import create_telegram_router, router

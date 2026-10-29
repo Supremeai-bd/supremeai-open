@@ -14,7 +14,7 @@ from api.routes.admin_dashboard._models import (
     ApprovalDecisionPayload,
     DeployGateToggle,
 )
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.utils.time_utils import utc_now
 
 with contextlib.suppress(ImportError):

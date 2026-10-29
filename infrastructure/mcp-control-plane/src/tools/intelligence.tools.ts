@@ -63,6 +63,7 @@ export async function registerIntelligenceTools(server: McpServer): Promise<void
       query: z.string().describe("Symbol, function name, class, endpoint route, or file to search, e.g. 'studio_auth_login' or 'GuestChat'"),
       limit: z.number().int().min(1).max(50).optional().describe("Maximum matched nodes to return (default: 15)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ query, limit }) => {
       try {
         const graphPath = findGraphJson();
@@ -148,6 +149,7 @@ export async function registerIntelligenceTools(server: McpServer): Promise<void
       url: z.string().url().describe("Target URL to audit, e.g. 'https://example.com'"),
       device: z.enum(["desktop", "mobile"]).optional().describe("Device viewport profile (default: desktop)"),
     },
+    { readOnlyHint: false, destructiveHint: false },
     async ({ url, device }) => {
       try {
         let auditFallbackReason: string | undefined;

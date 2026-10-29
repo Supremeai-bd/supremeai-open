@@ -39,6 +39,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void> 
       source: z.string().optional().describe("Specific doc source to filter"),
       limit: z.number().optional().describe("Max search results (default: 5)"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ query, source, limit }: { query?: string; source?: string; limit?: number }) => {
       try {
         if (query && query.trim().length > 0) {
@@ -70,6 +71,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void> 
       source: z.string().optional().describe("Specific doc source to search"),
       limit: z.number().optional().describe("Max results to return"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ query, source, limit }) => {
       const results = await searchDocs(query, source, limit ?? 5);
       return {
@@ -86,6 +88,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void> 
       url: z.string().describe("Full URL of the documentation page"),
       topic: z.string().optional().describe("Topic to fetch"),
     },
+    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     async ({ url, topic }) => {
       const content = await fetchDocPage(url, topic);
       return {
@@ -99,6 +102,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void> 
     "docs.list",
     "List all available documentation sources",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       return {
         content: [{

@@ -8,7 +8,7 @@ from fastapi.websockets import WebSocketDisconnect
 from api.routes.admin_dashboard import router
 from api.routes.admin_dashboard.endpoints_health import get_health_map
 from api.routes.admin_dashboard.endpoints_metrics import get_metrics, get_providers
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.utils.time_utils import utc_now
 
 

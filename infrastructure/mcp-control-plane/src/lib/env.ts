@@ -325,6 +325,15 @@ export const env = {
   firecrawl: {
     get apiKeys(): string[] { return multiKey("FIRECRAWL_API_KEY"); },
   },
+
+  // ── DevTools audit backend (#1673 — chrome-devtools-mcp as tool backend)
+  devtools: {
+    get chromePath(): string { return optional("DEVTOOLS_CHROME_PATH", "chrome"); },
+    get defaultWaitMs(): number { return positiveInt("DEVTOOLS_AUDIT_WAIT_MS", 4000); },
+    get defaultTimeoutMs(): number { return positiveInt("DEVTOOLS_AUDIT_TIMEOUT_MS", 30000); },
+    get slowRequestMs(): number { return positiveInt("DEVTOOLS_SLOW_REQUEST_MS", 1500); },
+    get resultCapBytes(): number { return positiveInt("DEVTOOLS_RESULT_CAP_BYTES", 30000); },
+  },
 };
 
 export type Env = typeof env;
@@ -349,6 +358,11 @@ export function validateRuntimeKnobs(): void {
   void env.runtime.httpSessionIdleMs;
   void env.runtime.maxSseSessions;
   void env.runtime.maxHttpSessions;
+  // #1673 — devtools audit knobs (validated the same loud way on boot)
+  void env.devtools.defaultWaitMs;
+  void env.devtools.defaultTimeoutMs;
+  void env.devtools.slowRequestMs;
+  void env.devtools.resultCapBytes;
   void env.runtime.sessionAdmissionIdleFloorMs;
 }
 

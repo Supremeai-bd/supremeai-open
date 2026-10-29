@@ -5,7 +5,7 @@ import os
 
 from api.routes.admin_dashboard import router
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.utils.time_utils import utc_now
 
 

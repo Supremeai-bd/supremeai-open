@@ -2,12 +2,12 @@ services:
   - type: web
     name: supremeai-browser
     runtime: docker
-    plan: starter
+    plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
       - key: GEMINI_PROFILE_DIR
-        value: /data/profile
+        value: /tmp/profile
       # R56 option A agent-slice (#2262): the ghost-tower vault regenerates its
       # Fernet master key on every boot (VAULT_DIR ~/.supremeai_vault is
       # ephemeral — outside the /data/profile disk), so anything encrypted
@@ -20,7 +20,4 @@ services:
       # then and makes the next key generation the last one. Unset = rollback.
       - key: CREDENTIAL_MASTER_KEY
         sync: false
-    disk:
-      name: browser-profile
-      mountPath: /data/profile
-      sizeGB: 1
+    

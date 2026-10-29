@@ -8,6 +8,11 @@ import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
 import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
 import { evaluateBaseStaleness, staleBaseErrorText, type MainBlobState } from "../lib/bridge_staleness.js";
+import {
+  isTestWired,
+  payloadTestWiringGroups,
+  unwiredTestErrorText,
+} from "../lib/bridge_test_wiring.js";
 import { applyLabelFallback, type VerdictSource } from "../lib/bridge_verdicts.js";
 import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
 import { RequestContextStore } from "../policy/auth.context.js";
@@ -122,6 +127,22 @@ export function reflectionFixSnippet(): string {
   ].join("\n");
 }
 
+// Auto-close detection for submit summaries - VERB INTENT ONLY
+// ("fixes #1519", "resolves #1520", "closes #1521", "issue #1522").
+// #1609's original regex carried a bare-`\#` branch that matched ANY first
+// "#NNN" mention, so referencing an open ticket in prose auto-emitted
+// `Closes #N` on merge. Three false-closes traced to it, all on
+// radar-registration submissions whose summaries cited the tickets they
+// registered: PR #2518 closed #2512 (+3s post-merge, 08:46:25Z); PR #2556
+// closed #2545 (+3s, 10:50:46Z); PR #2611 closed #2608 (+2s, 13:43:39Z -
+// independently audited as a premature zero-work closure in #2615). A bare
+// mention references; it does not resolve. The verb branches keep #1609's
+// intended auto-link for intent-carrying summaries.
+export function detectOriginalIssueFromSummary(summary: string): number | undefined {
+  const match = summary.match(/(?:close[s]?|fix(?:es)?|resolve[s]?|issue)\s*#?([0-9]{2,6})\b/i);
+  return match ? parseInt(match[1], 10) : undefined;
+}
+
 export interface BridgePrBodyOptions {
   taskId: string;
   summary: string;
@@ -132,6 +153,17 @@ export interface BridgePrBodyOptions {
   reflectionWhy?: string;
   alternativesRejected?: string;
   rollbackPath?: string;
+  /**
+   * #2485: opt-in escape hatch for the receipt-closure class. Docs-only
+   * (spec-only) submissions emit `Refs #N` so a spec-first lane keeps its work
+   * order open until code lands - but for CI-failure closure receipts the
+   * receipt IS the resolution, so the WO would stay open forever
+   * (evidence: #2405 stayed open after #2427 landed; #2368 after #2466).
+   * When true, a docs-only submission emits `Closes #N` for both the original
+   * issue and the round's work-order issue. Absent/false preserves the
+   * spec-only keep-open contract exactly.
+   */
+  closesOriginalIssue?: boolean;
 }
 
 export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
@@ -147,8 +179,12 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
   );
 
   // Auto-close original issue if provided (e.g. #1519, #1520)
+  // #2485: isSpecOnly normally downgrades Closes->Refs ("open until code
+  // implementation"), but closesOriginalIssue opts a docs-only receipt out of
+  // that keep-open contract (receipt-closure class: #2405/#2427, #2368/#2466).
+  const keepSpecOpen = isSpecOnly && !opts.closesOriginalIssue;
   if (opts.originalIssueNumber) {
-    if (isSpecOnly) {
+    if (keepSpecOpen) {
       linkedIssues.push(`Refs #${opts.originalIssueNumber}`);
     } else {
       linkedIssues.push(`Closes #${opts.originalIssueNumber}`, `Refs #${opts.originalIssueNumber}`);
@@ -157,7 +193,7 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
 
   // Also close/ref the bridge work order issue
   if (opts.issueNumber && opts.issueNumber !== opts.originalIssueNumber) {
-    if (isSpecOnly) {
+    if (keepSpecOpen) {
       linkedIssues.push(`Refs #${opts.issueNumber}`, `<!-- spec-only: keeps #${opts.issueNumber} open until code implementation -->`);
     } else {
       linkedIssues.push(`Closes #${opts.issueNumber}`, `Refs #${opts.issueNumber}`);
@@ -808,6 +844,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     "bridge.guide",
     "Zero-credential onboarding contract for external agents working from the public open-source repo: lifecycle, branch convention, diff caps, protected paths and the submission flow. No network required.",
     {},
+    { readOnlyHint: true, idempotentHint: true },
     async () => {
       return { content: [{ type: "text", text: JSON.stringify(bridgeGuide(), null, 2) }] };
     }
@@ -840,6 +877,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         workOrders: z.array(z.object(bridgeQueueItemSchema)),
         nextStep: z.string(),
       },
+      annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ limit, label }) => {
       const repo = bridgeOpenRepo();
@@ -934,6 +972,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         body: z.string(),
         contract: z.record(z.string(), z.unknown()),
       },
+      annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ number }) => {
       const repo = bridgeOpenRepo();
@@ -992,6 +1031,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return when viewing queue (default: 20)."),
       label: z.string().optional().describe("Optional label filter for queue."),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ view, taskId, limit, label }) => {
       const repo = bridgeOpenRepo();
       if (view === "guide") {
@@ -1073,6 +1113,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     agentIdentity,
     reflectionWhy,
     alternativesRejected,
+    closesOriginalIssue,
   }: {
     taskId: string;
     summary: string;
@@ -1084,12 +1125,13 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     agentIdentity?: string;
     reflectionWhy?: string;
     alternativesRejected?: string;
+    closesOriginalIssue?: boolean;
   }) => {
-    // If not explicitly passed, detect original issue reference from summary e.g. "fix #1519" or "(#1519)"
-    const detectedIssueNum = originalIssueNumber ?? (() => {
-      const match = summary.match(/(?:close[s]?|fix(?:es)?|resolve[s]?|issue|\#)\s*#?([0-9]{2,6})\b/i);
-      return match ? parseInt(match[1], 10) : undefined;
-    })();
+    // If not explicitly passed, detect original issue reference from summary -
+    // verb-intent only ("fixes #1519"); a bare "#NNN" mention references, it
+    // does not resolve (see detectOriginalIssueFromSummary: the old bare-`\#`
+    // branch false-closed three open tickets via auto-detected Closes links).
+    const detectedIssueNum = originalIssueNumber ?? detectOriginalIssueFromSummary(summary);
     // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
     const candidateBody = [
       REFLECTION_EVIDENCE_SECTION,
@@ -1248,6 +1290,67 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           return { isError: true, content: [{ type: "text", text: `Failed to resolve main branch on ${repo}: HTTP ${mainRes.status}` }] };
         }
         const mainSha = mainRes.data.object.sha;
+
+        // #2444 test-wiring checkpoint (pre-branch, pre-PUT): a NEW test file in
+        // the guarded package that no npm script references would deterministically
+        // fail the #116 wiring guard on the PR gate AFTER the branch + PR already
+        // exist (recurring class: #2404 r1 run 40803525030, #2440 r2 run
+        // 40816022722 — each cost a red gate, a stranded PR, and a triage WO).
+        // Refuse at submit-time with the exact fix instead. Scope is exactly the
+        // guard's collection shapes under infrastructure/mcp-control-plane/;
+        // everything else is never evaluated (zero false-positive surface).
+        // Fail-open with disclosure whenever the Tower cannot prove the wiring
+        // state (manifest absent, API error, diff-mode manifest override) —
+        // availability over false blocks, never silent (staleness precedent).
+        let unwiredError: string | undefined;
+        const wiringCheckSkips: string[] = [];
+        for (const group of payloadTestWiringGroups(files.map((f) => f.path))) {
+          const pkgPath = `${group.packageDir}/package.json`;
+          const override = files.find((f) => f.path === pkgPath);
+          let blob: string | undefined;
+          if (override && (override.mode ?? "full_file") === "full_file" && typeof override.content === "string") {
+            // Payload's own manifest is the wiring authority when present: it
+            // is exactly what the guard will read post-land.
+            blob = override.content;
+          } else if (override) {
+            wiringCheckSkips.push(`${pkgPath}: payload override is unified_diff — post-apply blob not evaluated here; fail-open`);
+            continue;
+          } else {
+            const pkgRes = await httpRequest<{ content?: string; encoding?: string }>(
+              `https://api.github.com/repos/${repo}/contents/${pkgPath}?ref=main`,
+              { headers, timeoutMs: 15_000 }
+            );
+            if (pkgRes.ok && pkgRes.data?.content) {
+              blob = Buffer.from(pkgRes.data.content, "base64").toString("utf-8");
+            } else if (pkgRes.status === 404) {
+              wiringCheckSkips.push(`${pkgPath}: absent on main (HTTP 404) — guard not applicable to this group`);
+              continue;
+            } else {
+              wiringCheckSkips.push(`${pkgPath}: read failed HTTP ${pkgRes.status} — fail-open`);
+              continue;
+            }
+          }
+          const groupUnwired: string[] = [];
+          for (const testPath of group.testPaths) {
+            const existsRes = await httpRequest<{ sha?: string }>(
+              `https://api.github.com/repos/${repo}/contents/${testPath}?ref=main`,
+              { headers, timeoutMs: 15_000 }
+            );
+            if (existsRes.ok) continue; // modification of an existing (main-wired) suite
+            if (existsRes.status !== 404) {
+              wiringCheckSkips.push(`${testPath}: existence probe HTTP ${existsRes.status} — fail-open`);
+              continue;
+            }
+            if (!isTestWired(testPath, blob)) groupUnwired.push(testPath);
+          }
+          if (groupUnwired.length > 0) {
+            unwiredError = unwiredTestErrorText(groupUnwired, pkgPath);
+            break;
+          }
+        }
+        if (unwiredError) {
+          return { isError: true, content: [{ type: "text", text: unwiredError }] };
+        }
 
         // Step B: Create branch bridge/<taskId> if not exists
         const branchName = `bridge/${taskId}`;
@@ -1440,6 +1543,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           reflectionWhy,
           alternativesRejected,
           rollbackPath,
+          closesOriginalIssue,
         });
 
         let prNumber: number | undefined;
@@ -1493,6 +1597,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               targetAnchor: targetRepoResolution.anchor,
               targetMode: targetRepoResolution.mode,
               files: fileResults,
+              ...(wiringCheckSkips.length > 0 ? { wiringCheckSkips } : {}),
               branch: branchName,
               branchUrl: `https://github.com/${repo}/tree/${branchName}`,
               issueNumber,
@@ -1522,7 +1627,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
 
   const submitPatchSchema = {
     taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
-    summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
+    summary: z.string().min(5).max(1000).describe("Summary of what was changed and why. Auto-close detection (#1609) fires on verb-intent phrases only (fixes/closes/resolves #N); a bare #N mention references without resolving - the old bare-# branch false-closed three open tickets (see detectOriginalIssueFromSummary)"),
     originalIssueNumber: z.number().int().positive().optional().describe("Original GitHub issue number being resolved (e.g. 1519) to ensure root issue closes automatically on PR merge"),
     scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
     testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
@@ -1537,12 +1642,14 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     agentIdentity: z.string().optional().describe("Agent name / session attribution"),
     reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
     alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
+    closesOriginalIssue: z.boolean().optional().describe("#2485: opt-in for receipt-closure submissions. Docs-only (spec-only) payloads normally emit Refs #N so the work order stays open until code lands - but when this docs-only patch IS the resolution (e.g. a CI-failure closure receipt whose root cause is already remediated on main), set true to emit Closes #N on merge. Absent/false preserves the spec-only keep-open contract. Evidence: #2405 stayed open after #2427 landed; #2368 after #2466."),
   };
 
   server.tool(
     "bridge.submit_patch",
     "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
     submitPatchSchema,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     submitPatchHandler as any
   );
 
@@ -1551,6 +1658,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     "bridge.submit",
     "Unified patch submission endpoint (S0.4 canonical alias of bridge.submit_patch). Submits work to the public repo atomically with automatic branch creation, commit, and PR generation.",
     submitPatchSchema,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     submitPatchHandler as any
   );
 
@@ -1755,6 +1863,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Task issue number to claim"),
       agentId: z.string().optional().describe("Optional caller identity (defaults to authenticated client or contributor)"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     claimHandler
   );
 
@@ -1765,6 +1874,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
     {
       number: z.number().int().positive().describe("Work-order issue number in the public open-source repo"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async ({ number }) => {
       const repo = bridgeOpenRepo();
       try {
@@ -1823,6 +1933,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Task / Work-order issue number"),
       agentId: z.string().optional().describe("Caller agent identity (required for renew/release)"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ action, issueNumber, agentId }: { action: string; issueNumber: number; agentId?: string }) => {
       if (action === "feedback") {
         const repo = bridgeOpenRepo();
@@ -1865,6 +1976,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Claimed task issue number"),
       agentId: z.string().optional().describe("Caller identity — must match the claiming agent"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ issueNumber, agentId }) => {
       const repo = bridgeOpenRepo();
       const agent = resolveIssueAgent(agentId);
@@ -1923,6 +2035,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       issueNumber: z.number().int().positive().describe("Claimed task issue number"),
       agentId: z.string().optional().describe("Caller identity — must match the claiming agent"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     async ({ issueNumber, agentId }) => {
       const repo = bridgeOpenRepo();
       const agent = resolveIssueAgent(agentId);

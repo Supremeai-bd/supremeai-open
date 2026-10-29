@@ -31,7 +31,7 @@ except ImportError:
     compile_restricted = None
     default_globals = {}
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security.codegen_gate import (
     denied_reason,
     inprocess_codegen_enabled,

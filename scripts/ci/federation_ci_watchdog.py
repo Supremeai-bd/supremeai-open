@@ -174,6 +174,9 @@ Workflow **{workflow_name}** failed on repository `{repo}` (branch `{branch}`).
 - **Commit:** `{short_commit}`{error_section}
 - **Failure Logs / Check Details:** Inspect the check run logs in the linked run.
 
+### Protected-Path Routing Note (#2512)
+The bridge lane rejects `.github/` writes (protected paths — workflow files execute with repo secrets, so intake never accepts them from agents). If this failure's root cause lives in `.github/workflows/` (workflow-internal class: sync clobbers, guard removals, action-version breakage — e.g. the #2511 schedule-lane clobber), NO agent patch can land it: the fix is admin-only. Check the board for a triage report before claiming; if none exists, file triage evidence (report-only) instead of burning a claim+TTL on a structurally blocked patch.
+
 ### Acceptance Criteria
 1. Inspect the failing check logs in Run #{run_id}.
 2. Fix root cause in `{repo}`.
@@ -237,6 +240,32 @@ def find_mirror_in_items(
             continue  # PRs share the issue numbering plane; never a mirror
         if needle in (item.get("body") or ""):
             return int(item["number"])
+    return None
+
+
+def find_mirror_by_commit(
+    items: list[dict[str, Any]], repo: str, branch: str, commit_sha: str
+) -> int | None:
+    """Pure scan: find an OPEN mirror issue for the same repo+branch+commit.
+
+    Complements find_mirror_in_items (which keys on run_id). Re-runs of the
+    same commit produce different run_ids but the same root cause; this
+    prevents duplicate P0/P2 work orders for one incident (#2705).
+    """
+    if not commit_sha or len(commit_sha) < 8:
+        return None
+    short = commit_sha[:12]
+    for item in items or []:
+        if item.get("pull_request"):
+            continue
+        body = item.get("body") or ""
+        if repo not in body:
+            continue
+        if short not in body:
+            continue
+        if branch and branch not in ("unknown",) and f"`{branch}`" not in body and branch not in body:
+            continue
+        return int(item["number"])
     return None
 
 
@@ -367,6 +396,17 @@ def mirror_failure(
                 f"[watchdog] Incident already mirrored as issue #{existing_num}. Skipping."
             )
             return True
+        # Enhanced dedup (#2705): same repo+branch+commit => same incident,
+        # even if the run_id differs (re-runs / different workflow runs on
+        # the same commit). Prevents duplicate P0/P2 WOs for one root cause.
+        if commit_sha:
+            dup_num = find_mirror_by_commit(items, repo, branch, commit_sha)
+            if dup_num is not None:
+                print(
+                    f"[watchdog] Duplicate incident (same commit {commit_sha[:8]}) "
+                    f"already mirrored as issue #{dup_num}. Skipping."
+                )
+                return True
         if len(items) < 100:
             break
         page += 1
@@ -500,6 +540,12 @@ def poll_federation_failures(
                 mirrored_count += 1
             else:
                 failed_count += 1
+
+    # Auto-close already-resolved incidents so the board drains.
+    try:
+        auto_resolve_fixed_incidents(token=token)
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[watchdog] auto-resolve error: {exc}")
 
     return mirrored_count, failed_count
 
@@ -775,6 +821,11 @@ def self_test() -> int:
     assert "agent-orchestration" in body
     assert marker in body
     assert "tests/test_command.py: FAILED" in body
+    # #2512: the protected-path routing note ships in every incident body —
+    # agents must see the admin-only boundary before burning a claim+TTL on
+    # a `.github/`-root-caused lane (the #2511 structural-block class).
+    assert "Protected-Path Routing Note" in body
+    assert "admin-only" in body
 
     labels = build_issue_labels("Supremeai-bd/supremeai-command")
     assert "status:unclaimed" in labels

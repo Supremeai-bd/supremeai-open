@@ -21,7 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from core.autonoguard_engine import OperationContext, autonoguard_engine
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class AutonoGuardMiddleware(BaseHTTPMiddleware):

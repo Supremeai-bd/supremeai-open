@@ -16,7 +16,7 @@ from api.dependencies import get_current_admin
 from core.cache.redis_manager import redis_manager
 from core.config import settings
 from core.errors.error_bus import with_error_bus
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.security import is_token_revoked, revoke_token
 from core.security.authentication.rbac import UserContext
 from database.supabase_client import db

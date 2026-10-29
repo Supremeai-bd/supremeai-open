@@ -3,7 +3,7 @@
 
 from api.routes.admin_dashboard import router
 from api.routes.admin_dashboard._models import RouterOverrideRequest
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 @router.get("/model-router")

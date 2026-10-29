@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 HAS_PLAYWRIGHT = True
 try:  # pragma: no cover - optional dependency

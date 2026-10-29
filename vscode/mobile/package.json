@@ -1,6 +1,7 @@
 {
   "name": "@supremeai/mobile",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "SupremeAI Mobile Application — Cross-platform iOS & Android Agent Supervisor",
   "main": "src/App.tsx",
   "scripts": {

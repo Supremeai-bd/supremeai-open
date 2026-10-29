@@ -28,7 +28,9 @@ class _FakeReachableClient:
         return None
 
     def call_tool(self, name: str, arguments: dict | None = None) -> dict:
-        assert name == "bridge_work_queue"
+        # 2026-10-29 tower rename (#2454 r3 deploy): bridge_work_queue is now
+        # bridge.work_queue — the pin follows the live registry (#2457).
+        assert name == "bridge.work_queue"
         import json as _json
 
         payload = _json.dumps(

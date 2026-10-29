@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class AIEngineMixin:

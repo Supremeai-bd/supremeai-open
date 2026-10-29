@@ -14,6 +14,13 @@ import {
 } from "../policy/client-registry.js";
 import { isGlobalAdmin, verifyTenantAdminToken } from "../tenancy/tenant.registry.js";
 import { env } from "../lib/env.js";
+import {
+  MARKETPLACE_PLUGINS,
+  connectPlugin,
+  getMarketplacePlugin,
+  listMarketplaceConnections,
+  listTenantRemoteServersForMarketplace,
+} from "../registry/marketplace-plugins.js";
 
 /**
  * Client Management Tools — "Bring Your Own AI".
@@ -59,6 +66,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Your tenant ID (required when using tenant admin token)"),
       adminToken: z.string().optional().describe("Your tenant admin token (required for non-global-admin callers)"),
     },
+    { readOnlyHint: false },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -110,6 +118,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Tenant ID (tenant admin) — global admin may omit to see all"),
       adminToken: z.string().optional().describe("Tenant admin token"),
     },
+    { readOnlyHint: true, idempotentHint: true },
     async (args) => {
       const { scope, error } = requireScope(args);
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -126,6 +135,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Your tenant ID"),
       adminToken: z.string().optional().describe("Your tenant admin token"),
     },
+    { readOnlyHint: false },
     async ({ clientId, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -148,6 +158,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Your tenant ID"),
       adminToken: z.string().optional().describe("Your tenant admin token"),
     },
+    { readOnlyHint: false },
     async ({ clientId, role, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -179,6 +190,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional().describe("Your tenant ID"),
       adminToken: z.string().optional().describe("Your tenant admin token"),
     },
+    { readOnlyHint: false },
     async ({ clientId, toolProfile, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -211,6 +223,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false },
     async ({ clientId, provider, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -232,6 +245,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ clientId, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -252,6 +266,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       tenantId: z.string().optional(),
       adminToken: z.string().optional(),
     },
+    { readOnlyHint: false, destructiveHint: true },
     async ({ clientId, tenantId, adminToken }) => {
       const { scope, error } = requireScope({ tenantId, adminToken });
       if (error) return { isError: true, content: [{ type: "text", text: error }] };
@@ -262,6 +277,94 @@ export async function registerClientTools(server: McpServer): Promise<void> {
       } catch (err) {
         return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
       }
+    }
+  );
+
+  // ── #1523 Marketplace MVP: plugin catalog + one-click BYO connect ────────
+  // Zero-risk by construction: credentials are vault REFERENCES only (the
+  // connect guard rejects plaintext), and every connection lands on the SAME
+  // governed federation path as client.register_mcp_server — pending status,
+  // descriptor pinning via client.discover_mcp_server, fail-closed remote.call.
+  server.tool(
+    "marketplace.list_plugins",
+    "List the Marketplace MVP plugin catalog (Phase 1: GitHub, Telegram, Web-Search, Drive, Notion). Templates only — credential fields are SPECS (names/labels), never values.",
+    {},
+    { readOnlyHint: true, idempotentHint: true },
+    async () => {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ count: MARKETPLACE_PLUGINS.length, plugins: MARKETPLACE_PLUGINS }, null, 2),
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "marketplace.connect_plugin",
+    "One-click BYO connect: register a marketplace plugin for your tenant through the SAME governed registry as client.register_mcp_server. Pass credentialVaultRef = 'vault:<key>' — NEVER a plaintext token. Follow up with client.discover_mcp_server to pin tool descriptors before any remote.call.",
+    {
+      pluginId: z.string().describe("Marketplace plugin ID (see marketplace.list_plugins)"),
+      credentialVaultRef: z.string().describe("Vault REFERENCE for the plugin credential, e.g. 'vault:github-token'. Plaintext secrets are rejected."),
+      endpoint: z.string().url().optional().describe("Override endpoint (required for self-hosted plugins without a hosted template)"),
+      tenantId: z.string().optional().describe("Your tenant ID (required when using tenant admin token)"),
+      adminToken: z.string().optional().describe("Your tenant admin token (required for non-global-admin callers)"),
+    },
+    { readOnlyHint: false },
+    async (args) => {
+      const { scope, error } = requireScope(args);
+      if (error) return { isError: true, content: [{ type: "text", text: error }] };
+      const tenantId = scope === "*" ? (args.tenantId ?? "tenant_default") : (scope ?? "tenant_default");
+      const result = connectPlugin({
+        pluginId: args.pluginId,
+        tenantId,
+        credentialVaultRef: (args.credentialVaultRef ?? "").trim(),
+        endpoint: args.endpoint,
+      });
+      if (!result.ok) return { isError: true, content: [{ type: "text", text: `Connect failed: ${result.error}` }] };
+      const plugin = getMarketplacePlugin(args.pluginId);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            message: `Plugin '${plugin?.name ?? args.pluginId}' connected for tenant ${tenantId}. Status: ${result.connection.status} (pending discovery + descriptor approval).`,
+            connection: result.connection,
+            remoteServer: result.remote,
+            nextStep: result.nextStep,
+            security: "Credential stored as a vault reference only; tool relay stays fail-closed until descriptors are approved.",
+          }, null, 2),
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "marketplace.list_connections",
+    "List marketplace plugin connections in your tenant scope, with the live federation status of each backing remote server.",
+    {
+      tenantId: z.string().optional().describe("Tenant ID (tenant admin) — global admin may omit to see all"),
+      adminToken: z.string().optional().describe("Tenant admin token"),
+    },
+    { readOnlyHint: true, idempotentHint: true },
+    async (args) => {
+      const { scope, error } = requireScope(args);
+      if (error) return { isError: true, content: [{ type: "text", text: error }] };
+      const tenantScope = scope ?? "tenant_default";
+      const conns = listMarketplaceConnections(tenantScope);
+      const remotes = listTenantRemoteServersForMarketplace(tenantScope);
+      const remoteById = new Map(remotes.map((r) => [r.id, r]));
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            count: conns.length,
+            connections: conns.map((c) => ({
+              ...c,
+              remote: remoteById.get(c.remoteServerId) ?? null,
+            })),
+          }, null, 2),
+        }],
+      };
     }
   );
 }

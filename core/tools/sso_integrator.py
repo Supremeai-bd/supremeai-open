@@ -8,7 +8,7 @@ import defusedxml.ElementTree as ET  # -- standard idiom (mirrors stdlib xml.etr
 import jwt
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class SSOIntegrator:
