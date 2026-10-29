@@ -276,7 +276,7 @@ const LIVE_TEMPLATE = [
     "verb-intent mention keeps the #1609 auto-link",
   );
   assert.equal(
-    detectOriginalIssueFromSummary("register the R76 row (receipt be6e34f/WO #2545) and advance the pointer"),
+    detectOriginalIssueFromSummary("register the fresh row (receipt be6e34f/WO #2545) and advance the pointer"),
     undefined,
     "receipt-path mention is a reference, not a resolution",
   );
