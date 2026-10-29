@@ -88,7 +88,7 @@ def main() -> int:
                 doc_paths.append(root_doc)
         print(f"{repo}: {len(doc_paths)} candidate docs")
         for path in sorted(doc_paths)[: args.max_docs]:
-            read = call(sid, "github_read_file", {"repo": repo, "path": path}, rid)
+            read = call(sid, "github.read_file", {"repo": repo, "path": path}, rid)
             rid += 1
             try:
                 inner = json.loads(read.get("result", {}).get("content", [{}])[0].get("text", "{}"))

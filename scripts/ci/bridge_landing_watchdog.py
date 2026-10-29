@@ -24,7 +24,9 @@ Reconciliation model (three planes, one join key):
                     legitimate unless main history proves otherwise.
   - history plane : landed commit subjects on origin/main (squash-merge
                     convention embeds the same slug and the PR number).
-  - flight plane  : open PR titles (Tower github_list_prs) — same slug token.
+  - flight plane  : open PR titles (Tower github.list_prs — dotted form since
+                    the 2026-10-29 github-family rename wave, #2486) — same
+                    slug token.
   - verdict plane : Tower bridge_read_feedback per WO number — the feedback-
                     plane reader this file's own scope note called for. Used
                     ONLY to enrich MERGED_ON_MAIN rows (tower_verdict /
@@ -554,8 +556,11 @@ def _open_pr_titles(fetch_text=_tower_text) -> list[str]:
     # silently ignored and limit fell back to its default 5 (five newest
     # rows only). Neither defect raises; classification just degraded to the
     # age ladder (LANDING_AT_RISK false positives for WOs whose PR was
-    # genuinely in flight).
-    txt = fetch_text("github_list_prs", {"state": "open", "repo": OPEN_REPO, "limit": 50})
+    # genuinely in flight). Third silent mode (cycle 36, #2486): the
+    # github-family dotted-wave rename turned the legacy wire name into a
+    # -32602 error whose text flowed into the classifier as pseudo-titles
+    # (OPEN_PR=0 while PRs were open) — migrated to the dotted name.
+    txt = fetch_text("github.list_prs", {"state": "open", "repo": OPEN_REPO, "limit": 50})
     titles = []
     for line in txt.splitlines():
         line = line.strip()
@@ -925,7 +930,7 @@ def self_test() -> list[tuple[str, bool, str]]:
 
     titles = _open_pr_titles(fetch_text=_cap)
     cases.append(("flight plane pins open repo + schema limit (no per_page)",
-                  sent.get("name") == "github_list_prs"
+                  sent.get("name") == "github.list_prs"
                   and sent.get("args", {}).get("repo") == OPEN_REPO
                   and sent.get("args", {}).get("limit") == 50
                   and "per_page" not in sent.get("args", {})

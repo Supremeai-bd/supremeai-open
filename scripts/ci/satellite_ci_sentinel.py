@@ -8,7 +8,8 @@
 
 Zero-credential by contract: exactly ONE anonymous MCP Tower handshake per sweep
 (initialize -> notifications/initialized -> tools/call), then read-only
-`github_workflow_runs` per satellite repo. No tokens, no gh CLI, no writes.
+`github.workflow_runs` per satellite repo (dotted form since the 2026-10-29
+github-family rename wave, #2486). No tokens, no gh CLI, no writes.
 
 Never-do compliance (audit trail):
   - no `.github/**` touching (protected-path law #1643); scheduling is routed,
@@ -265,7 +266,7 @@ def live_sweep(repos, max_age_hours: float, tower_url: str = TOWER_URL, timeout:
     skips: list = []
     for name in repos:
         try:
-            data = client.tool("github_workflow_runs", {"repo": f"{ORG}/{name}", "per_page": 15})
+            data = client.tool("github.workflow_runs", {"repo": f"{ORG}/{name}", "per_page": 15})
         except Exception as exc:  # noqa: BLE001 - honest-skip, never fabricate
             sweep[name] = {"runs": None, "note": f"skip ({exc})"}
             skips.append(f"{ORG}/{name}: skip ({exc})")
