@@ -7,10 +7,7 @@ add/modify আটকায়; monorepo ও deletion বাদ। সব টে�
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-
-import pytest
 
 from scripts.bridge.bridge_intake import (
     PRIVATE_REPO,
