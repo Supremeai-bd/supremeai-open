@@ -16,7 +16,7 @@ import importlib.util
 import os
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 def _ddgs_client():
