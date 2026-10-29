@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Fixed import path - using relative import
 from .cache.redis_manager import redis_manager
