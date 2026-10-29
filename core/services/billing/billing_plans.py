@@ -22,7 +22,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 def _load_tier_prices() -> dict[str, Decimal]:
