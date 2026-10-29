@@ -16,7 +16,6 @@ Revises: f1a2b3c4d5e6
 Create Date: 2026-08-30
 """
 
-from typing import Union
 from collections.abc import Sequence
 
 from alembic import op
