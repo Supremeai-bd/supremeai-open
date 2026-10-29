@@ -8,6 +8,7 @@ import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
 import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
 import { evaluateBaseStaleness, staleBaseErrorText, type MainBlobState } from "../lib/bridge_staleness.js";
+import { applyLabelFallback, type VerdictSource } from "../lib/bridge_verdicts.js";
 import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
 import { RequestContextStore } from "../policy/auth.context.js";
 
@@ -441,6 +442,14 @@ export interface IssueFeedback {
   state: string;
   labels: string[];
   latestVerdict: IntakeVerdict | null;
+  // #2344 Option A: the RAW intake-plane verdict (null for the anonymous-bridge
+  // cohort where the verdict writer never fired) — auditability alongside the
+  // possibly label-derived latestVerdict above.
+  intakeVerdict: IntakeVerdict | null;
+  // #2344 Option A: provenance of latestVerdict — "intake-bot" (plane wrote a
+  // record), "label-fallback" (derived from bridge:landed + closed), or null
+  // (no verdict representable).
+  verdictSource: VerdictSource;
   verdictHistory: IntakeVerdict[];
   latestClaim: { agent: string; at: string; ttlMinutes: number } | null;
   commentCount: number;
@@ -485,11 +494,21 @@ export function parseIntakeFeedback(
     });
   }
   const markers = parseClaimMarkers(comments);
+  // #2344 Option A: the intake-verdict plane has NEVER written for
+  // anonymous-bridge WOs (7-WO live cohort, all latestVerdict=null despite
+  // byte-verified landings). Derive the landed-class verdict read-side so
+  // bridge_read_feedback stops promising data it never returns; the raw null
+  // is preserved as intakeVerdict and the derivation is attributed via
+  // verdictSource. verdictHistory stays pure intake-bot history.
+  const rawLatest = history.length > 0 ? history[history.length - 1]! : null;
+  const fallback = applyLabelFallback(state, labels, rawLatest);
   return {
     issueNumber,
     state,
     labels: [...labels],
-    latestVerdict: history.length > 0 ? history[history.length - 1]! : null,
+    latestVerdict: fallback.latestVerdict,
+    intakeVerdict: fallback.intakeVerdict,
+    verdictSource: fallback.verdictSource,
     verdictHistory: history,
     latestClaim: markers.latest
       ? { agent: markers.latest.agent, at: markers.latest.ts.toISOString(), ttlMinutes: markers.latest.ttlMinutes }
