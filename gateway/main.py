@@ -340,6 +340,7 @@ def create_app(
     stealth_webhook_fn=None,
     memory_store=None,
     capability_router=None,
+    circuit_breaker: Any = None,
 ) -> FastAPI:
     """Build the gateway. Every collaborator is injectable for offline tests."""
     if limiter is None:
@@ -716,7 +717,9 @@ def create_app(
                 },
             )
 
-        result = await execute_chain(chain, payload, attempt_fn=attempt_fn)
+        result = await execute_chain(
+            chain, payload, attempt_fn=attempt_fn, circuit_breaker=circuit_breaker
+        )
         cap_name = getattr(request.state, "capability_name", None)
         alias = getattr(request.state, "capability_alias", None)
         if cap_name is not None and alias is not None and capability_router is not None:

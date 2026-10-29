@@ -111,6 +111,16 @@ def stream_fn_factory(script: list[list[dict]]):
 
 
 def make_client(**kw) -> TestClient:
+    # Fresh breaker per client: the default singleton is process-global and
+    # #2765 made execute_chain mutate it (record_failure on every retryable
+    # exhaustion / transport-error attempt), so sharing it across tests let
+    # one test's exhaustion trip circuits for every later test (rate-limit
+    # assertions then saw 502s instead of 200s). Injected breakers keep each
+    # test's failure accounting local, matching create_app's injectable-
+    # collaborators contract.
+    from gateway.circuit_breaker import CircuitBreaker
+
+    kw.setdefault("circuit_breaker", CircuitBreaker())
     return TestClient(create_app(**kw))
 
 
@@ -307,7 +317,15 @@ def test_failover_on_provider_429_then_success():
     )
     assert r.status_code == 200
     assert r.json()["model"] == "openai/gpt-4o-mini"
-    assert calls == ["groq/llama-3.1-8b-instant", "openai/gpt-4o-mini"]
+    # #2082/#2752 contract: a retryable 429 is retried on the SAME endpoint
+    # up to max_retries (default 2) times with backoff BEFORE failing over,
+    # so groq is attempted 3x total, then the chain fails over to openai.
+    assert calls == [
+        "groq/llama-3.1-8b-instant",
+        "groq/llama-3.1-8b-instant",
+        "groq/llama-3.1-8b-instant",
+        "openai/gpt-4o-mini",
+    ]
 
 
 def test_exhaustion_returns_502_with_redacted_ledger():
@@ -338,7 +356,9 @@ def test_exhaustion_returns_502_with_redacted_ledger():
     payload = r.json()
     assert payload["error"]["code"] == "provider_chain_exhausted"
     ledger = payload["providers_tried"]
-    assert [e["status"] for e in ledger] == [503, 429]
+    # #2082/#2752 contract: each retryable endpoint is attempted max_retries+1
+    # times (default 3) before failover, and every attempt is ledgered.
+    assert [e["status"] for e in ledger] == [503, 503, 503, 429, 429, 429]
     # redaction: no credential-shaped fields survive
     for entry in ledger:
         assert set(entry) <= {
@@ -365,7 +385,10 @@ def test_transport_error_fails_over_and_exhaustion_carries_ledger():
         json={"messages": [{"role": "user", "content": "hi"}]},
     )
     assert r.status_code == 502
-    assert len(r.json()["providers_tried"]) == 2
+    # #2082/#2752 contract: transport errors are retried on the SAME endpoint
+    # up to max_retries times before failover, each attempt ledgered, so the
+    # 2-endpoint chain yields 6 ledgered attempts.
+    assert len(r.json()["providers_tried"]) == 6
     assert all(e["outcome"] == "transport_error" for e in r.json()["providers_tried"])
 
 
