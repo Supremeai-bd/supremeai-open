@@ -252,11 +252,65 @@ def test_live_repo_sweep_passes() -> None:
     # the disambiguated rows R63-I (#2343 hooks-bootstrap) / R63-II (#2358
     # MCP-Registry) and advanced it R63 -> R64 (the successor slot's only
     # citation is the scout ticket's own title token — pass-15 self-ref class).
+    # and after #2392 (R64 pointer-board agreement guard, pass 25) registered
+    # the R64 row and advanced it R64 -> R65 (verified free: tracked scan
+    # zero hits; 100-row board sweep zero citations outside the self-ref).
     # Bump this literal ONLY together with a landed index-pointer advance.
-    assert r["pointer"] == 64, "pointer drifted — regenerate expectation with the index"
+    assert r["pointer"] == 65, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
+
+
+def test_invariant_e_roster_regressions_fail() -> None:
+    """#2392 component 1: pointer revert / row eviction fail closed (ebe630c class)."""
+    base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
+             "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
+    # Pointer regression: the pass-9/22/23 stale-branch overwrite signature.
+    findings, ran = guard.invariant_e(64, {"R1", "R63", "R64"}, base2)
+    assert ran
+    assert any(f["kind"] == "roster-pointer-regressed" and f["was"] == 65 and f["now"] == 64
+               for f in findings)
+    # Row eviction with the pointer intact — the co-regression blind spot
+    # the pin discipline cannot see, now enforced.
+    findings, ran = guard.invariant_e(65, {"R1", "R63"}, base2)
+    assert ran
+    assert any(f["kind"] == "roster-row-evicted" and f["token"] == "R64" for f in findings)
+
+
+def test_invariant_e_forward_motion_and_v1_skip() -> None:
+    """Forward motion (advance + additions) never fails; /1 baselines honest-skip."""
+    base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
+             "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
+    findings, ran = guard.invariant_e(66, {"R1", "R63", "R64", "R66"}, base2)
+    assert ran and findings == []
+    findings, ran = guard.invariant_e(None, set(),
+                                      {"schema": "radar-index-freshness-baseline/1", "floor": []})
+    assert findings == [] and not ran
+
+
+def test_board_sweep_predicate_offline() -> None:
+    """#2392 component 2 / #2372 option B: the captured-title sweep predicate."""
+    # Fixture token R97: a neutral synthetic successor — the tracked-tree
+    # freeness scan for the REAL advertised successor must stay zero-hit
+    # outside pointer context (pass-4/22 standard), so the suite never
+    # embeds the live next-free token in fixture strings.
+    queue = {"workOrders": [
+        {"number": 2401, "title": "scout(R97): a third-party lane citing the candidate"},
+        {"number": 2402, "title": "guard(docs): register R60 row + next-free R97 (WO mirror)"},
+        {"number": 2403, "title": "unrelated lane with R59 only"},
+        {"number": 2392, "title": "scout(R64): the successor lane's own defining ticket"},
+    ]}
+    # Third-party title citation of the candidate fails, naming the issue.
+    fnd = guard.board_sweep(queue, 97, set())
+    assert any(f["issue"] == 2401 and f["token"] == "R97" for f in fnd)
+    # A WO mirror quoting the allocation rule (pointer phrase) never self-trips.
+    assert not any(f["issue"] == 2402 for f in fnd)
+    # The self-ref exception (a): the successor lane's own defining ticket.
+    assert guard.board_sweep(queue, 97, {2401}) == []
+    # Legacy `issueNumber` key accepted (pre-#2286 shape).
+    legacy = guard.board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())
+    assert len(legacy) == 1 and legacy[0]["issue"] == 9
 
 
 def test_wiring_roster_and_pre_push() -> None:
