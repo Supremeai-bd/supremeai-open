@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from api.dependencies import get_project_admin
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from scout import persistence
 from scout.models import CrawlHistoryRecord, CrawlPolicy, DomainRule, TrustLevel
 
