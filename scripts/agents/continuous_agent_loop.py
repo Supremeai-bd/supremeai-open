@@ -335,6 +335,18 @@ def pick_next_issue(
             return False
         # বাংলা: ৩০ মিনিটের স্বয়ংক্রিয় লিজ ট্র্যাকিং — অন্য এজেন্ট যদি ৩০ মিনিটের মধ্যে কাজ শেষ না
         # করে থাকে, তবে এটি নিজে থেকেই রিলিজ হয়ে রি-ক্লেইমযোগ্য হয়ে যাবে।
+        # #2903 fix: state truth on the fallback plane — the gh-present path
+        # pre-filters `gh issue list --state open`, but tower-board fallback rows
+        # carry `state` verbatim, so a closed row with stale unclaimed labels
+        # dispatched as claimable (live 2026-10-29: #2225 picked while closed at
+        # 9f32c01 — the #2211/#2225 false-closure family, contained only by the
+        # #2886 template scoping; #2794 fix (2)-adjacent mechanical filter, not
+        # the owner-pending convention space). Rows without a `state` key (the
+        # gh-present contract: number,title,labels) default open — that path's
+        # behavior is unchanged.
+        state = item.get("state")
+        if state is not None and str(state).lower() != "open":
+            return False
         num_str = str(item.get("number", ""))
         leased_at = lease_store.get(num_str)
         if leased_at is not None and (now_ts - leased_at) < ISSUE_LEASE_SECONDS:
