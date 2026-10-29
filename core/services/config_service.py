@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from models.system_config import SystemConfig
 from services.config_registry import get_definition, safe_defaults, validate_value
 
