@@ -11,7 +11,7 @@ import time
 
 import redis.asyncio as aioredis
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class DailyQuotaLimiter:

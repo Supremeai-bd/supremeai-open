@@ -16,7 +16,7 @@ from typing import Any
 from brain.model_registry import ModelRegistry
 from core.config import settings
 from core.health.self_healer import RemediationPipeline, SelfHealerService
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.resilience.circuit_breaker import CircuitBreaker
 
 

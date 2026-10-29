@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 def export_openapi_schema(output_path: str = "packages/shared-types/openapi.json") -> str:

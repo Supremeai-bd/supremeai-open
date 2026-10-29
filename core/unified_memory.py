@@ -19,7 +19,7 @@ import os
 import re
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from memory.sliding_window import SlidingWindowMemory
 
 # Import the underlying services

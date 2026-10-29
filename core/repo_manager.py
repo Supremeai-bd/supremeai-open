@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.target_registry import TargetEntity, target_registry
 
 

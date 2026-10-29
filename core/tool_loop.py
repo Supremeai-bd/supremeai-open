@@ -23,7 +23,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.mcp_policy import evaluate_tool
 
 #: প্রতি-টুল প্রাথমিক প্যারামিটার-নাম — deterministic fallback

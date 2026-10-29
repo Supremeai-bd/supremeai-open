@@ -19,7 +19,7 @@ import httpx
 
 from core.cache.redis_manager import redis_manager
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 CHANNEL_DISCORD = "discord"
 CHANNEL_EMAIL = "email"

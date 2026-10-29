@@ -27,7 +27,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 DEFAULT_SWEEP_INTERVAL_SECONDS = 60
 DEFAULT_STALE_CLAIM_SECONDS = 900

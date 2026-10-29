@@ -21,7 +21,7 @@ from collections.abc import AsyncGenerator
 # বাংলা মন্তব্য: aioredis মডিউল লেভেলে ইমপোর্ট করা হয়েছে যাতে টেস্টের সময় সঠিক মক ট্র্যাকিং বজায় থাকে।
 import redis.asyncio as aioredis  # type: ignore[import-untyped]
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
 
 # বাংলা মন্তব্য: module-level redis.from_url("redis://<your-redis-url>") সম্পূর্ণ নিষিদ্ধ।

@@ -24,7 +24,7 @@ from datetime import datetime
 from enum import Enum, StrEnum
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     import psutil

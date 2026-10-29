@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from core.browser_session_vault import BrowserSessionVault, SessionVaultError
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # ডিপেন্ডেন্সি প্রাপ্যতা যাচাই (Optional dependencies)
 CURL_CFFI_AVAILABLE = importlib.util.find_spec("curl_cffi") is not None

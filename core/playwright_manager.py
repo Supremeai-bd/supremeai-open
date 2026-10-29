@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     from playwright.async_api import Browser, Playwright, async_playwright
