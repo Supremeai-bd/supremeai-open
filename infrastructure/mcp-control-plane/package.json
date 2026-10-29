@@ -69,7 +69,8 @@
     "test:mcp-mutation-rate-limit": "tsx test_mcp_mutation_rate_limit.ts",
     "test:bridge-verdicts": "tsx test_bridge_verdicts.ts",
     "test:github-pagination": "tsx test_github_pagination.ts",
-    "test:c29-dual-emission": "tsx test_c29_dual_emission.ts"
+    "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+    "test:r66-target-echo": "tsx test_r66_target_echo.ts"
   },
   "keywords": [
     "mcp",
