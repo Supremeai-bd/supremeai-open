@@ -1121,6 +1121,105 @@ def _receipt_covered_note(
         return None
 
 
+def _duplicate_twin_note(
+    item: dict[str, Any],
+    issues: list[dict[str, Any]],
+    lease_store: dict[str, float] | None = None,
+    now_ts: float | None = None,
+) -> str | None:
+    """Born-duplicate twin demotion (U5 anti-stampede) — board-local, fail-open.
+
+    বাংলা: ফাইলার-পাইপলাইনের retry/race থেকে byte-identical শিরোনামের যমজ issue
+    জন্ম নেয় (লাইভ প্রমাণ 2026-10-31: #3698 + #3699 একই শিরোনামে ২১ সেকেন্ড
+    ব্যবধানে ফাইল হয়েছিল; unclaimed যমজটি dispatch পেয়েছিল অথচ তার claimed
+    যমজের কাজ ইতোমধ্যে in-flight — একই কাজ দুই এজেন্টের দ্বৈত অপচয়)। ফাইলিং-পাশে
+    exact-title dedup আছে (#1997, create_blocker_issue.find_existing_blocker),
+    pick-পাশে ছিল না — একই ত্রুটি-শ্রেণির অসমমিত প্রয়োগ (R61/#2318 বোর্ড-লেন বনাম
+    PR-অডিট-লেনের U2 বংশধারা)। এই স্ক্যান সেই শ্রেণি pick-পাশে বন্ধ করে: এক
+    identical-title পরিবারে একটাই dispatch।
+
+    candidate X বাদ যায় যদি — অন্য কোনো OPEN row Y-এর normalized শিরোনাম
+    (whitespace-collapse + casefold) X-এর সমান, এবং:
+    - (ক) Y `status:claimed` — finding-টি অন্য এজেন্টের হাতে in-flight; অথবা
+    - (খ) Y এই রানারের লোকাল lease-উইন্ডোতে সক্রিয় (ISSUE_LEASE_SECONDS); অথবা
+    - (গ) Y সংখ্যায় ছোট (older) এবং নিজেও dispatchable লেনে (EXCLUDED_LABELS-মুক্ত)
+      — পরিবারের প্রবীণ sibling-ই canonical dispatch পাবে; কানেষ্ঠ কপিটি
+      ফাইলার-artifact (dedup ফাইলার/admin লেনের দায়িত্ব)।
+    Y যদি excluded-lane row হয় তবে (গ) প্রযোজ্য নয় — excluded row dispatch-ই পায়
+    না, তাই সে দাবিযোগ্য কানেষ্ঠ সারিকে ঢেকে রাখতে পারে না; (ক)/(খ) তখনও প্রযোজ্য —
+    একই finding-এর claim/lease যে কোনো কপিতে থাকলে পরিবার in-flight।
+    Malformed row বা যেকোনো ব্যতিক্রমে None — fail-open, never-raise চুক্তি; এই
+    ফিল্টার শুধু একটি dispatch সরাতে পারে, কখনো আটকাতে পারে না।
+    """
+    try:
+        title = " ".join(str(item.get("title") or "").split()).casefold()
+        if not title:
+            return None
+        raw_own = item.get("number")
+        if raw_own is None:
+            return None  # malformed own row: fail open, serve unchanged
+        try:
+            own = int(raw_own)
+        except (TypeError, ValueError):
+            return None
+        claimed_twin: int | None = None
+        leased_twin: int | None = None
+        older_twin: int | None = None
+        for row in issues or []:
+            if not isinstance(row, dict):
+                continue
+            raw_num = row.get("number")
+            if raw_num is None:
+                continue  # malformed family row: not provably a sibling
+            try:
+                num = int(raw_num)
+            except (TypeError, ValueError):
+                continue
+            if num == own:
+                continue  # a row never demotes itself
+            state = row.get("state")
+            if state is not None and str(state).lower() != "open":
+                continue  # closed sibling: a refile after resolution is servable
+            other = " ".join(str(row.get("title") or "").split()).casefold()
+            if other != title:
+                continue
+            names = label_names(row)
+            if "status:claimed" in names:
+                claimed_twin = num if claimed_twin is None else min(claimed_twin, num)
+                continue
+            if (
+                lease_store
+                and now_ts is not None
+                and str(num) in lease_store
+                and (now_ts - float(lease_store[str(num)])) < ISSUE_LEASE_SECONDS
+            ):
+                leased_twin = num if leased_twin is None else min(leased_twin, num)
+                continue
+            if num < own and not (EXCLUDED_LABELS & set(names)):
+                older_twin = num if older_twin is None else min(older_twin, num)
+        if claimed_twin is not None:
+            return (
+                f"byte-identical twin #{claimed_twin} is claimed — the finding is already "
+                "in flight, serving this refile would mint duplicate work (anti-stampede U5); "
+                "explicit --issue override available"
+            )
+        if leased_twin is not None:
+            return (
+                f"byte-identical twin #{leased_twin} holds an active dispatch lease on this "
+                "runner — the finding is already in flight (anti-stampede U5); "
+                "explicit --issue override available"
+            )
+        if older_twin is not None:
+            return (
+                f"byte-identical older sibling #{older_twin} is the canonical row — one "
+                "dispatch per identical-title family (U5); this younger refile is a filer "
+                "artifact for the filer/admin lane to dedup; explicit --issue override available"
+            )
+        return None
+    except Exception:  # noqa: BLE001 — a demotion probe must never raise
+        return None
+
+
 def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> tuple[bool, str]:
     """#2794 fix (1) — live-plane claim pre-verify for the dispatch pick.
 
@@ -1417,6 +1516,10 @@ def pick_next_issue(
     (dead code) — ফলে লুপ P0 আগে দেবে এই প্রতিশ্রুতি কোডে কখনো কার্যকর হয়নি। এখন
     main() pre-fetched board এখানে পাঠায় (issues=...) — এক সাইকেলে দুবার gh query হয় না।
 
+    বোর্ড-লোকাল demotion পরিবার (live mode, sort-এর আগে, শুধু সরায় — কখনো
+    আটকায় না): stale-sentry (#3050) → sentry-test-row (U4) → duplicate-twin
+    (born-duplicate যমজ, U5) → receipt-coverage (#3315)।
+
     #2794 fix (1): claim_probe দিলে top-FEEDBACK_PREVERIFY_TOPN প্রার্থী bridge_read_feedback
     দিয়ে live-claim যাচাই হয় — সক্রিয় claim-পত রো একই রানে স্কিপ হয়ে পরের প্রার্থীতে
     এগোয় (এজেন্টকে পুরো লুপ পুনঃরান করতে বলা হয় না); প্রোব-ডার্ক হলে label-only
@@ -1534,6 +1637,37 @@ def pick_next_issue(
             test_row_survivors.append(cand)
         if test_rows_demoted:
             candidates = test_row_survivors
+        # Born-duplicate twin demotion (U5 anti-stampede, live mode only — same
+        # boundary as the sentry/coverage filters above): filer retries mint
+        # byte-identical sibling rows (live 2026-10-31: #3698 + #3699 filed 21s
+        # apart; the loop dispatched the unclaimed twin while its claimed twin's
+        # work was already in flight — two agents, one finding). The filing plane
+        # got an exact-title dedup in #1997
+        # (create_blocker_issue.find_existing_blocker); this is the symmetric
+        # pick-plane half of that one defect class. Board-local, fail-open,
+        # window-preserving (demoted rows never burn a probe slot), and the
+        # explicit --issue N override stays the escape hatch.
+        twin_survivors: list[dict[str, Any]] = []
+        twins_demoted = 0
+        for cand in candidates:
+            twin_note = _duplicate_twin_note(cand, issues or [], lease_store, now_ts)
+            if twin_note is not None:
+                twins_demoted += 1
+                log_fn(
+                    "!",
+                    f"duplicate-twin demotion: #{cand.get('number')} skipped — {twin_note}",
+                )
+                continue
+            twin_survivors.append(cand)
+        if twins_demoted:
+            candidates = twin_survivors
+            if not candidates:
+                log_fn(
+                    "!",
+                    "duplicate-twin demotion: every open candidate is a born-duplicate "
+                    "twin of an in-flight or canonical sibling — no clean pick this run "
+                    "(rerun later or dispatch explicitly via --issue N)",
+                )
         # #3315 — receipt-coverage demotion (live mode only, sentry-precedent
         # shape): a candidate covered by an OPEN bridge WO/receipt elsewhere on
         # the same board is skipped BEFORE the priority sort (window-preserving:
