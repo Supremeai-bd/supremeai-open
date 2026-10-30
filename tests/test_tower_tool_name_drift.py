@@ -83,6 +83,12 @@ DEAD_TOWER_TOOL_NAMES: dict[str, str] = {
 ALLOWLISTED_PREFIXES: tuple[tuple[str, str], ...] = (
     ("tests/test_tower_tool_name_drift.py",
      "this guard's own pin data quotes the dead names as data"),
+    ("tests/test_tower_queue_tool_name_epochs.py",
+     "oscillation-epoch tolerance test — quotes BOTH spellings of the "
+     "oscillating queue tool as test data (wave-1 dotted / wave-3 underscore, "
+     "live-verified 2026-10-31): the drift pin model is one-directional per "
+     "wave, this test pins the bidirectional try-in-order cure; same "
+     "name-as-data doctrine as this guard's own self-allowlist above"),
     ("scripts/tower/tool_consolidation_reference.py",
      "historical consolidation-mapping SSOT (MERGED records of old->new)"),
     ("scripts/ci/mcp_access_policy_guard.py",
