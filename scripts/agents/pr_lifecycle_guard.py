@@ -73,15 +73,27 @@ HAS_PR_LABEL = "has-pr"
 def real_api(endpoint: str, method: str = "GET", payload: dict | None = None) -> Any:
     """GitHub REST কল — মান কখনো লগ নয়, শুধু স্ট্যাটাস।"""
     token = (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if not token:
+        try:
+            import subprocess
+            proc = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
+            if proc.returncode == 0:
+                token = proc.stdout.strip()
+        except Exception:
+            pass
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"token {token}"
+
     req = urllib.request.Request(  # noqa: S310
         f"{API_BASE}/{endpoint.lstrip('/')}",
         data=json.dumps(payload).encode() if payload is not None else None,
         method=method,
-        headers={
-            "Authorization": f"token {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
