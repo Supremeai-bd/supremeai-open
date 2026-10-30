@@ -24,6 +24,14 @@ Remedy mapping (#2673 numbering + #3031 addendum):
                                now a standing boundary assertion, and tower_call
                                raises TowerHollowReadError instead of silently
                                returning a {"raw": ...} fallback.
+  6. assert_incidents_consistent — intra-payload plane agreement (#3111 class):
+                               a health sweep whose snapshots/overallStatus say
+                               degraded-or-worse while its own incidents array
+                               stays [] is silently suppressing incidents.
+                               Observed live for 8+ consecutive sentry passes
+                               (#3049, #3077, #3111: incidents=[] while THREE
+                               rows were degraded/down). The two planes inside
+                               ONE payload must not contradict each other.
 
 Scope honesty: this is the repo-reachable standing guard. It cannot fix the
 tower-side planes themselves (owner lane); it makes their hollow answers loud
@@ -55,7 +63,8 @@ TOWER_URL_DEFAULT = "https://supremeai-mcp-tower.onrender.com/mcp"
 
 GUARD = "hollow_read_guard"
 LINEAGE = ("#2673 silent-empty class, Unified remedy 1/2/3(+5); #2704 fail-loud "
-           "shape; #3031 parseability addendum (66B SSE mid-body cut class)")
+           "shape; #3031 parseability addendum (66B SSE mid-body cut class); "
+           "#3111 incidents-plane suppression class (assertion 6)")
 
 EXIT_CLEAN = 0
 EXIT_HOLLOW = 1
@@ -169,6 +178,91 @@ class TowerHollowReadError(RuntimeError):
         super().__init__(
             f"hollow-read ({tool}): non-empty but unparseable body "
             f"({self.body_length}B, excerpt={self.excerpt!r}) — #3031 66B class")
+
+
+# Statuses that do NOT imply an incident. Everything else that is a non-empty
+# string status (degraded, down, unhealthy, error, failed, update_failed,
+# timeout, unreachable, ...) counts as a non-OK row. Unknown/excluded are
+# neutral: an unprobed or intentionally excluded face is not, by itself,
+# evidence of a suppressed incident (keeps the guard false-positive-safe).
+_INCIDENT_OK_STATUSES = frozenset({
+    "ok", "healthy", "operational", "up", "alive", "passing", "green",
+    "nominal", "unknown", "skipped", "excluded", "disabled", "not_configured",
+})
+
+
+def _incident_non_ok_rows(snapshots) -> dict:
+    """Extract non-OK rows from either snapshots shape (dict or list)."""
+    non_ok: dict = {}
+    if isinstance(snapshots, dict):
+        pairs = list(snapshots.items())
+    elif isinstance(snapshots, list):
+        pairs = [(f"row-{i}", row) for i, row in enumerate(snapshots)]
+    else:
+        return non_ok
+    for name, row in pairs:
+        if not isinstance(row, dict):
+            continue
+        status = row.get("status")
+        if not isinstance(status, str):
+            continue
+        s = status.strip().lower()
+        if s and s not in _INCIDENT_OK_STATUSES:
+            non_ok[str(name)] = status
+    return non_ok
+
+
+def assert_incidents_consistent(plane: str, sweep) -> dict:
+    """Assertion 6 (#3111 class): incident/data plane agreement in ONE payload.
+
+    A health sweep that reports overallStatus=degraded-or-worse, or >=1
+    non-OK snapshot row, while its own incidents array is empty is silently
+    suppressing incidents — the exact defect-shaped datum platform-guardian
+    sentries reported live for 8+ consecutive passes (#3049 -> #3077 ->
+    #3111: incidents=[] while THREE rows degraded/down, hollow-signature
+    checklist explicitly NOT tripped because per-row statuses were fully
+    populated). Emptiness assertions cannot see this class: every individual
+    plane is populated; the LIE is the contradiction between two populated
+    planes inside the same payload. Fail-loud at the consumption boundary.
+
+    Verdicts: HOLLOW (contradiction), UNREADABLE (shape unknown — never a
+    silent pass), CLEAN (planes agree or no non-OK datum exists)."""
+    if not isinstance(sweep, dict):
+        return {
+            "assertion": "incidents_consistent", "plane": plane, "verdict": "UNREADABLE",
+            "detail": "sweep payload is not a dict — shape unknown",
+        }
+    incidents = sweep.get("incidents")
+    if not isinstance(incidents, list):
+        return {
+            "assertion": "incidents_consistent", "plane": plane, "verdict": "UNREADABLE",
+            "detail": "incidents field missing or not a list — shape unknown",
+        }
+    snapshots = sweep.get("snapshots")
+    if not isinstance(snapshots, (dict, list)):
+        return {
+            "assertion": "incidents_consistent", "plane": plane, "verdict": "UNREADABLE",
+            "detail": "snapshots neither dict nor list — shape unknown",
+        }
+    non_ok = _incident_non_ok_rows(snapshots)
+    overall = str(sweep.get("overallStatus", "") or "").strip().lower()
+    overall_bad = bool(overall) and overall not in _INCIDENT_OK_STATUSES
+    if (non_ok or overall_bad) and not incidents:
+        rows_note = ", ".join(f"{k}={v}" for k, v in sorted(non_ok.items())[:5]) or "(rows ok)"
+        overall_note = f"overallStatus={overall}" if overall_bad else "overallStatus ok"
+        return {
+            "assertion": "incidents_consistent", "plane": plane, "verdict": "HOLLOW",
+            "nonOkRows": non_ok, "overallStatus": sweep.get("overallStatus"),
+            "incidentsCount": 0,
+            "detail": (f"{plane}=[] while the same payload reports degraded-or-worse "
+                       f"({overall_note}; non-OK rows: {rows_note}) — incident plane "
+                       f"contradicts data plane, #3111 suppression class"),
+        }
+    return {
+        "assertion": "incidents_consistent", "plane": plane, "verdict": "CLEAN",
+        "incidentsCount": len(incidents), "nonOkRowCount": len(non_ok),
+        "overallStatus": sweep.get("overallStatus"),
+    }
 
 
 def assert_parsable(plane: str, raw_body: str, context: str = "") -> dict:
@@ -293,7 +387,8 @@ def run_live_probe(fetch, owner: str = "Supremeai-bd", repo: str = "supremeai-op
                          "detail": str(exc)[:200]})
 
     # Roster plane: health-style sweep — live stamp must not decorate an empty
-    # check table (#2665).
+    # check table (#2665), and the incident plane must agree with the data
+    # plane inside the same payload (#3111).
     try:
         sweep = fetch("health_full_sweep", {})
         snaps = sweep.get("snapshots") if isinstance(sweep, dict) else None
@@ -302,6 +397,7 @@ def run_live_probe(fetch, owner: str = "Supremeai-bd", repo: str = "supremeai-op
             {"rows": sorted(snaps.keys()) if isinstance(snaps, dict) else None},
             semantic_floor=1,
         ))
+        findings.append(assert_incidents_consistent("health_full_sweep.incidents", sweep))
     except TowerHollowReadError as exc:
         findings.append({"assertion": "parsable", "plane": "health_full_sweep",
                          "verdict": "HOLLOW", "detail": str(exc)[:200]})
