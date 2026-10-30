@@ -1202,6 +1202,12 @@ def pick_next_issue(
         names = label_names(item)
         if EXCLUDED_LABELS & set(names):
             return False
+        # Report-only sentry/audit rows are evidence-only; do not dispatch them
+        # to the solver, so agents keep picking code-fixable work instead.
+        if "report" in names and "audit:finding" in names:
+            return False
+        if str(item.get("title", "")).startswith("guard(platform): sentry"):
+            return False
         # বাংলা: ৩০ মিনিটের স্বয়ংক্রিয় লিজ ট্র্যাকিং — অন্য এজেন্ট যদি ৩০ মিনিটের মধ্যে কাজ শেষ না
         # করে থাকে, তবে এটি নিজে থেকেই রিলিজ হয়ে রি-ক্লেইমযোগ্য হয়ে যাবে।
         # #2903 fix: state truth on the fallback plane — the gh-present path
