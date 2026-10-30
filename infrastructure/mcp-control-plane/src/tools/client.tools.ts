@@ -15,10 +15,12 @@ import {
 import { isGlobalAdmin, verifyTenantAdminToken } from "../tenancy/tenant.registry.js";
 import { env } from "../lib/env.js";
 import {
-  MARKETPLACE_PLUGINS,
   connectPlugin,
   getMarketplacePlugin,
   listMarketplaceConnections,
+  listMarketplacePlugins,
+  marketplaceLicenseGate,
+  registerMarketplacePlugin,
   listTenantRemoteServersForMarketplace,
 } from "../registry/marketplace-plugins.js";
 
@@ -291,10 +293,17 @@ export async function registerClientTools(server: McpServer): Promise<void> {
     {},
     { readOnlyHint: true, idempotentHint: true },
     async () => {
+      // #1668: the catalog view carries each row's mechanical license +
+      // provenance verdict so the trust boundary is machine-checkable, not
+      // editorial. Seeds without pinned upstreams honestly show REJECT codes.
+      const plugins = listMarketplacePlugins().map((p) => ({
+        ...p,
+        licenseGate: marketplaceLicenseGate(p),
+      }));
       return {
         content: [{
           type: "text",
-          text: JSON.stringify({ count: MARKETPLACE_PLUGINS.length, plugins: MARKETPLACE_PLUGINS }, null, 2),
+          text: JSON.stringify({ count: plugins.length, plugins }, null, 2),
         }],
       };
     }
@@ -362,6 +371,76 @@ export async function registerClientTools(server: McpServer): Promise<void> {
               ...c,
               remote: remoteById.get(c.remoteServerId) ?? null,
             })),
+          }, null, 2),
+        }],
+      };
+    }
+  );
+
+  // ── #1668 License + provenance gate: catalog INGRESS (global admin) ─────
+  // Third-party plugins enter the mcp_plugins registry ONLY through this
+  // tool. The gate is mechanical and fail-closed: GPL-family licenses are
+  // rejected (repo verdict rule), unknown/unverifiable licenses are rejected
+  // (S10 doctrine), and the upstream must be a code-hosting repository URL
+  // (vendor-marketing/distribution pages are the open-washing marker and
+  // are rejected). Admissions land 'untrusted' — the governed connect path
+  // (pending -> descriptor pinning -> fail-closed relay) is unchanged.
+  server.tool(
+    "marketplace.register_plugin",
+    "Register a NEW third-party plugin into the mcp_plugins catalog (GLOBAL admin only). Runs the #1668 license + provenance gate first: GPL-family licenses, unknown licenses, and non-repository upstreams are rejected fail-closed. Pass the upstream's SPDX license expression and its code-hosting repository URL.",
+    {
+      pluginId: z.string().regex(/^[a-z0-9-]{2,64}$/, "pluginId must match ^[a-z0-9-]{2,64}$"),
+      name: z.string().min(2).describe("Plugin display name"),
+      description: z.string().min(20).describe("What the plugin does (templates-only catalog, never tenant data)"),
+      category: z.string().optional().describe("Catalog category (default: productivity)"),
+      provider: z.string().optional().describe("Provider/vendor identifier (default: pluginId)"),
+      endpointTemplate: z.string().url().nullable().optional().describe("Official hosted endpoint, or null for self-hosted BYO"),
+      protocol: z.enum(["streamable-http", "sse", "stdio"]).optional().describe("MCP transport protocol (default: streamable-http)"),
+      credentialFields: z.array(z.object({
+        name: z.string().min(1),
+        label: z.string().min(1),
+        required: z.boolean().optional(),
+        secret: z.boolean().optional(),
+      })).optional().describe("Credential FIELD SPECS only ({name,label,required,secret}) — never values"),
+      docsUrl: z.string().url().nullable().optional().describe("Documentation URL"),
+      license: z.string().nullable().describe("SPDX license expression of the upstream project (e.g. 'MIT', 'Apache-2.0') — null is rejected"),
+      upstreamUrl: z.string().nullable().describe("Upstream repository URL (https, github/gitlab/bitbucket, owner/repo) — null is rejected"),
+      tenantId: z.string().optional().describe("Ignored for catalog registration (global-admin plane)"),
+      adminToken: z.string().optional().describe("Tenant admin token (not sufficient — catalog registration is global-admin only)"),
+    },
+    { readOnlyHint: false },
+    async (args) => {
+      const { scope, error } = requireScope(args);
+      if (error) return { isError: true, content: [{ type: "text", text: error }] };
+      if (scope !== "*") {
+        return { isError: true, content: [{ type: "text", text: "marketplace.register_plugin is a global-admin plane: the mcp_plugins catalog is registry-wide (public catalog table), not tenant-scoped." }] };
+      }
+      const result = registerMarketplacePlugin({
+        pluginId: args.pluginId,
+        name: args.name,
+        description: args.description,
+        category: args.category ?? "productivity",
+        provider: args.provider ?? args.pluginId,
+        endpointTemplate: args.endpointTemplate ?? null,
+        protocol: args.protocol ?? "streamable-http",
+        credentialFields: (args.credentialFields ?? []).map((f) => ({
+          name: f.name,
+          label: f.label,
+          required: f.required ?? true,
+          secret: f.secret ?? true,
+        })),
+        docsUrl: args.docsUrl ?? null,
+        license: args.license,
+        upstreamUrl: args.upstreamUrl,
+      });
+      if (!result.ok) return { isError: true, content: [{ type: "text", text: `Registration failed: ${result.error}` }] };
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            message: `Plugin '${result.plugin.pluginId}' registered into the catalog (trust_level: untrusted).`,
+            gate: result.gate,
+            plugin: result.plugin,
           }, null, 2),
         }],
       };
