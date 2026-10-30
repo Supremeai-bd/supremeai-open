@@ -97,6 +97,86 @@ async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpSer
   // limit, input payload validation, the hard execution timeout and output
   // truncation — one choke point, no competing wrappers.
   const originalTool = server.tool.bind(server);
+  const originalRegisterTool = (server as any).registerTool.bind(server);
+  // ONE governed-handler factory shared by BOTH registration surfaces: legacy
+  // server.tool(...) and the SDK-blessed registerTool(...) (#2423 option A —
+  // outputSchema/structuredContent tools). Routing both through this single
+  // factory keeps "one choke point, no competing wrappers" literally true
+  // across the registerTool migration: RBAC, rate limiting, payload
+  // validation, execution timeout and output truncation apply identically to
+  // every handler regardless of which registration API declared it.
+  const governedHandler = (
+    sanitizedName: string,
+    originalHandler: (toolArgs: unknown, extra: unknown) => unknown,
+  ) => {
+    return async (toolArgs: unknown, extra: unknown) => {
+      // 1) Central default-deny RBAC gate (#695) + LIVE slot re-authorization
+      // (#48): credential-bound sessions are re-checked against the
+      // operational registry on every call — suspension, demotion, rotation
+      // and store outages all fail CLOSED on the immediate-next check.
+      const denial = await toolAccessErrorAsync(sanitizedName);
+      if (denial) {
+        return { isError: true, content: [{ type: "text", text: denial }] };
+      }
+
+      // 2) Per-(identity, tool) rate limit (#686 item 4).
+      const toolRate = consumeToolRateLimit(sanitizedName);
+      if (!toolRate.allowed) {
+        return {
+          isError: true,
+          content: [{
+            type: "text",
+            text: `Rate limit exceeded for tool '${sanitizedName}' (max ${env.runtime.toolRateLimitMax} per ${env.runtime.toolRateLimitWindowMs}ms per identity). Retry in ~${Math.ceil(toolRate.retryAfterMs / 1000)}s.`,
+          }],
+          metadata: { rateLimited: true, tool: sanitizedName, retryAfterMs: toolRate.retryAfterMs },
+        };
+      }
+
+      // 3) Input payload validation + strict size cap (#686 item 1).
+      const payloadError = toolPayloadError(sanitizedName, toolArgs);
+      if (payloadError) {
+        return { isError: true, content: [{ type: "text", text: payloadError }] };
+      }
+
+      // 4) Hard execution timeout (#686 item 3). The handler promise cannot
+      // be cancelled, but the caller is released with a structured isError
+      // denial as soon as the budget is spent.
+      const timeoutBudgetMs = env.runtime.toolTimeoutMs;
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      let result: unknown;
+      try {
+        result = await Promise.race([
+          Promise.resolve(originalHandler(toolArgs, extra)),
+          new Promise<never>((_resolve, reject) => {
+            timeoutTimer = setTimeout(
+              () => reject(new ToolExecutionTimeoutError(sanitizedName, timeoutBudgetMs)),
+              timeoutBudgetMs,
+            );
+            if (typeof timeoutTimer === "object" && timeoutTimer !== null && typeof (timeoutTimer as { unref?: () => void }).unref === "function") {
+              (timeoutTimer as { unref: () => void }).unref();
+            }
+          }),
+        ]);
+      } catch (error) {
+        if (error instanceof ToolExecutionTimeoutError) {
+          return {
+            isError: true,
+            content: [{
+              type: "text",
+              text: `${error.message} (MCP_TOOL_TIMEOUT_MS). The call was aborted at the governance layer.`,
+            }],
+            metadata: { timedOut: true, tool: sanitizedName, timeoutMs: timeoutBudgetMs },
+          };
+        }
+        throw error; // non-timeout failures keep the SDK's normal error path
+      } finally {
+        if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
+      }
+
+      // 5) Output truncation (#686 item 2).
+      return truncateToolResult(sanitizedName, result);
+    };
+  };
   (server as any).tool = (name: string, ...args: any[]) => {
     const sanitizedName = typeof name === "string" ? name.replace(/\./g, "_") : name;
     let handlerIndex = -1;
@@ -104,78 +184,26 @@ async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpSer
       if (typeof args[i] === "function") { handlerIndex = i; break; }
     }
     if (handlerIndex >= 0) {
-      const originalHandler = args[handlerIndex] as (toolArgs: unknown, extra: unknown) => unknown;
       const wrappedArgs = args.slice();
-      wrappedArgs[handlerIndex] = async (toolArgs: unknown, extra: unknown) => {
-        // 1) Central default-deny RBAC gate (#695) + LIVE slot re-authorization
-        // (#48): credential-bound sessions are re-checked against the
-        // operational registry on every call — suspension, demotion, rotation
-        // and store outages all fail CLOSED on the immediate-next check.
-        const denial = await toolAccessErrorAsync(sanitizedName);
-        if (denial) {
-          return { isError: true, content: [{ type: "text", text: denial }] };
-        }
-
-        // 2) Per-(identity, tool) rate limit (#686 item 4).
-        const toolRate = consumeToolRateLimit(sanitizedName);
-        if (!toolRate.allowed) {
-          return {
-            isError: true,
-            content: [{
-              type: "text",
-              text: `Rate limit exceeded for tool '${sanitizedName}' (max ${env.runtime.toolRateLimitMax} per ${env.runtime.toolRateLimitWindowMs}ms per identity). Retry in ~${Math.ceil(toolRate.retryAfterMs / 1000)}s.`,
-            }],
-            metadata: { rateLimited: true, tool: sanitizedName, retryAfterMs: toolRate.retryAfterMs },
-          };
-        }
-
-        // 3) Input payload validation + strict size cap (#686 item 1).
-        const payloadError = toolPayloadError(sanitizedName, toolArgs);
-        if (payloadError) {
-          return { isError: true, content: [{ type: "text", text: payloadError }] };
-        }
-
-        // 4) Hard execution timeout (#686 item 3). The handler promise cannot
-        // be cancelled, but the caller is released with a structured isError
-        // denial as soon as the budget is spent.
-        const timeoutBudgetMs = env.runtime.toolTimeoutMs;
-        let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-        let result: unknown;
-        try {
-          result = await Promise.race([
-            Promise.resolve(originalHandler(toolArgs, extra)),
-            new Promise<never>((_resolve, reject) => {
-              timeoutTimer = setTimeout(
-                () => reject(new ToolExecutionTimeoutError(sanitizedName, timeoutBudgetMs)),
-                timeoutBudgetMs,
-              );
-              if (typeof timeoutTimer === "object" && timeoutTimer !== null && typeof (timeoutTimer as { unref?: () => void }).unref === "function") {
-                (timeoutTimer as { unref: () => void }).unref();
-              }
-            }),
-          ]);
-        } catch (error) {
-          if (error instanceof ToolExecutionTimeoutError) {
-            return {
-              isError: true,
-              content: [{
-                type: "text",
-                text: `${error.message} (MCP_TOOL_TIMEOUT_MS). The call was aborted at the governance layer.`,
-              }],
-              metadata: { timedOut: true, tool: sanitizedName, timeoutMs: timeoutBudgetMs },
-            };
-          }
-          throw error; // non-timeout failures keep the SDK's normal error path
-        } finally {
-          if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
-        }
-
-        // 5) Output truncation (#686 item 2).
-        return truncateToolResult(sanitizedName, result);
-      };
+      wrappedArgs[handlerIndex] = governedHandler(
+        sanitizedName,
+        args[handlerIndex] as (toolArgs: unknown, extra: unknown) => unknown,
+      );
       args = wrappedArgs;
     }
     return (originalTool as any)(sanitizedName, ...args);
+  };
+  // #2423 option A: registerTool is the SDK's blessed surface for tools that
+  // declare outputSchema / emit structuredContent (server.tool is deprecated
+  // SDK-side and cannot carry outputSchema). Patch it with the SAME name
+  // sanitization and route callbacks through governedHandler so structured-
+  // output tools keep the exact central governance sequence above.
+  (server as any).registerTool = (name: string, config: any, cb: any) => {
+    const sanitizedName = typeof name === "string" ? name.replace(/\./g, "_") : name;
+    const governed = typeof cb === "function"
+      ? governedHandler(sanitizedName, cb as (toolArgs: unknown, extra: unknown) => unknown)
+      : cb;
+    return originalRegisterTool(sanitizedName, config, governed);
   };
 
   await registerAllTools(server, memoryAdapter);
@@ -188,8 +216,8 @@ async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpSer
   attachDiscoveryFilter(server);
 
   server.resource(
-    MCP_MANIFEST_URI,
     "server-manifest",
+    MCP_MANIFEST_URI,
     { description: "Verified SupremeAI MCP server identity and trust metadata", mimeType: "application/json" },
     async () => ({
       contents: [{
@@ -201,9 +229,13 @@ async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpSer
   );
 
   // ── Resources (MCP Protocol — Data/State Exposure) ──
+  // FIX #1329: SDK arg order is (name, uriTemplate, ...) — the registrations
+  // below previously passed them swapped, which made every resources/read
+  // return -32603 Invalid URL (bare name is not a URL) and -32602 not found
+  // (the real URI was never registered).
   server.resource(
-    "control-tower://system/health",
     "system-health",
+    "control-tower://system/health",
     { description: "Real-time health status of all SupremeAI services", mimeType: "application/json" },
     async () => {
       try {
@@ -223,8 +255,8 @@ async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpSer
   );
 
   server.resource(
-    "control-tower://system/dependencies",
     "system-dependencies",
+    "control-tower://system/dependencies",
     { description: "Service dependency graph — which services depend on which", mimeType: "application/json" },
     async () => {
       const context = RequestContextStore.get();
@@ -241,8 +273,8 @@ async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpSer
   );
 
   server.resource(
-    "control-tower://clients/registry",
     "client-registry",
+    "control-tower://clients/registry",
     { description: "Registered MCP clients and their roles/scopes", mimeType: "application/json" },
     async () => {
       const context = RequestContextStore.get();

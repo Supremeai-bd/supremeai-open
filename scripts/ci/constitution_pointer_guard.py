@@ -144,23 +144,6 @@ ALLOWLIST: dict[str, tuple[str, str]] = {
         "historical",
         "one line records 'the former AGENT_RULES.md was deleted by #1526'",
     ),
-    "docs/AUDIT_2026-10-15.md": ("historical", "audit record — never rewritten"),
-    "docs/AUDIT_2026-10-15-duplicate-sweep.md": (
-        "historical",
-        "audit record — never rewritten",
-    ),
-    "docs/AUDIT_2026-10-16-external-audit.md": (
-        "historical",
-        "audit record — never rewritten",
-    ),
-    "docs/AUDIT_2026-10-27.md": ("historical", "audit record — never rewritten"),
-    "docs/AUDIT_2026-10-28.md": ("historical", "audit record — never rewritten"),
-    "docs/reports/CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md": (
-        "historical",
-        "case file quotes the duplicate-pr-guard's verbatim error line — which still cites the deleted path (pipeline.yml L362 drift, receipt 6g footnote); citation is the evidence record, never rewritten",
-    ),
-    "docs/adrs/README.md": ("historical", "ADR index — decision records"),
-    "docs/PROJECT_FULL_AUDIT_BN.md": ("historical", "audit snapshot (BN)"),
     # -- protected: admin-owned .github/ ------------------------------------
     ".github/ISSUE_TEMPLATE/auditor-rule-breaker-report.yml": (
         "protected",
@@ -175,61 +158,16 @@ ALLOWLIST: dict[str, tuple[str, str]] = {
         "admin-owned workflow (bridge contract: admin review)",
     ),
     # -- debt: live stale pointers, enumerated for the fast-follow sweep ----
-    "docs/ZERO_ADMIN_GUIDE.md": (
-        "debt",
-        "docs sweep WO-2: related-docs lists",
-    ),
-    "docs/FAQ.md": (
-        "debt",
-        "docs sweep WO-2: related-docs lists + related link",
-    ),
+    # বাংলা (#3524-অভিঘাত, 2026-10-31): #3524-এর archive-migration 473টি doc
+    # supremeai-archive-এ সরিয়েছে; সেই ২৩টি এন্ট্রি এখানে ghost ছিল (untracked) —
+    # guard-এর নিজের self-test অদ্রব্য ("shipped ALLOWLIST has no stale entries")
+    # সেগুলোর অপসারণ বাধ্য করে। debt-র‍্যাচেট অক্ষত: নতুন ফাইল কখনো এই শ্রেণিতে
+    # যুক্ত হবে না; docs/AUTONOMY_LOOP_CONTRACT.md থাকছে (98e5815-এ পুনঃট্র্যাক্টেড,
+    # এখনও live debt)। ভবিষ্যৎ bulk-move-এর শিক্ষা: migration-এর সাথে cross-guard
+    # registry sync আবশ্যক (de2c051 parity-guard collateral-এর একই শ্রেণি)।
     "docs/AUTONOMY_LOOP_CONTRACT.md": (
         "debt",
         "docs sweep WO-2: related-docs lists + §47 authority pointer",
-    ),
-    "docs/CI_MINIMUM_PIPELINE_STANDARD.md": (
-        "debt",
-        "docs sweep WO-2: related-docs lists + §13 quota pointer",
-    ),
-    "docs/CONTRIBUTING_BN.md": ("debt", "docs sweep WO-2: BN mirror link line"),
-    "docs/README.bn.md": ("debt", "docs sweep WO-2: BN mirror pointer"),
-    "docs/CURRENT_ONLY_FILES.md": ("debt", "docs sweep WO-2: file roster"),
-    "docs/CONTINUOUS_AGENT_LOOP_AND_SKILL_ARCHITECTURE.md": (
-        "debt",
-        "docs sweep WO-2: roadmap status header + §57 + §232",
-    ),
-    "docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md": (
-        "debt",
-        "docs sweep WO-2: root-inventory table row",
-    ),
-    "docs/FEDERATION_SPECS_SSOT.md": (
-        "debt",
-        "docs sweep WO-2: companion-to header",
-    ),
-    "docs/GUARDIAN_EVALUATION.md": (
-        "debt",
-        "docs sweep WO-2: related-docs lists",
-    ),
-    "docs/INGRESS_SECURITY_POLICY.md": (
-        "debt",
-        "docs sweep WO-2: related-docs lists; §5.4/U6 rows are delivery "
-        "history (ADR-class) and stay",
-    ),
-    "docs/ADMIN_SOVEREIGNTY_WIRING_APPENDIX.md": (
-        "debt",
-        "docs sweep WO-2: 'append verbatim' instruction",
-    ),
-    "docs/OPS_ACTIONS_QUOTA_RUNBOOK.md": (
-        "debt",
-        "docs sweep WO-2: U4 pointer in runbook body",
-    ),
-    "docs/S14_REQUIREMENT_AND_TRAINING_SPEC.md": (
-        "debt",
-        "docs sweep WO-2: companion-to header",
-    ),
-    "docs/CI_REMEDIATION_ROADMAP_BN.md": (
-        "debt",
-        "docs sweep WO-2: BN roadmap evidence line",
     ),
 }
 

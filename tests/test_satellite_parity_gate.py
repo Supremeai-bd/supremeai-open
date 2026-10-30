@@ -206,5 +206,59 @@ class SelfTestAndMainTests(unittest.TestCase):
         self.assertEqual(code, 2)
 
 
+class ManifestGatewayCoverageTests(unittest.TestCase):
+    """#3656: the manifest must pin the Dockerfile-load-bearing gateway/ package.
+
+    #1772 made `COPY gateway/ gateway/` build-critical on supremeai-api, but v1
+    of the manifest pinned only root artifacts - so the scheduled gate was
+    structurally blind to the #3649 failed-deploy drift class (satellite
+    gateway/ absent, live-verified 2026-10-30 with a positive-control probe).
+    These pins keep the manifest covering its own layout contract.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.manifest_path = (Path(__file__).resolve().parents[1]
+                             / "scripts" / "ci" / "satellite_sentinels.json")
+        cls.manifest = json.loads(cls.manifest_path.read_text(encoding="utf-8"))
+        cls.pairs = cls.manifest["pairs"]
+
+    def _api_pairs(self):
+        return [p for p in self.pairs if p.get("satellite") == "Supremeai-bd/supremeai-api"]
+
+    def test_gateway_package_sentinels_present(self):
+        pinned = {(p.get("open"), p.get("path")) for p in self._api_pairs()}
+        self.assertIn(("gateway/__init__.py", "gateway/__init__.py"), pinned)
+        self.assertIn(("gateway/main.py", "gateway/main.py"), pinned)
+
+    def test_package_sentinels_are_package_true(self):
+        # a regression to root-flattened paths would silently re-blind the
+        # gate to the COPY gateway/ gateway/ dependency (#3649 class).
+        # gateway/main.py legitimately maps to TWO surfaces (root main.py
+        # entrypoint + package gateway/main.py); uniqueness is per (open, path).
+        for want in ("gateway/__init__.py", "gateway/main.py"):
+            match = [p for p in self._api_pairs()
+                     if p.get("open") == want and p.get("path", "").startswith("gateway/")]
+            self.assertEqual(len(match), 1, want)
+            self.assertTrue(match[0].get("path", "").startswith("gateway/"), want)
+        pinned = {(p.get("open"), p.get("path")) for p in self.pairs}
+        self.assertEqual(len(pinned), len(self.pairs))
+
+    def test_manifest_open_paths_exist_on_disk(self):
+        # manifest-rot guard: a sentinel whose open-side file is gone would
+        # make every scheduled run error (exit 2, fail-closed) forever
+        root = self.manifest_path.parents[2]
+        missing = [p["open"] for p in self.pairs
+                   if not (root / p["open"]).is_file()]
+        self.assertEqual(missing, [])
+
+    def test_gateway_dockerfile_still_copies_the_package(self):
+        # the dependency that makes the package sentinels load-bearing: if the
+        # satellite layout contract changes again, revisit the manifest (#3656)
+        dockerfile = (self.manifest_path.parents[2] / "gateway" / "Dockerfile")
+        self.assertTrue(dockerfile.is_file())
+        self.assertIn("COPY gateway/ gateway/", dockerfile.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

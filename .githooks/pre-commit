@@ -42,6 +42,8 @@ reject() {
 # Self-test mode: offline fixtures, hermetic verification
 # ---------------------------------------------------------------------------
 if test "${1:-}" = "--self-test"; then
+    # Fail-closed: any scenario FAIL propagates to a non-zero exit so CI
+    # (ingress_hook_guard) and humans can never mistake rot for a pass.
     HOOK_ABS="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     sandbox="$(mktemp -d)" || exit 2
     (
@@ -50,51 +52,60 @@ if test "${1:-}" = "--self-test"; then
         git config user.email "guard-selftest@example.invalid"
         git config user.name "Pre-Commit Guard Self-Test"
         HOOK="$HOOK_ABS"
+        fails=0
 
         # S1: Clean commit -> PASS
         echo "clean content" > clean.txt
         git add clean.txt
-        sh "$HOOK" >/dev/null 2>&1 && echo "PASS clean-commit-accepted" || echo "FAIL clean-commit-accepted"
+        sh "$HOOK" >/dev/null 2>&1 && echo "PASS clean-commit-accepted" || { echo "FAIL clean-commit-accepted"; fails=$((fails + 1)); }
         git commit -qm "clean"
 
         # S2: Staged .env -> REJECT
         echo "SECRET=123" > .env
         git add .env
-        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL env-file-rejected" || echo "PASS env-file-rejected"
+        sh "$HOOK" >/dev/null 2>&1 && { echo "FAIL env-file-rejected"; fails=$((fails + 1)); } || echo "PASS env-file-rejected"
         git rm -f -q .env
 
         # S3: Staged bad Python -> REJECT
         echo "def broken(: pass" > bad.py
         git add bad.py
-        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL bad-python-rejected" || echo "PASS bad-python-rejected"
+        sh "$HOOK" >/dev/null 2>&1 && { echo "FAIL bad-python-rejected"; fails=$((fails + 1)); } || echo "PASS bad-python-rejected"
         git rm -f -q bad.py
 
         # S4: Staged bad JSON -> REJECT
         echo "{not a json}" > bad.json
         git add bad.json
-        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL bad-json-rejected" || echo "PASS bad-json-rejected"
+        sh "$HOOK" >/dev/null 2>&1 && { echo "FAIL bad-json-rejected"; fails=$((fails + 1)); } || echo "PASS bad-json-rejected"
         git rm -f -q bad.json
 
         # S5: Staged oversized file -> REJECT
         dd if=/dev/zero of=huge.bin bs=1024 count=300 >/dev/null 2>&1
         git add huge.bin
-        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL huge-file-rejected" || echo "PASS huge-file-rejected"
+        sh "$HOOK" >/dev/null 2>&1 && { echo "FAIL huge-file-rejected"; fails=$((fails + 1)); } || echo "PASS huge-file-rejected"
         git rm -f -q huge.bin
 
         # S6: Staged single-quoted secret -> REJECT (both quote styles must be caught)
         echo "TOKEN = 'abcdefghijklmnopqrst'" > quoted_secret.py
         git add quoted_secret.py
-        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL single-quoted-secret-rejected" || echo "PASS single-quoted-secret-rejected"
+        sh "$HOOK" >/dev/null 2>&1 && { echo "FAIL single-quoted-secret-rejected"; fails=$((fails + 1)); } || echo "PASS single-quoted-secret-rejected"
         git rm -f -q quoted_secret.py
 
         # S7: Unquoted x-delimited value is not a quoted secret -> PASS (no false positive)
         echo "TOKEN = xabcdefghijklmnopqrstx" > unquoted_ok.py
         git add unquoted_ok.py
-        sh "$HOOK" >/dev/null 2>&1 && echo "PASS unquoted-value-accepted" || echo "FAIL unquoted-value-accepted"
+        sh "$HOOK" >/dev/null 2>&1 && echo "PASS unquoted-value-accepted" || { echo "FAIL unquoted-value-accepted"; fails=$((fails + 1)); }
         git rm -f -q unquoted_ok.py
+
+        if test "$fails" -eq 0; then
+            echo "self-test: 7/7 scenarios PASS"
+        else
+            echo "self-test: $fails scenario(s) FAILED"
+        fi
+        test "$fails" -eq 0
     )
+    rc=$?
     rm -rf "$sandbox"
-    exit 0
+    exit $rc
 fi
 
 # ---------------------------------------------------------------------------
@@ -119,7 +130,10 @@ for file in $staged_files; do
 done
 
 # 2. Check for common raw credential patterns in staged diff
-if git diff --cached -U0 | grep -E '^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*[\x27"][A-Za-z0-9_\-\.]{20,}[\x27"]' | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
+# Quote class must be a real ["'] bracket expression: POSIX ERE has no \x27
+# hex escape, so the old [\x27"] compiled as [x27"] — it missed '…' secrets
+# and false-positived on x…x values (caught by self-test S6/S7).
+if git diff --cached -U0 | grep -E "^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*[\"'][A-Za-z0-9_.-]{20,}[\"']" | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
     reject "Potential raw secret literal detected in staged diff" \
         "Secrets must be loaded from vault/environment, never hardcoded into source files." \
         "If this is a false positive test fixture, annotate the line with '# gitleaks:allow'." \

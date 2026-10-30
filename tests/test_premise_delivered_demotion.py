@@ -17,9 +17,8 @@ the live probe at both dispatch surfaces. Two bounded scans, both fail-open:
      artifact existing ⇒ demote (any missing path keeps the row).
   B. merged-landing citation: one cached /pulls?state=closed fetch per pick
      run; a MERGED PR citing the row in delivery form (closes/fixes/resolves/
-     for/receipt #N), compound receipt-header form (R<n>/#N, #<n>/#N) or the
-     board's bare R-idiom (R<n>) ⇒ demote with the citing PR named.
-     Closed-unmerged and in-gates vehicles never demote.
+     for/receipt #N) ⇒ demote with the citing PR named. Closed-unmerged and
+     in-gates vehicles never demote.
 
 Pins enforced here (zero gh/network dependency — tree roots and fetchers are
 injected fakes):
@@ -28,12 +27,10 @@ injected fakes):
      nothing (never raises).
   2. Check A: all promised artifacts exist (temp tree) ⇒ demotion note;
      any missing ⇒ serve; markerless body falls through to Check B.
-  3. Check B: merged "for #N"/"receipt #N"/"Closes #N", compound receipt
-     headers ("R<n>/#N", "#<n>/#N") and the board's bare R-idiom ("R<n>")
-     ⇒ demotion note with the citing PR number; closed-unmerged ⇒ serve;
-     non-delivery citations ("refs #N", "#N false-close receipt", bare
-     "#N") ⇒ serve; number-boundary safe (#N1, R<n>/#N1 and R<n>0 do not
-     match #N; branch-slug "...-r<n>-..." never demotes a compound check).
+  3. Check B: merged "for #N"/"receipt #N"/"Closes #N" ⇒ demotion note with
+     the citing PR number; closed-unmerged ⇒ serve; non-delivery citations
+     ("refs #N", "#N false-close receipt") ⇒ serve; number-boundary safe
+     (#N1 does not match #N).
   4. Check A hit short-circuits Check B (fetcher never called).
   5. Raising fetcher ⇒ serve (fail-open); unparseable number ⇒ serve.
   6. Live wrapper never raises.
@@ -185,7 +182,8 @@ class TestPremiseDeliveredCheckB(unittest.TestCase):
         # Live miss (2026-10-30 12:52Z): merged #3338's subject carried the
         # row as "R1776/#2766" — slash-adjacent, no whitespace — the keyword
         # regex sailed past it and the loop re-dispatched #2766 ~20 minutes
-        # after its own evidence refresh landed.
+        # after its own evidence refresh landed. Re-land r3: #3348's heal
+        # was silently reverted by #3404's stale-base full-file landing.
         rows = [
             _pr(
                 3338,
@@ -246,10 +244,8 @@ class TestPremiseDeliveredCheckB(unittest.TestCase):
         )
 
     def test_branch_slug_alone_never_demotes_compound_check(self):
-        # "...-r1776-..." inside a branch slug matches \bR<n>\b ONLY when a
-        # slash follows for the compound; as a bare token it IS the board's
-        # R-idiom and demotes — pin the compound's slug-neutrality instead:
-        # a slug WITHOUT the R-token (plain dash-number) must not demote.
+        # A branch slug WITHOUT the R-token (plain dash-number) must not
+        # demote: dash-adjacency is not a compound citation form.
         rows = [_pr(3405, "watchdog live run (bridge-20261030-2766-watchdog-live-run-r1) (#3405)")]
         self.assertIsNone(
             cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
@@ -379,6 +375,194 @@ class TestDefaultProbeWiring(unittest.TestCase):
             wired,
             2,
             "both dispatch surfaces (envelope + dispatch print) must wire the premise probe",
+        )
+
+
+class TestReceiptLabelDemotion(unittest.TestCase):
+    """Item 15 R2 (GLM Agent 23, Job 486814, 2026-10-30) — label-plane truth.
+
+    Live anatomy: the picker dispatched #3351 (bridge:receipt — GLM Agent 10's
+    zizmor-guard receipt) as a fresh coder-IMPLEMENT task while its own scope
+    artifact tests/test_zizmor_profile_guard.py was already byte-on-main, and
+    re-picked #2360 one run after demoting it — both because the anonymous
+    /pulls citation scan silently failed open on the burned-out 60 req/h IP
+    quota. A receipt row is a record of already-submitted work by
+    construction; the label check demotes it with ZERO network dependency.
+    """
+
+    def test_bridge_receipt_label_demotes_with_zero_fetch(self):
+        row = _row(3351, labels=["report", "bridge:receipt"], body="Bridge Work Order receipt body.")
+        note = cal._premise_delivered_note(
+            row,
+            tree_root=Path("/nonexistent"),
+            fetch_merged=lambda p: (_ for _ in ()).throw(AssertionError("fetch must not run for a receipt row")),
+        )
+        self.assertIsNotNone(note)
+        self.assertIn("bridge:receipt", note)
+        self.assertIn("already-submitted", note)
+
+    def test_receipt_label_check_runs_before_tree_scans(self):
+        # A receipt row with NO body at all still demotes — the label alone
+        # is the plane of truth (zero-network, zero-heuristic).
+        row = _row(3353, labels=["bridge:receipt"])
+        note = cal._premise_delivered_note(row, tree_root=Path("/nonexistent"), fetch_merged=lambda p: [])
+        self.assertIsNotNone(note)
+
+    def test_non_receipt_labels_serve(self):
+        row = _row(2360, labels=["p2-medium", "status:unclaimed", "repo:core", "audit:finding"], body="audit prose only.")
+        self.assertIsNone(
+            cal._premise_delivered_note(row, tree_root=Path("/nonexistent"), fetch_merged=lambda p: [])
+        )
+
+    def test_dict_labels_and_str_labels_both_recognized(self):
+        for labels in (["bridge:receipt"], [{"name": "bridge:receipt"}]):
+            row = {"number": 3345, "title": "r", "labels": labels, "body": ""}
+            note = cal._premise_delivered_note(row, tree_root=Path("/nonexistent"), fetch_merged=lambda p: [])
+            self.assertIsNotNone(note, f"label shape {labels!r} must be recognized")
+
+    def test_malformed_labels_never_raise(self):
+        for bad in (None, 42, [object()], [{"name": 42}]):
+            row = {"number": 1, "title": "r", "labels": bad, "body": ""}
+            try:
+                cal._premise_delivered_note(row, tree_root=Path("/nonexistent"), fetch_merged=lambda p: [])
+            except Exception as exc:  # noqa: BLE001
+                self.fail(f"malformed labels {bad!r} raised {type(exc).__name__}")
+
+
+class TestReceiptScopePaths(unittest.TestCase):
+    """Item 15 R2 — structured `### Scope Paths` extraction (receipt-shape gated)."""
+
+    RECEIPT_BODY = (
+        "### Task ID\nbridge-20261030-x\n\n### Patch Branch\nbridge/x\n\n"
+        "### Summary\nwork already submitted elsewhere.\n\n"
+        "### Scope Paths\n- scripts/ci/guard.py\n- tests/test_guard.py\n\n"
+        "### Test Evidence\nTier-1 reflection.\n"
+    )
+
+    def test_scope_block_extracts_list_paths(self):
+        self.assertEqual(
+            cal._receipt_scope_paths(self.RECEIPT_BODY),
+            ["scripts/ci/guard.py", "tests/test_guard.py"],
+        )
+
+    def test_receipt_shape_gate_blocks_non_receipt_bodies(self):
+        # A fresh work order that merely lists files to create must NOT be
+        # demotable off this scan alone (no ### Task ID / ### Patch Branch).
+        body = "### Deliverables\nPlease create:\n- scripts/new_thing.py\n"
+        self.assertEqual(cal._receipt_scope_paths(body), [])
+
+    def test_backticked_scope_items_extracted(self):
+        body = "### Task ID\nx\n\n### Scope Paths\n- `docs/report.md`\n"
+        self.assertEqual(cal._receipt_scope_paths(body), ["docs/report.md"])
+
+    def test_tree_escape_and_absolute_paths_filtered(self):
+        body = (
+            "### Task ID\nx\n\n### Scope Paths\n- ../escape.md\n- /abs.md\n"
+            "- ok/rel.md\n- no-slash.md\n"
+        )
+        self.assertEqual(cal._receipt_scope_paths(body), ["ok/rel.md"])
+
+    def test_prose_after_scope_block_ends_extraction(self):
+        body = (
+            "### Task ID\nx\n\n### Scope Paths\n- docs/a.md\n"
+            "Some prose line that is not a list item.\n- docs/b.md\n"
+        )
+        self.assertEqual(cal._receipt_scope_paths(body), ["docs/a.md"])
+
+    def test_malformed_body_never_raises(self):
+        for bad in (None, "", 42, object()):
+            self.assertEqual(cal._receipt_scope_paths(bad), [])
+
+    def test_all_scope_artifacts_exist_demotes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "tests").mkdir()
+            (root / "tests" / "test_zizmor_profile_guard.py").write_text("guard", encoding="utf-8")
+            row = _row(
+                3351,
+                body="### Task ID\nx\n\n### Scope Paths\n- tests/test_zizmor_profile_guard.py\n",
+            )
+            note = cal._premise_delivered_note(
+                row,
+                tree_root=root,
+                fetch_merged=lambda p: (_ for _ in ()).throw(AssertionError("fetch must not run when the scope scan hits")),
+            )
+            self.assertIsNotNone(note)
+            self.assertIn("receipt scope cross-scan", note)
+            self.assertIn("tests/test_zizmor_profile_guard.py", note)
+
+    def test_missing_scope_artifact_serves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = _row(3360, body="### Task ID\nx\n\n### Scope Paths\n- scripts/ci/not_yet.py\n")
+            self.assertIsNone(
+                cal._premise_delivered_note(row, tree_root=root, fetch_merged=lambda p: [])
+            )
+
+
+class TestDarkScanHonesty(unittest.TestCase):
+    """Item 15 R2 — a failed anonymous fetch is a first-class dark state.
+
+    Fail-open dispatch stays (never-raise contract), but the silence is gone:
+    the advisory surfaces at landing_crossscan_advisory() for the pick log and
+    the envelope board_note.
+    """
+
+    def setUp(self):
+        self._orig = cal._LANDING_FETCH_FAILED
+
+    def tearDown(self):
+        cal._LANDING_FETCH_FAILED = self._orig
+
+    def test_healthy_scan_advisory_is_none(self):
+        cal._LANDING_FETCH_FAILED = False
+        self.assertIsNone(cal.landing_crossscan_advisory())
+
+    def test_failed_scan_advisory_honest(self):
+        cal._LANDING_FETCH_FAILED = True
+        advisory = cal.landing_crossscan_advisory()
+        self.assertIsNotNone(advisory)
+        self.assertIn("DARK", advisory)
+        self.assertIn("re-verify", advisory)
+
+    def test_live_fetch_failure_sets_dark_state(self):
+        # The LIVE fetcher (not an injected one) must flip the dark flag on
+        # any failure — that is the exact silent path this R2 closes.
+        # R3 update (item 15, GLM Agent 05): the fetcher now has TWO
+        # transports (REST first, tower second, one shared cache). With every
+        # urlopen patched dark, both transports fail, and the live fetcher
+        # raises HONESTLY (the R3 contract pinned in
+        # test_landing_fetch_tower_fallback.py) while still flipping the dark
+        # flag and caching the darkness — the note's fail-open layer serves
+        # the row, never blocks. The R2-era silent-return shape would be a
+        # false-green here: the raise is the honesty signal itself.
+        cal._LANDING_FETCH_FAILED = False
+        cal._LANDING_FETCH_DONE = False
+        with unittest.mock.patch.object(
+            cal.urllib.request, "urlopen", side_effect=OSError("rate limited")
+        ):
+            with self.assertRaises(RuntimeError):
+                cal._fetch_merged_landing_prs(80)
+        self.assertEqual(cal._LANDING_ROWS, [])
+        self.assertTrue(cal._LANDING_FETCH_FAILED)
+        self.assertEqual(cal._LANDING_PLANE, "dark")
+        self.assertIsNotNone(cal.landing_crossscan_advisory())
+        # darkness is cached: a later candidate re-networks nothing
+        self.assertEqual(cal._fetch_merged_landing_prs(80), [])
+        cal._LANDING_FETCH_DONE = True  # keep the module cache coherent
+
+    def test_envelope_carries_dark_advisory_in_board_note(self):
+        # build_task_envelope itself stays pure; the threading lives in
+        # run_dispatch_cycle. Pin the SOURCE so the advisory cannot silently
+        # regress out of the envelope path (same AST-pin style as above).
+        loop_src = Path(cal.__file__).read_text(encoding="utf-8")
+        self.assertIn("landing_crossscan_advisory()", loop_src)
+        self.assertIn("board_note=note", loop_src)
+        # the dark advisory must be threaded INTO note before the envelope call
+        self.assertLess(
+            loop_src.index("dark_note = landing_crossscan_advisory()"),
+            loop_src.rindex("board_note=note"),
+            "dark advisory must be computed before build_task_envelope consumes board_note",
         )
 
 

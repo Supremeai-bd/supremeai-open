@@ -1,15 +1,15 @@
 {
-  "version": 1,
-  "cadences_hours": {
-    "ecosystem-scout": 12,
-    "auditor": 12,
-    "human-eye": 24,
-    "rules-breaker": 24,
-    "platform-guardian": 24
-  },
+  "version": 2,
+  "scheduled_roles": [
+    "ecosystem-scout",
+    "auditor",
+    "human-eye",
+    "rules-breaker",
+    "platform-guardian"
+  ],
   "merged_roles": {
     "federation-auditor": "auditor",
     "task-auditor": "auditor"
   },
-  "notes": "Role-based cadence. Per-role last_run stored separately. P0/P1 issues preempt scheduled audits."
+  "notes": "Event-driven scheduled roles (#3573): zero artificial timer locks. Roles dispatch one per idle cycle in this order; the rotation re-arms on every work assignment (claimable issue dispatched). Legacy key 'cadences_hours' is still accepted (its keys become the role order; hour values are ignored)."
 }

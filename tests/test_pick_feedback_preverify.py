@@ -60,13 +60,15 @@ _FREE = (False, "no active claim on the feedback plane")
 
 
 class _LeaseIsolated(unittest.TestCase):
-    """Isolate pick_next_issue from THIS runtime's local dispatch-lease state.
+    """Isolate pick_next_issue from THIS runtime's local dispatch journal.
 
-    The loop persists 30-min local leases (mark_issue_leased) outside the repo;
-    a test run on an agent machine that was just dispatched row N would see N
-    filtered out of candidates before any probe logic — contaminating results
-    with ambient scheduler state (live hit: #2597 was leased locally at
-    20:50Z when these tests first ran). Hermetic ⇒ empty store.
+    The loop persists a machine-local dispatch journal (mark_issue_leased)
+    outside the repo (#3573: observability-only — the old 30-minute lease
+    exclusion is gone, but tests still isolate from ambient files); a test run
+    on an agent machine that was just dispatched row N would see N in the
+    journal — contaminating assertions with ambient scheduler state (live hit:
+    #2597 was journaled locally at 20:50Z when these tests first ran).
+    Hermetic ⇒ empty store.
     """
 
     def setUp(self):

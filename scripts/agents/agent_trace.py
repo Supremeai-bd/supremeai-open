@@ -79,6 +79,15 @@ SENSITIVE_KEY_RE = re.compile(
 # বাংলা: বড় payload — শুধু hash-reference রাখা হয় (storage/cost pressure এড়াতে)
 LARGE_PAYLOAD_LIMIT = 2048
 
+# বাংলা (R87/#3620 root-cause fix): token-count কী-এর অখণ্ড int মান টেলিমেট্রি
+# (gen_ai.usage.* ভোক্তা), credential নয় — SENSITIVE_KEY_RE-এর "token" সাবস্ট্রিং
+# এদের রেডঅ্যাক্ট করলে প্রতিটি cost/usage কনজিউমার অন্ধ হয়। সংকীর্ণ allowlist:
+# শুধু এই কী-শেষাংশের int মান প্রবাহিত হবে; string/dict/list মান আগের মতোই
+# সবসময় রেডঅ্যাক্টেড (fail-closed অপরিবর্তিত — কোনো credential-int পথ নেই)।
+TOKEN_COUNT_KEY_RE = re.compile(
+    r"(?i)(input|output|prompt|completion|total)[_-]?tokens?$"
+)
+
 
 def _redact_value(value: Any) -> Any:
     """Value redaction — dict/list recursively; বড় string ও sensitive string হ্যাশ-রেফ।"""
@@ -97,6 +106,10 @@ def _redact_value(value: Any) -> Any:
 
 def _redact_key_value(key: str, value: Any) -> Any:
     """Key-aware redaction — sensitive নামের কী-এর value কখনো plaintext থাকে না।"""
+    # বাংলা (R87/#3620): token-count int allowlist — রেডঅ্যাকশনের আগে, সংকীর্ণ।
+    if (TOKEN_COUNT_KEY_RE.search(key or "")
+            and isinstance(value, int) and not isinstance(value, bool)):
+        return value
     if SENSITIVE_KEY_RE.search(key or ""):
         if value in (None, "", [], {}):
             return value
