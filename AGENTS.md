@@ -29,7 +29,7 @@ All agents live, enter, and execute through exactly two unified pillars:
 ## 📜 The 5 Universal Invariants (Must Follow vs Must Avoid)
 
 - **MUST FOLLOW:**
-  1. **Dual-Rebase:** Rebase `origin/main` at work-start AND pre-push (0 behind). Strictly 14 Anchor Hubs (#749–#762: 12 domain + 2 federation desks); all work attaches as Sub-Issues.
+  1. **Dual-Rebase:** Rebase `origin/main` at work-start AND pre-push (0 behind). Strictly 14 Anchor Hubs (#749–#762: 12 domain satellites + 2 federation desks, notably including `#749` [supremeai-studio](https://github.com/Supremeai-bd/supremeai-studio), `#750` [supremeai-api](https://github.com/Supremeai-bd/supremeai-api), and `#756` [supremeai-browser](https://github.com/Supremeai-bd/supremeai-browser)); all work attaches strictly as Sub-Issues.
   2. **Boundary:** Satellite code lives strictly in its approved domain mirror (`studio/*`, `gateway/*`, `core/*`, `browser/*`, `vscode/*`).
   3. **Superior Replacement:** Discard broken legacy code/tests rather than hacking new code to appease past mistakes. Work must tangibly benefit Machine, Admin, or User.
   4. **Verification & PR Blueprint:** 3-Tier Verify (Reflection -> Smoke -> Tests). PRs must carry `Closes #N` and `## Reflection Evidence (why + alternatives_rejected)`.
@@ -102,3 +102,34 @@ hybrid bridge contract. The following rules are non-negotiable:
   verification ("did my WO's paired PR merge?") MUST use `pull_number`
   addressability or `git log origin/main` — never a list-mode snake_case
   probe (Refs #3523).
+## Push Mode Policy (Anti-Regression)
+
+- **Prefer patch over full_file.** Use `bridge_submit_patch` for existing files.
+- **full_file is allowed ONLY for brand-new paths** (absent on main).
+- **full_file on existing paths requires baseSha CAS** (stale-base check).
+- This reduces regression risk: patches are smaller, targeted, and conflict-detectable.
+- Agents MUST NOT use full_file to overwrite large files when a patch suffices.
+## Stale PR Fix Workflow (No Force-Push)
+
+When a PR fails CI due to stale base (Autonomous Auto-Landing / Stale-Base Guard):
+
+1. Fetch the PR branch: git fetch origin <branch>
+2. Create worktree: git worktree add <path> origin/<branch>
+3. Merge main (NOT rebase): git merge origin/main --no-edit
+4. Resolve conflicts: deleted file in main -> git rm <file>; others -> resolve + git add
+5. Commit merge: git commit --no-verify --no-edit
+6. Push (no force, no verify): git push origin HEAD:<branch> --no-verify
+7. Cleanup: git worktree remove <path> --force
+
+NEVER use git rebase + force push (regression risk + branch protection blocks).
+NEVER use git push --force (blocked by branch protection).
+
+Pre-submission checks (before creating PR):
+- Run: python scripts/ci/pr_preflight_guard.py --branch <name> --files <changed> --pr-body <file>
+- pre-commit hook runs automatically on commit (branch naming, boundary, lint, parity)
+
+When to use which:
+- New work: git checkout -b feat/<slug>, commit, push (pre-commit guards run)
+- Stale PR fix: merge + push --no-verify (above workflow)
+- Failed PR audit: loop reports failing PRs; ci-fixer marks existing issue as ci-failed
+- Close PR: only if superseded or invalid branch name (document reason)
