@@ -631,3 +631,5 @@ at the bottom — the generator preserves them verbatim on every regeneration.
 |---|---|
 | `ai/` | AI-specific scripts (memory, model, bias detection) — সদস্য লিস্ট নিচের AUTO-GENERATED টেবিলে |
 <!-- /hand:AI & Knowledge -->
+
+<!-- #1630 test tamper: stale marker -->

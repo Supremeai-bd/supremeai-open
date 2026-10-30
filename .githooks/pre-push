@@ -700,6 +700,49 @@ for line in $updates; do
         fi
     fi
 
+    # 18. SCRIPT INDEX FRESHNESS GUARD & RAW DIFF PAYLOAD GUARD
+    # (Pre-push mechanical backstop for scripts/ops/_INDEX.md and corrupted source files).
+    if ! ZERO_TEST "$local_sha"; then
+        if ZERO_TEST "$remote_sha"; then
+            push_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
+        else
+            push_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+        fi
+
+        hook_py=""
+        if python3 -c "import sys" >/dev/null 2>&1; then
+            hook_py="python3"
+        elif python -c "import sys" >/dev/null 2>&1; then
+            hook_py="python"
+        elif py -3 -c "import sys" >/dev/null 2>&1; then
+            hook_py="py -3"
+        fi
+
+        if [ -n "$hook_py" ]; then
+            # (A) Check scripts/ops/_INDEX.md freshness if any file under scripts/ was modified/added
+            scripts_touched=$(printf '%s\n' "$push_changed" | grep -E '^scripts/' || true)
+            if [ -n "$scripts_touched" ] && [ -f scripts/ops/generate_script_index.py ]; then
+                if ! $hook_py scripts/ops/generate_script_index.py --check >/dev/null 2>&1; then
+                    reject "SCRIPT INDEX FRESHNESS GUARD FAILED" \
+                        "scripts/ops/_INDEX.md is stale relative to scripts under scripts/." \
+                        "Regenerate with: python3 scripts/ops/generate_script_index.py and commit the result."
+                fi
+            fi
+
+            # (B) Reject corrupted source files containing raw git diff patch headers as source code
+            code_files=$(printf '%s\n' "$push_changed" | grep -E '\.(py|ts|tsx|js|json|yaml|yml)$' || true)
+            for cf in $code_files; do
+                if [ -f "$cf" ]; then
+                    if head -n 5 "$cf" | grep -qE '^diff --git|^index [0-9a-f]{7}\.\.'; then
+                        reject "RAW DIFF PAYLOAD CORRUPTION DETECTED" \
+                            "File '$cf' starts with a git diff header instead of valid source code." \
+                            "Ensure the full source file is committed, not a unified diff/patch."
+                    fi
+                fi
+            done
+        fi
+    fi
+
     IFS="$nl"
 done
 IFS="$OIFS"
