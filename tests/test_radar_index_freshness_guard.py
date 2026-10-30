@@ -385,7 +385,13 @@ def test_live_repo_sweep_passes() -> None:
     # 87->89 regeneration first — first heal lands wins; this change therefore carries only its
     # OWN co-advance, and Plan-5 (mechanical pre-push wiring of the co-obligation guard, still
     # unwired on main) is recorded in docs/reports/SCOUT_R89_GATEWAY_PROMPT_CACHE_BLINDNESS_2026-10-31.md.
-    assert r["pointer"] == 90, "pointer drifted — regenerate expectation with the index"
+    # and after pass 47 (GLM Agent 21, Job 486808, cycle 05:21+08 2026-10-31): this pin co-advances
+    # 90 -> 91 in the SAME change that advances the index pointer 90 -> 91. Same-window disclosure
+    # (pass-26 class, fifth recurrence): this filer drafted its lane as R89 with three-plane freeness
+    # verified, then caught the peer's issue-side R89 consumption (landing 0d32b24) on a fresh
+    # pre-submit queue capture, yielded R89 (first-registration-wins) and re-took the lane as R90 —
+    # see index drift log pass 47 + docs/reports/SCOUT_R90_GITHUB_AGENTIC_WORKFLOWS_2026-10-31.md.
+    assert r["pointer"] == 91, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
