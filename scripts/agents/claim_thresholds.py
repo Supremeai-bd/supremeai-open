@@ -19,6 +19,19 @@ ORPHAN_RELEASE_MINUTES = 30
 # War-evidence-এ release হচ্ছিল claim-এর ~১৬s-এর মধ্যেই।
 MIN_CLAIM_AGE_BEFORE_RELEASE_MINUTES = 5
 
+# Receipt-coverage TTL (saturation livelock-এর রুট-কজ ফিক্স; GLM Agent 18,
+# Job 486801; প্রমাণ: #3634 saturation #2 + #3600 strand census): এর চেয়ে
+# পুরোনো খোলা bridge-WO receipt আর dispatch-demote করতে পারবে না — এমন
+# receipt-এর coverage "in-flight" নয়, "stranded" (event-driven auto-landing
+# পুরোনো PR আর কখনো revisit করে না)। প্রমাণভিত্তিক সীমা: in-flight receipt
+# মিনিটেই land হয় (#3578: 44s, #3602: 1m24s, #3604: 2m01s, #3599: ~3min),
+# আর stranded কভারার ঘণ্টার পর ঘণ্টা খোলা থাকে (#3600: oldest PR 5.7h,
+# 20/27 never-touched; #2756 ৪-তম সাইকেলেও stranded)। ১২০ মিনিট = সবচেয়ে
+# ধীর পর্যবেক্ষিত সৎ ল্যান্ডিংয়ের ~৪০ গুণ, সবচেয়ে আগের স্ট্র্যান্ড-প্রমাণের
+# অর্ধেক — দুই দিকেই বড় মার্জিন। এক-সত্য-উৎস: লুপ এখান থেকে import করবে,
+# নিজে হার্ডকোড নয় (#57-এর হুবহু ডুয়াল-SSOT শ্রেণি)।
+RECEIPT_COVERAGE_TTL_MINUTES = 120
+
 
 def claim_age_minutes(claim_epoch: float, now_epoch: float | None = None) -> float:
     """Claim-এর বয়স (মিনিটে) — release-path-গুলো এই হেল্পার দিয়েই মাপবে।"""
