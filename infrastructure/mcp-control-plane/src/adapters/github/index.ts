@@ -138,11 +138,44 @@ export async function searchCode(query: string, repo?: string, limit: number = 1
 
 export const codeSearch = searchCode;
 
-export async function listPullRequests(accountId: string, state: string = "open", limit: number = 5): Promise<unknown> {
+// #3368/R81 — single-PR addressability + sort passthrough. Pure URL SSOT:
+// the list endpoint and the one-PR endpoint share this builder so the two
+// query dialects cannot drift apart (the R62 per_page trap was exactly a
+// schema/code dialect fork). Offline-testable — no IO, no env reads.
+export function buildPullsUrl(
+  baseUrl: string,
+  opts: {
+    state?: string;
+    perPage?: number | string;
+    sort?: string;
+    direction?: string;
+    pullNumber?: number | string | null;
+  } = {},
+): string {
+  const pullNumber = opts.pullNumber;
+  if (pullNumber !== undefined && pullNumber !== null && `${pullNumber}` !== "") {
+    return `${baseUrl}/pulls/${pullNumber}`;
+  }
+  const params = new URLSearchParams();
+  params.set("state", opts.state ?? "open");
+  params.set("per_page", String(opts.perPage ?? 5));
+  if (opts.sort) params.set("sort", String(opts.sort));
+  if (opts.direction) params.set("direction", String(opts.direction));
+  return `${baseUrl}/pulls?${params.toString()}`;
+}
+
+export async function listPullRequests(
+  accountId: string,
+  state: string = "open",
+  limit: number = 5,
+  sort?: string,
+  direction?: string,
+): Promise<unknown> {
   const { apiKey: token, baseUrl } = getAccountConfig(accountId);
-  const res = await httpRequest(`${baseUrl}/pulls?state=${state}&per_page=${limit}`, {
-    headers: githubHeaders(token),
-  });
+  const res = await httpRequest(
+    buildPullsUrl(baseUrl, { state, perPage: limit, sort, direction }),
+    { headers: githubHeaders(token) },
+  );
   if (!res.ok || !Array.isArray(res.data)) {
     const errorMsg =
       res.data && typeof res.data === "object" && "message" in (res.data as Record<string, unknown>)
@@ -162,6 +195,39 @@ export async function listPullRequests(accountId: string, state: string = "open"
     createdAt: pr.created_at,
     updatedAt: pr.updated_at,
   }));
+}
+
+// #3368/R81 single-resource passthrough (pattern after readFile): answers
+// "what is the state of PR N?" for ANY PR regardless of the creation-window —
+// the exact wall every #2547/#2567-census-class audit hit (live receipt
+// 12:45Z: 5 capability PRs ~3200 ranks deep, anon-REST fallback 403x8).
+// Returns the verdict-plane fields the census class needs: state, merged,
+// mergedAt, closedAt.
+export async function getPullRequest(accountId: string, pullNumber: number | string): Promise<unknown> {
+  const { apiKey: token, baseUrl } = getAccountConfig(accountId);
+  const res = await httpRequest(buildPullsUrl(baseUrl, { pullNumber }), {
+    headers: githubHeaders(token),
+  });
+  const data = res.data as any;
+  if (!res.ok || !data || typeof data !== "object" || Array.isArray(data) || !("number" in data)) {
+    const errorMsg =
+      data && typeof data === "object" && "message" in (data as Record<string, unknown>)
+        ? String((data as Record<string, unknown>).message)
+        : `Failed to fetch PR #${pullNumber} (HTTP ${res.status})`;
+    throw new Error(`GitHub API error: ${errorMsg}`);
+  }
+  return {
+    number: data.number,
+    title: data.title,
+    state: data.state,
+    merged: data.merged,
+    mergedAt: data.merged_at,
+    closedAt: data.closed_at,
+    user: data.user?.login,
+    htmlUrl: data.html_url,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
 }
 
 export async function createIssue(
