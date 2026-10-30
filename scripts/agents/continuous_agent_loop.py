@@ -76,6 +76,19 @@ EXCLUDED_LABELS = frozenset({
     "bridge:in-gates",
     "bridge:rejected",
     "bridge:idempotent-noop",
+    # বাংলা (restore, GLM Agent 25): bridge:receipt = সাবমিশন পাইপলাইন নিজেই
+    # প্রতিটি receipt/report-only WO-তে স্ট্যাম্প করে (mcp-control-plane
+    # bridge.tools.ts BRIDGE_RECEIPT_LABEL: taskId-তে receipt|report-only হলে
+    # [bridge:receipt, report]) — এরা submission-এর intake artifact, solver-টাস্ক
+    # নয়; তাদের কাজ নিজের PR-এই থাকে। সেটে না থাকায় picker self-fulfilled
+    # receipt-WO নতুন টাস্ক হিসেবে পুনঃdispatch করত (#2516 drain census: 34/128
+    # self-fulfilled receipt-WO; লাইভ প্রমাণ 2026-10-30: #3345 dispatch হলো অথচ
+    # তার কাজ ইতোমধ্যে #3346-এ landed)। #3315 coverage-probe এই শ্রেণি ধরতে পারে
+    # না — সে উল্টো দিক দেখে (অন্য কোনো খোলা WO candidate-কে cite করছে কি না),
+    # অথচ receipt নিজেকে cite করে না; label-exclusion এই শ্রেণির সঠিক ধরার
+    # জায়গা (#2100-র একই মেকানিজম, একই SSOT)। সাধারণ report-only scout/ops রো
+    # বাদ যায় না — শুধু পাইপলাইন-স্ট্যাম্প করা receipt শ্রেণি।
+    "bridge:receipt",
 })
 
 DEFAULT_GROUP = "core"
@@ -937,6 +950,65 @@ def _probe_premise_delivered(item: dict[str, Any]) -> str | None:
         return None
 
 
+def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> str | None:
+    """#3315 — receipt-coverage demotion probe (pure, in-memory, never raises).
+
+    বাংলা: #2794-এর claim-probe লাইভ claim ধরে, কিন্তু খোলা (unmerged) bridge
+    WO/receipt যে রো-কে reference করে সেটা ধরে না — লাইভ প্রমাণ 2026-10-30:
+    #2360 dispatch হয়েছে রিসিপ্ট #3272 ফাইল হওয়ার ৪ মিনিট পরে, #2633 হয়েছে
+    রিসিপ্ট #3281-এর ১০ মিনিট পরে (দুই ক্ষেত্রেই latestClaim null ছিল, তাই
+    claim-probe পাস করেছিল); #1676-ও WO #3292-এর "detection half" রেফারেন্স
+    থাকা সত্ত্বেও dispatch হয়েছিল। এই প্রোব candidate-এর নম্বর বোর্ডের অন্য
+    কোনো খোলা Bridge-WO-আকৃতি সারির টাইটেলে আছে কি না দেখে সৎ note দেয় —
+    coverage মানে সেই রো-র কাজ ইন-ফ্লাইট (anti-stampede U5), পুনঃ-dispatch
+    ডুপ্লিকেট ওয়ার্ক অর্ডারের ঝুঁকি। ফিল্টার শুধু dispatch সরাতে পারে, আটকাতে
+    পারে না; `--issue N` explicit override escape-hatch থেকে যায়।
+
+    Board-local and pure: the WO titles ride the same in-memory list the
+    picker already holds (gh path and tower fallback alike), so this adds
+    zero network. Fail-open contract: any malformed row / parse error returns
+    None (the filter can only REMOVE a dispatch, never break the pick).
+    Conservative issuer gate: only titles containing "Bridge Work Order" count
+    as coverage issuers — a plain issue that merely cites #N is related work,
+    not a receipt for it. Number matches are word-bounded (`#N`, `row N`,
+    `bridge-YYYYMMDD-N`) so #263 never matches #2633.
+    """
+    try:
+        num_raw = item.get("number") if isinstance(item, dict) else None
+        if num_raw is None:
+            return None
+        n = int(num_raw)
+        pat_hash = re.compile(rf"(?<![0-9])#{n}(?![0-9])")
+        pat_row = re.compile(rf"(?<![0-9])row\s+{n}(?![0-9])")
+        pat_task = re.compile(rf"bridge-\d{{6,8}}-{n}(?![0-9])")
+        hits: list[str] = []
+        for row in board or []:
+            if not isinstance(row, dict):
+                continue  # malformed rows fail open
+            try:
+                if str(row.get("number", "")) == str(n):
+                    continue  # a row never covers itself
+                state = row.get("state")
+                if state is not None and str(state).lower() != "open":
+                    continue
+                title = str(row.get("title") or "")
+                if "Bridge Work Order" not in title:
+                    continue  # conservative issuer gate (receipt-shaped WOs only)
+                if pat_hash.search(title) or pat_row.search(title) or pat_task.search(title):
+                    hits.append(f"#{row.get('number')}")
+            except Exception:  # noqa: BLE001 — per-row fail-open
+                continue
+        if not hits:
+            return None
+        return (
+            "open bridge WO receipt already references this row "
+            f"({', '.join(hits[:3])}) — coverage in flight (anti-stampede U5); "
+            "explicit --issue override available"
+        )
+    except Exception:  # noqa: BLE001 — a demotion probe must never raise
+        return None
+
+
 def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> tuple[bool, str]:
     """#2794 fix (1) — live-plane claim pre-verify for the dispatch pick.
 
@@ -1146,6 +1218,37 @@ def pick_next_issue(
                     f"filtered from the pick — newest open sibling #{newest_sentry} carries the sentinel duty",
                 )
             candidates = survivors
+        # #3315 — receipt-coverage demotion (live mode only, sentry-precedent
+        # shape): a candidate covered by an OPEN bridge WO/receipt elsewhere on
+        # the same board is skipped BEFORE the priority sort (window-preserving:
+        # a covered candidate inside the top-FEEDBACK_PREVERIFY_TOPN window
+        # would otherwise burn a window slot plus a network probe on a row whose
+        # work is already in flight — live 2026-10-30: #2360 dispatched 4 min
+        # after receipt #3272, #2633 10 min after #3281). Pure mode (claim_probe
+        # is None) keeps the byte-identical pre-#3315 label-only contract for
+        # hermetic callers; the filter can only REMOVE a dispatch, never block
+        # one, and the explicit --issue N override stays the escape hatch.
+        coverage_survivors: list[dict[str, Any]] = []
+        covered = 0
+        for cand in candidates:
+            covered_note = _receipt_covered_note(cand, issues or [])
+            if covered_note is not None:
+                covered += 1
+                log_fn(
+                    "!",
+                    f"receipt-coverage demotion: #{cand.get('number')} skipped — {covered_note}",
+                )
+                continue
+            coverage_survivors.append(cand)
+        if covered:
+            candidates = coverage_survivors
+            if not candidates:
+                log_fn(
+                    "!",
+                    "receipt-coverage demotion: every open candidate is covered by an "
+                    "open bridge WO receipt — no clean pick this run (rerun later or "
+                    "dispatch explicitly via --issue N)",
+                )
     sorted_issues = sorted(candidates, key=priority_key)
     if claim_probe is None:
         # Pure mode — label-only pick, exactly the pre-#2794 contract (hermetic
@@ -1898,9 +2001,42 @@ def classify_task_role(
         return "ci-fixer"
     if "gate:pre-landing" in present:
         return "task-auditor"
+    # বাংলা: টাইটেল-প্রিফিক্স ম্যাপ — বোর্ডের "verb(scope):" কনভেনশন রো-এর লেন
+    # ঘোষণা করে; প্রথম টোকেন case-insensitive ম্যাচ (EVIDENCE_LANE_TITLE_ROLES)।
+    # কঠোর আকৃতি: টোকেনের পরে (ঐচ্ছিক স্পেস সহ) `(` বা `:` থাকতে হবে — কীওয়ার্ড
+    # বাক্য নয়। #489 চুক্তি: "audit readiness report"-জাতীয় কীওয়ার্ড-টাইটেল আর
+    # role আবিষ্কার করতে পারে না — সেরা coder ডিফল্টেই যায়।
+    head = str(title or "").lstrip().lower()
+    token_match = re.match(r"([a-z][a-z-]*)\s*[:(]", head)
+    mapped = EVIDENCE_LANE_TITLE_ROLES.get(token_match.group(1)) if token_match else None
+    if mapped is not None:
+        return mapped
     if "status:claimed" in present:
         return "coder"
     return "coder"
+
+EVIDENCE_LANE_TITLE_ROLES: dict[str, str] = {
+    "audit": "task-auditor",
+    "report": "task-auditor",
+    "triage": "task-auditor",
+    "verify": "task-auditor",
+    "census": "task-auditor",
+    "ops": "task-auditor",
+    "dispatch": "task-auditor",
+    "guard": "platform-guardian",
+    "sentry": "platform-guardian",
+    "scout": "ecosystem-scout",
+}
+
+# বাংলা: envelope-এর task_type এখন role-থেকে সৎভাবে নেওয়া হয় — প্রমাণ-লেন রো
+# আর "IMPLEMENT" ভুখণ্ড পায় না (SPEC §2 task_type রেজিস্ট্রি: AUDIT/SCOUT/OPS/FIX)।
+ROLE_TASK_TYPES: dict[str, str] = {
+    "task-auditor": "AUDIT",
+    "auditor": "AUDIT",
+    "ecosystem-scout": "SCOUT",
+    "platform-guardian": "OPS",
+    "ci-fixer": "FIX",
+}
 
 SPECIALIST_ROLES = frozenset({"solver", "coder", "ci-fixer", "auditor", "task-auditor"})
 
@@ -1971,6 +2107,12 @@ def build_task_envelope(
         ROLE_RULES["solver"] if role in ("coder", "solver") else "Execute role objectives strictly.",
     )
 
+    # বাংলা: task_type এখন final role থেকে সৎ derivation (role_override-সহ) —
+    # প্রমাণ-লেন রো (audit/report/triage/verify/guard/scout টাইটেল) আর IMPLEMENT
+    # ভুখণ্ড পায় না (লাইভ #1690/#2360 মিস-ডিসপ্যাচ, 2026-10-30)। অজানা role →
+    # আগের আচরণ (IMPLEMENT)।
+    task_type = ROLE_TASK_TYPES.get(role, "IMPLEMENT")
+
     specialist_prompt = "\n".join(
         [
             COMMON_RULES,
@@ -1995,7 +2137,7 @@ def build_task_envelope(
         "output_format": "task-envelope-v1",
         "task_id": f"task-{issue_number}" if issue_number else "task-adhoc",
         "issue": issue_number,
-        "task_type": "IMPLEMENT",
+        "task_type": task_type,
         "group": resolved_group,
         "priority": _detect_priority(labels),
         "objective": title or ("Ad-hoc task — objective supplied by the calling agent." if not issue_number else ""),
@@ -2491,11 +2633,17 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # claim-first mandate অপরিবর্তিত (#1530-র zero-dispatch-change শৃঙ্খলা)।
             picked_issue = next((i for i in raw if str(i.get("number")) == picked), None)
             picked_labels = []
-            if isinstance(picked_issue, dict) and isinstance(picked_issue.get("labels"), list):
-                picked_labels = [
-                    str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
-                ]
-            classified = classify_task_role(labels=picked_labels)
+            picked_title = ""
+            if isinstance(picked_issue, dict):
+                # বাংলা: টাইটেলও প্রেরণ — classify_task_role-এর নতুন টাইটেল-প্রিফিক্স
+                # ম্যাপ (audit(/report(/guard(/scout(…) dispatch-পথেও কাজ করে; আগে
+                # labels-only কলে প্রমাণ-রিসিপ্ট রো coder-শ্রেণি হত।
+                picked_title = str(picked_issue.get("title", "") or "")
+                if isinstance(picked_issue.get("labels"), list):
+                    picked_labels = [
+                        str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
+                    ]
+            classified = classify_task_role(title=picked_title, labels=picked_labels)
             dispatch_role = args.role or "solver"
             if args.role and args.role not in SPECIALIST_ROLES and args.role not in ROLE_RULES:
                 log("!", f"unknown --role '{args.role}'; dispatching as solver")
