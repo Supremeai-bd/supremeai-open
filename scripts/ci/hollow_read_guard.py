@@ -59,6 +59,11 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 
+try:
+    from tower_name_tolerance import tolerant_tool_call  # flat: scripts/ci on sys.path
+except ImportError:  # pragma: no cover — package-style load (tests, CI runner)
+    from scripts.ci.tower_name_tolerance import tolerant_tool_call
+
 TOWER_URL_DEFAULT = "https://supremeai-mcp-tower.onrender.com/mcp"
 
 GUARD = "hollow_read_guard"
@@ -424,7 +429,11 @@ def main(argv: list | None = None) -> int:
     args = ap.parse_args(argv)
 
     def fetch(tool, arguments):
-        return tower_call(tool, arguments, args.tower_url)
+        # নাম-ঢেউ সহনশীল (U6): bridge.work_queue ↔ bridge_work_queue দোলনে
+        # এক-বানান hardcode প্রোব-প্লেন অন্ধ করে — যুগ-লেজার ক্রমে চেষ্টা
+        # (scripts/ci/tower_name_tolerance.py, shared cure)।
+        return tolerant_tool_call(
+            lambda n, a: tower_call(n, a, args.tower_url), tool, arguments)
 
     evidence = run_live_probe(fetch)
     payload = json.dumps(evidence, indent=2, ensure_ascii=False)

@@ -103,6 +103,11 @@ import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+try:
+    from tower_name_tolerance import tolerant_tool_call  # flat: scripts/ci on sys.path
+except ImportError:  # pragma: no cover — package-style load (tests, CI runner)
+    from scripts.ci.tower_name_tolerance import tolerant_tool_call
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TOWER = "https://supremeai-mcp-tower.onrender.com/mcp"
 OPEN_REPO = "Supremeai-bd/supremeai-open"
@@ -565,7 +570,10 @@ def main(argv: list | None = None) -> int:
         session.connect()
 
         def fetch_text(name: str, arguments: dict) -> str:
-            return session.tool_text(name, arguments)
+            # নাম-ঢেউ সহনশীল (U6): WO/PR প্লেনের নাম ঢেউয়ে দোলে — এক-বানান
+            # hardcode ল্যাডার-সহ প্রোব অন্ধ করে; যুগ-লেজার ক্রমে চেষ্টা
+            # (scripts/ci/tower_name_tolerance.py, shared cure)।
+            return tolerant_tool_call(session.tool_text, name, arguments)
 
         wos, _serving = _fetch_work_orders(fetch_text)
         open_prs = _fetch_open_prs(fetch_text, OPEN_REPO)
