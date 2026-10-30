@@ -1,14 +1,29 @@
 {
   "schema": "radar-index-freshness-baseline/2",
-  "generatedAt": "2026-10-30",
-  "headAtGeneration": "5fec348 (feat(docs): migrate 473 historical docs to supremeai-archive per founder mandate (#3524))",
+  "generatedAt": "2026-10-31",
+  "headAtGeneration": "2ea4ab7 feat(bridge): triage(ci) complement for #3811 (Run 41131028829, PR #3808 lane): job-level root-cause decomposition, first-hand + local. Companion to #3822 (read-plane wall angle) - NOT a dup… (bridge-20261031-3811-pr3808-rootcause-glm19-r1) (#3832)",
   "probe": "scripts/ci/radar_index_freshness_guard.py",
   "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes (#2187: D lands first-run-clean — its floor is born empty); key = [kind, file, base] / [kind, base, subject]. A/B invariant violations are NEVER floorable — they are structural and always fail. /2 adds the enforced roster (invariant E, #2392 component 1): a pointer regression or row eviction fails closed — update roster in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline.",
   "floor": [
-    {"key": ["citation-ghost", "docs/reports/SCOUT_R88_GATEWAY_VENDOR_DRIFT_2026-10-31.md", 89], "allowed": 1}
+    {
+      "key": [
+        "citation-ghost",
+        "docs/reports/SCOUT_R88_GATEWAY_VENDOR_DRIFT_2026-10-31.md",
+        89
+      ],
+      "allowed": 1
+    },
+    {
+      "key": [
+        "citation-ghost",
+        "docs/reports/SCOUT_R89_GATEWAY_PROMPT_CACHE_BLINDNESS_2026-10-31.md",
+        90
+      ],
+      "allowed": 1
+    }
   ],
   "roster": {
-    "pointer": 89,
+    "pointer": 90,
     "rows": [
       "R1",
       "R2",
@@ -99,7 +114,9 @@
       "R84",
       "R85",
       "R86",
-      "R88"
+      "R87",
+      "R88",
+      "R89"
     ]
   },
   "pointerAtGeneration": 87,
