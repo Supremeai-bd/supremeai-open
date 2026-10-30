@@ -101,6 +101,18 @@ class TestVerifyLiveQuotaPreflight(unittest.TestCase):
     ACTIVE_OK = {"state": "open", "title": "[Anchor Hub] ok"}
     RETIRED_OK = {"state": "closed", "title": "[Anchor Hub] consolidated"}
 
+    @classmethod
+    def scripted_happy_path(cls, first=None):
+        """Responses for one full verify pass, counts DERIVED from the SSOT
+        registry (not hardcoded) so topology re-definitions (8-satellite →
+        6-domain, #3968) cannot stale-red these tests again."""
+        from scripts.ci.federation_anchors import ACTIVE_ANCHOR_HUBS, RETIRED_ANCHOR_HUBS
+
+        seq = list(first) if first else []
+        seq += [cls.ACTIVE_OK] * len(ACTIVE_ANCHOR_HUBS)
+        seq += [cls.RETIRED_OK] * len(RETIRED_ANCHOR_HUBS)
+        return seq
+
     def run_verify(self, responses):
         import io
         import unittest.mock
@@ -132,11 +144,9 @@ class TestVerifyLiveQuotaPreflight(unittest.TestCase):
         rate_limit_body = {
             "resources": {"core": {"limit": 60, "remaining": 5000, "reset": 1790000000}}
         }
-        # /rate_limit raises → degrade; then 8 active open + 6 retired closed.
+        # /rate_limit raises → degrade; then SSOT-derived happy path.
         code, out = self.run_verify(
-            [ConnectionError("probe down")]
-            + [self.ACTIVE_OK] * 8
-            + [self.RETIRED_OK] * 6
+            self.scripted_happy_path(first=[ConnectionError("probe down")])
         )
         self.assertEqual(code, 0)
         self.assertIn("All Active Anchor Hubs are OPEN", out)
@@ -156,9 +166,7 @@ class TestVerifyLiveQuotaPreflight(unittest.TestCase):
             "https://api.github.com/repos/x/issues/1", 403, "rate limit exceeded", hdrs, None
         )
         code, out = self.run_verify(
-            [rate_limit_body, err403]
-            + [self.ACTIVE_OK] * 7
-            + [self.RETIRED_OK] * 6
+            self.scripted_happy_path(first=[rate_limit_body, err403])
         )
         self.assertEqual(code, 1)
         self.assertIn("remaining=0", out)
@@ -167,12 +175,16 @@ class TestVerifyLiveQuotaPreflight(unittest.TestCase):
 
     def test_fail_closed_semantics_preserved(self):
         """A wrong anchor state must still exit 1 (pre-existing contract)."""
+        from scripts.ci.federation_anchors import ACTIVE_ANCHOR_HUBS, RETIRED_ANCHOR_HUBS
+
         rate_limit_body = {
             "resources": {"core": {"limit": 60, "remaining": 5000, "reset": 1790000000}}
         }
         closed_active = {"state": "closed", "title": "[Anchor Hub] wrongly closed"}
         code, out = self.run_verify(
-            [rate_limit_body] + [closed_active] * 8 + [self.RETIRED_OK] * 6
+            [rate_limit_body]
+            + [closed_active] * len(ACTIVE_ANCHOR_HUBS)
+            + [self.RETIRED_OK] * len(RETIRED_ANCHOR_HUBS)
         )
         self.assertEqual(code, 1)
         self.assertIn("Must be OPEN", out)
