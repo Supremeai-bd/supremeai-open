@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 @dataclass
