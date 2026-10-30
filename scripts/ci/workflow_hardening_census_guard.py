@@ -15,7 +15,12 @@ What it measures (line-based, stdlib-only, offline, no YAML dependency):
   - local_actions   : `uses: ./...` composite actions (no pin requirement)
   - tag_pinned      : external actions on a mutable tag (unpinned-uses class)
   - checkout_sites  : actions/checkout invocations (artipacked exposure set)
-  - persist_false   : explicit `persist-credentials: false` occurrences
+  - persist_false   : explicit `persist-credentials: false` occurrences (global)
+  - implicit_persist_true : checkout sites whose step block does NOT carry an
+                      explicit `persist-credentials: false` — the checkout
+                      default persists the job GITHUB_TOKEN into runner git
+                      config (#3527 exposure class; block-aware, so an explicit
+                      false on an unrelated step cannot mask a bare checkout)
   - template_injection : untrusted PR attributes expanded inside run bodies
                        (github.head_ref / github.event.pull_request + ${{ }})
 
@@ -31,6 +36,7 @@ Usage:
   python workflow_hardening_census_guard.py --self-test
   python workflow_hardening_census_guard.py --check --root /path/to/repo
   python workflow_hardening_census_guard.py --check --root . --frozen-baseline baseline.json
+  python workflow_hardening_census_guard.py --check --files f1.yml,f2.yml --baseline-out out.json
 """
 from __future__ import annotations
 
@@ -40,10 +46,12 @@ import re
 import sys
 from pathlib import Path
 
-USES_RE = re.compile(r"^\s*(?:-\s+)?uses:\s*(\S+)", re.MULTILINE)
+USES_LINE_RE = re.compile(r"\s*(?:-\s+)?uses:\s*(\S+)")
 SHA_RE = re.compile(r"@[0-9a-f]{40}(?:\s|$|#)")
 INJECTION_TOKENS = ("github.head_ref", "github.event.pull_request")
 EXPR_RE = re.compile(r"\$\{\{")
+PERSIST_FALSE_RE = re.compile(r"\s*persist-credentials:\s*false\s*$")
+PERSIST_ANY_RE = re.compile(r"\s*persist-credentials:")
 
 REMEDIATED = "REMEDIATED"
 RESIDUAL = "RESIDUAL"
@@ -54,15 +62,43 @@ WORKFLOW_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
 ACTION_GLOBS = (".github/actions/*/action.yml", ".github/actions/*/*/action.yml")
 
 
+def _checkout_block_has_false(lines: list[str], uses_idx: int) -> bool:
+    """True iff the step block containing the `uses:` line at uses_idx carries an
+    explicit `persist-credentials: false`. Block scan uses the MAPPING-KEY indent
+    of the uses key (a leading `- ` bullet shifts the key two columns right), so
+    sibling keys at the same indent (`with:` under `- name:` + `uses:` layouts)
+    stay inside the step while any shallower line (next step / job key) closes it."""
+    uses_line = lines[uses_idx]
+    stripped = uses_line.lstrip()
+    key_indent = (len(uses_line) - len(stripped)) + (2 if stripped.startswith("- ") else 0)
+    for j in range(uses_idx + 1, len(lines)):
+        line = lines[j]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        j_indent = len(line) - len(line.lstrip())
+        if j_indent < key_indent:
+            return False
+        if PERSIST_FALSE_RE.match(line):
+            return True
+        if PERSIST_ANY_RE.match(line):
+            return False
+    return False
+
+
 def census_text(text: str) -> dict:
     """Census one file's bytes into the countable hardening classes."""
     uses_total = 0
     sha_pinned = 0
     local_actions = 0
     checkout_sites = 0
+    implicit_persist_true = 0
     persist_false = len(re.findall(r"persist-credentials:\s*false\s*$", text, re.MULTILINE))
     template_injection = 0
-    for m in USES_RE.finditer(text):
+    lines = text.splitlines()
+    for idx, line in enumerate(lines):
+        m = USES_LINE_RE.match(line)
+        if not m:
+            continue
         ref = m.group(1)
         uses_total += 1
         if ref.startswith("./"):
@@ -70,9 +106,12 @@ def census_text(text: str) -> dict:
             continue
         if SHA_RE.search(ref):
             sha_pinned += 1
-        if "actions/checkout" in ref or "checkout" in ref.split("@")[0].split("/")[-1]:
+        is_checkout = "actions/checkout" in ref or "checkout" in ref.split("@")[0].split("/")[-1]
+        if is_checkout:
             checkout_sites += 1
-    for line in text.splitlines():
+            if not _checkout_block_has_false(lines, idx):
+                implicit_persist_true += 1
+    for line in lines:
         if EXPR_RE.search(line) and any(tok in line for tok in INJECTION_TOKENS):
             template_injection += 1
     return {
@@ -82,12 +121,13 @@ def census_text(text: str) -> dict:
         "tag_pinned": uses_total - sha_pinned - local_actions,
         "checkout_sites": checkout_sites,
         "persist_false": persist_false,
+        "implicit_persist_true": implicit_persist_true,
         "template_injection": template_injection,
     }
 
 
-def census_surface(root: Path) -> tuple[dict, list[str]]:
-    """Census the whole .github workflow+action surface under root."""
+def _aggregate(paths) -> tuple[dict, list[str]]:
+    """Aggregate the per-file census over an explicit path iterable."""
     total = {
         "uses_total": 0,
         "sha_pinned": 0,
@@ -95,23 +135,37 @@ def census_surface(root: Path) -> tuple[dict, list[str]]:
         "tag_pinned": 0,
         "checkout_sites": 0,
         "persist_false": 0,
+        "implicit_persist_true": 0,
         "template_injection": 0,
     }
     files: list[str] = []
-    patterns = [p for glob in WORKFLOW_GLOBS + ACTION_GLOBS for p in [glob]]
-    for pattern in patterns:
-        for path in sorted(root.glob(pattern)):
-            if not path.is_file():
-                continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            files.append(str(path))
-            per = census_text(text)
-            for key in total:
-                total[key] += per[key]
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        files.append(str(path))
+        per = census_text(text)
+        for key in total:
+            total[key] += per[key]
     return total, files
+
+
+def census_surface(root: Path) -> tuple[dict, list[str]]:
+    """Census the whole .github workflow+action surface under root."""
+    patterns = [p for glob in WORKFLOW_GLOBS + ACTION_GLOBS for p in [glob]]
+    paths: list[Path] = []
+    for pattern in patterns:
+        paths.extend(sorted(root.glob(pattern)))
+    return _aggregate(paths)
+
+
+def census_files(paths: list[Path]) -> tuple[dict, list[str]]:
+    """Census an explicit file list (cross-repo surfaces, e.g. a core-repo
+    workflow fetched out-of-band; keeps --root .github globbing out of the way)."""
+    return _aggregate(paths)
 
 
 def classify(profile: dict, surface_files: int) -> tuple[str, int]:
@@ -120,7 +174,7 @@ def classify(profile: dict, surface_files: int) -> tuple[str, int]:
         return INSUFFICIENT_EVIDENCE, 2
     target_pin = profile["uses_total"] - profile["local_actions"]
     pins_ok = profile["sha_pinned"] >= target_pin
-    persist_ok = profile["checkout_sites"] == 0 or profile["persist_false"] >= profile["checkout_sites"]
+    persist_ok = profile["implicit_persist_true"] == 0
     inject_ok = profile["template_injection"] == 0
     if pins_ok and persist_ok and inject_ok:
         return REMEDIATED, 0
@@ -142,7 +196,7 @@ def _self_test() -> int:
               - uses: actions/setup-node@39370e3970a6aaaa5b8b0db1d59a6a5eeef664a4 # v5
         """
     )
-    cases.append(("hardened", hardened, 1, REMEDIATED, 0))
+    cases.append(("hardened", hardened, 1, REMEDIATED, 0, {"implicit_persist_true": 0}))
 
     # 2. The #1776-era profile: tag-pinned uses, no persist-credentials, live head_ref injection.
     era1776 = textwrap_dedent(
@@ -154,7 +208,7 @@ def _self_test() -> int:
               - run: BRANCH=$(echo "${{ github.head_ref }}" | grep -oE 'issue-?[0-9]+')
         """
     )
-    cases.append(("1776-era", era1776, 1, RESIDUAL, 2))
+    cases.append(("1776-era", era1776, 1, RESIDUAL, 2, {"implicit_persist_true": 1}))
 
     # 3. The 2026-10-30 restructured surface (synthetic): persist-credentials present,
     #    injection gone, but checkouts still tag-pinned -> unpinned-uses class persists.
@@ -168,10 +222,10 @@ def _self_test() -> int:
                   persist-credentials: false
         """
     )
-    cases.append(("restructured", restructured, 1, RESIDUAL, 2))
+    cases.append(("restructured", restructured, 1, RESIDUAL, 2, {"implicit_persist_true": 0}))
 
     # 4. Empty surface -> fail-closed, never assume remediation.
-    cases.append(("empty", "", 0, INSUFFICIENT_EVIDENCE, 2))
+    cases.append(("empty", "", 0, INSUFFICIENT_EVIDENCE, 2, {"implicit_persist_true": 0}))
 
     # 5. Local composite actions only: no external pin requirement, no injection.
     local_only = textwrap_dedent(
@@ -181,18 +235,67 @@ def _self_test() -> int:
             - uses: ./.github/actions/setup-backend
         """
     )
-    cases.append(("local-only", local_only, 1, REMEDIATED, 0))
+    cases.append(("local-only", local_only, 1, REMEDIATED, 0, {"implicit_persist_true": 0}))
+
+    # 6. The #3527 masking case: an explicit persist-credentials: false on an
+    #    UNRELATED step must NOT mask the bare checkout -> implicit stays 1.
+    masking = textwrap_dedent(
+        """
+        jobs:
+          audit:
+            steps:
+              - uses: actions/checkout@v5
+              - uses: actions/setup-node@v5
+                with:
+                  persist-credentials: false
+        """
+    )
+    cases.append(("3527-masking", masking, 1, RESIDUAL, 2, {"implicit_persist_true": 1}))
+
+    # 7. Persist-credentials: true explicitly set on a checkout -> NOT remediated.
+    explicit_true = textwrap_dedent(
+        """
+        jobs:
+          build:
+            steps:
+              - uses: actions/checkout@v5
+                with:
+                  persist-credentials: true
+        """
+    )
+    cases.append(("explicit-true", explicit_true, 1, RESIDUAL, 2, {"implicit_persist_true": 1}))
+
+    # 8. The core-repo ops-maintenance.yml layout regression case: `- name:` bullet
+    #    line, then `uses:`/`with:`/`persist-credentials: false` at the SAME or
+    #    deeper indent as the uses key -> the false MUST be attributed to the step.
+    core_layout = textwrap_dedent(
+        """
+        jobs:
+          audit:
+            steps:
+              - name: Checkout repository
+                uses: actions/checkout@v5
+                with:
+                  persist-credentials: false
+              - name: Next step
+                run: echo ok
+        """
+    )
+    cases.append(("core-layout", core_layout, 1, RESIDUAL, 2, {"implicit_persist_true": 0}))
 
     failures = 0
-    for name, text, n_files, want_verdict, want_code in cases:
+    for name, text, n_files, want_verdict, want_code, want_keys in cases:
         profile = census_text(text)
         got_verdict, got_code = classify(profile, n_files)
         ok = (got_verdict, got_code) == (want_verdict, want_code)
+        for k, v in want_keys.items():
+            if profile.get(k) != v:
+                ok = False
         print(f"  self-test {name}: profile={profile} -> {got_verdict}/{got_code} {'PASS' if ok else 'FAIL'}")
         if not ok:
             failures += 1
 
-    # 6. Drift detector: restructured profile vs hardened baseline must flag drift.
+    # 8. Drift detector: restructured profile vs hardened baseline must flag drift.
     baseline = census_text(hardened)
     drift_profile = census_text(restructured)
     drifted = any(drift_profile[k] != baseline[k] for k in baseline)
@@ -217,7 +320,9 @@ def main() -> int:
     parser.add_argument("--self-test", action="store_true", help="run offline fixtures and exit")
     parser.add_argument("--check", action="store_true", help="census the surface and classify")
     parser.add_argument("--root", default=".", help="repository root holding .github/")
+    parser.add_argument("--files", default=None, help="comma-separated explicit file list (overrides --root globbing)")
     parser.add_argument("--frozen-baseline", default=None, help="baseline JSON file; exit 3 on drift")
+    parser.add_argument("--baseline-out", default=None, help="write the current profile as a freezable baseline JSON")
     parser.add_argument("--json", action="store_true", help="print the profile as JSON")
     args = parser.parse_args()
 
@@ -227,9 +332,20 @@ def main() -> int:
         parser.print_help()
         return 0
 
-    root = Path(args.root)
-    profile, files = census_surface(root)
+    if args.files:
+        paths = [Path(p.strip()) for p in args.files.split(",") if p.strip()]
+        profile, files = census_files(paths)
+    else:
+        root = Path(args.root)
+        profile, files = census_surface(root)
     verdict, code = classify(profile, len(files))
+
+    if args.baseline_out:
+        Path(args.baseline_out).write_text(
+            json.dumps({**profile, "files": files}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"[workflow-hardening-census] baseline written: {args.baseline_out}")
 
     if args.frozen_baseline:
         try:
@@ -250,7 +366,7 @@ def main() -> int:
         print(
             "[workflow-hardening-census] residual classes present: "
             f"tag_pinned={profile['tag_pinned']} "
-            f"unpersisted_checkouts={max(0, profile['checkout_sites'] - profile['persist_false'])} "
+            f"implicit_persist_true={profile['implicit_persist_true']} "
             f"template_injection={profile['template_injection']} "
             "- closure-as-completed on this surface is falsifiable while these are non-zero"
         )
