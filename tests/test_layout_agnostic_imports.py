@@ -61,3 +61,5 @@ def test_satellite_top_level_modules_are_layout_agnostic():
         for lineno, mod in _hard_fragile_imports(path):
             offenders.append(f"core/{name}.py:{lineno}: {mod}")
     assert not offenders, "Hardcoded layout-fragile core.* imports in satellite-top-level modules:\n" + "\n".join(offenders)
+
+# end
