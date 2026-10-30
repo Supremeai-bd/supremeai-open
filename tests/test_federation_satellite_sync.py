@@ -241,3 +241,61 @@ class TestFederationSatelliteSync(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    # --- (#3649 root cause) composition integrity gate -------------------
+
+    def test_compose_gate_passes_when_tree_lands(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = sync_mod.Path(tmp) / "mirror" / "gateway"
+            (src / "service").mkdir(parents=True)
+            (src / "__init__.py").write_text("")
+            (src / "service" / "app.py").write_text("app = 1\n")
+            dst = sync_mod.Path(tmp) / "sat" / "gateway"
+            self.assertTrue(
+                sync_mod.compose_domain_tree(
+                    src, dst, "gateway", "Supremeai-bd/supremeai-api"
+                )
+            )
+            self.assertTrue((dst / "service" / "app.py").exists())
+
+    def test_compose_gate_fails_closed_on_empty_composition(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = sync_mod.Path(tmp) / "mirror" / "gateway"  # exists but empty
+            src.mkdir(parents=True)
+            dst = sync_mod.Path(tmp) / "sat" / "gateway"
+            self.assertFalse(
+                sync_mod.compose_domain_tree(
+                    src, dst, "gateway", "Supremeai-bd/supremeai-api"
+                )
+            )
+
+    def test_compose_gate_skips_when_mirror_absent(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = sync_mod.Path(tmp) / "mirror" / "gateway"  # absent: upstream no-op
+            dst = sync_mod.Path(tmp) / "sat" / "gateway"
+            self.assertTrue(
+                sync_mod.compose_domain_tree(
+                    src, dst, "gateway", "Supremeai-bd/supremeai-api"
+                )
+            )
+
+    def test_compose_gate_treats_pycache_only_as_empty(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = sync_mod.Path(tmp) / "mirror" / "gateway"
+            (src / "__pycache__").mkdir(parents=True)
+            (src / "__pycache__" / "x.pyc").write_bytes(b"\x00")
+            dst = sync_mod.Path(tmp) / "sat" / "gateway"
+            self.assertFalse(
+                sync_mod.compose_domain_tree(
+                    src, dst, "gateway", "Supremeai-bd/supremeai-api"
+                )
+            )
