@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, searchCode, createIssue } from "../adapters/github/index.js";
+import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, getPullRequest, searchCode, createIssue } from "../adapters/github/index.js";
 import { resolvePerPage } from "../lib/github_pagination.js"; // #2311/R62 per_page alias
 import { RequestContextStore, roleRank, type UserRole } from "../policy/auth.context.js";
 import { scopeAllows } from "../policy/client-registry.js";
@@ -345,27 +345,45 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
   server.registerTool(
     "github.list_prs",
     {
-      description: "List pull requests for any repository across Supremeai-bd (Read-Only).",
+      description:
+        "List pull requests for any repository across Supremeai-bd (Read-Only), or pass pull_number to fetch exactly one PR regardless of the creation window (state, merged, mergedAt, closedAt) — the audit/census single-PR path (#3368/R81).",
       annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
-        state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
+        pull_number: z.number().int().min(1).optional().describe(
+          "Single-PR addressability (#3368/R81): when set, the tool answers GET /pulls/{n} for that exact PR — reachable even ~3200 creation-ranks outside the window — and ignores state/per_page/limit/sort/direction"),
+        state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open'; ignored when pull_number is set)"),
+        sort: z.enum(["created", "updated", "long-running"]).optional().describe(
+          "GitHub-REST-native sort passthrough (default upstream: created) — lets callers reach older PR windows without a creation-rank crawl"),
+        direction: z.enum(["asc", "desc"]).optional().describe(
+          "GitHub-REST-native direction passthrough (default upstream: desc); pairs with sort"),
         per_page: z.number().int().min(1).max(100).optional().describe(
           "GitHub-REST page-size, fully honored (#2614 live-verified): precedence per_page ?? limit ?? default 5, clamped to GitHub's 1..100 envelope. A 5-row response means params were dropped (e.g. camelCase perPage), not a page-lock — re-probe with per_page=100 before filing an outage"),
         limit: z.number().optional().describe("Max number of PRs (default: 5)"),
       },
       outputSchema: targetEchoSchema,
     },
-    async ({ accountId, repo, state, per_page, limit }) => {
+    async ({ accountId, repo, pull_number, state, sort, direction, per_page, limit }) => {
       const target = repo || accountId || "github-primary";
       const targetUrl = repoUrlFor(accountId, repo);
       const deny = assertRepoReadAccess("github.list_prs", target, targetUrl);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const prs = await listPullRequests(target, state ?? "open", resolvePerPage(per_page, limit));
+        // #3368/R81: pull_number takes the single-PR endpoint; the list knobs
+        // (state/per_page/limit/sort/direction) are deliberately ignored there
+        // so a one-PR read can never be silently re-windowed.
+        const payload = pull_number
+          ? await getPullRequest(target, pull_number)
+          : await listPullRequests(
+              target,
+              state ?? "open",
+              resolvePerPage(per_page, limit),
+              sort,
+              direction,
+            );
         return {
-          content: [{ type: "text", text: JSON.stringify(prs, null, 2) }],
+          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
           structuredContent: describeTarget(targetUrl),
         };
       } catch (err) {
