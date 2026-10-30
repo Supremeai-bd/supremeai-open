@@ -10,6 +10,7 @@
 #
 # Environment overrides (identical to the sh mirror):
 #   GATEWAY_URL           default: https://supremeai-api-ulw0.onrender.com
+#                         (README SSOT — ghost host retired #2355/#2365/#2377)
 #   SUPREMEAI_API_KEY     required — monolith key-plane key (vault/env only)
 #   MODELS                space-separated model rotation, default: "auto"
 #   MAX_TOKENS            default: 32
