@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,11 @@ from typing import Any
 
 SAFE_BUILD_THRESHOLD_MINUTES = 450.0
 RENDER_MONTHLY_LIMIT_MINUTES = 500.0
+
+# Render caps a deploys page at 100; 12 pages covers a 1200-deploy month,
+# far beyond any observed retry-fail volume (#2811 window class).
+DEPLOY_WINDOW_PAGE_SIZE = 100
+DEPLOY_WINDOW_MAX_PAGES = 12
 
 SERVICE_ACCOUNT_MAP: dict[str, str] = {
     "supremeai-primary-node": "RENDER_API_KEY_1",
@@ -75,12 +81,54 @@ def fetch_account_services(api_key: str) -> list[dict[str, Any]]:
         return [item.get("service", {}) for item in data]
 
 
-def fetch_service_deploys(
-    service_id: str, api_key: str, limit: int = 50
+def _unwrap_deploy(item: Any) -> dict[str, Any]:
+    """Render lists deploys as {"deploy": {...}} — tolerate both envelopes."""
+    if not isinstance(item, dict):
+        return {}
+    dep = item.get("deploy")
+    return dep if isinstance(dep, dict) else item
+
+
+def sum_month_build_seconds(
+    deploys: list[Any], month_start: datetime
+) -> tuple[float, int, bool]:
+    """Pure: sum durations of deploys started within [month_start, *).
+
+    Returns (total_seconds, deploy_count, saw_pre_month). ``saw_pre_month``
+    reports that a parsed deploy predates the month boundary — with Render's
+    newest-first listing this certifies the stream has reached back past the
+    month start (the pagination stop rule; see the #2811 window class).
+    """
+    total_seconds = 0.0
+    deploy_count = 0
+    saw_pre_month = False
+    for item in deploys:
+        dep = _unwrap_deploy(item)
+        c_str = dep.get("createdAt")
+        f_str = dep.get("finishedAt")
+        if not c_str or not f_str:
+            continue
+        try:
+            c_dt = datetime.fromisoformat(str(c_str).replace("Z", "+00:00"))
+            f_dt = datetime.fromisoformat(str(f_str).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if c_dt < month_start:
+            saw_pre_month = True
+            continue
+        duration = max(0.0, (f_dt - c_dt).total_seconds())
+        total_seconds += duration
+        deploy_count += 1
+    return total_seconds, deploy_count, saw_pre_month
+
+
+def _fetch_deploys_page(
+    service_id: str, api_key: str, query: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """Fetch recent deploys for a given service."""
+    """Fetch a single page of deploys with an explicit query (limit/after)."""
+    qs = urllib.parse.urlencode(query)
     req = urllib.request.Request(
-        f"https://api.render.com/v1/services/{service_id}/deploys?limit={limit}",
+        f"https://api.render.com/v1/services/{service_id}/deploys?{qs}",
         headers={
             "Authorization": f"Bearer {api_key}",
             "Accept": "application/json",
@@ -89,7 +137,39 @@ def fetch_service_deploys(
     )
     with urllib.request.urlopen(req, timeout=12) as resp:
         data = json.loads(resp.read().decode())
-        return [d.get("deploy", {}) for d in data]
+        return list(data) if isinstance(data, list) else []
+
+
+def fetch_month_deploys(
+    service_id: str,
+    api_key: str,
+    month_start: datetime,
+    page_size: int = DEPLOY_WINDOW_PAGE_SIZE,
+    max_pages: int = DEPLOY_WINDOW_MAX_PAGES,
+) -> list[dict[str, Any]]:
+    """Cursor-paginate deploys newest-first until the month window is saturated.
+
+    Replaces the fixed limit=50 window whose slide produced the #2811 class: a
+    truncated window under-counts month-to-date burn and moves the reported
+    counter DOWN as old builds scroll out (the ledger 'correction' signature),
+    so a retry-fail month can read as a false safe posture.
+    """
+    collected: list[dict[str, Any]] = []
+    after: str | None = None
+    for _ in range(max_pages):
+        query: dict[str, Any] = {"limit": page_size}
+        if after:
+            query["after"] = after
+        items = _fetch_deploys_page(service_id, api_key, query)
+        collected.extend(items)
+        _, _, saw_pre_month = sum_month_build_seconds(items, month_start)
+        if saw_pre_month or len(items) < page_size:
+            break
+        last = _unwrap_deploy(items[-1]) if items else {}
+        after = last.get("id")
+        if not after:
+            break
+    return collected
 
 
 def calculate_monthly_build_minutes(
@@ -101,25 +181,8 @@ def calculate_monthly_build_minutes(
     if month_start is None:
         month_start = get_current_month_start()
 
-    deploys = fetch_service_deploys(service_id, api_key, limit=50)
-    total_seconds = 0.0
-    deploy_count = 0
-
-    for dep in deploys:
-        c_str = dep.get("createdAt")
-        f_str = dep.get("finishedAt")
-        if not c_str or not f_str:
-            continue
-        try:
-            c_dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
-            f_dt = datetime.fromisoformat(f_str.replace("Z", "+00:00"))
-            if c_dt >= month_start:
-                duration = max(0.0, (f_dt - c_dt).total_seconds())
-                total_seconds += duration
-                deploy_count += 1
-        except (ValueError, TypeError, KeyError):
-            continue
-
+    deploys = fetch_month_deploys(service_id, api_key, month_start)
+    total_seconds, deploy_count, _ = sum_month_build_seconds(deploys, month_start)
     return round(total_seconds / 60.0, 2), deploy_count
 
 
@@ -195,6 +258,64 @@ def run_self_test() -> int:
     res_exact = evaluate_deployment_mode(450.0, threshold=450.0)
     assert res_exact["mode"] == "GITHUB_ACTIONS_BUILD_AND_PUSH"
     assert res_exact["allow_render_native_build"] is False
+
+    # ── #2811 window class: a month-window sum must not truncate ──
+    month_start = datetime(2026, 10, 1, tzinfo=timezone.utc)
+
+    def _dep(created: str, dur_seconds: float) -> dict[str, Any]:
+        from datetime import timedelta
+
+        c = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        return {
+            "deploy": {
+                "id": f"dep-{created}",
+                "createdAt": created,
+                "finishedAt": (c + timedelta(seconds=dur_seconds)).isoformat().replace(
+                    "+00:00", "Z"
+                ),
+            }
+        }
+
+    # 120 one-minute month-to-date deploys: the old fixed limit=50 window
+    # counted only the newest 50 (50.0 min); the saturated window counts all.
+    deploys_120 = [_dep(f"2026-10-15T00:{i // 60:02d}:{i % 60:02d}:00Z", 60.0) for i in range(120)]
+    total, count, sat = sum_month_build_seconds(deploys_120, month_start)
+    assert round(total / 60.0, 2) == 120.0, f"expected 120.0, got {total / 60.0}"
+    assert count == 120
+    assert sat is False
+
+    # Pre-month deploys are excluded and flag saturation (the stop rule).
+    deploys_mixed = [_dep("2026-09-20T10:00:00Z", 600.0)] + deploys_120
+    total_m, count_m, sat_m = sum_month_build_seconds(deploys_mixed, month_start)
+    assert count_m == 120 and round(total_m / 60.0, 2) == 120.0
+    assert sat_m is True
+
+    # Calendar boundary: a deploy started exactly at month_start counts;
+    # one second earlier does not.
+    total_b, count_b, sat_b = sum_month_build_seconds(
+        [
+            _dep("2026-10-01T00:00:00Z", 60.0),
+            _dep("2026-09-30T23:59:59Z", 60.0),
+        ],
+        month_start,
+    )
+    assert count_b == 1 and round(total_b / 60.0, 2) == 1.0 and sat_b is True
+
+    # Junk / missing timestamps never crash or count; degenerate durations
+    # (0s, negative clock-skew) add 0 seconds but remain deploy records —
+    # the original counter semantics, preserved.
+    total_j, count_j, sat_j = sum_month_build_seconds(
+        [
+            {"deploy": {"id": "x1", "createdAt": "not-a-date", "finishedAt": "junk"}},
+            {"deploy": {"id": "x2"}},
+            "garbage-item",
+            _dep("2026-10-02T00:00:00Z", 0.0),
+            _dep("2026-10-03T00:00:00Z", -5.0),
+            _dep("2026-10-04T00:00:00Z", 30.0),
+        ],
+        month_start,
+    )
+    assert count_j == 3 and round(total_j, 2) == 30.0 and sat_j is False
 
     print("render_build_quota_guard self-test: PASS (deterministic exit 0)")
     return 0
