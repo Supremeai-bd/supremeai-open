@@ -33,6 +33,25 @@
  * `STALE_BASE_ERROR` names the path, the declared sha, and the current sha so
  * the filer re-reads, re-applies, and resubmits — the same re-read contract as
  * STALE_TEMPLATE_ERROR.
+ *
+ * #3487 upgrade (2026-10-30, fail-closed CAS gate — RFC 9110 If-Match
+ * pattern): the opt-in checkpoint above left the destructive class open — a
+ * full_file payload computed against a stale base WITHOUT declaring baseSha
+ * sailed through unchecked (witness: #3404's landing silently wiped
+ * co-landed pick-plane guards; the same-day restoration trail #3439/#3451,
+ * #3465, #3438, #3409 burned 4 PRs + 1 open WO in ~6 hours). The gate below
+ * (`evaluateFullFileGate`) subsumes the opt-in checkpoint:
+ * - full_file on a path that EXISTS on main with NO declared baseSha
+ *   -> reject `STALE_BASE_MISSING` (the write carries no precondition).
+ * - main blob unreadable (non-404 API failure) -> reject
+ *   `STALE_BASE_UNVERIFIED` (fail-closed: the PUT itself needs the same API,
+ *   so a GET-fails/PUT-works partial failure is exactly the unguarded window).
+ * - declared base drifted -> reject `STALE_BASE_ERROR` (unchanged).
+ * - brand-new path (absent on main) with no declared baseSha -> allow
+ *   (`new-file-no-base`): the new-file lane stays open, zero behavior change;
+ *   a declared baseSha on an absent path still rejects via the resurrection
+ *   guard (unchanged).
+ * The unified_diff lane is untouched (already fail-closed per #539).
  */
 
 /** The file's current state on main, as observed by the caller (GET /contents). */
@@ -93,4 +112,72 @@ export function staleBaseErrorText(path: string, v: Extract<StalenessVerdict, { 
     `silently revert main's increment (#2333). Re-read the file from main, re-apply your change, ` +
     `and resubmit with the fresh baseSha.`
   );
+}
+
+/**
+ * #3487 — the fail-closed CAS gate for EVERY full_file landing (RFC 9110
+ * If-Match / compare-and-swap pattern: a write carries its precondition; the
+ * server rejects a stale or precondition-less write instead of silently
+ * overwriting). Subsumes the #2333 opt-in checkpoint, which stays exported
+ * and unchanged for its existing callers and regression battery.
+ */
+
+export const STALE_BASE_MISSING_PREFIX = "STALE_BASE_MISSING";
+export const STALE_BASE_UNVERIFIED_PREFIX = "STALE_BASE_UNVERIFIED";
+
+export function staleBaseMissingErrorText(path: string): string {
+  return (
+    `${STALE_BASE_MISSING_PREFIX}: '${path}' exists on main but the payload declares no ` +
+    `baseSha — a full_file overwrite without a base precondition is the stale-base ` +
+    `silent-overwrite class (#3487; the #3404 clobber family). Re-read the file from main, ` +
+    `declare files[].baseSha = its live blob sha (40-hex, e.g. git rev-parse main:<path>), ` +
+    `and resubmit. Brand-new files must omit baseSha instead.`
+  );
+}
+
+export function staleBaseUnverifiedErrorText(path: string, mainReadStatus: number): string {
+  return (
+    `${STALE_BASE_UNVERIFIED_PREFIX}: '${path}' could not be staleness-verified before ` +
+    `landing — main blob read returned HTTP ${mainReadStatus} (#3487 fail-closed: the write ` +
+    `itself needs the same API, so landing unverified is exactly the unguarded window). ` +
+    `Retry the submission; if main stays unreadable the bridge stays closed — never silent.`
+  );
+}
+
+/**
+ * Decision of the fail-closed gate for one full_file ingress. Pure and offline
+ * so the regression battery replays every rejection deterministically.
+ *
+ * - `mainBlob === undefined` (main read failed with a non-404 status) ->
+ *   reject STALE_BASE_UNVERIFIED.
+ * - path exists on main + no declared baseSha -> reject STALE_BASE_MISSING.
+ * - declared baseSha -> delegate to the #2333 checkpoint (fresh -> allow,
+ *   stale -> reject STALE_BASE_ERROR, which also keeps the resurrection
+ *   guard for a declared base on an absent path).
+ * - brand-new path + no declared baseSha -> allow `new-file-no-base`.
+ */
+export type FullFileGateVerdict =
+  | { verdict: "reject"; error: string }
+  | { verdict: "allow"; disclosure: "checked-fresh" | "new-file-no-base" };
+
+export function evaluateFullFileGate(
+  path: string,
+  declaredBaseSha: string | undefined | null,
+  mainBlob: MainBlobState | undefined,
+  mainReadStatus: number
+): FullFileGateVerdict {
+  if (!mainBlob) {
+    return { verdict: "reject", error: staleBaseUnverifiedErrorText(path, mainReadStatus) };
+  }
+  if (mainBlob.exists && !declaredBaseSha) {
+    return { verdict: "reject", error: staleBaseMissingErrorText(path) };
+  }
+  if (declaredBaseSha) {
+    const staleness = evaluateBaseStaleness(declaredBaseSha, mainBlob);
+    if (staleness.verdict === "stale") {
+      return { verdict: "reject", error: staleBaseErrorText(path, staleness) };
+    }
+    return { verdict: "allow", disclosure: "checked-fresh" };
+  }
+  return { verdict: "allow", disclosure: "new-file-no-base" };
 }

@@ -54,7 +54,11 @@ def _sentry(number: int, provider: bool = False, labels: list[str] | None = None
     kind = "provider sentry pass" if provider else "sentry pass"
     return {
         "number": number,
-        "title": f"guard(platform): {kind} {stamp} — 7/8 alive (v0 EXCLUDED); sweep 31/33",
+        # (n=…) suffix: production pass rows carry real distinct timestamps, so
+        # byte-identical titles never occur in the family — the duplicate-twin
+        # pick guard (U5) treats exact-title siblings as one finding. Fixture
+        # titles stay prefix-conformant while being number-unique.
+        "title": f"guard(platform): {kind} {stamp} — 7/8 alive (v0 EXCLUDED); sweep 31/33 (n={number})",
         "labels": [{"name": name} for name in (labels or [])],
     }
 

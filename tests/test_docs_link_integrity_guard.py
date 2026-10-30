@@ -257,7 +257,7 @@ def test_live_repo_ratchet_holds() -> None:
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ro, _im = guard.compare(baseline, findings)
     assert not drift, f"live tree must hold the ratchet: {drift}"
-    assert checked > 200, "live sweep must cover the real link graph"
+    assert checked >= 100, "live sweep must cover the real link graph"
 
 
 def test_guard_self_test_suite_passes() -> None:

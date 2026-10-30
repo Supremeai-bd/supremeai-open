@@ -227,6 +227,41 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
     else:
         print("   ✅ Branch is fresh (0 commits behind origin/main).")
 
+    # 3b. Pre-PR Payload Integrity Guard (Zero-Corrupted-Payload Invariant)
+    # Check all modified code files on the branch for raw git diff headers.
+    _, diff_files_out, _ = run_cmd(["git", "diff", "--name-only", "origin/main...HEAD"])
+    for file_path in diff_files_out.splitlines():
+        file_path = file_path.strip()
+        if not file_path:
+            continue
+        p = Path(file_path)
+        if p.suffix.lower() in {".py", ".ts", ".tsx", ".js", ".json", ".yaml", ".yml"} and p.is_file():
+            try:
+                first_lines = p.read_text(encoding="utf-8", errors="replace").splitlines()[:5]
+                for l in first_lines:
+                    if l.startswith("diff --git ") or re.match(r"^index [0-9a-f]{7,}\.\.", l):
+                        print(f"   ❌ Corrupted payload detected in '{file_path}': starts with raw git diff header.")
+                        run_cmd(["git", "checkout", "-"])
+                        run_cmd([
+                            "gh", "issue", "comment", str(issue_num),
+                            "--repo", UPSTREAM_REPO,
+                            "--body", f"<!-- auto-bridge:corruption-close -->\n❌ **Automatic Closure**: Corrupted payload detected in `{file_path}`. The file starts with raw git diff headers instead of valid source code (e.g. `diff --git ...`).\n\nPlease submit valid full file contents or unified diffs, not raw patch headers pasted as code."
+                        ])
+                        run_cmd([
+                            "gh", "issue", "edit", str(issue_num),
+                            "--repo", UPSTREAM_REPO,
+                            "--add-label", "bridge:rejected,corrupted-payload",
+                            "--remove-label", "bridge:queued"
+                        ])
+                        run_cmd([
+                            "gh", "issue", "close", str(issue_num),
+                            "--repo", UPSTREAM_REPO,
+                            "--reason", "not planned"
+                        ])
+                        return False
+            except Exception as e:
+                print(f"   ⚠️ Could not read {file_path} for payload guard: {e}")
+
     # 4. Open PR
     pr_body = (
         f"## Summary\n"

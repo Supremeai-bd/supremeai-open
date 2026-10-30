@@ -183,7 +183,9 @@ export function UnifiedChatBubble({
             )}
             {parsed.type === 'image' && (
               <div className="rounded-lg overflow-hidden border border-slate-800 max-h-64 bg-slate-950">
-                <img src={parsed.content} alt="AI Generated" className="w-full h-auto object-contain mx-auto" />
+                {/* Perf (#3606): AI-image history must not eager-load on
+                    scroll — matches the FilesPage lazy-grid pattern. */}
+                <img src={parsed.content} alt="AI Generated" loading="lazy" decoding="async" className="w-full h-auto object-contain mx-auto" />
               </div>
             )}
             {parsed.type === 'text' && (

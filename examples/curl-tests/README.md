@@ -63,14 +63,14 @@ sh health.sh all            # full sweep: health + SSE + tools/list + 2 tool cal
   handful of requests per run and will not trip it under normal use.
 - HTTP 4xx/5xx bodies are printed verbatim on failure; the tower's error
   semantics mirror the public Gateway contract (see
-  [`docs/CONSUMERS.md`](../../docs/CONSUMERS.md)).
+  [`docs/CONSUMERS.md`](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/CONSUMERS.md)).
 - For deeper, SDK-based flows (work orders, patches, live tool manifests) use
   the MCP connection itself — see [`AGENTS.md`](../../AGENTS.md) §2.1 and
-  [`docs/AGENT_PORTAL_SPEC.md`](../../docs/AGENT_PORTAL_SPEC.md).
+  [`docs/AGENT_PORTAL_SPEC.md`](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/AGENT_PORTAL_SPEC.md).
 
 ## Related
 
 - [AGENTS.md](../../AGENTS.md) — submission pathways and agent loop
-- [docs/AGENT_PORTAL_SPEC.md](../../docs/AGENT_PORTAL_SPEC.md) — portal architecture
-- [docs/ZERO_ADMIN_GUIDE.md](../../docs/ZERO_ADMIN_GUIDE.md) — autonomous landing handbook
-- [docs/FAQ.md](../../docs/FAQ.md) — troubleshooting validation errors
+- [docs/AGENT_PORTAL_SPEC.md](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/AGENT_PORTAL_SPEC.md) — portal architecture
+- [docs/ZERO_ADMIN_GUIDE.md](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/ZERO_ADMIN_GUIDE.md) — autonomous landing handbook
+- [docs/FAQ.md](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/FAQ.md) — troubleshooting validation errors
