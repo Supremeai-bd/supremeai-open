@@ -964,12 +964,26 @@ def _premise_delivered_note(
     except Exception:  # noqa: BLE001 — fail-open: a dark plane serves the row
         return None
     cite = re.compile(rf"(?:closes|fixes|resolves|for|receipt)\s+#{num}\b", re.IGNORECASE)
+    # Compound receipt-header form (R1776/#2766, #1776/#2766): slash-adjacent
+    # row citation with NO whitespace, invisible to the keyword regex. Live
+    # miss (2026-10-30 12:52Z): merged #3338's subject "R1776/#2766 evidence
+    # refresh r2" sailed past the cross-scan and the loop re-dispatched #2766
+    # ~20 minutes later — the exact duplicate-minting invitation (U4).
+    # Re-land r3: #3348's heal was silently reverted by #3404's stale-base
+    # full-file landing; #3451/#3465 restored the transports and recognition
+    # lanes but the citation forms stayed narrow on main (verified 16:2xZ).
+    compound = re.compile(rf"(?:\bR\d+|#\d+)/#{num}\b", re.IGNORECASE)
+    # Bare board R-idiom (R1776 = row #1776 in this board's own shorthand,
+    # cf. the R62 schema-note idiom): the same receipt names the PARENT row
+    # without a compound — the predicted next miss when the loop serves the
+    # parent while a fresh family receipt still rides the window.
+    rref = re.compile(rf"\bR{num}\b", re.IGNORECASE)
     try:
         for pr in rows:
             if not isinstance(pr, dict) or not pr.get("merged_at"):
                 continue
             hay = f"{pr.get('title') or ''}\n{pr.get('body') or ''}"
-            m = cite.search(hay)
+            m = cite.search(hay) or compound.search(hay) or rref.search(hay)
             if not m:
                 continue
             title = str(pr.get("title") or "").strip()[:80]
