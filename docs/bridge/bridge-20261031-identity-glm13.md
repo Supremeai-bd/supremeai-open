@@ -8,32 +8,29 @@
 
 - Identity: GLM Agent 13, tower slot agent-13; mcp_call.py session helper with
   auto-reconnect (400/404 self-heals).
-- #3195 closure receipt landed (PR #3214); #3093 three-layer verdict receipt
-  landed (PR #3279) — both via report-only evidence path.
-- ARW three-layer live-state receipt landed (PR #3496, WO #3495):
-  L1 config FIXED → L2 route unblocked (core main 44/45 green, render-primary
-  first live) → L3 auth live-blocker root-caused from source (env.ts:119,
-  missing SUPREMEAI_BACKEND_SERVICE_TOKEN in render-mcp's 43 keys). Admin
-  remedy = one env var + redeploy; verification probe = the status tool
-  returning its capabilities payload.
-- hardening-#3527 zero-recurrence tripwire patch open as PR #3540 (block-aware
-  implicit_persist_true class).
+- #3195 closure receipt (PR #3214); #3093 verdict receipt (PR #3279); ARW
+  three-layer live-state receipt (PR #3496, WO #3495): L1 config FIXED → L2
+  route unblocked → L3 auth root-caused from source (env.ts:119, missing
+  SUPREMEAI_BACKEND_SERVICE_TOKEN). Flip-probe still HTTP 401 at 18:2xZ —
+  admin env action pending; probe re-runs every cycle, receipt only on flip.
+- Cycle 5 root-cause fix landed (PR #3602): the loop's failed-PR audit plane
+  revives via the tower fallback on gh-absent runtimes (R78-mirror; honesty
+  pins intact — check status stays UNSEEN, never certified clean). Worklog r1
+  landed (PR #3608). #3605 fix attempt hit the U4 Anti-Duplicate guard
+  correctly (first-lander #3612 won by seconds) — claim released, no stampede.
 
-## Cycle 5 (2026-10-31 01:13+08) — PR-audit blind-plane root-cause fix
+## Cycle 6 (2026-10-31 02:13+08) — #3649 deletion mechanism + ADR collateral
 
-1. Door honored; worktree reset to origin/main e9bad045; preflight: zero open
-   P0 blockers; loop emitted no clean pick (all candidates covered by in-flight
-   WO receipts, U5) — no board claim taken.
-2. ARW flip-probe re-run: status tool still returns HTTP 401 → L3 admin action
-   (add the service token env) still pending. No new receipt filed — the
-   threelayer doc already records L3 as the live blocker; a "still 401" line
-   would be duplicate-evidence class. Probe re-runs every cycle until flip.
-3. **Root-cause fix for the loop's own U2 defect:** preflight printed the PR
-   plane as dark (gh absent) while the tower's PR reader showed 27 open PRs —
-   the same gap GLM Agent 11 audited as findings at 01:11+08. Landed the
-   R78-mirror fallback (board path had it, PR path did not): new probe helper
-   + revived-line census, honesty preserved (no rollup in tower payload ⇒
-   check status stays UNSEEN, never certified clean). WO #3601 → PR #3602,
-   baseSha-pinned, 11 new offline pin tests, 28 passed combined, 8-tier PASS.
-4. Plane census for operators (via the new fallback): 27 open PRs, oldest
-   #3246 — landing train backlog now visible every boot.
+1. ARW flip-probe: still HTTP 401 (no flip, no receipt — duplicate-evidence
+   discipline). Loop: no clean pick at boot; plane census 30 open PRs via the
+   cycle-5 fallback.
+2. #3649 root cause found independently of the landed #3668 gate: the #1676
+   shadow guard runs policy=prune for supremeai-api and rmtree's exactly the
+   gateway/ tree the api block just copied (command/ has 0 entries on open
+   main → skipped; skills/ copied → present). The admin "re-run sync" remedy
+   cannot go green until supremeai-api joins PACKAGE_SHADOW_REFRESH_TARGETS —
+   the one-line #3441-precedent fix + the #3524 ADR collateral (dead
+   ARCHIVE_MIRROR_PAIRS entry reding main's test_self_test) submitted as
+   WO #3678 → PR #3679 (29 passed, 8-tier PASS, both files baseSha-pinned).
+3. #3663 (P0 identity fail-open): two corroborations landed by other agents;
+   remediation is owner/tower-policy lane — untouched by this agent.
