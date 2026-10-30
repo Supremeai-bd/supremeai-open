@@ -42,6 +42,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
 from typing import Any, Callable
 
 REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
@@ -58,7 +59,7 @@ GUARD_MARKER_PREFIX = "<!-- pr-lifecycle-guard:"
 BOT_LANE_PREFIXES = (
     "coder-", "ci-", "planner-", "pr-helper-", "platform-", "browser-",
     "super-", "agent-", "fix/", "feat/", "hotfix/", "perf/", "chore/",
-    "test/", "docs/", "refactor/", "ci/",
+    "test/", "docs/", "refactor/", "ci/", "bridge/",
 )
 
 CONFLICT_LABEL = "conflict:needs-manual"
@@ -363,27 +364,145 @@ def guard_lifecycle(api: Callable, apply: bool, report: GuardReport) -> None:
         report.add(GuardAction(num, "hold_protect", "label added", applied=True))
 
 
+# ─────────────────────────── মোড ৩: board issue janitor ───────────────────────────
+
+SENTRY_PASS_RE = re.compile(r"^(?:guard\([^)]*\):\s*(?:provider\s+)?sentry\s+pass|sentry:)", re.IGNORECASE)
+
+
+def is_historical_sentry(title: str, created_at_iso: str, now: datetime | None = None) -> bool:
+    """১২ ঘণ্টার বেশি পুরোনো ঐতিহাসিক sentry pass শনাক্তকরণ।"""
+    if not SENTRY_PASS_RE.search(title):
+        return False
+    if not created_at_iso:
+        return False
+    now = now or datetime.now(timezone.utc)
+    try:
+        created = datetime.fromisoformat(created_at_iso.replace("Z", "+00:00"))
+        return (now - created) > timedelta(hours=12)
+    except Exception:
+        return False
+
+
+def is_completed_receipt(title: str, labels: list[str], created_at_iso: str, now: datetime | None = None) -> bool:
+    """৬ ঘণ্টার বেশি পুরোনো সম্পন্ন হওয়া bridge:receipt/ওয়ার্কলগ শনাক্তকরণ।"""
+    if "anchor-hub" in labels:
+        return False
+    is_receipt_label = "bridge:receipt" in labels or "report" in labels
+    is_wo_title = "Bridge Work Order" in title
+    if is_receipt_label and is_wo_title:
+        now = now or datetime.now(timezone.utc)
+        try:
+            created = datetime.fromisoformat(created_at_iso.replace("Z", "+00:00"))
+            return (now - created) > timedelta(hours=6)
+        except Exception:
+            return False
+    return False
+
+
+def find_duplicate_issues(issues: list[dict]) -> list[tuple[int, int]]:
+    """হুবহু ডুপ্লিকেট ওপেন ইস্যু শনাক্তকরণ (duplicate_number, original_number)।"""
+    seen: dict[str, int] = {}
+    dups: list[tuple[int, int]] = []
+    sorted_issues = sorted(issues, key=lambda x: x.get("number", 0))
+    for iss in sorted_issues:
+        num = iss.get("number")
+        labels = [l.get("name") if isinstance(l, dict) else l for l in iss.get("labels", [])]
+        if "anchor-hub" in labels:
+            continue
+        title = iss.get("title", "").strip().lower()
+        if not title:
+            continue
+        if title in seen:
+            dups.append((num, seen[title]))
+        else:
+            seen[title] = num
+    return dups
+
+
+def clean_board_issues(api: Callable, apply: bool, report: GuardReport) -> None:
+    """বোর্ডের অপ্রয়োজনীয়/অপ্রাসঙ্গিক Issue পরিষ্কার:
+    (১) ১২ ঘণ্টার বেশি পুরোনো ঐতিহাসিক sentry pass স্ন্যাপশট ক্লোজ।
+    (২) ৬ ঘণ্টার বেশি পুরোনো সম্পন্ন হওয়া bridge:receipt/ওয়ার্কলগ ক্লোজ।
+    (৩) হুবহু ডুপ্লিকেট Issue শনাক্ত ও ডুপ্লিকেটটি ক্লোজ।
+    """
+    issues = api(f"repos/{REPO}/issues?state=open&per_page=100") or []
+    if isinstance(issues, dict):
+        report.errors.append(f"open-issues list failed: {str(issues)[:120]}")
+        return
+
+    # ১. হুবহু ডুপ্লিকেট Issue ক্লোজ
+    dups = find_duplicate_issues(issues)
+    for dup_num, orig_num in dups:
+        detail = f"duplicate of #{orig_num}"
+        if not apply:
+            report.add(GuardAction(dup_num, "duplicate_issue_close", detail + " (dry-run)"))
+            continue
+        body = f"<!-- janitor:auto-close:duplicate --> Closed as duplicate of #{orig_num}."
+        api(f"repos/{REPO}/issues/{dup_num}/comments", method="POST", payload={"body": body})
+        api(f"repos/{REPO}/issues/{dup_num}", method="PATCH", payload={"state": "closed"})
+        report.add(GuardAction(dup_num, "duplicate_issue_close", detail, applied=True))
+
+    now = datetime.now(timezone.utc)
+    for iss in issues:
+        num = iss.get("number")
+        if "pull_request" in iss:
+            continue  # PR বাদ
+        labels = [l.get("name") if isinstance(l, dict) else l for l in iss.get("labels", [])]
+        if "anchor-hub" in labels:
+            continue
+        title = iss.get("title", "")
+        created_at_iso = iss.get("created_at", "")
+
+        # ২. ঐতিহাসিক sentry pass ক্লোজ
+        if is_historical_sentry(title, created_at_iso, now=now):
+            detail = "historical sentry pass expired (>12h)"
+            if not apply:
+                report.add(GuardAction(num, "sentry_pass_close", detail + " (dry-run)"))
+                continue
+            body = "<!-- janitor:auto-close:sentry-snapshot --> Closed: historical sentry health pass snapshot has expired."
+            api(f"repos/{REPO}/issues/{num}/comments", method="POST", payload={"body": body})
+            api(f"repos/{REPO}/issues/{num}", method="PATCH", payload={"state": "closed"})
+            report.add(GuardAction(num, "sentry_pass_close", detail, applied=True))
+            continue
+
+        # ৩. সম্পন্ন হওয়া bridge receipt ক্লোজ
+        if is_completed_receipt(title, labels, created_at_iso, now=now):
+            detail = "completed bridge receipt (>6h)"
+            if not apply:
+                report.add(GuardAction(num, "receipt_close", detail + " (dry-run)"))
+                continue
+            body = "<!-- janitor:auto-close:receipt --> Closed: completed run/worklog receipt."
+            api(f"repos/{REPO}/issues/{num}/comments", method="POST", payload={"body": body})
+            api(f"repos/{REPO}/issues/{num}", method="PATCH", payload={"state": "closed"})
+            report.add(GuardAction(num, "receipt_close", detail, applied=True))
+            continue
+
+
 # ─────────────────────────── CLI ───────────────────────────
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="PR Lifecycle Guard (#3516)")
+    ap = argparse.ArgumentParser(description="PR & Board Issue Lifecycle Guard (#3516)")
     ap.add_argument("--heal", action="store_true", help="freshness self-heal (update-branch)")
     ap.add_argument("--guard", action="store_true", help="wrongful-closure reopen + duplicate warning")
-    ap.add_argument("--all", action="store_true", help="heal + guard")
+    ap.add_argument("--janitor", action="store_true", help="clean obsolete/duplicate issues and receipts")
+    ap.add_argument("--all", action="store_true", help="heal + guard + janitor")
     ap.add_argument("--apply", action="store_true", help="লেখা-কল সম্পন্ন করো (ডিফল্ট dry-run)")
     args = ap.parse_args(argv)
 
     apply = bool(args.apply)
     do_heal = args.all or args.heal
     do_guard = args.all or args.guard
-    if not (do_heal or do_guard):
-        do_heal = do_guard = True  # মোড না দিলে = --all
+    do_janitor = args.all or args.janitor
+    if not (do_heal or do_guard or do_janitor):
+        do_heal = do_guard = do_janitor = True  # মোড না দিলে = --all
 
     report = GuardReport()
     if do_heal:
         heal_freshness(real_api, apply, report)
     if do_guard:
         guard_lifecycle(real_api, apply, report)
+    if do_janitor:
+        clean_board_issues(real_api, apply, report)
 
     out = {
         "mode": "apply" if apply else "dry-run",
