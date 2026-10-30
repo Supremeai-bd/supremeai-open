@@ -231,6 +231,42 @@ def copy_tree_contents(src: Path, dst: Path, prune: bool = False) -> None:
                             print(f"⚠️ Could not prune {rel_file}: {e}")
 
 
+def _composed_tree_nonempty(dst: Path) -> bool:
+    """(#3649 root-cause class) True when the composed satellite tree carries at
+    least one real file (caches/pyc are excluded upstream by copy_tree_contents)."""
+    return dst.exists() and any(p.is_file() for p in dst.rglob("*"))
+
+
+def compose_domain_tree(src: Path, dst: Path, domain: str, target_repo: str) -> bool:
+    """(#3649 root-cause class) Copy a domain mirror into a satellite tree with a
+    fail-closed completeness gate.
+
+    The supremeai-api drift (issue #3649) was a silent partial landing: the
+    satellite's root artifacts (Dockerfile, requirements.txt, main.py, ...)
+    advanced to the package-true layout while the `gateway/` package tree
+    itself never landed, so every Render auto-deploy died at
+    `COPY gateway/ gateway/` (`"/gateway": not found`, 5 failed builds on
+    2026-10-30 13:02-16:23Z) while health checks stayed green on the stale
+    container. This helper keeps copy_tree_contents semantics identical and
+    additionally refuses the composition when the mirror dir exists but
+    composes EMPTY — converting that silent-drift class into a loud,
+    pre-push failure (fail-closed, #3441 discipline).
+    """
+    if not src.exists():
+        return True
+    copy_tree_contents(src, dst, prune=True)
+    if not _composed_tree_nonempty(dst):
+        print(
+            f"::error::[#3649] Composition integrity gate for {target_repo}: mirror "
+            f"'{src.name}/' exists in supremeai-open but the composed satellite tree "
+            f"'{dst.name}/' is EMPTY — refusing to commit/push a partial landing "
+            "(root artifacts without the package tree) that would break the "
+            "satellite's own build (Dockerfile COPY + import contract)."
+        )
+        return False
+    return True
+
+
 def sync_workflows(src_wf_dir: Path, target_wf_dir: Path) -> None:
     """Sync workflows from src to target, pruning stale workflow files from target."""
     if not src_wf_dir.exists():
@@ -391,8 +427,10 @@ def sync_satellite(
                 ("mcp", "infrastructure/mcp-control-plane"),
             ]:
                 sub_src = repo_root / sub_source
-                if sub_src.exists():
-                    copy_tree_contents(sub_src, tmp_repo / sub_name, prune=True)
+                if sub_src.exists() and not compose_domain_tree(
+                    sub_src, tmp_repo / sub_name, sub_name, target_repo
+                ):
+                    return False
             # (#1772 root cause) Retire the legacy flat 'service/' sync: the app
             # imports its own code as the 'gateway.*' package namespace (16+ import
             # sites incl. gateway.middleware.correlation_id / security_headers), so
@@ -602,6 +640,14 @@ def sync_satellite(
                         gw_src = repo_root / "gateway"
                         if gw_src.exists():
                             copy_tree_contents(gw_src, tmp_repo / "gateway", prune=True)
+                            if not _composed_tree_nonempty(tmp_repo / "gateway"):
+                                print(
+                                    f"::error::[#3649] Composition integrity gate for "
+                                    f"{target_repo}: reconcile re-copy of 'gateway/' "
+                                    "composed EMPTY — refusing to push a partial "
+                                    "landing that would break the satellite build."
+                                )
+                                return False
                     else:
                         copy_tree_contents(src_path, tmp_repo)
                     subprocess.run(["git", "add", "-A"], cwd=str(tmp_repo), capture_output=True, check=False)
