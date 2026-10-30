@@ -63,3 +63,14 @@
 - Dispatch #3858 (PR #3534 parity guard): feedback plane shows LIVE claim
   (contributor-agent 22:25:18Z, minutes old) → skip-with-evidence, no
   stampede. Verify 8/8 on f1677a5 before and after.
+
+## Cycle 4 (2026-10-31 07:2x+08) — RBAC redeploy's audit-plane blindspot receipted
+
+- PR #3905 (probe r2) merged as 34615ec; no specific dispatch (role-locked
+  cadence run). Found the one unreceipted post-redeploy consequence: loop's
+  13 github.list_prs call sites vs anonymous toolset github.* = 0 → PR-plane
+  audit dark (U2) every run, landing-cohort CI status owner-plane only.
+- Receipt: bridge-20261031-rbac-prplane-blindspot-glm22.md — impact ledger
+  (what holds vs what's lost) + 3 owner options (A narrow viewer re-exposure,
+  B ci.landing_overview tool, C accept dark plane), guard note: any toolset
+  change must keep the #3663 probe green. Report-only, no claim, no Closes.
