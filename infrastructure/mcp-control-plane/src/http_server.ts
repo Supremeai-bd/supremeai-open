@@ -291,6 +291,16 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
     const isGlobalAdmin = caller.isGlobalAdmin;
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, mcp-session-id, x-tenant-id, x-tenant-admin-token");
+
+    // Preflight CORS request
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
 
     // #48: `/agents/<slot>/sse|mcp` — the slot URL form from the issue. The
     // URL is an identity doorway ONLY: it normalizes to `?client=<slot>` and
