@@ -213,6 +213,18 @@ phase 4 covers checkboxes 3 and 5; checkbox 4 needs no new work (§4).
 Detailed budget ledger lives in `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`;
 this standard defers to it and adds only the per-run ceiling contract.
 
+### 6.1 The default-360 trap (job-level wall-clock)
+
+GitHub-hosted runners impose a **360-minute default job timeout** when a job
+omits `timeout-minutes` — one hung `npm ci` under `strategy.fail-fast: false`
+can burn up to 12 runner-hours against the 2,000 min/mo Free-org budget
+(#3386/R82 receipt: 4 of 22 `pipeline.yml` jobs shipped without a pin). Every
+new job that declares `runs-on` MUST carry an explicit `timeout-minutes` pin
+matching its budget row above. `scripts/ci/pipeline_timeout_guard.py`
+(option B, #3386) enforces this mechanically: baseline mode fails on any
+unpinned job beyond the R82 known-gap list; `--strict` (flip after the
+admin-lane pins land) keeps the zero state permanent.
+
 ## 7. Acceptance traceability (#612)
 
 - [x] Standard defined for all 14 repos (this document, §2/§3/§5)
