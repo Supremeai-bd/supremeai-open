@@ -156,6 +156,7 @@ export interface BridgePrBodyOptions {
   reflectionWhy?: string;
   alternativesRejected?: string;
   rollbackPath?: string;
+  agentIdentity?: string;
   /**
    * #2485: opt-in escape hatch for the receipt-closure class. Docs-only
    * (spec-only) submissions emit `Refs #N` so a spec-first lane keeps its work
@@ -207,6 +208,7 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
     lines.push("## Linked Work Order", ...linkedIssues, "");
   }
 
+  lines.push("", "## Agent Identity", opts.agentIdentity || "zero-credential-mcp-agent", "");
   lines.push(
     REFLECTION_EVIDENCE_SECTION,
     `- **why:** ${opts.reflectionWhy || ""}`,
@@ -265,6 +267,8 @@ export function bridgeOpenRepo(): string {
 
 /** The queue label upstream work orders carry in the open repo. */
 export const BRIDGE_QUEUE_LABEL = "bridge:queued";
+/** Queue label for report-only / audit receipts (#3516 / zero-admin queue hygiene) */
+export const BRIDGE_RECEIPT_LABEL = "bridge:receipt";
 /**
  * #621 — Bridge hardening: satellite routing, queue scoping, claim lease
  * lifecycle and machine-readable feedback.
@@ -1471,6 +1475,14 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
         ].join("\n");
 
+        const isReportOnlyReceipt =
+          /\b(report-only|docs-only|receipt|evidence\s+(addendum|refresh))\b/i.test(summary) ||
+          /\b(receipt|report-only)\b/i.test(taskId);
+
+        const targetLabels = isReportOnlyReceipt
+          ? [BRIDGE_RECEIPT_LABEL, "report"]
+          : [BRIDGE_QUEUE_LABEL];
+
         const issueRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
           `https://api.github.com/repos/${repo}/issues`,
           {
@@ -1482,7 +1494,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               // stranded the pushed branch. Clamp preserves the (taskId) tail
               // (authoritative for #2136 dedup).
               title: issueTitleFor(summary, taskId),
-              labels: [BRIDGE_QUEUE_LABEL],
+              labels: targetLabels,
               body: issueBody,
             },
             timeoutMs: 15_000,
@@ -1512,6 +1524,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           alternativesRejected,
           rollbackPath,
           closesOriginalIssue,
+          agentIdentity,
         });
 
         let prNumber: number | undefined;
