@@ -197,7 +197,18 @@ export const App: React.FC = () => {
           <React.Suspense fallback={<RouteFallback />}>
             <Routes>
               {/* Public Visitor Funnel — Cosmic landing at / (Zero-blocking; renders immediately without auth checks) */}
-              <Route path="/" element={<LandingPage />} />
+              <Route
+                path="/"
+                element={
+                  <PublicPageShell>
+                    <GuestDashboard
+                      language="bn"
+                      onSwitchToUser={() => { window.location.href = '/register'; }}
+                    />
+                  </PublicPageShell>
+                }
+              />
+              <Route path="/landing" element={<LandingPage />} />
               <Route path="/about" element={<OurStoryPage />} />
               <Route path="/chat" element={<LiveChatPage />} />
               <Route path="/features" element={<PublicPageShell><FeaturesPage /></PublicPageShell>} />

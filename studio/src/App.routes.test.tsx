@@ -72,6 +72,9 @@ vi.mock('./pages/PublicPages', () => ({
 }));
 // Refs #876 (router restoration): the Cosmic public funnel is now a distinct
 // page at / — mocked here so the route smoke suite stays hermetic.
+vi.mock('./components/guest/GuestDashboard', () => ({
+  GuestDashboard: () => <div>ইন্টারেক্টিভ মাল্টি-ডিভাইস লাইভ কোড স্যান্ডবক্স</div>,
+}));
 vi.mock('./pages/LandingPage', () => ({
   LandingPage: () => <div>Landing page</div>,
 }));
@@ -98,7 +101,9 @@ function renderRoute(path: string) {
 describe('application route smoke tests', () => {
   it.each([
     // Refs #876: '/' is the Cosmic landing page; guest chat lives at '/chat'.
-    ['/', 'Landing page'],
+    // '/' is the Interactive Guest Sandbox; Cosmic landing lives at '/landing'; guest chat at '/chat'.
+    ['/', 'ইন্টারেক্টিভ মাল্টি-ডিভাইস লাইভ কোড স্যান্ডবক্স'],
+    ['/landing', 'Landing page'],
     ['/chat', 'Guest chat'],
     ['/features', '/features page'],
     ['/models', 'Models page'],

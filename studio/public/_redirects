@@ -1,3 +1,6 @@
+# Cloudflare Pages proxy: MCP Tower
+/api/mcp/*   https://supremeai-mcp-tower.onrender.com/:splat        200
+
 # Cloudflare Pages proxy: route API requests directly to the Render backend via Cloudflare Edge
 /api/*      https://supremeai-api-ulw0.onrender.com/api/:splat    200
 /health     https://supremeai-api-ulw0.onrender.com/healthz        200
