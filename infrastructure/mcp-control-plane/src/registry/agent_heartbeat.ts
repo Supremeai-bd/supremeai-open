@@ -58,7 +58,7 @@ export const HEARTBEAT_ONLINE_THRESHOLD_SECONDS = 90;
 // ফিল্ড HDEL করে ডিফল্ট listing থেকে বাদ — একই পাঠে `archived`-এ একবার
 // দেখানো হয় (forensics), পরের পাঠে সম্পূর্ণ অদৃশ্য। ফিরে-আসা agent নিজেই
 // HSET করে নতুন রেকর্ড লেখে — মোছা কোনো তথ্য হারায় না।
-export const HEARTBEAT_ARCHIVE_GRACE_SECONDS_DEFAULT = 86_400;
+export const HEARTBEAT_ARCHIVE_GRACE_SECONDS_DEFAULT = 4 * 3600; // 4 hours TTL auto-scavenge
 
 export function archiveGraceSeconds(): number {
   const raw = Number(process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS);

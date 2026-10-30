@@ -76,8 +76,8 @@ RETIRED_ANCHOR_HUBS: dict[str, int] = {
 }
 
 # Specialized Hubs
-BRIDGE_ORDER_ANCHOR: int = 760  # [Federation Hub] Bridge Transit, Orders & Rejections
-CI_FAILURE_ANCHOR: int = 761  # [Federation Hub] CI Pipeline Failures & Incident Desk
+BRIDGE_ORDER_ANCHOR: int = 3783  # [Anchor Hub] Federation Bridge & External Transit Desk
+CI_FAILURE_ANCHOR: int = 3782  # [Anchor Hub] Federation CI & PR Intelligence Desk
 
 # Short aliases for CLI/script convenience
 ANCHOR_ALIASES: dict[str, int] = {
