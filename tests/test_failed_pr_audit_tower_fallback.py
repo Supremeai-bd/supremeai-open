@@ -43,12 +43,20 @@ import continuous_agent_loop as cal  # noqa: E402
 
 
 def _capture_report(tower_stub: object, list_stub: object = None) -> tuple[list, str]:
-    """Run report_failed_open_prs with the dark plane + tower probe stubbed."""
+    """Run report_failed_open_prs with the dark plane + tower probe stubbed.
+
+    #3772 evolution: the dark branch now also runs the board-plane assurance
+    layer, so this helper stubs it dark too — the "fallback failure ⇒ dark
+    line" contracts below stay byte-identical without any network access.
+    """
     buf = io.StringIO()
     with mock.patch.object(cal, "list_failed_open_prs", return_value=list_stub):
         with mock.patch.object(cal, "_tower_open_prs", return_value=tower_stub):
-            with redirect_stdout(buf):
-                failed = cal.report_failed_open_prs(repo="r/x", limit=30)
+            with mock.patch.object(
+                cal, "_tower_board_rows", return_value=([], "board probe stubbed dark")
+            ):
+                with redirect_stdout(buf):
+                    failed = cal.report_failed_open_prs(repo="r/x", limit=30)
     return failed, buf.getvalue()
 
 
