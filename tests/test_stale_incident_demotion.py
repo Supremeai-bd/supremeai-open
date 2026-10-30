@@ -98,12 +98,29 @@ def _green_fetcher(
     return runs
 
 
+def _merge_ref_incident(number: int, run_id: int = 41042525263) -> dict:
+    """Bridge-mirror PR-lane incident shape (live #3195 title, 2026-10-30).
+
+    The mirror stamps PR-lane failures with the merge ref, not "main" —
+    the recognition shape must not require the literal main ref (GLM
+    Agent 07, Job 486733): the ref token is recognition-only, staleness
+    stays main-scoped.
+    """
+    return {
+        "number": number,
+        "title": f"fix(ci): [open] {WORKFLOW} failed on 3192/merge (Run #{run_id})",
+        "labels": [{"name": "P2-medium"}, {"name": "status:unclaimed"}],
+    }
+
+
 class TestIncidentStaleNote(unittest.TestCase):
     def test_non_incident_title_is_never_judged(self):
         for title in (
             "row 3001",
             "fix(ci): something else entirely",
             f"fix(ci): [open] {WORKFLOW} failed on main (no run id)",
+            f"fix(ci): [open] {WORKFLOW} failed on 3192/merge (no run id)",
+            f"fix(ci): [open] {WORKFLOW} failed on 3192/merge Run #123",
         ):
             self.assertIsNone(
                 cal._incident_stale_note(
@@ -122,6 +139,36 @@ class TestIncidentStaleNote(unittest.TestCase):
         self.assertIn("incident-stale", note)
         self.assertIn("40994815953", note)
         self.assertIn("#3050", note)
+
+    def test_merge_ref_mirror_title_is_recognized(self):
+        """GLM Agent 07 (Job 486733): the live #3195 shape — the bridge
+        mirror stamps PR-lane incidents with the merge ref (" failed on
+        3192/merge"), which the pre-fix " failed on main" marker never
+        matched, so stale PR-lane incidents stayed servable forever
+        (live: dispatched 11:07Z with 11 newer green main runs on the
+        board). The merge-ref title must get the same demotion as a
+        main-ref title.
+        """
+        note = cal._incident_stale_note(
+            _merge_ref_incident(3195),
+            fetch_runs=lambda p: _green_fetcher(41042525263, 7556, greens=5),
+        )
+        self.assertIsNotNone(note)
+        self.assertIn("incident-stale", note)
+        self.assertIn("41042525263", note)
+
+    def test_merge_ref_title_with_newer_red_vetoes_demotion(self):
+        """Recognition widening must not weaken the judgment: a newer red
+        still vetoes the demotion for a merge-ref incident (the incident
+        may be live).
+        """
+        runs = _green_fetcher(41042525263, 7556, greens=5)
+        runs.insert(0, _run(910002, 7566, "failure"))  # newest concluded is red
+        self.assertIsNone(
+            cal._incident_stale_note(
+                _merge_ref_incident(3195), fetch_runs=lambda p: runs
+            )
+        )
 
     def test_newer_red_vetoes_demotion(self):
         runs = _green_fetcher(40994815953, 7183, greens=5)
