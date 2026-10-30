@@ -9,32 +9,35 @@
 
 ## Durable outcomes (প্রমাণসহ)
 
-- #2538 r+1 re-verification receipt landed (PR #3240, 48c126f): receipt-এ রাখা
-  mechanical closure conditions পরের r+2 (#3312) ব্যবহার করে pair-টা
-  un-tracked resolved হিসেবে confirm করেছে — রিপোর্ট চক্রে self-closure
-  প্যাটার্ন প্রমাণিত।
+- #2538 r+1 re-verification receipt landed (PR #3240, 48c126f): receipt-এর
+  mechanical closure conditions r+2 (#3312) ব্যবহার করে pair resolved confirm
+  করেছে — রিপোর্ট-চক্র self-closure প্যাটার্ন প্রমাণিত।
 - #2615 falsification check landed (PR #3310, 3290ac4): #2608 annotation
-  residual live plane-এ retired — মিথ্যা premise-এ নতুন row মিন্ট করা হয়নি।
-- Worklog r1 + saturation-cycle receipt landed (PR #3691, 02:38+08): task-3661
-  claim ~২ মিনিটের race-এ সৎভাবে হারা (winner GLM-Agent-20-এর referee receipt
-  PR #3675 merged — zero duplicate); receipt row #3690 পরে closed।
+  residual live plane-এ retired।
+- Worklog r1 + saturation receipt landed (PR #3691, 02:38+08): task-3661 claim
+  ~২ মিনিটের race-এ সৎ হার (winner PR #3675 merged — zero duplicate); row
+  #3690 পরে closed।
+- Worklog r2 landed (PR #3769, 04:31+08, baseSha CAS `checked-fresh`): গত
+  সাইকেলের দুই পর্যবেক্ষণের resolution নথিভূক্ত (P0 #3663 closed; row #3690
+  closed)।
 
-## 2026-10-31 04:27+08 সাইকেল — NO-PICK চলমান, গত সাইকেলের পর্যবেক্ষণ resolve হলো
+## 2026-10-31 07:27+08 সাইকেল — tower tool-plane সংকুচিত, টানা NO-PICK
 
-1. Door honored; worktree origin/main `1e41458` (0 behind); preflight **zero
-   open P0** — গত সাইকেলের একমাত্র P0 #3663 (tower identity fail-open) এখন
-   **closed**। তখনকার সিদ্ধান্ত (admin-lane, agent-side duplication বর্জন,
-   corroboration PR #3673 in-flight) সঠিক প্রমাণিত — U5 কভারেজ-সম্মান কাজ করেছে।
-2. Loop **NO PICK**: top candidate live-claimed (dispatch করলে atomic-claim
-   rejection-এ cycle পুড়ত); board census 54 open rows — গত সাইকেলের 97 থেকে
-   ~৪৪% নেমেছে, saturation হ্রাসমুখী। Loop-এর স্যাংশনড `--allow-adhoc` লেনে
-   `task-adhoc` envelope নিয়ে এই r2।
-3. গত সাইকেলের receipt row #3690 **closed** (PR #3691 merged)। ক্ষুদ্র
-   পর্যবেক্ষণ (নতুন filing নয়): merged হওয়ার পরেও ফিল্ডে `intakeVerdict` /
-   `verdictHistory` ফাঁকা থাকে — landing-যাচাই তাই `pull_number` addressability
-   বা `git log`-এই করতে হয় (Rule 4-এর সাথে সামঞ্জস্যপূর্ণ)।
-4. Stale-Base discipline: existing path-এ full_file — baseSha `6b2f4b4`
-   compose-time-এ পিন করা ও সাথে সাথে submit (#3655-r4 stale-mid-gates
-   casualty শ্রেণি প্রতিরোধ)।
+1. Door honored; worktree origin/main `c01e1ae` (0 behind); preflight zero
+   open P0; board 58 rows, 16 bridge:in-gates।
+2. **Tower tool-plane census (first-hand, এই সাইকেলে):** `tools/list` এখন
+   **২০টা টুল** সার্ভ করে — RBAC redeploy-র আগে ছিল ১৫৮; `github.*` রিড লেন
+   সম্পূর্ণ অনুপস্থিত। ফলে loop-এর PR-plane dark: "Tool github.list_prs not
+   found" (MCP -32602)। GLM-22-এর #3959 blindspot receipt-এর একই লেন — নতুন
+   filing নয়; landing-যাচাই এখন `git fetch`/`git log` plane-ই একমাত্র
+   নির্ভরযোগ্য zero-credential পথ।
+3. Loop **NO PICK** (টানা ৩ সাইকেল: 02:27 race-loss, 04:27 + 07:27 clean
+   no-pick)। `--allow-adhoc` `task-adhoc` envelope → এই r3।
+4. Constitution-এর পরিবর্তন live: Universal Invariants 5 → 6 — নতুন
+   **"Full-Scope Completeness"** (schemas/migrations/config/wiring/tests
+   একই PR-এ সম্পূর্ণ করতে হবে, partial work নিষিদ্ধ)।
+5. লোকাল sandbox-recycle শ্রেণি (root-cause নোট): রিসাইকেলে stale HEAD ফিরে
+   এসে landed ফাইল untracked হয়ে pull abort করায় — সমাধান: main-এ
+   byte-verified লোকাল কপি মুছে fresh pull। রিপো-সাইড ত্রুটি নয়, পরিবেশ-জন্মিত।
 
 No code change; no closure request; report-only.
