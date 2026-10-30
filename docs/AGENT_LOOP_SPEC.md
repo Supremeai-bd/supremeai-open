@@ -152,30 +152,45 @@ parity contract:
    registry, guards) land in this repo first, then port to the private mirror
    **via a bridge work order** (never hand-edit the private copy).
 
-## 4c. Runtime state surface — cadence SSOT + 30-minute issue lease (#1591 lineage)
+## 4c. Runtime state surface — event-driven rotation + dispatch journal (#1591 → #3573)
 
 The loop keeps two runtime state files under `scripts/agents/`. Both are
 gitignored in this repo (#1624) — machine-local runtime state, never committed;
 the private-mirror port is pending (port rule).
 
+**#3573 regime change (founder mandate, LOOP_ALIGNMENT.md):** execution is
+strictly Event & Condition-Driven — zero artificial timer locks. The old
+regime held two fixed-guess clocks: `cadences_hours` (12h/24h role gates that
+kept oversight roles waiting on an idle board) and a local 30-minute dispatch
+lease (a time window that skipped dispatched-but-unclaimed actionable work —
+the SPEC itself documented it as "a fixed guess, not lease renewal"). Both are
+REMOVED. Claimability now has exactly two mechanical arbiters: the live claim
+probe (`_feedback_claim_active`, #2794 fix (1)) at pick time and the atomic
+`work_claim` at claim time. The tower's own #57 lease SSOT
+(`claim_thresholds.py`, 30-min TTL + 5-min floor) is untouched — it RELEASES
+stalled claims (frees work), the inverse of an artificial delay.
+
 | File | Written by | Behaviour |
 |---|---|---|
-| `agent_cadence_state.json` | canonical cadence API (`due_roles` → `role_is_due` → `mark_role_run`, #1569 lineage) | last-run unix timestamps per canonical role; reset to `{}` when the board query succeeds and the board is genuinely empty (docstring rule 3) |
-| `dispatched_issues_state.json` | `mark_issue_leased` at every issue assignment — the non-envelope dispatch path AND the `--task-envelope` paths (auto-pick + `--issue N`, #1596) | `{ "<issue-number>": <unix-ts> }`; an issue whose entry is inside the 30-minute window (`ISSUE_LEASE_SECONDS = 1800`) is excluded from `pick_next_issue`; expired entries auto-release with no marker |
+| `agent_rotation_state.json` | canonical rotation API (`due_roles` → `role_is_due` → `mark_role_run`, #1569 lineage; episode semantics #3573) | per-role episode markers (unix ts of this episode's run; NO duration comparison anywhere). The rotation re-arms (store reset) ONLY on the work event: a claimable issue was dispatched (both the dispatch path and the `--task-envelope` paths re-arm). Idle cycles dispatch one scheduled role each, in `scheduled_roles` config order; once every scheduled role has run this episode, the loop reports clean state and sleeps (founder mandate 2: 100% green → clean + safe sleep). There is NO reset-on-empty-board timer loop and NO hour gate. The old `agent_cadence_state.json` (timer regime) is simply orphaned. |
+| `dispatched_issues_state.json` | `mark_issue_leased` at every issue assignment — the non-envelope dispatch path AND the `--task-envelope` paths (auto-pick + `--issue N`, #1596) | machine-local dispatch JOURNAL (`{ "<issue-number>": <last-dispatch-ts> }`), observability-only since #3573: the 30-minute time-window exclusion in `is_claimable` is REMOVED — a dispatched-but-unclaimed actionable issue is re-pickable immediately (founder mandate 1: no artificial waiting). Entries older than `DISPATCH_JOURNAL_RETENTION_SECONDS` (derived from the #57 SSOT, `claim_thresholds.ORPHAN_RELEASE_MINUTES`) are pruned on write; pruning is file hygiene, never behavior. |
 
 Honest limitations, documented rather than hidden:
 
-- **Machine-local visibility**: agents on different machines never see each
-  other's lease entries; same-machine reruns are deduped, cross-machine dedup
-  still depends on the `status:claimed` label path. Unifying the two protocols
-  is an owner-level policy decision, not an agent patch.
-- **Store hygiene**: `mark_issue_leased` prunes expired entries on every write,
-  so the file holds at most the leases inside the 30-minute window (plus the
-  entry being written); the claimability check ignores expired entries either
-  way, so pruning is behavior-neutral file hygiene.
-- **No completion signal**: a task still running past 30 minutes re-becomes
-  claimable — the window is a fixed guess, not lease renewal (the bridge's own
-  lease allows renewal up to 180 minutes; the loop's local store cannot renew).
+- **Machine-local visibility**: the rotation state and the dispatch journal
+  are machine-local; agents on different machines never see each other's
+  files. Cross-machine "who owns this row" truth lives entirely on the tower
+  plane (live claim probe + atomic claim), which is the intended SSOT — the
+  local files never gate behavior, so their blindness cannot cause a wrong
+  skip, only a bounded re-probe.
+- **Episode locality**: a machine's rotation re-arms when THAT machine assigns
+  work. A machine that only ever sleeps while others work keeps its completed
+  episode (clean + sleep) — fleet-level oversight continuity is carried by the
+  machines that observe the work events. This is the founder's sleep-safely
+  clause, not a starvation bug.
+- **Upgrade migration**: machines upgrading from the timer regime re-arm at
+  their first post-upgrade work event (the orphaned
+  `agent_cadence_state.json` is never read).
 
 **P0 Drainage gate (Universal Invariant 5, AGENTS.md):** the cadence path is
 not free-running. After a successful board query and before the due-role loop,
