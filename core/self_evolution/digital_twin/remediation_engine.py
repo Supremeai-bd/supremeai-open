@@ -17,7 +17,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from .simulator import SimulationResult, get_impact_simulator
 from .topology import get_topology_mapper
