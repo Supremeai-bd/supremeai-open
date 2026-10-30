@@ -287,6 +287,23 @@ const LIVE_TEMPLATE = [
   );
 }
 
+// ─── ৬.৫. #2508 prescription A: the guide carries the receipt-closure convention ──
+// The #2490 closesOriginalIssue opt-in had zero post-deploy adoption because
+// submitters never see the flag (the 17-row docs-only cohort, #2470/#2508).
+// The guide is the SSOT onboarding surface, so the convention must ship there.
+{
+  const guide = bridgeGuide() as Record<string, any>;
+  const convention = guide.contract?.receiptClosureConvention;
+  assert.ok(
+    typeof convention === "string" && convention.length > 0,
+    "bridge.guide contract must carry receiptClosureConvention (#2508)",
+  );
+  assert.match(convention, /closesOriginalIssue: true/, "convention names the opt-in flag");
+  assert.match(convention, /bridge_submit_patch/, "convention names the submission tool");
+  assert.match(convention, /Refs #N/, "convention states the default keep-open contract");
+  assert.match(convention, /Watch\/census receipts/, "convention preserves the watch/census default");
+}
+
 // ─── ৭. e2e: submit_patch fail-closes PRE-PUSH (no token, no network) ───────
 {
   const server = new McpServer({ name: "freshness-test", version: "1.0.0" });
