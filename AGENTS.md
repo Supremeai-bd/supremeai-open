@@ -61,12 +61,15 @@ hybrid bridge contract. The following rules are non-negotiable:
   or open a direct PR. Every code change MUST arrive through the Tower's
   `bridge_submit` / `bridge_submit_patch` API (`taskId`, `files`, `summary`,
   `reflectionWhy`, `alternativesRejected`, `testsEvidence`, `agentIdentity`).
-- **Stale-Base Pin (enforced by the tower's #2333 pre-land check):** for
+- **Stale-Base Pin (fail-closed CAS gate — #3487, PR #3513):** for
   `full_file` on a path that already exists, always pin the CURRENT landed
   blob sha as `files[].baseSha` (`git rev-parse HEAD:<path>` on a freshly
-  rebased tree). A stale `baseSha` is rejected with `STALE_BASE_ERROR`; an
-  absent `baseSha` proceeds **unchecked** (fail-open) — the exact vector that
-  let #3404's stale landing revert co-landed work (#3438 burn trail).
+  rebased tree). The gate is **fail-closed**: a stale `baseSha` is rejected
+  with `STALE_BASE_ERROR`; an existing path with **no declared `baseSha`** is
+  rejected with `STALE_BASE_MISSING`; an unverifiable main read rejects with
+  `STALE_BASE_UNVERIFIED`; only a **brand-new path** (absent on main) may omit
+  it. This closes the fail-open vector that let #3404's stale landing revert
+  co-landed work (#3438 burn trail).
 - **Credential Zero-Leak Rule:** No agent may print or expose GitHub tokens or
   secrets in plaintext in console output or prompt logs. Secrets are loaded
   from Infisical into memory only (`GITHUB_READONLY_TOKEN`).
