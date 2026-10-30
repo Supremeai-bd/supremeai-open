@@ -493,6 +493,52 @@ def _sentry_superseded_note(item: dict[str, Any], newest: int | None) -> str | N
     return None
 
 
+# Sentry test-row demotion (U4 anti-stampede, board-local extension of the
+# #3050 demotion family): sentry passes occasionally file small-body
+# CONNECTIVITY TEST rows while probing the WAF-limited issue intake (live
+# 2026-10-30 13:35Z: #3371 "guard(platform): sentry c60 test row
+# sentry-c60-test-1-small — harmless diagnostics note", filed one minute
+# before its real pass row #3376 — the filer tested the small-body path while
+# the ~9.8KB census body was WAF-blocked, per the #3380 receipt). The test row
+# carries ZERO sentinel findings — the real pass row and its bridge receipt
+# carry the evidence — yet it lands claimable with labels [], so the age-first
+# priority sort serves it as a top pick and a full solver cycle burns minting
+# duplicate evidence of a pass already covered in-flight (U4's founding
+# class). Unlike the pass series there is NO newest-member exemption: test
+# rows are pure artifacts, so EVERY family test row is demoted and the
+# filer/admin lane owns their disposition. Title-phrase discriminator: the
+# word "sentry" must PRECEDE the phrase "test row" so real tasks about
+# test-row machinery ("validate test row handling for sentry intake") never
+# join. Board-local, zero network, fail-open by construction (malformed rows
+# serve unchanged — the filter can only REMOVE a dispatch, never block one);
+# the explicit --issue N override stays the escape hatch.
+SENTRY_TEST_ROW_MARKER = "test row"
+
+
+def _sentry_test_row_note(item: dict[str, Any]) -> str | None:
+    """Demotion note for sentry connectivity TEST rows, else None.
+
+    None for non-family rows, rows where "sentry" follows "test row" (real
+    tasks ABOUT test-row machinery), and malformed rows. Never raises.
+    """
+    try:
+        title = str(item.get("title") or "").casefold()
+        if not title.startswith(SENTRY_FAMILY_PREFIX):
+            return None
+        num = int(item.get("number", 0))
+        if "sentry" not in title or SENTRY_TEST_ROW_MARKER not in title:
+            return None
+        if title.index("sentry") > title.index(SENTRY_TEST_ROW_MARKER):
+            return None
+    except Exception:  # noqa: BLE001 — fail-open
+        return None
+    return (
+        "sentry connectivity test row (U4 anti-stampede demotion): filing-test "
+        f"artifact, duplicate coverage of its sibling pass row — no solver duty; "
+        f"filer/admin lane owns disposition (row #{num})"
+    )
+
+
 # Case-file item 15 (§6ak, docs/reports/CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md)
 # — premise-delivered demotion ("landing-receipt cross-scan candidate picking").
 # The picker reads a row's body to extract a TASK but never checks whether the
@@ -1218,6 +1264,29 @@ def pick_next_issue(
                     f"filtered from the pick — newest open sibling #{newest_sentry} carries the sentinel duty",
                 )
             candidates = survivors
+        # Sentry test-row demotion (U4 anti-stampede, live mode only — same
+        # boundary as the stale-sentry filter above): sentry connectivity TEST
+        # rows (filing-path artifacts, e.g. #3371 "sentry c60 test row …
+        # harmless diagnostics note", sibling of pass #3376) carry no sentinel
+        # findings and no solver duty — serving them burns a full cycle minting
+        # duplicate evidence of a pass already covered in-flight. Every family
+        # test row is demoted (no newest-member exemption: test rows are pure
+        # artifacts; the filer/admin lane owns their disposition). Board-local,
+        # fail-open, --issue N override stays the escape hatch.
+        test_row_survivors: list[dict[str, Any]] = []
+        test_rows_demoted = 0
+        for cand in candidates:
+            tr_note = _sentry_test_row_note(cand)
+            if tr_note is not None:
+                test_rows_demoted += 1
+                log_fn(
+                    "!",
+                    f"sentry-test-row demotion: #{cand.get('number')} skipped — {tr_note}",
+                )
+                continue
+            test_row_survivors.append(cand)
+        if test_rows_demoted:
+            candidates = test_row_survivors
         # #3315 — receipt-coverage demotion (live mode only, sentry-precedent
         # shape): a candidate covered by an OPEN bridge WO/receipt elsewhere on
         # the same board is skipped BEFORE the priority sort (window-preserving:
