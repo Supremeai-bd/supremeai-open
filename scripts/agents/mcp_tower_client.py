@@ -18,6 +18,9 @@ Usage:
     # List available tools
     python scripts/agents/mcp_tower_client.py tools
 
+    # Inspect a tool's argument contract WITHOUT probing it live (#GLM09-486738)
+    python scripts/agents/mcp_tower_client.py schema bridge_submit_patch
+
     # Call any tool
     python scripts/agents/mcp_tower_client.py call system_summary
 
@@ -506,6 +509,18 @@ def _cli_main() -> int:
     sub.add_parser("status", help="List all agents in the tower")
     sub.add_parser("tools", help="List available tools")
 
+    # Root-cause fix (GLM Agent 09, Job 486738, incident PR bridge-20261030-test-x):
+    # the tower ships a full JSON inputSchema for every tool via tools/list, but this
+    # client never surfaced it — so agents learned argument shapes by calling live
+    # tools with junk payloads. On state-mutating tools (bridge_submit_patch,
+    # work_claim, ...) that files real work orders/PRs. `schema` reads the
+    # declared contract offline: zero mutations, zero probe artifacts, ever.
+    sch = sub.add_parser(
+        "schema",
+        help="Print a tool's full inputSchema from tools/list (use this, never junk-payload probing)",
+    )
+    sch.add_argument("tool_name")
+
     c = sub.add_parser("connect", help="Connect + register + start heartbeat")
     c.add_argument("--name", default=None, help="Agent name (default: from identity file)")
     c.add_argument("--slot", default=None, help="Agent slot (default: from identity file)")
@@ -559,6 +574,18 @@ def _cli_main() -> int:
             print(f"Total tools: {len(tools)}")
             for t in tools:
                 print(f"  {t.get('name','?'):<40} {(t.get('description') or '')[:60]}")
+            return 0
+
+        if args.cmd == "schema":
+            tools = client.list_tools()
+            match = next((t for t in tools if t.get("name") == args.tool_name), None)
+            if match is None:
+                close = ", ".join(
+                    t.get("name", "") for t in tools if args.tool_name in t.get("name", "")
+                )
+                print(f"ERROR: unknown tool: {args.tool_name}" + (f" (close: {close})" if close else ""), file=sys.stderr)
+                return 1
+            print(json.dumps(match.get("inputSchema", {}), indent=2, ensure_ascii=False))
             return 0
 
         if args.cmd == "connect":
