@@ -54,7 +54,7 @@ except ImportError:  # pragma: no cover - PyYAML is the loop's only dependency
 ROOT = Path(__file__).resolve().parents[2]
 LOOP = ROOT / "scripts" / "agents" / "continuous_agent_loop.py"
 SPEC = ROOT / "docs" / "AGENT_LOOP_SPEC.md"
-CONTRIB = ROOT / "docs" / "CONTRIBUTING.md"
+CONTRIB = ROOT / "CONTRIBUTING.md"  # moved to repo root by #3524 (founder doc migration)
 CONTRACT_DOC = ROOT / "docs" / "AUTONOMY_LOOP_CONTRACT.md"
 GUARDS_WF = ROOT / ".github" / "workflows" / "pipeline.yml"
 # The open-guards.yml fallback was removed with the #155 workflow diet: a
