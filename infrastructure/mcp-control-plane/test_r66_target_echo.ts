@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { describeTarget, registerGitHubTools } from "./src/tools/github.tools.js";
+import { describeTarget, registerGitHubTools, repoDefaultNote, repoUrlFor } from "./src/tools/github.tools.js";
 import { RequestContextStore } from "./src/policy/auth.context.js";
 
 // ─── 1. describeTarget unit ───────────────────────────────────────────────
@@ -90,6 +90,28 @@ await RequestContextStore.run(anon, async () => {
   assert.equal(r.structuredContent, undefined, "isError results must stay exempt from output validation (R65 class)");
   assert.match(r.content?.[0]?.text ?? "", /Forbidden/i, "deny shape preserved");
   console.log("[3] error-path OK (isError text-only, structuredContent absent)");
+
+  // ─── 4. default-repo disclosure (#2452/#2469): no silent fallback ───────
+  // The no-repo call MUST be documented in tools/list itself, derived from
+  // the same repoUrlFor producer the runtime uses — the description and the
+  // actual request target can never disagree (drift can never re-hide).
+  const expectedDefault = describeTarget(repoUrlFor("github-primary")).targetRepo;
+  const repoTargeted = [
+    "github_actions_op", "github_workflow_runs", "github_get_failed_logs",
+    "github_list_secrets", "github_read_file", "github_list_prs",
+  ];
+  for (const wire of repoTargeted) {
+    const t = github.find((x) => x.name === wire);
+    assert.ok(t, `${wire} missing from tools/list`);
+    type IS = { inputSchema?: { properties?: { repo?: { description?: string } } } };
+    const desc = (t as IS).inputSchema?.properties?.repo?.description ?? "";
+    assert.match(desc, /When 'repo' is omitted/, `${wire}.repo must disclose the no-repo default (R66 #2452/#2469)`);
+    assert.ok(desc.includes(expectedDefault), `${wire}.repo disclosure must name the resolved account default (${expectedDefault}) — got: ${desc}`);
+    assert.match(desc, /R66/, `${wire}.repo disclosure must carry the R66 marker`);
+  }
+  // helper itself stays on the single producer (self-consistency)
+  assert.ok(repoDefaultNote().includes(expectedDefault), "repoDefaultNote must derive from repoUrlFor");
+  console.log(`[4] default-repo disclosure OK (6 tools disclose '${expectedDefault}' from the single registry producer)`);
 });
 
-console.log("ALL R66 TARGET-ECHO CONTRACT TESTS PASSED (#2447 option A)");
+console.log("ALL R66 TARGET-ECHO CONTRACT TESTS PASSED (#2447 option A + #2452/#2469 default disclosure)");
