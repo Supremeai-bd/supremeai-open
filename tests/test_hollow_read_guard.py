@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import contextlib
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -170,6 +171,107 @@ class TestExitContract(unittest.TestCase):
         ev = hrg.run_live_probe(boom)
         self.assertEqual(len(ev["findings"]), 3)
         self.assertTrue(all(f["verdict"] == "UNREADABLE" for f in ev["findings"]))
+
+
+class TestParsableAssertion3031(unittest.TestCase):
+    """#3031: the NON-EMPTY but INVALID class — 66-byte SSE mid-body cut."""
+
+    def test_valid_json_body_is_clean(self):
+        body = json.dumps({"totalOpen": 110, "workOrders": []})
+        r = hrg.assert_parsable("bridge.work_queue", body)
+        self.assertEqual(r["verdict"], "CLEAN")
+        self.assertEqual(r["bodyLength"], len(body))
+
+    def test_empty_body_is_hollow(self):
+        r = hrg.assert_parsable("bridge.work_queue", "")
+        self.assertEqual(r["verdict"], "HOLLOW")
+        self.assertEqual(r["bodyLength"], 0)
+
+    def test_whitespace_only_body_is_hollow(self):
+        r = hrg.assert_parsable("bridge.work_queue", "   \n  ")
+        self.assertEqual(r["verdict"], "HOLLOW")
+
+    def test_66b_truncated_envelope_is_hollow(self):
+        """Exact live receipt from #3031: body cut mid-string, error=False."""
+        body = '{"repo": "Supremeai-bd' + "x" * (66 - len('{"repo": "Supremeai-bd'))
+        self.assertEqual(len(body), 66)
+        r = hrg.assert_parsable("bridge.work_queue", body)
+        self.assertEqual(r["verdict"], "HOLLOW")
+        self.assertEqual(r["bodyLength"], 66)
+        self.assertIn("#3031", r["detail"])
+        self.assertIn("silent-consumption", r["detail"])
+
+    def test_excerpt_captured_in_finding(self):
+        r = hrg.assert_parsable("bridge.work_queue", '{"repo": "Supremeai-bd')
+        self.assertEqual(r["excerpt"], '{"repo": "Supremeai-bd')
+
+    def test_none_body_treated_as_empty_hollow(self):
+        r = hrg.assert_parsable("plane.x", None)
+        self.assertEqual(r["verdict"], "HOLLOW")
+
+
+class TestTowerCallParseBoundary(unittest.TestCase):
+    """#3031 wiring: tower_call must raise, never launder via {"raw": ...}."""
+
+    @staticmethod
+    def _sse(text: str) -> str:
+        inner = json.dumps({"jsonrpc": "2.0", "id": 99, "result": {
+            "content": [{"type": "text", "text": text}]}})
+        return f"data: {inner}\n\n"
+
+    def test_unparseable_sse_body_raises_hollow_read_error(self):
+        cut = '{"repo": "Supremeai-bd'
+        import unittest.mock as mock
+        with mock.patch.object(hrg, "_tower_rpc",
+                               side_effect=[("sid-1", ""), ("", ""),
+                                            ("sid-1", self._sse(cut))]):
+            with self.assertRaises(hrg.TowerHollowReadError) as ctx:
+                hrg.tower_call("bridge.work_queue", {"limit": 120}, "http://tower")
+            self.assertEqual(ctx.exception.body_length, len(cut))
+            self.assertEqual(ctx.exception.tool, "bridge.work_queue")
+            self.assertEqual(ctx.exception.excerpt, cut)
+
+    def test_parseable_sse_body_returns_dict(self):
+        import unittest.mock as mock
+        with mock.patch.object(hrg, "_tower_rpc",
+                               side_effect=[("sid-1", ""), ("", ""),
+                                            ("sid-1", self._sse('{"ok": true}'))]):
+            out = hrg.tower_call("bridge.work_queue", {"limit": 3}, "http://tower")
+        self.assertEqual(out, {"ok": True})
+
+    def test_hollow_error_is_runtime_error_subclass(self):
+        """Generic RuntimeError handling paths still apply (advisory parity)."""
+        self.assertTrue(issubclass(hrg.TowerHollowReadError, RuntimeError))
+
+
+class TestProbeHollowOnUnparseable(unittest.TestCase):
+    def test_unparseable_plane_is_hollow_detected(self):
+        honest = _FakeRosterFetch([{"number": 1}, {"number": 2}])
+
+        def fetch(tool, arguments):
+            if tool == "bridge.work_queue":
+                raise hrg.TowerHollowReadError(
+                    "bridge.work_queue", '{"repo": "Supremeai-bd' + "x" * 41)
+            return honest(tool, arguments)
+
+        ev = hrg.run_live_probe(fetch)
+        self.assertEqual(ev["verdict"], "HOLLOW_DETECTED")
+        self.assertEqual(ev["hollowCount"], 1)
+        f = [x for x in ev["findings"] if x.get("assertion") == "parsable"]
+        self.assertTrue(f and f[0]["plane"] == "bridge.work_queue")
+        self.assertIn("#3031", f[0]["detail"])
+
+    def test_unparseable_beats_unreadable_shape(self):
+        """TowerHollowReadError is distinct from generic UNREADABLE rows."""
+
+        def boom(tool, arguments):
+            raise hrg.TowerHollowReadError(tool, "cut-")
+
+        ev = hrg.run_live_probe(boom)
+        self.assertEqual(ev["verdict"], "HOLLOW_DETECTED")
+        self.assertEqual(ev["hollowCount"], 3)
+        self.assertTrue(all(f["verdict"] == "HOLLOW" for f in ev["findings"]))
+        self.assertTrue(all(f["assertion"] == "parsable" for f in ev["findings"]))
 
 
 if __name__ == "__main__":
