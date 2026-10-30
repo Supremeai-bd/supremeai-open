@@ -1051,6 +1051,7 @@ jobs:
           GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           python scripts/agents/pr_lifecycle_guard.py --all --apply || true
+          python scripts/ci/bridge_landing_watchdog.py --apply || true
 
       # AGENTS.md §10 — "A job that runs but produces no expected result
       # is actionable when evidence confirms it… No-actionable-finding must be
