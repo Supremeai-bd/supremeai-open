@@ -41,3 +41,34 @@ All agents live, enter, and execute through exactly two unified pillars:
   - **NO Backlog Starvation / Duplicate Stampede:** Never bypass open P0 blockers to create or pick up fast-follow research tickets, and never spawn duplicate PRs/work orders for the same task.
 
 **Beyond these guardrails, you have absolute freedom on HOW to solve your task. Never ask for permission.**
+
+---
+
+## 🌐 External Agent Hybrid Invariant
+
+External web agents (Devin, OpenHands, custom runners) participate through the
+hybrid bridge contract. The following rules are non-negotiable:
+
+- **READ Boundary:** External web agents MAY read the codebase, history, and
+  issue tracking through the direct `github-reader` MCP (`get_issue`,
+  `get_file_contents`, `search_repositories`). Read access is read-only.
+- **Single Write Gateway (Enforced):** No external agent may commit to GitHub
+  or open a direct PR. Every code change MUST arrive through the Tower's
+  `bridge_submit` / `bridge_submit_patch` API (`taskId`, `files`, `summary`,
+  `reflectionWhy`, `testsEvidence`, `agentIdentity`).
+- **Credential Zero-Leak Rule:** No agent may print or expose GitHub tokens or
+  secrets in plaintext in console output or prompt logs. Secrets are loaded
+  from Infisical into memory only (`GITHUB_READONLY_TOKEN`).
+
+### Tool Routing Contract
+
+- **Rule 1 (Intel / Reading):** Use only `github-reader` tools (`get_issue`,
+  `get_file_contents`, `search_repositories`) for GitHub issues, file contents,
+  discussions, and history.
+- **Rule 2 (Submission / PR):** Never call direct GitHub push tools. Send code
+  changes through the Tower `bridge_submit` / `bridge_submit_patch` API with
+  `taskId`, `files`, `summary`, `reflectionWhy`, `testsEvidence`, and
+  `agentIdentity`.
+- **Rule 3 (Infrastructure Health):** Use only Tower tools such as
+  `supabase_schema_inspect` and `render_service_health` for database, cache, or
+  deployment status.

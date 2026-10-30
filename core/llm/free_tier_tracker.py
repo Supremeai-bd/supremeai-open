@@ -17,7 +17,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from ..config import settings  # Fixed import path - using relative import
 from ..messaging.event_bus import (
@@ -450,7 +450,6 @@ def get_tracker(
     user_id: str = "default",
 ) -> FreeTierTracker:
     """Return the per-user FreeTierTracker."""
-    global _trackers
     if user_id not in _trackers:
         _trackers[user_id] = FreeTierTracker(custom_limits=custom_limits)
         logger.info(f"[FreeTier] FreeTierTracker initialized for user: {user_id}")

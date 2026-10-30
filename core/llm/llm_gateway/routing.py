@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 from core.errors.error_bus import with_error_bus
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from ...config import settings  # Fixed import path - using relative import
 from ...messaging.event_bus import (  # Fixed import path - using relative import

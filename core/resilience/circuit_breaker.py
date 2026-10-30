@@ -677,7 +677,6 @@ async def sync_from_db(db: Any) -> None:
     # module-level import — sync_from_db() is the only consumer).
     from services.config_service import ConfigService
 
-    global CIRCUITS
     try:
         # We serialize the default dict to a dict of config kwargs for fallback
         default_configs = {

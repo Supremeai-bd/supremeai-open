@@ -1,7 +1,9 @@
 """Dashboard events + standup report endpoints (GET /admin-api/events, GET /admin-api/reports)."""
 
+import asyncio
 import json
 import os
+from pathlib import Path
 
 from fastapi import HTTPException, Query
 
@@ -20,8 +22,10 @@ async def get_events(limit: int = Query(50, ge=1, le=200)):
         return []
 
     try:
-        with open(events_log_path, encoding="utf-8") as f:
-            lines = f.readlines()
+        def _read_events_lines():
+            with open(events_log_path, encoding="utf-8") as f:
+                return f.readlines()
+        lines = await asyncio.to_thread(_read_events_lines)
 
         events = []
         for line in reversed(lines):
@@ -60,8 +64,8 @@ async def list_reports(report_name: str | None = None):
 
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Report not found.")
-        with open(file_path, encoding="utf-8") as f:
-            return {"name": report_name, "content": f.read()}
+        content = await asyncio.to_thread(lambda: Path(file_path).read_text(encoding="utf-8"))
+        return {"name": report_name, "content": content}
     else:
         import glob
 

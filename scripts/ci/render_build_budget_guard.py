@@ -18,13 +18,62 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+# render_client lives at scripts/ops/lib/render_client.py — the historical
+# scripts/lib/ path vanished in the ops/ relocation and crashed this guard at
+# import in every context (the #2811 hardening ride-along).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ops" / "lib"))
 from render_client import RenderClient  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 BUILD_MINUTE_THRESHOLD = 450.0  # Max safe minutes out of 500 monthly free tier
+
+# Render caps a deploys page at 100; 12 pages covers a 1200-deploy month,
+# far beyond any observed retry-fail volume (#2811 window class).
+DEPLOY_WINDOW_PAGE_SIZE = 100
+DEPLOY_WINDOW_MAX_PAGES = 12
+
+
+def _unwrap_deploy(item):
+    """Render lists deploys as {"deploy": {...}} — tolerate both envelopes."""
+    if not isinstance(item, dict):
+        return {}
+    dep = item.get("deploy")
+    return dep if isinstance(dep, dict) else item
+
+
+def sum_month_build_seconds(deploys, month_start):
+    """Pure: sum durations of deploys started within [month_start, *).
+
+    Returns (total_seconds, deploy_count, saw_pre_month). ``saw_pre_month``
+    flags that the newest-first stream has reached back past the month start
+    (the pagination stop rule; see the #2811 window class).
+    """
+    total_seconds = 0.0
+    deploy_count = 0
+    saw_pre_month = False
+    for item in deploys:
+        dep = _unwrap_deploy(item)
+        created_at_str = dep.get("createdAt")
+        finished_at_str = dep.get("finishedAt")
+        if not created_at_str or not finished_at_str:
+            continue
+        try:
+            created_at = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
+            finished_at = datetime.fromisoformat(str(finished_at_str).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if created_at < month_start:
+            saw_pre_month = True
+            continue
+        if created_at.year == month_start.year and created_at.month == month_start.month:
+            duration = (finished_at - created_at).total_seconds()
+            if duration > 0:
+                total_seconds += duration
+                deploy_count += 1
+    return total_seconds, deploy_count, saw_pre_month
+
 
 SERVICES = [
     {
@@ -63,38 +112,33 @@ SERVICES = [
 
 
 def calculate_monthly_build_minutes(api_key: str, service_id: str) -> float:
-    """Calculate total build minutes used in the current calendar month."""
-    now = datetime.now(timezone.utc)
-    current_year = now.year
-    current_month = now.month
+    """Calculate total build minutes used in the current calendar month.
 
+    Cursor-paginates until the month window is saturated instead of reading a
+    fixed first page (#2811 window class): a truncated window under-counts
+    month-to-date burn during retry-fail loops and can present a false safe
+    posture to the autoDeploy toggle below.
+    """
+    now = datetime.now(timezone.utc)
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+
+    deploys = []
     try:
-        deploys = RenderClient(api_key=api_key).list_deploys(service_id, limit=50)
+        client = RenderClient(api_key=api_key)
+        for page in client.paginate(
+            f"/services/{service_id}/deploys",
+            page_size=DEPLOY_WINDOW_PAGE_SIZE,
+            max_pages=DEPLOY_WINDOW_MAX_PAGES,
+        ):
+            deploys.extend(page)
+            _, _, saw_pre_month = sum_month_build_seconds(page, month_start)
+            if saw_pre_month or len(page) < DEPLOY_WINDOW_PAGE_SIZE:
+                break
     except Exception as e:
         print(f"  ⚠️ Warning: Unable to fetch deploys for service {service_id}: {e}")
         return 0.0
 
-    total_seconds = 0.0
-    for item in deploys:
-        dep = item.get("deploy", {})
-        created_at_str = dep.get("createdAt")
-        finished_at_str = dep.get("finishedAt")
-
-        if not created_at_str or not finished_at_str:
-            continue
-
-        try:
-            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-            finished_at = datetime.fromisoformat(finished_at_str.replace("Z", "+00:00"))
-
-            # Only count deploys that started in the current calendar month
-            if created_at.year == current_year and created_at.month == current_month:
-                duration = (finished_at - created_at).total_seconds()
-                if duration > 0:
-                    total_seconds += duration
-        except Exception:
-            continue
-
+    total_seconds, _count, _sat = sum_month_build_seconds(deploys, month_start)
     return total_seconds / 60.0
 
 

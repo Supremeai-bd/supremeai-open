@@ -172,8 +172,12 @@ async def trigger_quick_action(action_type: str, admin_user: dict = Depends(get_
             backup_dir.mkdir(parents=True, exist_ok=True)
             backup_path = backup_dir / f"db_backup_{int(datetime.now(UTC).timestamp())}.json"
 
-            with open(backup_path, "w", encoding="utf-8") as f:
-                json.dump(backup_data, f, indent=2)
+            import asyncio
+
+            def _write_backup():
+                with open(backup_path, "w", encoding="utf-8") as f:
+                    json.dump(backup_data, f, indent=2)
+            await asyncio.to_thread(_write_backup)
 
             logger.info(f"Database backup saved successfully to {backup_path}")
             _admin_action_audit("success")

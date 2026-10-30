@@ -18,7 +18,18 @@ from typing import Any
 
 def get_mcp_servers() -> dict[str, Any]:
     settings: dict[str, Any] = {
-        "github": {
+        "github-reader": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": os.getenv("GITHUB_READONLY_TOKEN", "")},
+        "allowed_paths": ["/api/v1/gateway"],
+        "allowed_tools": [
+            "get_issue",
+            "get_file_contents",
+            "search_repositories",
+        ],
+    },
+    "github": {
             "command": "uvx",
             "args": ["mcp-server-github"],
             "env": {"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN", "")},

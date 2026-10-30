@@ -43,10 +43,10 @@
       "filesystem_read",
       "shell_exec",
       "github_pr_helper",
-      "github_list_prs",
-      "github_workflow_runs",
-      "github_get_failed_logs",
-      "github_read_file",
+      "github.list_prs",
+      "github.workflow_runs",
+      "github.get_failed_logs",
+      "github.read_file",
       "agent_heartbeat"
     ],
     "permissions": [
@@ -157,8 +157,8 @@
     "tools": [
       "filesystem_read",
       "shell_exec",
-      "github_workflow_runs",
-      "github_get_failed_logs",
+      "github.workflow_runs",
+      "github.get_failed_logs",
       "github_pr_helper",
       "agent_heartbeat"
     ],

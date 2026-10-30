@@ -1,5 +1,13 @@
 # Seq 0.4 — CONSUMERS Quickstart Overhaul & Link-Integrity Hand-off (#404, r2)
 
+> **ghost-host-retired: #2355/#2365/#2377** — this historical work-order receipt
+> predates the host adjudication: URLs embedded below point at the retired
+> no-server ghost `supremeai-api.onrender.com` (plain 404,
+> `x-render-routing: no-server`). The live gateway SSOT is
+> `https://supremeai-api-ulw0.onrender.com` (README service table,
+> `docs/CONSUMERS.md`). Do NOT copy URLs from this receipt — grep the SSOT
+> first; `scripts/ci/ghost_host_guard.py` enforces this class.
+
 > Task: `bridge-20261017-seq04-consumers-quickstart-r2` · Issue: #404 (P2-medium,
 > handoff:coder, repo:open; claim: operator-set `status:claimed` label AND
 > `<!-- atomic-claim -->` marker comment on #404 — both planes of

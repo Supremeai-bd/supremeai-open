@@ -9,7 +9,8 @@
 #   pwsh -File run_e2e_smoke.ps1 -Stream        # only 5 SSE streaming calls
 #
 # Environment overrides (identical to the sh mirror):
-#   GATEWAY_URL           default: https://supremeai-api.onrender.com
+#   GATEWAY_URL           default: https://supremeai-api-ulw0.onrender.com
+#                         (README SSOT — ghost host retired #2355/#2365/#2377)
 #   SUPREMEAI_API_KEY     required — monolith key-plane key (vault/env only)
 #   MODELS                space-separated model rotation, default: "auto"
 #   MAX_TOKENS            default: 32
@@ -26,7 +27,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$GatewayUrl = ($env:GATEWAY_URL ?? 'https://supremeai-api.onrender.com').TrimEnd('/')
+$GatewayUrl = ($env:GATEWAY_URL ?? 'https://supremeai-api-ulw0.onrender.com').TrimEnd('/')
 $ApiKey     = $env:SUPREMEAI_API_KEY
 $Models     = @($env:MODELS ?? 'auto')
 $MaxTokens  = [int]($env:MAX_TOKENS ?? '32')

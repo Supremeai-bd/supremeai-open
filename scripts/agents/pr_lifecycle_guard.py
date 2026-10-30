@@ -44,7 +44,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-REPO = os.environ.get("GH_REPO", "SaifulHaqueNiloy/supremeai")
+REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
 API_BASE = "https://api.github.com"
 
 # বাংলা মন্তব্য: evaluator-এর verdict-মার্কার চুক্তি (ai_pr_evaluator.py:verdict_marker_prefix)
@@ -73,15 +73,27 @@ HAS_PR_LABEL = "has-pr"
 def real_api(endpoint: str, method: str = "GET", payload: dict | None = None) -> Any:
     """GitHub REST কল — মান কখনো লগ নয়, শুধু স্ট্যাটাস।"""
     token = (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if not token:
+        try:
+            import subprocess
+            proc = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
+            if proc.returncode == 0:
+                token = proc.stdout.strip()
+        except Exception:
+            pass
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"token {token}"
+
     req = urllib.request.Request(  # noqa: S310
         f"{API_BASE}/{endpoint.lstrip('/')}",
         data=json.dumps(payload).encode() if payload is not None else None,
         method=method,
-        headers={
-            "Authorization": f"token {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
@@ -198,8 +210,7 @@ def heal_freshness(api: Callable, apply: bool, report: GuardReport) -> None:
         head_ref = pr["head"]["ref"]
         if not is_bot_lane(head_ref):
             continue  # মানুষের লেন — হস্তক্ষেপ নয়
-        base_sha = pr["base"]["sha"]
-        cmp_res = api(f"repos/{REPO}/compare/{base_sha}...{pr['head']['sha']}")
+        cmp_res = api(f"repos/{REPO}/compare/main...{head_ref}")
         if behind_count(cmp_res) <= 0:
             continue
         if not apply:

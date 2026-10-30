@@ -14,7 +14,7 @@ except ImportError:
     nx = None
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 
 class EvolutionSkillGraph:

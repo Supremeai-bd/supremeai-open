@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -43,8 +43,8 @@ class _FakeResponse:
 class _FakeClient:
     """Stands in for httpx.Client; records requests, serves queued payloads."""
 
-    calls: list[dict[str, Any]] = []
-    payloads: list[dict[str, Any]] = []
+    calls: ClassVar[list[dict[str, Any]]] = []
+    payloads: ClassVar[list[dict[str, Any]]] = []
     explode: bool = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

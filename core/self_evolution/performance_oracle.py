@@ -21,7 +21,7 @@ from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from models.meta_ai import (
     MetricType,
     PerformanceMetric,

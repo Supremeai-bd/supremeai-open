@@ -318,7 +318,6 @@ _startup_time: float = time.time()
 
 def _get_startup_time() -> float:
     """Get application startup time."""
-    global _startup_time
     return _startup_time
 
 

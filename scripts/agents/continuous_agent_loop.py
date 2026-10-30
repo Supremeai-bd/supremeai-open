@@ -189,6 +189,366 @@ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
 # None with an honest note instead (see pick_next_issue).
 FEEDBACK_PREVERIFY_TOPN = 5
 
+# #3050: stale-incident demotion. A CI-failure incident row whose referenced run
+# is superseded by this many green main runs of the SAME workflow (with zero
+# newer red runs) is mechanically skipped by the picker — U3's manual
+# "verify on live main" duty becomes a pick-time filter. Live anatomy that
+# motivates the constant (a43 dossier #3048, item 18 cost model): the #3019
+# incident consumed 4 dispatches and a claim-release lap while every agent
+# re-derived the same staleness by hand; the treadmill kept re-serving the row
+# because the falsified premise lived above the pick line. Fail-open: any
+# probe failure (rate limit, timeout, parse, renamed workflow) serves the row
+# unchanged — the filter can only REMOVE a dispatch, never block one.
+STALE_INCIDENT_GREEN_RUNS = 5
+STALE_INCIDENT_PROBE_TIMEOUT_S = 10.0
+STALE_INCIDENT_RUNS_WINDOW = 60  # per_page for the runs fetch (newest-first)
+
+_INCIDENT_RUN_RE = re.compile(r"Run\s*#(\d+)", re.IGNORECASE)
+_INCIDENT_FAIL_MARKER = " failed on main"
+
+
+def _incident_stale_note(
+    item: dict[str, Any],
+    fetch_runs: Callable[[int], list[dict[str, Any]]] | None = None,
+    min_green: int | None = None,
+) -> str | None:
+    """#3050 — demotion note for a superseded CI-failure incident, else None.
+
+    Recognizes the mirror's incident-title shape
+    "...[<state>] <workflow> failed on main (Run #<id>)"; resolves the run's
+    workflow name and run_number via the runs surface, then checks whether
+    min_green (default STALE_INCIDENT_GREEN_RUNS) SUCCESS runs of the same
+    workflow on main exist strictly newer than it with zero newer FAILURES
+    (cancelled/timed-out runs are inconclusive and ignored — storm concurrency
+    pruning must not read as red). Returns None for anything unjudgeable
+    (non-incident titles, scrolled-off runs, renamed workflows, fetch errors):
+    fail-open by construction, the row is served exactly as before.
+    """
+    n_green = STALE_INCIDENT_GREEN_RUNS if min_green is None else min_green
+    title = str(item.get("title", ""))
+    if _INCIDENT_FAIL_MARKER not in title:
+        return None
+    run_match = _INCIDENT_RUN_RE.search(title)
+    if not run_match:
+        return None
+    try:
+        incident_run_id = int(run_match.group(1))
+    except ValueError:
+        return None
+    head = title.split(_INCIDENT_FAIL_MARKER)[0]
+    if "] " not in head:
+        return None
+    workflow = head.rsplit("] ", 1)[1].strip()
+    if not workflow:
+        return None
+
+    if fetch_runs is None:
+        def fetch_runs(per_page: int) -> list[dict[str, Any]]:
+            url = (
+                f"https://api.github.com/repos/{UPSTREAM_REPO}/actions/runs"
+                f"?branch=main&per_page={per_page}"
+            )
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "supremeai-agent-loop-stale-incident-probe",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=STALE_INCIDENT_PROBE_TIMEOUT_S) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            return list(payload.get("workflow_runs") or [])
+
+    try:
+        runs = fetch_runs(STALE_INCIDENT_RUNS_WINDOW)
+    except Exception:  # noqa: BLE001 — fail-open: a dark runs surface serves the row
+        return None
+
+    incident = next(
+        (r for r in runs if r.get("id") == incident_run_id),
+        None,
+    )
+    if incident is None:
+        return None  # scrolled off the window — cannot judge, serve unchanged
+    incident_num = incident.get("run_number")
+    incident_name = str(incident.get("name") or "")
+    if not isinstance(incident_num, int):
+        return None
+
+    def _same_workflow(r: dict[str, Any]) -> bool:
+        name = str(r.get("name") or "")
+        return bool(name) and (name == workflow or name == incident_name or name in workflow or workflow in name or name in incident_name)
+
+    newer = [
+        r
+        for r in runs
+        if isinstance(r.get("run_number"), int)
+        and r["run_number"] > incident_num
+        and _same_workflow(r)
+    ]
+    concluded = [
+        r for r in newer if r.get("conclusion") in ("success", "failure")
+    ]
+    if not concluded:
+        return None
+    greens = sum(1 for r in concluded if r.get("conclusion") == "success")
+    has_red = any(r.get("conclusion") == "failure" for r in concluded)
+    newest_first = concluded[0].get("conclusion") == "success"
+    if greens >= n_green and not has_red and newest_first:
+        return (
+            f"incident-stale (U3 demotion, #3050): run #{incident_run_id} "
+            f"superseded by {greens} green main runs of '{workflow}' with zero "
+            "newer reds"
+        )
+    return None
+
+
+def _probe_incident_stale(item: dict[str, Any]) -> str | None:
+    """Live-plane wrapper handed to pick_next_issue as incident_probe.
+
+    Never raises (the pick path's never-raise contract); returns the demotion
+    note or None. Hermetic callers inject fetch_runs into _incident_stale_note
+    directly instead.
+    """
+    try:
+        return _incident_stale_note(item)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# Stale-sentry demotion (#3050 demotion family, board-local extension):
+# the platform sentry series is a rolling sentinel — every pass supersedes the
+# previous one, yet all 20 open passes sit on the board as claimable rows
+# (labels [] / status:unclaimed / platform-guardian+sentry), so the
+# age-first priority sort serves the OLDEST fossil (live 2026-10-30 09:25Z:
+# #2237 — a 2-day-old pass — was dispatched as the top pick while the live
+# sentinel #3111, carrying that cycle's first-hand TELEGRAM-PRIMARY DOWN
+# finding, sorted last). The falsified premise is the same class as #3050's:
+# "you are looking at the freshest evidence" — false for every superseded
+# pass. Unlike the CI-incident probe this judgment needs ZERO network: the
+# family comparison is board-local (max issue number among open rows sharing
+# the family shape; issue numbers are monotonic with filing order, which makes
+# them a robustness-proof ordering token — no timestamp parsing). Two title
+# spellings coexist in the series ("guard(platform): sentry pass …" and
+# "guard(platform): provider sentry pass …"); the family test is prefix +
+# marker so both join. Bridge mirror rows ("🌉 Bridge Work Order — … sentry
+# pass …") do NOT start with the prefix and never join. Fail-open: any
+# malformed row (missing title, non-numeric number) serves unchanged — the
+# filter can only REMOVE a dispatch, never block one.
+SENTRY_FAMILY_PREFIX = "guard(platform):"
+SENTRY_FAMILY_MARKER = "sentry pass"
+
+
+def _sentry_pass_newest_open(issues: list[dict[str, Any]]) -> int | None:
+    """Newest (max issue number) open platform sentry pass on the board.
+
+    Board-local, never-raise: comparison runs over the full open-row list
+    (not just claimable candidates) so a claimed/bot-labeled newest sibling
+    still supersedes the older fossils — the sentinel duty follows the
+    newest OPEN pass regardless of its claim state.
+    """
+    newest: int | None = None
+    try:
+        for row in issues:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "").casefold()
+            if not title.startswith(SENTRY_FAMILY_PREFIX) or SENTRY_FAMILY_MARKER not in title:
+                continue
+            try:
+                num = int(row.get("number", 0))
+            except (TypeError, ValueError):
+                continue
+            if newest is None or num > newest:
+                newest = num
+    except Exception:  # noqa: BLE001 — fail-open
+        return newest
+    return newest
+
+
+def _sentry_superseded_note(item: dict[str, Any], newest: int | None) -> str | None:
+    """Demotion note when item is an OLDER member of the sentry-pass family.
+
+    None for non-family rows, malformed rows, and the newest member itself
+    (its premise — freshest sentinel evidence — is intact). Never raises.
+    """
+    try:
+        if newest is None:
+            return None
+        title = str(item.get("title") or "").casefold()
+        if not title.startswith(SENTRY_FAMILY_PREFIX) or SENTRY_FAMILY_MARKER not in title:
+            return None
+        num = int(item.get("number", 0))
+    except Exception:  # noqa: BLE001 — fail-open
+        return None
+    if num < newest:
+        return (
+            "superseded platform sentry pass (stale-sentry demotion, #3050 family): "
+            f"newest open sibling #{newest} carries the sentinel duty"
+        )
+    return None
+
+
+# Case-file item 15 (§6ak, docs/reports/CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md)
+# — premise-delivered demotion ("landing-receipt cross-scan candidate picking").
+# The picker reads a row's body to extract a TASK but never checks whether the
+# body's PROMISE is already kept. Live anatomy (GLM Agent 27, Job 486827,
+# 2026-10-30): the loop dispatched #2395 minutes after its landing receipt hit
+# main (merged #3158, squash subject "…live-verified by receipt #2395…"), and
+# the board's #2597/#2792 rows were served while their receipts/landing
+# vehicles existed plane-adjacent (merged #3162 "…for #2597…"; WO #3169) —
+# each serve is a duplicate-minting invitation (U4's founding class), caught
+# pre-claim only because each lane re-scanned by hand and walked away. Two
+# bounded scans, both fail-open (the filter can only REMOVE a dispatch, never
+# block one — the #3050-family contract):
+#   A. promised-artifact existence (item 15's literal mechanism): backticked
+#      repo paths inside the reach of a promise marker ("lands in-repo as",
+#      "dossier at", "full dossier in", "companion PR") are tested against the
+#      current tree; EVERY promised artifact existing ⇒ demote (any missing
+#      path keeps the row — the promise may be partially unmet).
+#   B. merged-landing citation (the a39 narrative's own receipt shape —
+#      "landed … as the companion PR whose squash subject refs the row
+#      back"): one cached /pulls?state=closed fetch per pick run; a MERGED PR
+#      whose title/body cites the row in delivery form (closes/fixes/resolves/
+#      for/receipt #N) ⇒ demote with the citing PR named. Closed-unmerged and
+#      in-gates vehicles never demote — their work may still land or be
+#      retried; only a merged receipt is a definitive landing signal.
+PROMISE_MARKER_RE = re.compile(
+    r"lands?\s+in[-\s]?repo\s+as|dossier\s+at|full\s+dossier\s+in|companion\s+pr",
+    re.IGNORECASE,
+)
+# বাংলা: শুধুমাত্র ব্যাকটিকে ঘেরা রিপো-আপেক্ষিক পথ — কমপক্ষে একটি "/" থাকতে হবে,
+# "/" বা ".." দিয়ে শুরু/এসকেপ করা পথ বাদ (tree-escape প্রতিরোধ)।
+PROMISED_PATH_RE = re.compile(r"`(\w[\w.-]*(?:/[\w.-]+)+)`")
+MERGED_LANDING_WINDOW = 80  # /pulls?state=closed newest-updated window (one fetch per pick run)
+PREMISE_PROBE_TIMEOUT_S = 10.0
+
+# বাংলা: প্রক্রিয়া-স্তরের একক ফেচ — প্রতি pick রানে সর্বোচ্চ একবার REST কল
+# (rate-limit নিয়ন্ত্রণ); ব্যর্থতাও ক্যাশ হয় (খালি তালিকা) যাতে একই রানের
+# পরবর্তী প্রার্থীরা বারবার নেটওয়ার্কে না যায়। ব্যর্থ ফেচ = কোনো demotion নয়
+# (fail-open দিক: ফিল্টার শুধু dispatch সরায়, কখনো ব্লক করে না)।
+_LANDING_FETCH_DONE = False
+_LANDING_ROWS: list[dict[str, Any]] = []
+
+
+def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
+    global _LANDING_FETCH_DONE, _LANDING_ROWS
+    if _LANDING_FETCH_DONE:
+        return _LANDING_ROWS
+    _LANDING_FETCH_DONE = True
+    url = (
+        f"https://api.github.com/repos/{UPSTREAM_REPO}/pulls"
+        f"?state=closed&sort=updated&direction=desc&per_page={per_page}"
+    )
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "supremeai-agent-loop-landing-receipt-probe",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=PREMISE_PROBE_TIMEOUT_S) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    _LANDING_ROWS = list(payload if isinstance(payload, list) else [])
+    return _LANDING_ROWS
+
+
+def _promised_artifact_paths(body: str) -> list[str]:
+    """Backticked repo-relative paths inside the reach of a promise marker.
+
+    বাংলা: item 15-এর শাব্দিক মেকানিজম — প্রতিশ্রুতি-মার্কারের বাক্যসীমার ভেতরে
+    থাকা ব্যাকটিক-পথগুলোই "promised artifact"। মার্কার-পরের উইন্ডো প্রথম
+    বাক্য-সমাপ্তিতে কাটা হয় যাতে অসংশ্লিষ্ট গদ্যের পথ ঢুকে না যায়। কখনোই
+    raise করে না (বিকৃত body = খালি তালিকা)।
+    """
+    try:
+        paths: list[str] = []
+        seen: set[str] = set()
+        text = str(body or "")
+        for marker in PROMISE_MARKER_RE.finditer(text):
+            reach = text[marker.end(): marker.end() + 200]
+            # বাংলা: বাক্য-সীমা = নিউলাইন, অথবা [.!?]-এর পরে স্পেস/স্ট্রিং-শেষ —
+            # ফাইলনেমের ভেতরের ডট (docs/x.md) বাক্য-সমাপ্তি নয়, সেটি রক্ষা করতেই
+            # lookahead।
+            stop = re.search(r"\n|[.!?](?=\s|$)", reach)
+            if stop:
+                reach = reach[: stop.start()]
+            for pm in PROMISED_PATH_RE.finditer(reach):
+                path = pm.group(1)
+                parts = path.split("/")
+                if path.startswith("/") or ".." in parts:
+                    continue
+                if path not in seen:
+                    seen.add(path)
+                    paths.append(path)
+        return paths
+    except Exception:  # noqa: BLE001 — fail-open
+        return []
+
+
+def _premise_delivered_note(
+    item: dict[str, Any],
+    tree_root: Path | None = None,
+    fetch_merged: Callable[[int], list[dict[str, Any]]] | None = None,
+) -> str | None:
+    """Item 15 — demotion note when a row's premise is already delivered, else None.
+
+    বাংলা: দুই স্ক্যান, দুটোই সৎ-নোটবহন: (A) body-র প্রতিশ্রুত আর্টিফ্যাক্ট
+    বর্তমান গাছে আছে কি না; (B) মার্জড PR কি ডেলিভারি-ফর্মে রো-নম্বর উদ্ধৃত
+    করছে। যেকোনো প্রোব-ব্যর্থতা (rate limit, timeout, parse) রো অপরিবর্তিত
+    সার্ভ করে — ফিল্টার শুধু একটি dispatch সরাতে পারে, কখনো ব্লক করে না।
+    হারমেটিক কলার tree_root/fetch_merged ইনজেক্ট করে (zero network)।
+    """
+    try:
+        promised = _promised_artifact_paths(str(item.get("body") or ""))
+        if promised:
+            root = tree_root if tree_root is not None else REPO_ROOT
+            missing = [p for p in promised if not (root / p).exists()]
+            if not missing:
+                return (
+                    "premise-delivered (landing-receipt cross-scan, item 15/§6ak): promised "
+                    f"in-repo artifact(s) already exist on main: {', '.join(promised)} — "
+                    "the row's own deliverable is landed; claiming would mint a duplicate landing"
+                )
+        if fetch_merged is None:
+            fetch_merged = _fetch_merged_landing_prs
+        rows = fetch_merged(MERGED_LANDING_WINDOW)
+        num = int(item.get("number"))
+    except Exception:  # noqa: BLE001 — fail-open: a dark plane serves the row
+        return None
+    cite = re.compile(rf"(?:closes|fixes|resolves|for|receipt)\s+#{num}\b", re.IGNORECASE)
+    try:
+        for pr in rows:
+            if not isinstance(pr, dict) or not pr.get("merged_at"):
+                continue
+            hay = f"{pr.get('title') or ''}\n{pr.get('body') or ''}"
+            m = cite.search(hay)
+            if not m:
+                continue
+            title = str(pr.get("title") or "").strip()[:80]
+            return (
+                "premise-delivered (landing-receipt cross-scan, item 15/§6ak): merged PR "
+                f"#{pr.get('number')} already cites this row ('{m.group(0)}' in \"{title}\") — "
+                "the landing receipt is on main; re-verify the residual need before claiming"
+            )
+    except Exception:  # noqa: BLE001 — fail-open
+        return None
+    return None
+
+
+def _probe_premise_delivered(item: dict[str, Any]) -> str | None:
+    """Live-plane wrapper handed to pick_next_issue as premise_probe.
+
+    Never raises (the pick path's never-raise contract); returns the demotion
+    note or None. Hermetic callers inject tree_root/fetch_merged into
+    _premise_delivered_note directly instead.
+    """
+    try:
+        return _premise_delivered_note(item)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> tuple[bool, str]:
     """#2794 fix (1) — live-plane claim pre-verify for the dispatch pick.
 
@@ -291,6 +651,8 @@ def pick_next_issue(
     issues: list[dict[str, Any]] | None = None,
     claim_probe: Callable[[int | str], tuple[bool, str]] | None = None,
     log_fn: Callable[[str, str], None] | None = None,
+    incident_probe: Callable[[dict[str, Any]], str | None] | None = None,
+    premise_probe: Callable[[dict[str, Any]], str | None] | None = None,
 ) -> str | None:
     # বাংলা: log_fn=None → call-time-এ log-এ ফলব্যাক। ডিফল্ট-প্যারামিটারে সরাসরি log
     # লিখলে def-time evaluation-এ NameError হত — log() এই ফাইলে pick_next_issue-
@@ -368,6 +730,33 @@ def pick_next_issue(
     if exclude:
         excluded_set = {str(e) for e in exclude}
         candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
+    # Stale-sentry demotion (#3050 family, board-local): superseded platform
+    # sentry passes are filtered from the candidates BEFORE the priority sort,
+    # so the live sentinel (newest open pass) and real work surface within the
+    # top-FEEDBACK_PREVERIFY_TOPN pre-verify window instead of the window
+    # exhausting on fossils (live 2026-10-30: 20 open sentry passes; top-5 by
+    # age were ALL fossils, #2237 dispatched while #3111 sorted last).
+    # Gated on live mode (claim_probe wired) — pure mode keeps the pre-change
+    # label-only contract byte-identical for hermetic callers, exactly the
+    # boundary the #2794/#3050 probes ride. Malformed rows fail open and are
+    # served unchanged.
+    if claim_probe is not None:
+        newest_sentry = _sentry_pass_newest_open(issues or [])
+        if newest_sentry is not None:
+            survivors: list[dict[str, Any]] = []
+            demoted = 0
+            for cand in candidates:
+                if _sentry_superseded_note(cand, newest_sentry) is not None:
+                    demoted += 1
+                    continue
+                survivors.append(cand)
+            if demoted:
+                log_fn(
+                    "!",
+                    f"stale-sentry demotion: {demoted} superseded platform sentry pass row(s) "
+                    f"filtered from the pick — newest open sibling #{newest_sentry} carries the sentinel duty",
+                )
+            candidates = survivors
     sorted_issues = sorted(candidates, key=priority_key)
     if claim_probe is None:
         # Pure mode — label-only pick, exactly the pre-#2794 contract (hermetic
@@ -391,6 +780,35 @@ def pick_next_issue(
         if active:
             log_fn("!", f"pick pre-verify: #{num} skipped — {note}; advancing to next candidate (#2794 fix (1))")
             continue
+        if incident_probe is not None:
+            # #3050 — stale-incident demotion: a superseded CI-failure incident
+            # is skipped IN THE SAME RUN (advance to the next candidate), the
+            # same skip-and-advance shape as the live-claim filter above.
+            # Fail-open: probe errors serve the row (never-raise contract).
+            try:
+                stale_note = incident_probe(item)
+            except Exception as exc:  # noqa: BLE001
+                stale_note = None
+                log_fn("!", f"pick pre-verify: #{num} incident probe raised {type(exc).__name__} — serving row unchanged")
+            if stale_note:
+                log_fn("!", f"pick pre-verify: #{num} skipped — {stale_note}; advancing to next candidate (#3050 U3 demotion)")
+                continue
+        if premise_probe is not None:
+            # item 15 (§6ak) — premise-delivered demotion: a row whose own
+            # promised in-repo artifact already exists on main, or whose
+            # merged landing receipt already cites the row, is skipped IN THE
+            # SAME RUN (advance to the next candidate), the same
+            # skip-and-advance shape as the live-claim and incident filters.
+            # Fail-open: probe errors serve the row (never-raise contract);
+            # the filter can only REMOVE a dispatch, never block one.
+            try:
+                delivered_note = premise_probe(item)
+            except Exception as exc:  # noqa: BLE001
+                delivered_note = None
+                log_fn("!", f"pick pre-verify: #{num} premise probe raised {type(exc).__name__} — serving row unchanged")
+            if delivered_note:
+                log_fn("!", f"pick pre-verify: #{num} skipped — {delivered_note}; advancing to next candidate (item 15 premise-delivered demotion)")
+                continue
         if note and not note.startswith("no active claim"):
             log_fn("!", f"pick pre-verify: #{num} {note} — proceeding on labels (live advisory to the agent stays in force)")
         return num
@@ -1149,7 +1567,7 @@ def build_task_envelope(
             f"MANDATE: {role_description}",
             "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge.",
             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
-            "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.",
+            "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved. The picker also auto-demotes mechanically (#3050): an incident whose referenced run is superseded by >=5 green main runs of the same workflow (zero newer reds) is skipped at pick time — for explicit --issue N dispatches this manual check remains the backstop.",
             # বাংলা: কিউ-স্তরের claim লেবেল tower-এর লাইভ claim-কে পিছিয়ে থাকে (live
             # 2026-10-28: ৩ সারি >=১৯ মিনিট ধরে status:unclaimed দেখিয়েছে যদিও claim
             # স্ট্যাম্প হয়ে গিয়েছিল — #2111, #2123, #2102; স্থায়ী প্রোব
@@ -1553,7 +1971,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # বাংলা: SPEC §4b stdout-purity — envelope-মোডে pick-প্রি-ভেরিফাই অ্যাডভাইজরি
             # stderr-এ যায় (log_fn=_stderr_log), stdout শুধুই envelope JSON; ডিসপ্যাচ-পথে
             # (নিচের সাইট) default log_fn=log অপরিবর্তিত — stdout-মার্কার গণনা অক্ষত।
-            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log)
+            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered)
             if picked:
                 target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
                 # বাংলা: board query-র list payload-এ title থাকে না (gh issue list
@@ -1646,7 +2064,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # never raises/hangs (see _tower_queue_floor).
             log("!", _tower_queue_floor())
     else:
-        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)
+        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered)
         if picked:
             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
             # status:runway → ci-fixer, gate:pre-landing → task-auditor হলেও
@@ -1673,7 +2091,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
             print(action_instruction(picked))
             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
-            print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
+            print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved. The picker auto-demotes superseded incidents at pick time (#3050); this manual check remains the backstop for explicit --issue N dispatches.")
             # বাংলা: STALE-CLAIM GUARD — envelope-এর specialist_prompt-এর সাথে সমান্তরাল
             # (U3-র দুই-স্তর প্যাটার্ন)। কিউ-লেবেল লাইভ claim-কে পিছিয়ে থাকায়
             # status:unclaimed পরামর্শ মাত্র, সত্য নয়; work_claim-এর আগে

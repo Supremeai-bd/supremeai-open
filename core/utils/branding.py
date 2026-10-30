@@ -64,7 +64,6 @@ MODEL_DISPLAY: dict[str, dict[str, str]] = {
 
 async def sync_from_db(db: Any) -> None:
     """Sync PROVIDER_DISPLAY and MODEL_DISPLAY from the database configuration."""
-    global PROVIDER_DISPLAY, MODEL_DISPLAY
     try:
         default_config = {
             "provider_display": dict(PROVIDER_DISPLAY),

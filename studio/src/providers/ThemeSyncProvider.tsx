@@ -25,6 +25,7 @@ export const ThemeSyncProvider: React.FC<{ children: React.ReactNode; userId?: s
       if (!token) return;
       eventSource = createSecureEventSource(`${getApiBaseUrl()}/api/preferences/${userId}/stream`, token, {
         onMessage: (event) => {
+          if (!event.data || !event.data.trim()) return;
           try {
             const data = JSON.parse(event.data);
             // fetchEventSource passes event.type via event.type property now if we matched it, or we check data.event

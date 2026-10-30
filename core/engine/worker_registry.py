@@ -1,7 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.messaging.nats_messaging import nats_client
 
 

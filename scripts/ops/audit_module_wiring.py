@@ -10,13 +10,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parents[2]
 AUDIT_VERSION = "2.0"
 VERIFICATION_COMMAND = "python scripts/audit_module_wiring.py && python scripts/sync_modules_list.py"
 PRODUCTION_SCAN_DIRS = [
-    ROOT_DIR / "backend" / name for name in ("core", "api", "services", "middleware", "pipelines", "tools")
-] + [ROOT_DIR / name for name in ("frontend/src", "packages", "infrastructure/mcp-control-plane/src")]
-TEST_SCAN_DIRS = [ROOT_DIR / "backend/tests", ROOT_DIR / "frontend/src"]
+    ROOT_DIR / "core", ROOT_DIR / "gateway", ROOT_DIR / "studio" / "src",
+    ROOT_DIR / "infrastructure" / "mcp-control-plane" / "src",
+]
+TEST_SCAN_DIRS = [ROOT_DIR / "tests", ROOT_DIR / "studio" / "src"]
 ENVIRONMENT_DEPENDENT_MODULES = {
     "backend/tools/devops/docker_sandbox.py",
     "backend/tools/launchdarkly_agent_adapter.py",
@@ -39,6 +40,8 @@ def load_cataloged_modules() -> list[dict]:
     catalog_path = ROOT_DIR / "docs/reference/MODULES_LIST.md"
     if not catalog_path.exists():
         catalog_path = ROOT_DIR / "MODULES_LIST.md"
+    if not catalog_path.exists():
+        return modules
     for line in catalog_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line.startswith("|") or "Module Name / Relative Path" in line or "---|---" in line:

@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator, Sequence
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from ..interfaces import ModelProvider
 

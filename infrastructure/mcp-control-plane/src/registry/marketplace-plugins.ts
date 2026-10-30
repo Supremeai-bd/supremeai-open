@@ -1,5 +1,6 @@
 import { registerRemoteServer, listRemoteServers, type RemoteMcpServer } from "./remote-mcp-servers.js";
 import { mcpTrustLevelSchema, mcpProtocolSchema, type McpProtocol, type McpTrustLevel } from "./mcp.contracts.js";
+import { evaluateLicenseProvenance, type LicenseGateVerdict } from "./license-gate.js";
 
 /**
  * #1523 — Marketplace MVP: MCP plugin catalog + BYO connection ledger.
@@ -36,6 +37,10 @@ export interface MarketplacePlugin {
   credentialFields: MarketplaceCredentialField[];
   trustLevel: McpTrustLevel;
   docsUrl: string | null;
+  /** SPDX expression of the upstream project, or null when not pinned. */
+  license: string | null;
+  /** Upstream repository URL, or null when not pinned (#1668 provenance). */
+  upstreamUrl: string | null;
 }
 
 export interface MarketplaceConnection {
@@ -75,6 +80,8 @@ function seed(
   endpointTemplate: string | null,
   credentialFields: MarketplaceCredentialField[],
   docsUrl: string | null,
+  license: string | null,
+  upstreamUrl: string | null,
 ): MarketplacePlugin {
   return {
     pluginId,
@@ -87,6 +94,8 @@ function seed(
     credentialFields,
     trustLevel: "untrusted",
     docsUrl,
+    license,
+    upstreamUrl,
   };
 }
 
@@ -108,6 +117,8 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
     "https://api.githubcopilot.com/mcp/",
     [vaultField("github-token", "GitHub personal access token (vault ref)")],
     "https://github.com/github/github-mcp-server",
+    "MIT",
+    "https://github.com/github/github-mcp-server",
   ),
   seed(
     "telegram",
@@ -117,6 +128,8 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
     "telegram",
     null,
     [vaultField("bot-token", "Telegram bot token (vault ref)")],
+    null,
+    null,
     null,
   ),
   seed(
@@ -128,6 +141,8 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
     null,
     [vaultField("search-api-key", "Search API key (vault ref)")],
     null,
+    null,
+    null,
   ),
   seed(
     "google-drive",
@@ -137,6 +152,8 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
     "google",
     null,
     [vaultField("drive-token", "Google OAuth token (vault ref)")],
+    null,
+    null,
     null,
   ),
   seed(
@@ -148,11 +165,100 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
     "https://mcp.notion.com/mcp",
     [vaultField("notion-token", "Notion integration token (vault ref)")],
     "https://developers.notion.com/docs/mcp",
+    null,
+    null,
   ),
 ]);
 
 export function getMarketplacePlugin(pluginId: string): MarketplacePlugin | undefined {
-  return MARKETPLACE_PLUGINS.find((p) => p.pluginId === pluginId);
+  return (
+    MARKETPLACE_PLUGINS.find((p) => p.pluginId === pluginId) ??
+    marketplaceRegistryExtras.find((p) => p.pluginId === pluginId)
+  );
+}
+
+/** Runtime additions from #1668 catalog ingress (seeds stay frozen/SQL-synced). */
+const marketplaceRegistryExtras: MarketplacePlugin[] = [];
+
+/** Combined catalog view: frozen Phase-1 seeds + gate-admitted registrations. */
+export function listMarketplacePlugins(): MarketplacePlugin[] {
+  return [...MARKETPLACE_PLUGINS, ...marketplaceRegistryExtras];
+}
+
+/** #1668 — mechanical license + provenance verdict for any catalog row. */
+export function marketplaceLicenseGate(plugin: MarketplacePlugin): LicenseGateVerdict {
+  return evaluateLicenseProvenance({ license: plugin.license, upstreamUrl: plugin.upstreamUrl });
+}
+
+export interface RegisterMarketplacePluginInput {
+  pluginId: string;
+  name: string;
+  category: string;
+  description: string;
+  provider: string;
+  endpointTemplate: string | null;
+  protocol: McpProtocol;
+  credentialFields: MarketplaceCredentialField[];
+  docsUrl: string | null;
+  license: string | null;
+  upstreamUrl: string | null;
+}
+
+export type RegisterMarketplacePluginResult =
+  | { ok: true; plugin: MarketplacePlugin; gate: LicenseGateVerdict }
+  | { ok: false; error: string; gate: LicenseGateVerdict | null };
+
+/**
+ * #1668 — Catalog ingress. Third-party plugins enter the registry ONLY
+ * through this gate: GPL-family licenses, unknown/unverifiable licenses,
+ * and non-repository upstreams are rejected fail-closed (S10 doctrine);
+ * every admission lands 'untrusted' and is never merged into the frozen
+ * seed list (which must stay in sync with the SQL migration).
+ */
+export function registerMarketplacePlugin(input: RegisterMarketplacePluginInput): RegisterMarketplacePluginResult {
+  const pluginId = (input.pluginId ?? "").trim();
+  if (!/^[a-z0-9-]{2,64}$/.test(pluginId)) {
+    return { ok: false, error: `pluginId must match ^[a-z0-9-]{2,64}$ (got '${pluginId}').`, gate: null };
+  }
+  if (getMarketplacePlugin(pluginId)) {
+    return { ok: false, error: `Plugin already registered in the catalog: ${pluginId}.`, gate: null };
+  }
+  // Gate FIRST — a rejected plugin never reaches catalog state.
+  const gate = evaluateLicenseProvenance({ license: input.license, upstreamUrl: input.upstreamUrl });
+  if (gate.verdict === "REJECT") {
+    return { ok: false, error: `License/provenance gate rejected plugin '${pluginId}': ${gate.reason}`, gate };
+  }
+  if (!input.name || input.name.trim().length < 2) {
+    return { ok: false, error: "name must be a real plugin name (>=2 chars).", gate };
+  }
+  if (!input.description || input.description.trim().length < 20) {
+    return { ok: false, error: "description must be substantive (>=20 chars) — the catalog is templates-only, never tenant data.", gate };
+  }
+  for (const field of input.credentialFields ?? []) {
+    if (!field?.name || !/^[a-zA-Z0-9._:-]+$/.test(field.name)) {
+      return { ok: false, error: `credential field name invalid: '${field?.name}'`, gate };
+    }
+    if (looksLikePlaintextSecret(field.label ?? "")) {
+      return { ok: false, error: `credential field '${field.name}' label looks like a live token value — specs only (name/label), never values.`, gate };
+    }
+  }
+  mcpProtocolSchema.parse(input.protocol);
+  const plugin: MarketplacePlugin = {
+    pluginId,
+    name: input.name.trim(),
+    category: input.category?.trim() || "productivity",
+    description: input.description.trim(),
+    provider: input.provider?.trim() || pluginId,
+    endpointTemplate: input.endpointTemplate,
+    protocol: input.protocol,
+    credentialFields: (input.credentialFields ?? []).map((f) => ({ ...f })),
+    trustLevel: "untrusted",
+    docsUrl: input.docsUrl,
+    license: input.license,
+    upstreamUrl: input.upstreamUrl,
+  };
+  marketplaceRegistryExtras.push(plugin);
+  return { ok: true, plugin, gate };
 }
 
 const connections = new Map<string, MarketplaceConnection>();
@@ -257,4 +363,9 @@ export function listTenantRemoteServersForMarketplace(tenantId: string): RemoteM
 export function clearMarketplaceConnections(): void {
   connections.clear();
   connectionSeq = 0;
+}
+
+/** Test hygiene: drop runtime registrations (frozen seeds are untouched). */
+export function clearMarketplaceRegistry(): void {
+  marketplaceRegistryExtras.length = 0;
 }

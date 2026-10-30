@@ -128,7 +128,8 @@ export const USER_BACKEND_URL: string = normalizeBackendUrl(
   import.meta.env.VITE_USER_BACKEND ||
     import.meta.env.VITE_API_BASE ||
     import.meta.env.VITE_API_URL ||
-    import.meta.env.VITE_BACKEND_URL,
+    import.meta.env.VITE_BACKEND_URL ||
+    'https://supremeai-api-ulw0.onrender.com',
 );
 
 /** Admin-context API calls-এর canonical backend URL (build-time resolved, runtime-picked) */

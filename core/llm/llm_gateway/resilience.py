@@ -10,7 +10,7 @@ import random
 
 import httpx
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from ...resilience.circuit_breaker import (
     CircuitBreaker,  # Fixed import path - using relative import

@@ -33,7 +33,7 @@ import os
 import secrets as _secrets
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from core.errors.error_bus import with_error_bus
 from core.monitoring.logging_config import logger
@@ -68,7 +68,7 @@ class GodModeAuditLog:
     Note: entries are treated as WORM-like; no deletion.
     """
 
-    _entries: list[dict[str, Any]] = []
+    _entries: ClassVar[list[dict[str, Any]]] = []
 
     _REDIS_KEY_PREFIX = "audit:godmode:events"
 
