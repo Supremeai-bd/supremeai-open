@@ -15,6 +15,9 @@ import {
 } from "../lib/bridge_test_wiring.js";
 import { applyLabelFallback, type VerdictSource } from "../lib/bridge_verdicts.js";
 import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
+import {
+  parseClaimMarkers,
+} from "../lib/claim_markers.js";
 import { RequestContextStore } from "../policy/auth.context.js";
 
 export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
@@ -153,6 +156,7 @@ export interface BridgePrBodyOptions {
   reflectionWhy?: string;
   alternativesRejected?: string;
   rollbackPath?: string;
+  agentIdentity?: string;
   /**
    * #2485: opt-in escape hatch for the receipt-closure class. Docs-only
    * (spec-only) submissions emit `Refs #N` so a spec-first lane keeps its work
@@ -204,6 +208,7 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
     lines.push("## Linked Work Order", ...linkedIssues, "");
   }
 
+  lines.push("", "## Agent Identity", opts.agentIdentity || "zero-credential-mcp-agent", "");
   lines.push(
     REFLECTION_EVIDENCE_SECTION,
     `- **why:** ${opts.reflectionWhy || ""}`,
@@ -262,6 +267,8 @@ export function bridgeOpenRepo(): string {
 
 /** The queue label upstream work orders carry in the open repo. */
 export const BRIDGE_QUEUE_LABEL = "bridge:queued";
+/** Queue label for report-only / audit receipts (#3516 / zero-admin queue hygiene) */
+export const BRIDGE_RECEIPT_LABEL = "bridge:receipt";
 /**
  * #621 — Bridge hardening: satellite routing, queue scoping, claim lease
  * lifecycle and machine-readable feedback.
@@ -337,67 +344,20 @@ export function filterPublicQueue<T extends { labels: readonly string[] }>(items
   return { kept, filtered: items.length - kept.length };
 }
 
-/** One atomic-claim marker (label plane + comment plane, Invariant #430). */
-export interface ParsedClaimMarker {
-  agent: string;
-  issueNumber: number;
-  ts: Date;
-  ttlMinutes: number;
-}
-
-export interface ClaimMarkerView {
-  first: ParsedClaimMarker | null;
-  latest: ParsedClaimMarker | null;
-}
-
-const ATOMIC_CLAIM_RE = /<!--\s*atomic-claim:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+),ttl=(\d+)m\s*-->/;
-
-/**
- * Parse ALL atomic-claim markers from an issue's comments — the SAME regex
- * and legacy-JSON fallback the live work.claim handler uses (latest ts wins,
- * first ts = original claim for the total-lease budget). Pure + offline.
- */
-export function parseClaimMarkers(comments: ReadonlyArray<{ body?: unknown }>): ClaimMarkerView {
-  let first: ParsedClaimMarker | null = null;
-  let latest: ParsedClaimMarker | null = null;
-  for (const c of comments ?? []) {
-    const body = typeof c?.body === "string" ? c.body : "";
-    if (!body) continue;
-    let marker: ParsedClaimMarker | null = null;
-    const match = ATOMIC_CLAIM_RE.exec(body);
-    if (match) {
-      const ts = new Date(match[3] ?? "");
-      if (!isNaN(ts.getTime())) {
-        marker = {
-          issueNumber: parseInt(match[1] ?? "0", 10),
-          agent: match[2] ?? "unknown",
-          ts,
-          ttlMinutes: parseInt(match[4] ?? "30", 10) || 30,
-        };
-      }
-    } else if (body.includes("<!-- atomic-claim -->") && body.includes('"claimedAt"')) {
-      // Legacy JSON marker fallback (same shape the live handler accepts).
-      try {
-        const jsonMatch = /```json\s*(\{[\s\S]*?\})\s*```/.exec(body);
-        const parsed = jsonMatch ? JSON.parse(jsonMatch[1]) : null;
-        const ts = parsed?.claimedAt ? new Date(parsed.claimedAt) : null;
-        if (ts && !isNaN(ts.getTime())) {
-          marker = {
-            issueNumber: typeof parsed.issueNumber === "number" ? parsed.issueNumber : 0,
-            agent: typeof parsed.claimedBy === "string" ? parsed.claimedBy : "legacy-agent",
-            ts,
-            ttlMinutes: typeof parsed.leaseMinutes === "number" ? parsed.leaseMinutes : 30,
-          };
-        }
-      } catch { /* malformed legacy marker — ignore */ }
-    }
-    if (marker) {
-      if (!latest || marker.ts > latest.ts) latest = marker;
-      if (!first || marker.ts < first.ts) first = marker;
-    }
-  }
-  return { first, latest };
-}
+// Claim-marker parsing extracted to src/lib/claim_markers.ts (house pattern:
+// pure decision cores live in src/lib, replayable offline). The lib is
+// EPOCH-AWARE: release markers (new `<!-- atomic-claim-release:... -->` and
+// legacy prose) CLOSE the claim epoch — fixes the release-blind-spot where
+// latestClaim kept projecting a released claim (live instances #2557 c51,
+// #2201, #3093). Re-exported here for API compat.
+export {
+  parseClaimMarkers,
+  ATOMIC_CLAIM_RE,
+  ATOMIC_CLAIM_RELEASE_RE,
+  LEGACY_RELEASE_RE,
+} from "../lib/claim_markers.js";
+import type { ClaimMarkerView, ParsedClaimMarker } from "../lib/claim_markers.js";
+export type { ClaimMarkerView, ParsedClaimMarker };
 
 export const CLAIM_LEASE_MINUTES = 30;
 export const MAX_TOTAL_LEASE_MINUTES = 180;
@@ -641,6 +601,18 @@ export function bridgeGuide() {
       },
       queueScope: "anonymous callers see the public-open partition (repo:open / unlabeled); authenticated callers see the full queue (#621)",
       feedbackTool: "bridge.read_feedback — machine-readable intake verdicts (APPLIED/REJECTED + reason) for any open-repo work order (#621)",
+      // #2508 prescription A: the submitter-side convention note. The #2490
+      // closesOriginalIssue opt-in had zero post-deploy adoption because
+      // submitters never see the flag — the 17-row never-touched docs-only
+      // receipt cohort (#2470) grows one row per docs-only landing. The guide
+      // is the SSOT surface every zero-credential submitter reads, so the
+      // convention lives here, not only in the z-schema description.
+      receiptClosureConvention:
+        "Docs-only (spec-only) submissions default to Refs #N — the spec-first keep-open contract (open until code lands). " +
+        "When the docs-only patch IS the resolution of its target (closure receipts, verification receipts that resolve their finding), " +
+        "pass closesOriginalIssue: true in bridge_submit_patch so the landed PR emits Closes #N and the work order closes on merge. " +
+        "Watch/census receipts that do NOT resolve their subject keep the default — they are correctly open until their subject resolves. " +
+        "Evidence: #2405 stayed open after #2427 landed; #2368 after #2466; #2508's 17-row cohort.",
       externalAgentsNeverWriteToMain: true,
       landingAuthority: "constitutional gates only — the bridge never merges",
     },
@@ -1503,6 +1475,14 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
         ].join("\n");
 
+        const isReportOnlyReceipt =
+          /\b(report-only|docs-only|receipt|evidence\s+(addendum|refresh))\b/i.test(summary) ||
+          /\b(receipt|report-only)\b/i.test(taskId);
+
+        const targetLabels = isReportOnlyReceipt
+          ? [BRIDGE_RECEIPT_LABEL, "report"]
+          : [BRIDGE_QUEUE_LABEL];
+
         const issueRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
           `https://api.github.com/repos/${repo}/issues`,
           {
@@ -1514,7 +1494,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
               // stranded the pushed branch. Clamp preserves the (taskId) tail
               // (authoritative for #2136 dedup).
               title: issueTitleFor(summary, taskId),
-              labels: [BRIDGE_QUEUE_LABEL],
+              labels: targetLabels,
               body: issueBody,
             },
             timeoutMs: 15_000,
@@ -1544,6 +1524,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           alternativesRejected,
           rollbackPath,
           closesOriginalIssue,
+          agentIdentity,
         });
 
         let prNumber: number | undefined;
@@ -1706,36 +1687,17 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           { headers, timeoutMs: 15_000 }
         );
 
-        let latestClaim: { agent: string; ts: Date; ttlMinutes: number } | null = null;
-        if (commentsRes.ok && Array.isArray(commentsRes.data)) {
-          for (const c of commentsRes.data) {
-            const body = c.body || "";
-            // Match <!-- atomic-claim:issue=123,agent=xyz,ts=...,ttl=30m --> or legacy JSON marker
-            const match = /<!--\s*atomic-claim:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+),ttl=(\d+)m\s*-->/.exec(body);
-            if (match) {
-              const claimTs = new Date(match[3]);
-              if (!isNaN(claimTs.getTime())) {
-                if (!latestClaim || claimTs > latestClaim.ts) {
-                  latestClaim = { agent: match[2], ts: claimTs, ttlMinutes: parseInt(match[4], 10) || 30 };
-                }
-              }
-            } else if (body.includes("<!-- atomic-claim -->") && body.includes('"claimedAt"')) {
-              // Legacy JSON marker fallback
-              try {
-                const jsonMatch = /```json\s*(\{[\s\S]*?\})\s*```/.exec(body);
-                if (jsonMatch) {
-                  const parsed = JSON.parse(jsonMatch[1]);
-                  const claimTs = new Date(parsed.claimedAt);
-                  if (!isNaN(claimTs.getTime())) {
-                    if (!latestClaim || claimTs > latestClaim.ts) {
-                      latestClaim = { agent: parsed.claimedBy || "legacy-agent", ts: claimTs, ttlMinutes: parsed.leaseMinutes || 30 };
-                    }
-                  }
-                }
-              } catch {}
-            }
-          }
-        }
+        // Step 2b: parse the claim epoch via the SHARED parser (SSOT).
+        // The inline duplicate here ignored release markers — the divergence
+        // class behind the release-blind-spot: after bridge.work.release the
+        // stale claim stayed "live" for up to its full TTL, so fresh claimers
+        // hit CLAIM_CONFLICT_OTHER inside the zombie window. The epoch-aware
+        // lib closes the epoch on release markers AND legacy release prose.
+        const claimEpoch =
+          commentsRes.ok && Array.isArray(commentsRes.data)
+            ? parseClaimMarkers(commentsRes.data ?? [])
+            : { first: null, latest: null };
+        const latestClaim = claimEpoch.latest;
 
         const now = new Date();
         const ttlMs = (latestClaim?.ttlMinutes || 30) * 60 * 1000;

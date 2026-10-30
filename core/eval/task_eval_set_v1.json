@@ -17,7 +17,7 @@
     {"id": "T12", "category": "build", "difficulty": "hard", "prompt": "Wire a cron job that ingests docs daily and alerts on failure.", "rubric": "Uses ingest_project_docs.py; alert path goes to Telegram lane; idempotent."},
     {"id": "T13", "category": "analyze", "difficulty": "easy", "prompt": "What does redis_chain.ts do in one paragraph?", "rubric": "Correct mechanism summary (chain walk, cooldown, rotation); cites file path."},
     {"id": "T14", "category": "analyze", "difficulty": "hard", "prompt": "Why is overallStatus degraded while all snapshots are healthy?", "rubric": "Identifies deploy-status cross-reference vs service liveness; proposes fix."},
-    {"id": "T15", "category": "analyze", "difficulty": "easy", "prompt": "Count open P0/P1 work orders in the bridge queue.", "rubric": "Calls bridge_work_queue; numbers match live state."},
+    {"id": "T15", "category": "analyze", "difficulty": "easy", "prompt": "Count open P0/P1 work orders in the bridge queue.", "rubric": "Calls bridge.work_queue; numbers match live state."},
     {"id": "T16", "category": "analyze", "difficulty": "hard", "prompt": "Estimate the cost saving of fixing the secondary-slot cooldown bug.", "rubric": "Quantifies wasted capacity (500k cmds slot); reasons about exhaustion cascade."},
     {"id": "T17", "category": "research", "difficulty": "easy", "prompt": "Explain EWC to a junior engineer.", "rubric": "Correct intuition (quadratic penalty on important weights); no fake math."},
     {"id": "T18", "category": "build", "difficulty": "hard", "prompt": "Add a 'remembered context' chip UI wired to memory_read_graph.", "rubric": "Renders real entities; per-item forget calls memory_delete_entities; tenant-namespaced."},

@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from brain.model_router import ModelRouter
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     from prometheus_client import Counter

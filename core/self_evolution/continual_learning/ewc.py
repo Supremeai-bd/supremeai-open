@@ -51,7 +51,7 @@ except ImportError:
     DataLoader = None  # type: ignore
     TORCH_UTILS_AVAILABLE = False
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # বাংলা মন্তব্য (DEP-AUDIT): এখানে একটি আনগার্ডেড ডুপ্লিকেট
 # `from torch.utils.data import DataLoader` ছিল — একই import উপরের

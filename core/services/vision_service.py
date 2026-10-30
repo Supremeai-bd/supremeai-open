@@ -8,7 +8,7 @@ import os
 import time
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Issue #444 doctrine (real work or loud failure, never fabricated success):
 # the old implementation returned one HARDCODED description ("Identified 3-tier

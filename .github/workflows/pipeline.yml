@@ -309,6 +309,38 @@ jobs:
           fi
           echo "✅ Reflection Evidence present."
 
+  tower-verification-guard:
+    name: "🛡️ Tower Verification Signature Guard (#hybrid-agent)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Verify PR body carries Tower verification signature (event-context only, no checkout)
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # Admin escape hatch
+          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
+            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
+          fi
+          # Bot-generated branches are allowed
+          if [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot|all-contributors|gh-readonly|bridge)/ ]] \
+             || [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot)\[?[a-z_]* ]]; then
+            echo "✅ Automated/bridge branch — allowed."; exit 0
+          fi
+          # External agent PRs must carry the Tower verification signature
+          if ! printf '%s\n' "$PR_BODY" | grep -qE '^## Reflection Evidence'; then
+            echo "::error::PR body missing '## Reflection Evidence' (Tower verification signature)."
+            exit 1
+          fi
+          if ! printf '%s\n' "$PR_BODY" | grep -qiE '3[- ]?Tier|Test Evidence'; then
+            echo "::error::PR body missing '3-Tier Verify' / 'Test Evidence' (Tower verification signature)."
+            exit 1
+          fi
+          echo "✅ Tower verification signature present."
+
   duplicate-pr-guard:
     name: "👥 Anti-Duplicate PR Guard"
     if: github.event_name == 'pull_request'
@@ -803,7 +835,7 @@ jobs:
   # ---------------------------------------------------------------------------
   auto-landing:
     name: "🛬 Autonomous Auto-Landing"
-    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower, studio-verification]
+    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower, studio-verification, tower-verification-guard]
     if: |
       always() &&
       github.event_name == 'pull_request' &&
@@ -1027,7 +1059,7 @@ jobs:
           BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 200 --json number,title,labels)
           # Mirror the pick_next_issue() EXCLUDED_LABELS set exactly (case-insensitive,
           # like the loop's .lower()): claimed, in-progress, seq-hold, blocked, private mirror, anchor-hub.
-          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private","anchor-hub"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
+          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private","anchor-hub","admin-only","bridge:idempotent-noop","bridge:in-gates","bridge:pr-opened","bridge:queued","bridge:rejected"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
           echo "claimable-board snapshot: $CLAIMABLE"
           if [ "$CLAIMABLE" = "[]" ]; then
             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENTS.md §10."

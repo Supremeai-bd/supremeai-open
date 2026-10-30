@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
 
 # ---------------------------------------------------------------------------
@@ -493,7 +493,6 @@ def get_budget_manager(
     user_id: str = "default",
 ) -> TokenBudgetManager:
     """Return the per-user TokenBudgetManager."""
-    global _managers
     if user_id not in _managers:
         _managers[user_id] = TokenBudgetManager(custom_budgets=custom_budgets)
         logger.info(f"[TokenBudget] TokenBudgetManager initialized for user: {user_id}")

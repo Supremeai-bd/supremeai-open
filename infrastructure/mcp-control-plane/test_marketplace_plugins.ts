@@ -33,6 +33,14 @@ assert.equal(getMarketplacePlugin("notion")?.endpointTemplate, "https://mcp.noti
 assert.equal(getMarketplacePlugin("telegram")?.endpointTemplate, null);
 assert.equal(getMarketplacePlugin("web-search")?.endpointTemplate, null);
 assert.equal(getMarketplacePlugin("google-drive")?.endpointTemplate, null);
+// #1668: license + provenance metadata is pinned per row and honestly null
+// where no upstream repo is verified (gate verdicts: see test_license_gate.ts).
+assert.equal(getMarketplacePlugin("github")?.license, "MIT");
+assert.equal(getMarketplacePlugin("github")?.upstreamUrl, "https://github.com/github/github-mcp-server");
+for (const id of ["telegram", "web-search", "google-drive", "notion"]) {
+  assert.equal(getMarketplacePlugin(id)?.license, null, `${id} has no pinned license (honest null)`);
+  assert.equal(getMarketplacePlugin(id)?.upstreamUrl, null, `${id} has no pinned upstream (honest null)`);
+}
 
 // 2. Plaintext-secret detector (defense in depth at the connect guard).
 assert.equal(looksLikePlaintextSecret("vault:github-token"), false);

@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from core.logging_config import logger  # loguru logger (monitoring.logging_config shim)
+from core.monitoring.logging_config import logger  # loguru logger (monitoring.logging_config shim)
 
 
 def _finite_non_negative(value: Any) -> float | None:

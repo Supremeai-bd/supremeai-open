@@ -1,6 +1,15 @@
 import { buildAccountRegistry } from "../../registry/account.registry.js";
 import { httpRequest, bearerAuth } from "../../lib/http.js";
 import { maskSecretValue, redactSecretsInText } from "../../lib/masking.js";
+import {
+  BUILD_WINDOW_MAX_PAGES,
+  BUILD_WINDOW_PAGE_SIZE,
+  monthStartUtc,
+  nextCursor,
+  sumMonthBuildSeconds,
+  unwrapDeploy,
+  windowSaturated,
+} from "../../lib/render_build_window.js";
 
 const BASE_URL = "https://api.render.com/v1";
 
@@ -259,34 +268,32 @@ export async function getServiceHealth(accountId: string, serviceId: string): Pr
   const FREE_BUILD_MINUTES_LIMIT = 500; // Render Free Tier limit per account: 500 build minutes/month
 
   try {
-    const deploysRes = await httpRequest(`${BASE_URL}/services/${serviceId}/deploys?limit=20`, {
-      headers: bearerAuth(apiKey),
-    });
-    const deploys = deploysRes.data;
-    if (Array.isArray(deploys) && deploys.length > 0) {
-      deployStatus = deploys[0]?.deploy?.status ?? "unknown";
-
-      const now = new Date();
-      const currentYear = now.getUTCFullYear();
-      const currentMonth = now.getUTCMonth();
-
-      let totalSeconds = 0;
-      for (const item of deploys) {
-        const dep = item.deploy ?? item;
-        const createdAt = dep.createdAt;
-        const finishedAt = dep.finishedAt;
-        if (!createdAt || !finishedAt) continue;
-        const started = new Date(createdAt);
-        const finished = new Date(finishedAt);
-        if (started.getUTCFullYear() === currentYear && started.getUTCMonth() === currentMonth) {
-          const duration = (finished.getTime() - started.getTime()) / 1000;
-          if (duration > 0) {
-            totalSeconds += duration;
-          }
-        }
+    // #2811 window class: cursor-paginate until the month window is saturated
+    // instead of reading a fixed 20-deploy first page. A truncated window
+    // under-counts month-to-date burn during retry-fail months and moves the
+    // counter DOWN as old builds scroll out — freeLimitRemaining (derived from
+    // the same variable) then rises by exactly that amount, the "ledger
+    // correction" exact-mirror signature #2811 documented.
+    const monthStart = monthStartUtc(new Date());
+    let totalSeconds = 0;
+    let after: string | undefined;
+    for (let page = 0; page < BUILD_WINDOW_MAX_PAGES; page++) {
+      const cursor = after ? `&after=${encodeURIComponent(after)}` : "";
+      const deploysRes = await httpRequest(
+        `${BASE_URL}/services/${serviceId}/deploys?limit=${BUILD_WINDOW_PAGE_SIZE}${cursor}`,
+        { headers: bearerAuth(apiKey) },
+      );
+      const items = Array.isArray(deploysRes.data) ? deploysRes.data : [];
+      if (page === 0 && items.length > 0) {
+        deployStatus = unwrapDeploy(items[0]).status ?? "unknown";
       }
-      monthlyBuildMinutes = Math.round((totalSeconds / 60) * 10) / 10;
+      const summed = sumMonthBuildSeconds(items, monthStart);
+      totalSeconds += summed.totalSeconds;
+      if (windowSaturated(items, monthStart)) break;
+      after = nextCursor(items);
+      if (!after) break;
     }
+    monthlyBuildMinutes = Math.round((totalSeconds / 60) * 10) / 10;
   } catch (err) {
     // Ignore error for deploys
   }

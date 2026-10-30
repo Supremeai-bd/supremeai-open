@@ -23,41 +23,44 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # (relative_path, [required substrings], why-it-is-critical)
 INVARIANTS: list[tuple[str, list[str], str]] = [
     # ── Atomic Upstash sliding-window rate limiter (issue #460/#476) ──────
     (
-        "backend/middleware/rate_limiter.py",
+        "core/middleware/rate_limiter.py",
         ["ZREMRANGEBYSCORE", "ZCARD", "ZADD", "EXPIRE"],
         "Atomic Lua sliding-window (cleanup+count+add must stay in ONE script)",
     ),
     (
-        "backend/core/rate_limit.py",
+        "core/rate_limit.py",
         ["RateLimitMiddleware"],
         "Global rate-limit middleware registration surface",
     ),
     # ── Tenant isolation invariants ───────────────────────────────────────
     (
-        "backend/api/middleware.py",
+        "core/api/middleware.py",
         ["scoped_key", "idempotency:response:"],
         "Idempotency keys MUST stay principal-scoped (cross-tenant replay fix)",
     ),
     # ── Fail-closed readiness / schema gate (issue #478) ──────────────────
     (
-        "backend/core/db_schema_gate.py",
+        "core/db_schema_gate.py",
         ["automation_executions", "ai_memory", "task_checkpoints"],
         "Production readiness schema gate — required-table registry",
     ),
     (
-        "backend/core/health_policy.py",
+        "core/health_policy.py",
         ["db_failure_readiness"],
         "Role-aware DB degradation policy (fail-closed on core in production)",
     ),
     # ── Vault fail-closed contract ─────────────────────────────────────────
     (
-        "backend/core/security/secret_vault.py",
+        "core/security/secret_vault.py",
         ["ProductionSecretVault", "SecretNotFoundError"],
         "Enterprise vault fail-closed contract (Sep-14 crash-loop hardening)",
     ),

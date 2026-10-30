@@ -12,8 +12,10 @@
 #   sh run_e2e_smoke.sh help           # this help
 #
 # Environment overrides:
-#   GATEWAY_URL           default: https://supremeai-api.onrender.com
-#                         (repo client contract, examples/gateway_client.py)
+#   GATEWAY_URL           default: https://supremeai-api-ulw0.onrender.com
+#                         (README SSOT service table; repo client contract,
+#                         examples/gateway_client.py — ghost host retired by
+#                         #2355/#2365/#2377, ghost_host_guard.py enforces)
 #   SUPREMEAI_API_KEY     required — monolith key-plane-issued key (vault/env;
 #                         never hardcode, SECRETS_MODEL.md)
 #   MODELS                space-separated model rotation, default: "auto"
@@ -33,7 +35,7 @@
 # ============================================================================
 set -u
 
-GATEWAY_URL="${GATEWAY_URL:-https://supremeai-api.onrender.com}"
+GATEWAY_URL="${GATEWAY_URL:-https://supremeai-api-ulw0.onrender.com}"
 GATEWAY_URL="${GATEWAY_URL%/}"
 MODELS="${MODELS:-auto}"
 MAX_TOKENS="${MAX_TOKENS:-32}"
