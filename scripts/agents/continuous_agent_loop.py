@@ -95,6 +95,10 @@ EXCLUDED_LABELS = frozenset({
     "mirror:private",
     "anchor-hub",
     "admin-only",
+    "admin-needed",
+    "role:admin",
+    "scope:admin",
+    "needs:admin",
     "bridge:pr-opened",
     "bridge:queued",
     "bridge:in-gates",
@@ -1566,6 +1570,11 @@ def pick_next_issue(
         names = label_names(item)
         if EXCLUDED_LABELS & set(names):
             return False
+        # Admin-lane exclusion guard: Admin-only বা Admin-decision দরকার এমন কোনো ইস্যু
+        # continuous agent loop স্বয়ংক্রিয়ভাবে ডিসপ্যাচ করবে না (এভয়েড করবে)।
+        title_lower = str(item.get("title", "")).lower()
+        if any(marker in title_lower for marker in ("owner-lane", "admin-lane", "admin needed", "admin only", "admin decision", "admin-decision")):
+            return False
         # বাংলা: #3573 — এখানে কোনো সময়-ভিত্তিক এক্সক্লুশন নেই। আগে ৩০-মিনিট লোকাল
         # লিজ উইন্ডো ডিসপ্যাচ-হওয়া কিন্তু-এখনো-আনক্লেইমড অ্যাকশনেবল কাজকে ঘড়ির
         # কারণে স্কিপ করাত (প্রতিষ্ঠাতা-নিষেধ: কৃত্রিম অপেক্ষা)। এখন একমাত্র শর্ত
@@ -1589,14 +1598,42 @@ def pick_next_issue(
 
     PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
 
-    def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+    def priority_key(item: dict[str, Any]) -> tuple[int, int, int]:
+        """Priority key:
+        Tier 0: Infrastructure & Agent Loop criticals (Render, Supabase, Redis, Infisical, loop crash)
+        Tier 1: CI & PR failure issues (Anchor #3782 or labels like ci, pr, build-fail)
+        Tier 2: Explicit priority labels (P0=0, P1=1, P2=2, P3=3)
+        """
         names = label_names(item)
+        title_lower = str(item.get("title", "")).lower()
+        body_lower = str(item.get("body", "")).lower()
+
+        # Domain category weighting (lower = higher priority)
+        # 1. 3rd-party services & Agent Loop health (Most Critical)
+        infra_keywords = ("render", "supabase", "upstash", "redis", "infisical", "cloudflare", "continuous_agent_loop", "agent_loop")
+        is_infra_or_loop = any(k in title_lower for k in infra_keywords) or any(k in names for k in infra_keywords)
+
+        # 2. CI & PR failure related issues (Anchor #3782 or CI/PR markers)
+        is_ci_or_pr = (
+            "3782" in title_lower
+            or "3782" in body_lower
+            or any("3782" in n for n in names)
+            or any(n in ("ci", "ci-failure", "pr", "test-fail", "build-fail") for n in names)
+            or any(k in title_lower for k in ("ci:", "fix(ci)", "ci failure", "pr preflight", "standing-suite"))
+        )
+
+        category_rank = 2
+        if is_infra_or_loop:
+            category_rank = 0
+        elif is_ci_or_pr:
+            category_rank = 1
+
         tier = 4
         for marker, rank in PRIORITY_MAP:
             if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
                 tier = rank
                 break
-        return (tier, int(item.get("number", 0)))
+        return (category_rank, tier, int(item.get("number", 0)))
 
     candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
     if exclude:
