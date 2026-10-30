@@ -21,7 +21,7 @@ from pydantic import BaseModel, model_validator
 from adaptive_engine.experience_db import Experience
 from api.dependencies import get_current_user_token
 
-# STABILIZE FIX: PromptAction now lives in core.intent_router_v2 (canonical).
+# STABILIZE FIX: PromptAction now lives in core.intent_router (canonical).
 # core.intent_router re-exports it for backwards compat.
 from core.intent_router import PromptAction
 from core.monitoring.logging_config import logger
@@ -332,9 +332,9 @@ async def execute_task(req: TaskRequest, background_tasks: BackgroundTasks):
     # --- Prompt-to-Action: Intent Routing ---
     # বাংলা মন্তব্য: ইনপুটকে ক্যাটাগরি রূপে চিহ্নিত করে ফ্রন্টএন্ডকে ডাইনামিক অ্যাকশন টিপ দিচ্ছে
     # R1 FIX: Use LLM-based IntentRouterV2 with regex fallback (env INTENT_ROUTER_MODE=regex to disable)
-    from core.intent_router_v2 import intent_router_v2
+    from core.intent_router import intent_router
 
-    prompt_action: PromptAction = await intent_router_v2.route(req.task)
+    prompt_action: PromptAction = await intent_router.route(req.task)
 
     # Offload heavy CPU-bound Intent classification to background thread pool
     app_spec = await anyio.to_thread.run_sync(
@@ -491,10 +491,10 @@ async def task_stream():
 @router.post("/api/chat/prompt-action")
 async def prompt_action(req: ActionStreamRequest):
     from core.intent import IntentClassifier
-    from core.intent_router_v2 import intent_router_v2
+    from core.intent_router import intent_router
 
     # R1 FIX: LLM-based intent router (async) with regex fallback
-    action = await intent_router_v2.route(req.message)
+    action = await intent_router.route(req.message)
     intent_clf = IntentClassifier()
     intent = intent_clf.classify(req.message)
 

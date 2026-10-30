@@ -118,10 +118,10 @@ def test_auto_healer():
 
 def test_intent_router():
     """intent_router_v2.route should classify prompts using regex fallback."""
-    from core.intent_router_v2 import intent_router_v2
+    from core.intent_router import intent_router
 
     async def _route():
-        return await intent_router_v2.route("write a python function")
+        return await intent_router.route("write a python function")
 
     result = asyncio.run(_route())
     assert result.action_type == "code_generate", f"expected code_generate, got {result.action_type}"
@@ -131,7 +131,7 @@ def test_intent_router():
 def test_prompt_action_dataclass():
     """PromptAction should be importable from both core.intent_router and v2."""
     from core.intent_router import ACTION_PATTERNS, PromptAction
-    from core.intent_router_v2 import (
+    from core.intent_router import (
         ACTION_PATTERNS as AP2,
         PromptAction as PA2,
     )
