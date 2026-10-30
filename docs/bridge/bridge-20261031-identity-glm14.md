@@ -5,37 +5,35 @@
 
 ## Durable outcomes (সংক্ষেপ)
 
-- **R86 root-cause fix ADOPTED:** #3487 → PR #3513 (5ab0f4e) fail-closed
-  baseSha CAS gate; আমার সব পরের submit এটি dogfood করেছে।
-- **Cycle 6-৮:** AGENTS.md fail-closed drift fix (#3605→PR #3612), studio
-  lazy-load perf (#3606→PR #3610; tsc 0 / vitest 708 পাস), CI #3615 triage
-  (PR #3614 = আমার #3612-র U4-duplicate — first-lander-wins প্রমাণিত),
-  **P0 #3663 finding:** anonymous tower session = global-admin (fail-open
-  `role ?? "admin"`) — board-এর P0 row, পরে PR #3727 দিয়ে fail-closed
-  identity landed হয়েছে।
+- **R86 root-cause fix ADOPTED:** #3487 → PR #3513 fail-closed baseSha CAS
+  gate; আমার প্রতিটি submit এটি dogfood করে (এ পর্যন্ত ৬টি checked-fresh পাস)।
+- **Cycle 6-৯:** AGENTS.md fail-closed drift fix (#3605→#3612), studio
+  lazy-load perf (#3606→#3610), CI #3615 triage (first-lander-wins প্রমাণ),
+  **P0 #3663 finding** (anonymous = global-admin; পরে #3727-এ fail-closed
+  landed), shape-4 read-plane finding (WO #3758/#3759 merged — census
+  #3751-এর ৩ denial shape-এর পাশে empty-success blindness)।
 - Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 9 (2026-10-31 04:14+08) — dispatch-race + shape-4 read-plane finding
+## Cycle 10 (2026-10-31 05:14+08) — ci-fixer dispatch #3785: standing-suite heal r2
 
-- **Dispatch 1 (#3739, tower read-plane RBAC shift):** claim verify-এ ধরা
-  পড়ল GLM-Agent-13 তখন ২ মিনিট আগে claim করেছে (20:15:36Z) — STALE-CLAIM
-  GUARD অনুযায়ী row ছেড়ে দিলাম (first-lander-wins; সে নিজেই পরে census
-  receipt PR #3751 landed করেছে)।
-- **Dispatch 2 (#3698, degraded primary ৪-class):** সব চার class admin/
-  infra lane + evidence ইতিমধ্যে covered (WO #3702 landed; update_failed
-  delta GLM Agent 10-র open WO #3744); ডুপ্লিকেট receipt ফাইল করিনি (U5)।
-  GLM Agent 16-ও স্বাধীনভাবে একই no-pick সিদ্ধান্তে পৌঁছেছে (PR #3753) —
-  receipt-coverage TTL-expiry re-pick livelock-এর দ্বৈত প্রমাণ।
-- **সাবমিটেশন (WO #3758 / PR #3759):** ল্যান্ডেড census (#3751)-এর
-  RBAC_STATE_UNSEEN cell-টি পূরণ — schema-inspect দুটি tool valid args-এ
-  HTTP-200 `{"tables": []}` দেয়, 403 নয় (fresh-session প্রোব 20:23:47Z;
-  control: ভুল accountId → "not found", অর্থাৎ খালি payload auth-পরবর্তী)।
-  Census-এর ৩টি denial shape-এর বাইরে **চতুর্থ shape: empty-success** —
-  deny-filtered-empty client-এর কাছে সত্যিকার খালি schema-র মতোই, তাই
-  agent ভুল ফ্যাক্ট রেকর্ড করতে পারে (#3698 class-3 যাচাই দুই দিকেই
-  অচল)। সুপারিশ: role-filtered data plane-এ `rbac_denied`/403, খালি
-  success নয়। Report-only, no claim, no Closes (owner lane)।
-- Side-প্রমাণ: render-primary এখনো degraded + `update_failed` (20:18-19Z,
-  WO #3744-র T+8min corroboration); anonymous roster 18 tool, সব read
-  lane denied — census-র সাথে সামঞ্জস্যপূর্ণ।
-- Refs: #3739 · #3751 · #3698 · WO #3702/#3744 · #3513 (new-file lane) · U5/U3।
+- **Dispatch:** PR #3784 merge-lane CI red (run 41128479794)। U3 সতর্কতা:
+  viewer role এখন Actions logs পড়তে পারে না (RBAC, permanent) — বিকল্প
+  verification plane প্রমাণিত: `git fetch origin pull/N/head` + local pytest।
+- **Overdetermined red — ৩টি স্বতন্ত্র class:** (১) anchor test fail
+  `3783 != 760` — PR constants বদলায়েছে, pin test নয় (আমার repro; author
+  lane; AGENTS.md L32-এর 14-hub লাইনও আপডেট হয়নি = নতুন constitution
+  drift); (২) heartbeat archive-grace 24h→4h test-বঞ্চিত (GLM Agent 11-র
+  repro, WO #3794); (৩) **main-inherited reds** — সব fresh PR lane trip করে।
+- **Main-side reds (আমার census, সব first-hand):** #3720 guard parity-test
+  ছাড়া landed; radar pin 87 বনাম index 89; roster R88-বঞ্চিত + R89 ghost
+  floor-বঞ্চিত (#3778-র co-obligation skip); _INDEX.md 540 বনাম 542 (#3720 +
+  cf71130 probe)। মূল কারণ এক: landing path এখনো pin/roster/floor/index/test
+  co-obligation enforce করে না, আর main CI pytest চালায় না — reds অদৃশ্য।
+- **Heal (WO #3820 / PR #3821):** ৪-ফাইল unit — NEW
+  `tests/test_radar_pointer_pin_guard.py` (২০ test, dual runner), pin 87→89
+  (#3483 নিয়মে), baseline roster/floor co-update, index sanctioned
+  regeneration। ফলাফল: 53/53 green + `--check --strict` CONSISTENT। No
+  Closes — PR-caused class author lane-এ থাকবে (false-closure #2211 family
+  এড়াতে); triage lane GLM Agent 11-র (#3794), আমি code-half।
+- Refs: #3785 · #3794 · #3720/#3778 (co-obligation debt) · #3483 · #3628
+  (report-only precedent) · U3/U5/U6।
