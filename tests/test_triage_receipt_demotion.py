@@ -54,9 +54,19 @@ sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
 import continuous_agent_loop as cal  # noqa: E402
 
 
-def _row(number: int, title: str = "fix(ci): CI — pipeline failed (Run 1)") -> dict:
-    """gh-shaped board row (the picker only needs number/labels/title here)."""
-    return {"number": number, "title": title, "labels": [], "state": "open"}
+def _row(number: int, title: str | None = None) -> dict:
+    """gh-shaped board row (the picker only needs number/labels/title here).
+
+    Default title embeds the number: board rows are distinct findings, and the
+    duplicate-twin pick guard (U5) treats byte-identical open rows as one
+    finding's refile family — fixtures must not mint accidental twins.
+    """
+    return {
+        "number": number,
+        "title": title or f"fix(ci): CI — pipeline failed (Run {number})",
+        "labels": [],
+        "state": "open",
+    }
 
 
 class TestLoadTriageReceipts(unittest.TestCase):
