@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 GUARDS: list[list[str]] = [
     # Wiring integrity FIRST (#3316): every later roster entry is asserted to
-    # reference a script that actually exists in the tree — wiring must not
+    # reference a script that actually exists in the tree â wiring must not
     # outrun implementation (live instance 2026-10-30: #3268 wiring merged
     # while carrying PR #3257 still waited in the gate).
     ["python", "scripts/ci/wiring_integrity_guard.py", "--self-test"],
@@ -55,6 +55,10 @@ GUARDS: list[list[str]] = [
     ["python", "scripts/ci/skill_conformance_guard.py", "--check"],
     ["python", "scripts/ci/ghost_host_guard.py", "--self-test"],
     ["python", "scripts/ci/ghost_host_guard.py", "--check"],
+    # annotations_census_guard: U4 false-close tripwire per #2615 — roster runs the
+    # offline --self-test only; the live --check stays agent/owner-invoked so the
+    # roster never pays a network round-trip (zero-credential raw tools/list).
+    ["python", "scripts/ci/annotations_census_guard.py", "--self-test"],
 ]
 
 
