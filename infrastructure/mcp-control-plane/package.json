@@ -76,9 +76,9 @@
     "test:github-pagination": "tsx test_github_pagination.ts",
     "test:marketplace-plugins": "tsx test_marketplace_plugins.ts",
     "test:license-gate": "tsx test_license_gate.ts",
-    "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
     "test:r66-target-echo": "tsx test_r66_target_echo.ts",
-    "test:annotations-floor": "tsx test_annotations_floor.ts"
+    "test:annotations-floor": "tsx test_annotations_floor.ts",
+    "test:render-build-window": "tsx test_render_build_window.ts"
   },
   "keywords": [
     "mcp",
