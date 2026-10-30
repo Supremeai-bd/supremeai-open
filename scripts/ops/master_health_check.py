@@ -63,7 +63,7 @@ CI_GUARDS: list[tuple[str, list[str], str]] = [
     (
         "Federation Anchors",
         ["python", "scripts/ci/federation_anchors.py", "--self-test"],
-        "Anchor hub SSOT broken. Verify 8 active anchors (#749-#762) in federation_anchors.py.",
+        "Anchor hub SSOT broken. Verify 6 active domain anchors (#749..#762) in federation_anchors.py.",
     ),
     (
         "Satellite Board",
