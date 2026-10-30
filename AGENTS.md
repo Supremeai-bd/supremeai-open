@@ -36,12 +36,14 @@ All agents live, enter, and execute through exactly two unified pillars:
   5. **P0 Drainage & Anti-Stampede Invariant:** Open architectural blockers (`P0-critical`) supersede all speculative research, routine audits, and lower-priority work. Agents and Bridge pipelines MUST verify idempotency (zero duplicate work orders, zero duplicate issues/PRs for the same task/branch) before filing or claiming.
   6. **Zero-Recurrence Invariant (Anti-Regression & Continuous Learning):** Every identified mistake, defect, false closure, or contract violation MUST have an automated mechanical guard or test written against it. A mistake once discovered and remediated MUST NEVER recur. Machine enforcement supersedes human vigilance.
   7. **Loop-Driven Determinism:** Agents NEVER guess, speculate, or arbitrarily pick tasks. The continuous autonomous loop (`continuous_agent_loop.py`) is the sole SSOT for task assignment, dispatching, and role constraints. "The loop is the permission (U10)."
+  8. **Universal Defect Ownership & Anti-Blindspot Invariant:** Whenever an agent discovers, uncovers, or observes ANY unhandled defect, pipeline failure (such as failed unmerged PRs or silent gate rejections), architectural blindspot, or unowned failure anywhere in the federation during execution, the agent MUST NEVER ignore, bypass, or silently discard it. The agent must record, claim, or surface an actionable structured work order with proper deduplication before considering its cycle complete. Avoidance of discovered defects is strictly prohibited.
 - **MUST AVOID:**
   - **NO Direct Push:** Never push directly to satellites or protected branches without PR gate.
   - **NO Root Shadowing:** Never put satellite code in repo root (`src/*`, `service/*`, `packages/*`).
   - **NO Ghost Fixes:** Never mask errors or fix issues not reproduced on live `main`.
   - **NO Backlog Starvation / Duplicate Stampede:** Never bypass open P0 blockers to create or pick up fast-follow research tickets, and never spawn duplicate PRs/work orders for the same task.
   - **NO Speculative Dispatch:** Never manually claim or work on issues outside the loop's dispatch envelope.
+  - **NO Defect Avoidance / Blindspot Bypassing:** Never observe a broken pipeline, failed unmerged PR, or system defect and walk away without mechanical recording or remediation.
 
 **Beyond these guardrails, you have absolute freedom on HOW to solve your task. Never ask for permission.**
 
