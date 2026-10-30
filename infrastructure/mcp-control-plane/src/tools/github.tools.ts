@@ -137,6 +137,24 @@ export function describeTarget(targetUrl: string): { targetRepo: string; targetU
   return { targetRepo: targetUrl, targetUrl };
 }
 
+/** #2469/#2452 (R66 default-repo drift, disclosure slice) — the no-repo
+ * fallback is real runtime behavior (the github-primary account URL = the
+ * core monorepo 'Supremeai-bd/supremeai'), but it was invisible in
+ * tools/list, so callers silently landed on the monorepo and cited run/PR
+ * ids without a repo attestation. Deriving the disclosure from repoUrlFor()
+ * keeps description and runtime on ONE producer: if the registry default
+ * ever moves, the disclosure moves with it — the drift can never re-hide.
+ * Registration-time only; repoUrlFor is no-I/O by contract (try/catch kept
+ * so schema advertisement can never fail registration). */
+export function repoDefaultNote(accountId = "github-primary"): string {
+  try {
+    const { targetRepo } = describeTarget(repoUrlFor(accountId, undefined));
+    return ` When 'repo' is omitted the call silently targets the account default '${targetRepo}' (R66 drift class, #2452/#2469) — always pass repo explicitly and verify rows via the targetRepo/targetUrl echo.`;
+  } catch {
+    return " When 'repo' is omitted the call silently targets the account default repo (R66 drift class, #2452/#2469) — always pass repo explicitly and verify rows via the targetRepo/targetUrl echo.";
+  }
+}
+
 /** R66 echo schemas: repo-targeted tools always resolve a repo; the search
  * pair resolves org-wide when repo is omitted (null = org-wide, honest). */
 const targetEchoSchema = {
@@ -161,7 +179,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       inputSchema: {
         action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-        repo: z.string().optional().describe("Target repository name"),
+        repo: z.string().optional().describe("Target repository name" + repoDefaultNote()),
         per_page: z.number().int().min(1).max(100).optional().describe(
           "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
         limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
@@ -201,7 +219,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
         per_page: z.number().int().min(1).max(100).optional().describe(
           "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
         limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
@@ -235,7 +253,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
         runId: z.string().describe("The GitHub Actions run ID"),
       },
       outputSchema: targetEchoSchema,
@@ -267,7 +285,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
       },
       outputSchema: targetEchoSchema,
     },
@@ -298,7 +316,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
         path: z.string().describe("Relative path to the file (e.g. 'package.json', 'backend/main.py')"),
         ref: z.string().optional().describe("Branch, tag or commit SHA (default: 'main')"),
       },
@@ -331,7 +349,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
       annotations: { readOnlyHint: true, idempotentHint: true },
       inputSchema: {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
         state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
         per_page: z.number().int().min(1).max(100).optional().describe(
           "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
