@@ -89,6 +89,20 @@ ALLOWLISTED_PREFIXES: tuple[tuple[str, str], ...] = (
      "live-verified 2026-10-31): the drift pin model is one-directional per "
      "wave, this test pins the bidirectional try-in-order cure; same "
      "name-as-data doctrine as this guard's own self-allowlist above"),
+    ("tests/test_tower_name_tolerance.py",
+     "contract tests for the shared rename-wave tolerance cure "
+     "(scripts/ci/tower_name_tolerance.py) — assert the epoch ledger contains "
+     "BOTH documented spellings per oscillating family (wave-1 dotted / "
+     "wave-3 underscore, live-verified 2026-10-31) and that first-live-wins "
+     "crosses a dead spelling; same name-as-data doctrine as this guard's "
+     "own self-allowlist above"),
+    ("scripts/ci/tower_name_tolerance.py",
+     "shared rename-wave tolerance cure (caller-side try-in-order across "
+     "documented name epochs) — its TOOL_NAME_EPOCHS map IS the name-as-data "
+     "ledger: every spelling it quotes is one of the two live-in-some-wave "
+     "forms of the same oscillating family, called only via first-live-wins, "
+     "never hardcoded at a call site; the docstring's wave-3 narrative also "
+     "names both forms as history"),
     ("scripts/tower/tool_consolidation_reference.py",
      "historical consolidation-mapping SSOT (MERGED records of old->new)"),
     ("scripts/ci/mcp_access_policy_guard.py",
