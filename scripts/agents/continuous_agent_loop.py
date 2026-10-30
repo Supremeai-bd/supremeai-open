@@ -1153,26 +1153,44 @@ def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> t
     )
 
 
-def list_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dict[str, Any]]:
+def list_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dict[str, Any]] | None:
     """Read-only audit: scan open PRs and list ones with failing CI/guards.
 
     Does NOT auto-create issues. Provides structured observability for failed PRs
     so agents or operators can inspect unmerged failure bottlenecks cleanly.
+
+    বাংলা (U2-honesty ফিক্স, 2026-10-31): রিটার্ন-চুক্তি এখন error-space ও
+    result-space আলাদা করে — আগে দুটোই খালি তালিকায় কোলাপস করত।
+    - ``None``  ⇒ প্লেন অন্ধকার: gh অনুপস্থিত (run_cmd 127), কোয়েরি ব্যর্থ, বা
+      stdout অপার্সেবল — PR-গুলো **অদৃশ্য**, শূন্য নয়।
+    - ``[]``    ⇒ প্লেন জীবিত এবং সত্যিকারের শূন্য failing PR।
+    লাইভ প্রমাণ 2026-10-31 (tower-fallback রানটাইম, gh অনুপস্থিত): বোর্ড-পথ
+    সৎভাবে "gh CLI not found on PATH" বলছিল, অথচ এই অডিট একই রানে
+    "✅ zero open PRs with failing checks" ছাপাচ্ছিল — একই রানে দুই সত্য।
+    R61/#2318-শ্রেণির "খালি নয়, অদৃশ্য" দর্শন PR-অডিট পথেও প্রয়োগ — বোর্ড-পথের
+    সাথে অসমমিতি দূর। অপরিবর্তিত রাখা হয়েছে যা আগে সৎ ছিল: কোয়েরি সফল হলে
+    পার্স-করা তালিকা আগের আকৃতিতেই ফেরে।
     """
-    code, out, _ = run_cmd([
+    code, out, err = run_cmd([
         "gh", "pr", "list",
         "--repo", repo,
         "--state", "open",
         "--limit", str(limit),
         "--json", "number,title,headRefName,statusCheckRollup,url",
     ])
-    if code != 0 or not out.strip():
+    if code != 0:
+        # বাংলা: ব্যর্থ কোয়েরি (gh অনুপস্থিত/নেটওয়ার্ক/অনুমতি) ⇒ প্লেন অন্ধকার।
+        # আগে এখানে [] ফেরত যেত — অন্ধকার প্লেন "পরিষ্কার" রিপোর্ট হত (মিথ্যা নিশ্চয়তা)।
+        return None
+    if not out.strip():
+        # বাংলা: gh JSON-মোড খালি ফলেও "[]" প্রিন্ট করে; কোড 0 সহ খালি stdout
+        # লাইভ-প্লেনের সত্য-শূন্য হিসেবেই গণ্য থাকে (আগের আচরণ অপরিবর্তিত)।
         return []
-
     try:
         prs = json.loads(out)
     except Exception:
-        return []
+        # বাংলা: অপার্সেবল stdout ⇒ ফল অজানা — সৎ অজ্ঞতা (None), মিথ্যা শূন্য নয়।
+        return None
 
     failed_prs: list[dict[str, Any]] = []
     for pr in prs:
@@ -1195,8 +1213,17 @@ def list_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dic
 
 
 def report_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dict[str, Any]]:
-    """Read-only audit step: emit a structured summary of currently failing open PRs."""
+    """Read-only audit step: emit a structured summary of currently failing open PRs.
+
+    বাংলা: প্লেন অন্ধকার হলে (list_failed_open_prs() ⇒ None) কখনো "✅ zero"
+    ছাপাবে না — "⚠️ UNSEEN" সৎ সতর্কতা ছাপায় (U2 সত্যতা; R61-শ্রেণি)।
+    কলার-স্বাক্ষর অপরিবর্তিত: সবসময় তালিকা ফেরত (অন্ধকারে খালি তালিকা,
+    তবে stdout-চুক্তি আলাদা — মিথ্যা-নিশ্চয়তা লাইন আর এমিট হয় না)।
+    """
     failed = list_failed_open_prs(repo=repo, limit=limit)
+    if failed is None:
+        log("⚠", "Read-only failed PR audit: plane dark — open PRs UNSEEN (gh query failed/absent), not zero; treating this as clean would be false assurance (U2).")
+        return []
     if failed:
         log("🔍", f"Read-only failed PR audit: found {len(failed)} open PR(s) with failing checks (report-only):")
         for f in failed:
