@@ -120,7 +120,11 @@ class _FakeRosterFetch:
             return {"workOrders": [{"n": i} for i in range(109)],
                     "windowTruncated": False, "totalOpen": 109}
         if tool == "health_full_sweep":
-            return {"snapshots": {"redis": {"status": "healthy"}, "render": {"status": "degraded"}}}
+            # Honest #2665 shape: populated rows; #3111 shape honesty: the
+            # degraded row is acknowledged by a non-empty incidents array.
+            return {"snapshots": {"redis": {"status": "healthy"}, "render": {"status": "degraded"}},
+                    "incidents": [{"kind": "degraded", "target": "render"}],
+                    "overallStatus": "degraded"}
         raise AssertionError(f"unexpected tool {tool}")
 
 
@@ -272,6 +276,121 @@ class TestProbeHollowOnUnparseable(unittest.TestCase):
         self.assertEqual(ev["hollowCount"], 3)
         self.assertTrue(all(f["verdict"] == "HOLLOW" for f in ev["findings"]))
         self.assertTrue(all(f["assertion"] == "parsable" for f in ev["findings"]))
+
+
+class TestIncidentsConsistent3111(unittest.TestCase):
+    """Assertion 6 (#3111 class): incidents plane must agree with data plane
+    INSIDE one sweep payload — 8+ live passes of incidents=[] while rows were
+    degraded/down (#3049, #3077, #3111)."""
+
+    def test_degraded_rows_with_empty_incidents_is_hollow(self):
+        sweep = {
+            "overallStatus": "degraded",
+            "incidents": [],
+            "snapshots": {
+                "telegram-primary": {"status": "down"},
+                "render-primary": {"status": "update_failed"},
+                "render-worker": {"status": "update_failed"},
+                "core-api": {"status": "healthy"},
+            },
+        }
+        r = hrg.assert_incidents_consistent("health_full_sweep.incidents", sweep)
+        self.assertEqual(r["verdict"], "HOLLOW")
+        self.assertIn("#3111", r["detail"])
+        self.assertIn("contradicts data plane", r["detail"])
+        self.assertEqual(r["nonOkRows"]["telegram-primary"], "down")
+        self.assertEqual(r["incidentsCount"], 0)
+
+    def test_overall_degraded_alone_is_hollow(self):
+        sweep = {"overallStatus": "degraded", "incidents": [],
+                 "snapshots": {"x": {"status": "healthy"}}}
+        r = hrg.assert_incidents_consistent("sweep", sweep)
+        self.assertEqual(r["verdict"], "HOLLOW")
+
+    def test_non_ok_rows_with_incident_present_is_clean(self):
+        sweep = {"overallStatus": "degraded", "incidents": [{"id": "inc-1"}],
+                 "snapshots": {"render": {"status": "degraded"}}}
+        r = hrg.assert_incidents_consistent("sweep", sweep)
+        self.assertEqual(r["verdict"], "CLEAN")
+
+    def test_all_healthy_with_empty_incidents_is_clean(self):
+        sweep = {"overallStatus": "healthy", "incidents": [],
+                 "snapshots": {"redis": {"status": "healthy"}}}
+        r = hrg.assert_incidents_consistent("sweep", sweep)
+        self.assertEqual(r["verdict"], "CLEAN")
+
+    def test_neutral_statuses_do_not_false_positive(self):
+        sweep = {
+            "overallStatus": "healthy",
+            "incidents": [],
+            "snapshots": {
+                "v0": {"status": "Excluded"},
+                "probe-pending": {"status": "unknown"},
+                "legacy": {"status": "disabled"},
+            },
+        }
+        r = hrg.assert_incidents_consistent("sweep", sweep)
+        self.assertEqual(r["verdict"], "CLEAN")
+
+    def test_list_snapshots_shape_supported(self):
+        sweep = {"overallStatus": "degraded", "incidents": [],
+                 "snapshots": [{"provider": "render", "status": "degraded"}]}
+        r = hrg.assert_incidents_consistent("sweep", sweep)
+        self.assertEqual(r["verdict"], "HOLLOW")
+        self.assertEqual(r["nonOkRows"], {"row-0": "degraded"})
+
+    def test_missing_incidents_field_is_unreadable_never_silent(self):
+        sweep = {"overallStatus": "degraded", "snapshots": {"render": {"status": "degraded"}}}
+        r = hrg.assert_incidents_consistent("sweep", sweep)
+        self.assertEqual(r["verdict"], "UNREADABLE")
+
+    def test_snapshots_missing_is_unreadable(self):
+        r = hrg.assert_incidents_consistent("sweep", {"overallStatus": "healthy", "incidents": []})
+        self.assertEqual(r["verdict"], "UNREADABLE")
+
+    def test_non_dict_sweep_is_unreadable(self):
+        r = hrg.assert_incidents_consistent("sweep", ["nope"])
+        self.assertEqual(r["verdict"], "UNREADABLE")
+
+
+class TestProbeIncidentsWiring3111(unittest.TestCase):
+    """Assertion 6 wired into run_live_probe's health_full_sweep plane."""
+
+    def test_degraded_sweep_with_silent_incidents_fires(self):
+        honest = _FakeRosterFetch([{"number": 1}])
+
+        def fetch(tool, arguments):
+            if tool == "health_full_sweep":
+                return {
+                    "overallStatus": "degraded",
+                    "incidents": [],
+                    "snapshots": {
+                        "telegram-primary": {"status": "down"},
+                        "render-worker": {"status": "update_failed"},
+                    },
+                }
+            return honest(tool, arguments)
+
+        ev = hrg.run_live_probe(fetch)
+        self.assertEqual(ev["verdict"], "HOLLOW_DETECTED")
+        f = [x for x in ev["findings"] if x.get("assertion") == "incidents_consistent"]
+        self.assertTrue(f and f[0]["plane"] == "health_full_sweep.incidents")
+        self.assertEqual(f[0]["verdict"], "HOLLOW")
+
+    def test_honest_sweep_incident_agreement_is_clean(self):
+        honest = _FakeRosterFetch([{"number": 1}, {"number": 2}])
+
+        def fetch(tool, arguments):
+            if tool == "health_full_sweep":
+                return {"overallStatus": "healthy", "incidents": [],
+                        "snapshots": {"redis": {"status": "healthy"},
+                                      "render": {"status": "healthy"}}}
+            return honest(tool, arguments)
+
+        ev = hrg.run_live_probe(fetch)
+        self.assertEqual(ev["verdict"], "CLEAN")
+        f = [x for x in ev["findings"] if x.get("assertion") == "incidents_consistent"]
+        self.assertTrue(f and f[0]["verdict"] == "CLEAN")
 
 
 if __name__ == "__main__":
