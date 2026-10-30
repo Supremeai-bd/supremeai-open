@@ -105,6 +105,60 @@ class TestTowerPrFallbackDark(unittest.TestCase):
         self.assertIn("UNSEEN", buf.getvalue())
 
 
+class TestTowerPrFailureClassification(unittest.TestCase):
+    """U6 Zero-Recurrence guard — RBAC-denial must never read as "no JSON list".
+
+    Live defect (GLM Agent 24, 2026-10-31T20:24Z): on the anonymous/viewer
+    lane tower's github.list_prs answers with a JSON-RPC-OK envelope whose
+    MCP result carries isError=true and content[0].text =
+    "Forbidden: role 'viewer' has no repository read access for
+    'github.list_prs'." The old probe ignored isError, failed to parse the
+    denial text as a JSON list, and reported the false cause note
+    "tower PR payload carried no JSON list" — masking a permanent
+    access-control state as a payload/format problem on every gh-absent
+    boot, and baiting later agents into pointless retries (U6 violation).
+    """
+
+    LIVE_DENIAL_TEXT = (
+        "Forbidden: role 'viewer' has no repository read access for 'github.list_prs'."
+    )
+
+    def test_rbac_denial_gets_truthful_permanent_state_note(self) -> None:
+        note = cal._classify_tower_pr_failure(self.LIVE_DENIAL_TEXT)
+        self.assertIn("RBAC-forbidden", note)
+        self.assertIn("permanent access-control state", note)
+        self.assertIn(self.LIVE_DENIAL_TEXT, note)
+        # The old false-cause note must never ride an RBAC denial again.
+        self.assertNotIn("no JSON list", note)
+
+    def test_rbac_denial_shape_variants_classified(self) -> None:
+        for shape in (
+            "Forbidden: role 'viewer' has no repository read access for 'github.list_prs'.",
+            "rbac denied: role 'viewer' lacks access",
+            "Forbidden",
+        ):
+            note = cal._classify_tower_pr_failure(shape)
+            self.assertIn("RBAC-forbidden", note, shape)
+
+    def test_rpc_error_gets_tool_call_error_note(self) -> None:
+        note = cal._classify_tower_pr_failure("Tool github.list_prs not found")
+        self.assertIn("tower PR tool-call error:", note)
+        self.assertIn("Tool github.list_prs not found", note)
+        self.assertNotIn("no JSON list", note)
+
+    def test_empty_error_text_gets_generic_tool_call_note(self) -> None:
+        note = cal._classify_tower_pr_failure("")
+        self.assertIn("no error text returned", note)
+
+    def test_probe_wiring_pins_is_error_branch(self) -> None:
+        # Structural pins: if someone removes the isError/RPC-error handling
+        # from _probe() again, these trip before the false note can return.
+        source = Path(cal.__file__).read_text(encoding="utf-8")
+        self.assertIn("result.get(\"isError\")", source)
+        self.assertIn("_classify_tower_pr_failure(", source)
+        self.assertIn("rpc_error_msg", source)
+
+
 class TestFallbackWiringContract(unittest.TestCase):
     """Structural pins so the symmetry cannot silently regress."""
 
