@@ -106,8 +106,11 @@ class RedTeamAdapter:
         # Load code content
         if code_content is None:
             try:
-                with open(artifact_path, encoding="utf-8") as f:
-                    code_content = f.read()
+                import asyncio
+                def _read_code():
+                    with open(artifact_path, encoding="utf-8") as f:
+                        return f.read()
+                code_content = await asyncio.to_thread(_read_code)
             except FileNotFoundError:
                 return SecurityReport(
                     findings=[

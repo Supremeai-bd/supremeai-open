@@ -183,4 +183,3 @@ def _self_test() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-EOF

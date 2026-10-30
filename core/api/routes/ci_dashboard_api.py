@@ -194,7 +194,7 @@ _ws_connections: list[WebSocket] = []
 
 def _store_summary(summary: CISummaryModel):
     """Store a CI summary (in memory or DB)"""
-    global _ci_summaries_store, _ci_history
+    global _ci_history
 
     # Store by run_id
     _ci_summaries_store[summary.run_id] = summary
@@ -711,7 +711,7 @@ async def clear_cache(
             status_code=400, detail="Set confirm=true to proceed with cache clearing"
         )
 
-    global _ci_history, _ci_summaries_store
+    global _ci_history
 
     cutoff = datetime.utcnow() - timedelta(days=older_than_days)
     before_count = len(_ci_history)

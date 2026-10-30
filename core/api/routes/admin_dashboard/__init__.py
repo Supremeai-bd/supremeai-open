@@ -117,7 +117,7 @@ def logs_stream():
 
         if os.path.exists(log_file):
             try:
-                with open(log_file) as f:
+                with open(log_file) as f:  # noqa: ASYNC230
                     lines = f.readlines()[-30:]
                     for line in lines:
                         yield f"data: {line.strip()}\n\n"
@@ -129,7 +129,7 @@ def logs_stream():
         last_output = time.monotonic()
         try:
             if os.path.exists(log_file):
-                file_obj = open(log_file)  # noqa: SIM115 - handle persists across generator yields, closed in finally
+                file_obj = open(log_file)  # noqa: SIM115, ASYNC230 - handle persists across generator yields, closed in finally
                 file_obj.seek(0, os.SEEK_END)
 
             while True:
@@ -154,7 +154,7 @@ def logs_stream():
                         yield ": ping\n\n"
                         last_output = time.monotonic()
                     if os.path.exists(log_file):
-                        file_obj = open(log_file)  # noqa: SIM115 - handle persists across generator yields, closed in finally
+                        file_obj = open(log_file)  # noqa: SIM115, ASYNC230 - handle persists across generator yields, closed in finally
                         file_obj.seek(0, os.SEEK_END)
                     await asyncio.sleep(1.0)
         except asyncio.CancelledError:

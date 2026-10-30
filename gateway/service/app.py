@@ -266,8 +266,9 @@ app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|.*\.pages\.dev|.*\.vercel\.app|.*\.workers\.dev)(:[0-9]+)?$",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["Authorization", "Content-Type", "X-SupremeAI-Key", "X-Guest-Mode", "X-Forwarded-For", "Accept", "Origin", "Referer", "X-Correlation-ID"],
 )
 
@@ -762,6 +763,21 @@ async def get_public_config():
     }
 
 
+@app.get("/api/preferences/{user_id}/stream")
+async def stream_preferences(user_id: str):
+    """SSE endpoint for real-time theme/preference updates (service tier)."""
+    import asyncio
+    import json
+
+    async def event_generator():
+        yield "event: connected\ndata: " + json.dumps({"status": "connected", "user_id": user_id}) + "\n\n"
+        while True:
+            await asyncio.sleep(15)
+            yield "event: ping\ndata: " + json.dumps({"channel": "heartbeat"}) + "\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @app.get("/api/v1/live")
 async def live_probe():
     """Live heartbeat probe for Studio."""
@@ -790,14 +806,25 @@ async def studio_auth_login(request: Request):
     password = str(body.get("password", "")).strip()
 
     admin_email = os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "niloyjoy7@gmail.com").strip().lower()
-    admin_pass = os.getenv("SUPREMEAI_ADMIN_PASSWORD", "").strip()
+    # Support both plaintext (SUPREMEAI_ADMIN_PASSWORD) and bcrypt hash
+    # (SUPREMEAI_ADMIN_PASSWORD_HASH) env vars, mirroring gateway.service.admin_auth.
+    try:
+        from service.admin_auth import _verify_password
+    except Exception:  # noqa: BLE001
+        try:
+            from gateway.service.admin_auth import _verify_password
+        except Exception:  # noqa: BLE001
+            def _verify_password(pw: str) -> bool:  # type: ignore[misc]
+                import hmac, os
+                env_pass = os.getenv("SUPREMEAI_ADMIN_PASSWORD", "").strip()
+                return bool(env_pass) and hmac.compare_digest(pw, env_pass)
 
     # FIX(auth 2026-10-24): fail-closed credential check. Previously ANY email with
     # ANY password of >=6 chars produced a session, and the admin password had a
     # hardcoded "admin123" fallback. Both bypasses removed: only the configured
-    # admin email + exact env password match is accepted (hmac.compare_digest).
+    # admin email + exact env password/hash match is accepted.
     # User accounts require the register flow / a real user store (tracked separately).
-    if admin_pass and email == admin_email and hmac.compare_digest(password, admin_pass):
+    if email == admin_email and _verify_password(password):
         # Generate stateless signed API token
         try:
             from service.keygen import generate_key
