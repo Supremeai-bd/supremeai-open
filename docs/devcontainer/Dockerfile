@@ -14,3 +14,5 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 # Install pinned global Python tooling matching CI invariants
 RUN pip install --no-cache-dir --upgrade pip==24.0 \
     && pip install --no-cache-dir poetry==2.4.1 ruff==0.16.4 pytest==8.2.2
+
+USER vscode

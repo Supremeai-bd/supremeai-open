@@ -261,6 +261,8 @@ tree for content inspection (stdlib-only, still minutes-bounded):
    (`why` + `alternatives_rejected`).
 10. **Tower Verification Signature Guard (#hybrid-agent)** — verifies external agent PR carries
     valid Tower verification signatures (`## Reflection Evidence` and 3-Tier test evidence).
+11. **Anti-Regression & Zero-Recurrence Guard (#zero-recurrence)** — enforces Invariant 6:
+    fix PRs must include an automated regression test under `tests/` and root-cause analysis.
 
 ## 6. Submission flow (Pathway 1 wiring)
 

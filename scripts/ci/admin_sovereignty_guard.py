@@ -80,27 +80,6 @@ def is_admin_only(labels: Sequence[str] | None) -> bool:
     return ADMIN_ONLY_LABEL in _normalized(labels)
 
 
-def quarantine_decision(labels: Sequence[str] | None, issue_number: int) -> Decision:
-    """D1: the fail-closed claim decision for one issue."""
-    if is_admin_only(labels):
-        return Decision(
-            allowed=False,
-            code=DENIAL_CODE,
-            message=(
-                f"CLAIM_DENIED_ADMIN_ONLY: Issue #{issue_number} is "
-                "strictly reserved for human Admin execution. "
-                "Autonomous bots cannot claim."
-            ),
-            execution_lane=LANE_ADMIN,
-        )
-    return Decision(
-        allowed=True,
-        code=GRANT_CODE,
-        message=f"Issue #{issue_number} is swarm-claimable.",
-        execution_lane=LANE_SWARM,
-    )
-
-
 def extract_domain_from_labels(labels: Sequence[str] | None) -> str | None:
     """Extract a routing domain from labels (domain:* or repo:* or target_repo shorthand)."""
     if not isinstance(labels, (list, tuple, set, frozenset)):
@@ -156,7 +135,7 @@ def domain_scope_decision(
     )
 
 
-def quarantine_decision(  # type: ignore[no-redef]
+def quarantine_decision(
     labels: Sequence[str] | None,
     issue_number: int,
     *,

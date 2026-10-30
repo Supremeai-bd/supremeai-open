@@ -85,6 +85,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
@@ -112,6 +114,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
@@ -136,6 +140,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
@@ -341,6 +347,34 @@ jobs:
           fi
           echo "✅ Tower verification signature present."
 
+  anti-regression-guard:
+    name: "🛡️ Anti-Regression & Zero-Recurrence Guard (#zero-recurrence)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Run Anti-Regression Contract Guard
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | tr '\n' ',')
+          python3 scripts/ci/anti_regression_guard.py \
+            --title "$PR_TITLE" \
+            --body "$PR_BODY" \
+            --labels "$PR_LABELS" \
+            --files "$CHANGED_FILES"
+
   duplicate-pr-guard:
     name: "👥 Anti-Duplicate PR Guard"
     if: github.event_name == 'pull_request'
@@ -354,6 +388,7 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+          BRANCH_NAME: ${{ github.head_ref }}
         run: |
           if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
             echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
@@ -361,7 +396,7 @@ jobs:
           # Target issues from (1) explicit closing statements (Closes/Fixes/Resolves #N),
           # or (2) branch issue tokens `issue-N` or `issueN`.
           TARGET_ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -ioE '(closes|fixes|resolves) #[0-9]+' | grep -oE '#[0-9]+' || true)
-          BRANCH_ISSUES=$(echo "${{ github.head_ref }}" | grep -oE 'issue-?[0-9]+' | grep -oE '[0-9]+' | sed 's/^/#/' || true)
+          BRANCH_ISSUES=$(echo "$BRANCH_NAME" | grep -oE 'issue-?[0-9]+' | grep -oE '[0-9]+' | sed 's/^/#/' || true)
           ISSUES=$(printf "%s\n%s" "$TARGET_ISSUES" "$BRANCH_ISSUES" | grep -E '^#[0-9]+' | sort -u || true)
           # (#1764/#1777 fix) Claims ONLY — mentions are not claims.
           # The removed mention-fallback ("general issue references") turned
@@ -418,6 +453,8 @@ jobs:
     steps:
       - name: Checkout repository (content inspection requires file bodies)
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Guard self-test (guard-the-guard, offline fixtures)
         run: python3 scripts/ci/boundary_sanitization_guard.py --self-test
@@ -482,6 +519,8 @@ jobs:
     steps:
       - name: Checkout repository (parity inspects file bodies)
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Assert loop-contract SSOT parity (tiers, guards, flag table)
         run: python3 scripts/agents/check_loop_contract_parity.py
@@ -494,6 +533,8 @@ jobs:
     steps:
       - name: Checkout repository (hook body required)
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Verify pre-push guard (exec bit + syntax + offline self-test)
         run: |
@@ -512,6 +553,7 @@ jobs:
       - name: Checkout repository (full history for merge-base arithmetic)
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Verify PR mergeability against main
@@ -545,6 +587,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
@@ -596,6 +640,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
@@ -681,6 +727,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Run Gitleaks Secret Detection (reusable composite action, #155)
@@ -711,6 +758,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: "Setup Node — MCP Tower (reusable composite action: node + cache + npm ci + tsc, #155)"
         uses: ./.github/actions/setup-node-tower
@@ -748,6 +797,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Check if SDK TypeScript exists
         id: check_sdk_ts
@@ -800,6 +851,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Check if Studio exists
         id: check_studio
@@ -837,7 +890,7 @@ jobs:
   # ---------------------------------------------------------------------------
   auto-landing:
     name: "🛬 Autonomous Auto-Landing"
-    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower, studio-verification, tower-verification-guard]
+    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower, studio-verification, tower-verification-guard, anti-regression-guard]
     if: |
       always() &&
       github.event_name == 'pull_request' &&
@@ -913,6 +966,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           fetch-depth: 50
 
       - name: Set up Python
@@ -1004,6 +1058,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v6

@@ -15,9 +15,9 @@ This skill runs a script to test the availability and health of various SupremeA
 
 ## Instructions
 
-1. **Run the Script**: Execute the health check script using the following command from the workspace root (`f:\supremeai backup`):
+1. **Run the Script**: Execute the health check script using the following command from the workspace root (`f:\supremeai-open`):
    ```bash
-   python scripts/check_env_health.py
+   python scripts/ops/master_health_check.py
    ```
 
 2. **Analyze Output**:

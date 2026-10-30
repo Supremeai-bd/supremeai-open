@@ -22,5 +22,9 @@ COPY runtime/infisical_bootstrap.py runtime/infisical_bootstrap.py
 
 EXPOSE 8787
 
+RUN useradd -m -u 1000 app && chown -R app:app /app
+
+USER app
+
 # বাংলা: CMD — infisical_bootstrap সফল হলে তা দিয়ে চালাবে, ফেইল করলে সরাসরি uvicorn দিয়ে সার্ভিস লাইভ রাখবে
 CMD ["sh", "-c", "(python runtime/infisical_bootstrap.py uvicorn gateway.service.app:app --host 0.0.0.0 --port ${PORT:-8787}) || (uvicorn gateway.service.app:app --host 0.0.0.0 --port ${PORT:-8787})"]
