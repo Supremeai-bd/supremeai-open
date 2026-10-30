@@ -29,7 +29,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from brain.model_router import ModelRouter
 from core.cache import get_cache
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.upload_validator import validate_upload
 from services.config_service import ConfigService
 

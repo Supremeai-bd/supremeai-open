@@ -17,7 +17,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from core.config import settings
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from utils.http_client import DEFAULT_TIMEOUT, create_async_client
 
 

@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.degraded_mode import InMemoryRing, sqlite_fallback_allowed
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 try:
     from google.cloud import firestore  # type: ignore[import-untyped]
