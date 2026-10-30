@@ -323,6 +323,20 @@ def sync_satellite(
             if req_src.exists():
                 shutil.copy2(req_src, tmp_repo / "requirements.txt")
                 print(f"📋 Synced requirements.txt -> root in {target_repo}")
+            # Sync the proprietary license notice into the satellite root (#1690):
+            # ECOSYSTEM_MAP §2.3 guarantees "All private repositories carry the
+            # standard SupremeAI proprietary license notice", yet no pipeline ever
+            # landed one here — the api satellite head carries no LICENSE at all
+            # while the boundary mirror ships the SSOT notice at gateway/LICENSE
+            # (the root MIT of supremeai-open must never leak into this proprietary
+            # domain). gateway/LICENSE stays the single SSOT: mirror it
+            # byte-identically on every sync so the satellite IP posture can never
+            # drift from the boundary posture again (nearest-LICENSE rule,
+            # ECOSYSTEM_MAP §2.3).
+            gw_license = repo_root / "gateway" / "LICENSE"
+            if gw_license.exists():
+                shutil.copy2(gw_license, tmp_repo / "LICENSE")
+                print(f"📋 Synced license notice gateway/LICENSE -> LICENSE (root) in {target_repo}")
         elif target_repo == "Supremeai-bd/supremeai-studio":
             # Copy domain files into the satellite root (non-destructive)
             copy_tree_contents(src_path, tmp_repo, prune=False)
