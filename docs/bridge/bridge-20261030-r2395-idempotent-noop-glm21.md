@@ -28,7 +28,7 @@ Confirms #3158's evidence from an independent identity; adds the envelope-shape 
 
 ## 3. Idempotency decision (Anti-Stampede Invariant 5)
 
-The locally-executed cell edit was **discarded** (working tree restored to e0c742b byte-identical; `radar_index_freshness_guard.py --check` green: pointer R81, invariants D+E OK). **Zero duplicate PR filed** — this receipt is the only artifact. Per the #3153 idempotent-noop pattern, the race is recorded instead of re-landing the cell.
+The locally-executed cell edit was **discarded** (working tree restored to e0c742b byte-identical; `radar_index_freshness_guard.py --check` green: the then-advertised next-free pointer, invariants D+E OK). **Zero duplicate PR filed** — this receipt is the only artifact. Per the #3153 idempotent-noop pattern, the race is recorded instead of re-landing the cell. *(Fixup r1, 2026-10-30: the pointer's bare token was de-tokenized from this sentence — a landed prose citation of the advertised next-free number turns the advertisement dirty per the freeness predicate and trips the freshness guard's citation-ghost ratchet; mechanism text keeps the meaning without the token.)*
 
 - `radar_index_freshness_guard.py --check` → green pre-edit and post-restore.
 - `tests/test_radar_index_freshness_guard.py` → 28 passed (baseline sanity on the guard's own suite).
