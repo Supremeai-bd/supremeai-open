@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # বাংলা মন্তব্য: Judge-এর জন্য consensus থ্রেশহোল্ড — hardcode value নয়, একটি নামযুক্ত
 # কনস্ট্যান্ট যাতে ভবিষ্যতে routing_policy.json/settings থেকে override করা সহজ হয়।
