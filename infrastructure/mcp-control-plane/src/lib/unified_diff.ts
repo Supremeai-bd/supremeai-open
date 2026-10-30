@@ -330,6 +330,16 @@ export async function resolveFileContent(
     if (typeof file.content !== "string") {
       throw new Error(`file '${file.path}': mode full_file requires content`);
     }
+    // Zero-Corrupted-Payload Invariant: Reject raw diff headers submitted as full_file content
+    const firstLines = file.content.slice(0, 500).split(/\r?\n/).slice(0, 5);
+    for (const line of firstLines) {
+      if (/^diff --git\s|^index [0-9a-f]{7,}\.\./.test(line)) {
+        throw new Error(
+          `file '${file.path}': raw unified diff header detected in full_file content. ` +
+          `Use mode: 'unified_diff' with diff field, or provide clean source code without git diff headers.`
+        );
+      }
+    }
     return { content: file.content, mode };
   }
   // unified_diff
