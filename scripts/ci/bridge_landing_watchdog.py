@@ -1151,6 +1151,8 @@ def main(argv: list[str] | None = None) -> int:
                    help=f"age past which an unmatched WO flags (default {DEFAULT_AT_RISK_HOURS:g}h)")
     p.add_argument("--strict", action="store_true",
                    help="exit 1 on at-risk/aging findings (report-only default)")
+    p.add_argument("--apply", action="store_true",
+                   help="auto-close work orders that are MERGED_ON_MAIN or FALSE_REJECTION")
     args = p.parse_args(argv)
 
     if args.self_test:
@@ -1247,6 +1249,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"NEVER-TOUCHED SIGNATURE: {len(untouched)} landed WOs untouched since creation — "
               "close-on-merge flap fingerprint (#2401/#2430 class), the reconciler's "
               "exact worklist, report-only.")
+
+    if args.apply:
+        to_close = [v for v in verdicts if v["verdict"] in ("MERGED_ON_MAIN", "FALSE_REJECTION")]
+        print(f"APPLY: Auto-closing {len(to_close)} landed / false-rejected work orders...")
+        for item in to_close:
+            num = item.get("number")
+            evidence = item.get("evidence", "")
+            if not num:
+                continue
+            comment = f"<!-- watchdog:auto-close --> Closed: work order deliverable landed on main ({evidence[:120]})."
+            try:
+                subprocess.run(
+                    ["gh", "issue", "close", str(num), "--comment", comment],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                print(f"  [OK] Auto-closed #{num}")
+            except Exception as err:
+                print(f"  [WARN] Failed to close #{num}: {err}")
     risky = [v for v in verdicts
              if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION")
              or (v["verdict"] == "MERGED_ON_MAIN" and (v["age_hours"] or 0) >= args.at_risk_hours)]

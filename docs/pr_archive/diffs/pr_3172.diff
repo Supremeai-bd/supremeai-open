@@ -1,0 +1,605 @@
+diff --git a/docs/SEQ04_CONSUMERS_QUICKSTART_HANDOFF.md b/docs/SEQ04_CONSUMERS_QUICKSTART_HANDOFF.md
+index 26f9a230..f348ebe7 100644
+--- a/docs/SEQ04_CONSUMERS_QUICKSTART_HANDOFF.md
++++ b/docs/SEQ04_CONSUMERS_QUICKSTART_HANDOFF.md
+@@ -1,5 +1,13 @@
+ # Seq 0.4 — CONSUMERS Quickstart Overhaul & Link-Integrity Hand-off (#404, r2)
+ 
++> **ghost-host-retired: #2355/#2365/#2377** — this historical work-order receipt
++> predates the host adjudication: URLs embedded below point at the retired
++> no-server ghost `supremeai-api.onrender.com` (plain 404,
++> `x-render-routing: no-server`). The live gateway SSOT is
++> `https://supremeai-api-ulw0.onrender.com` (README service table,
++> `docs/CONSUMERS.md`). Do NOT copy URLs from this receipt — grep the SSOT
++> first; `scripts/ci/ghost_host_guard.py` enforces this class.
++
+ > Task: `bridge-20261017-seq04-consumers-quickstart-r2` · Issue: #404 (P2-medium,
+ > handoff:coder, repo:open; claim: operator-set `status:claimed` label AND
+ > `<!-- atomic-claim -->` marker comment on #404 — both planes of
+@@ -110,7 +118,7 @@ in §৩, §০ checklist entry in §৭ — are updated consistently).
+ 
+ ## §০. 5-minute Quickstart (copy-paste)
+ 
+-**Base URL:** `https://supremeai-api-ulw0.onrender.com` — stable OpenAI-compatible surface (README-SSOT real host; the bare `supremeai-api.onrender.com` alias is a retired no-server ghost, #2355/#2365).
++**Base URL:** `https://supremeai-api.onrender.com` — stable OpenAI-compatible surface.
+ Contract SSOT: [`api-schemas/gateway.openapi.yaml`](../api-schemas/gateway.openapi.yaml).
+ 
+ > **Live status (সৎ-নোট):** এই লেখার সময় Render deployment সব route-এ
+@@ -123,7 +131,7 @@ Contract SSOT: [`api-schemas/gateway.openapi.yaml`](../api-schemas/gateway.opena
+ 
+ ```bash
+ # shell: export SUPREMEAI_API_KEY=... (কখনো কোড/git/log-এ হার্ডকোড নয়)
+-curl -sS https://supremeai-api-ulw0.onrender.com/v1/chat/completions \
++curl -sS https://supremeai-api.onrender.com/v1/chat/completions \
+   -H "Content-Type: application/json" \
+   -H "X-SupremeAI-Key: $SUPREMEAI_API_KEY" \
+   -d '{"model":"auto","messages":[{"role":"user","content":"ping"}]}'
+@@ -140,7 +148,7 @@ import os
+ from openai import OpenAI
+ 
+ client = OpenAI(
+-    base_url="https://supremeai-api-ulw0.onrender.com/v1",
++    base_url="https://supremeai-api.onrender.com/v1",
+     api_key=os.environ["SUPREMEAI_API_KEY"],
+     default_headers={"X-SupremeAI-Key": os.environ["SUPREMEAI_API_KEY"]},
+ )
+@@ -175,7 +183,7 @@ Zero-dependency পথ (SDK ছাড়া): §৪-র `examples/gateway_client
+ 
+ ```typescript
+ // Node 18+ বা যেকোনো fetch runtime; কোনো dependency নেই
+-const base = "https://supremeai-api-ulw0.onrender.com";
++const base = "https://supremeai-api.onrender.com";
+ const key = process.env.SUPREMEAI_API_KEY!;
+ 
+ // এক কল (non-streaming)
+@@ -231,7 +239,7 @@ defaultHeaders: { "X-SupremeAI-Key": key } })` — বাকি সব §০.২
+ ### §০.৪ Models তালিকা
+ 
+ ```bash
+-curl -sS https://supremeai-api-ulw0.onrender.com/v1/models \
++curl -sS https://supremeai-api.onrender.com/v1/models \
+   -H "X-SupremeAI-Key: $SUPREMEAI_API_KEY"
+ ```
+ 
+@@ -282,7 +290,7 @@ header   : X-SupremeAI-Key: <SUPREMEAI_API_KEY>
+ secret   : vault-ফিড env — কখনো কোড/git/log-এ নয় (monolith SECRETS_MODEL চুক্তি)
+ ```
+ 
+-- `GATEWAY_URL` ডিফল্ট `https://supremeai-api-ulw0.onrender.com` (README-SSOT রিয়েল হোস্ট; ghost alias অবসরপ্রাপ্ত — #2355/#2365)
++- `GATEWAY_URL` ডিফল্ট `https://supremeai-api.onrender.com` (Render live হলে)
+ - মডেল `"auto"` দিন — provider নির্বাচন gateway-র কাজ; নির্দিষ্ট মডেলও চলে
+   (`/v1/models`-এ সক্রিয় তালিকা — §০.৪)
+ 
+diff --git a/docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md b/docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md
+index 27cb7922..307650df 100644
+--- a/docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md
++++ b/docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md
+@@ -1,5 +1,14 @@
+ # Seq 453 — Live Telemetry Probe & Timestamp-Parity Contract Hand-off (#453, r1)
+ 
++> **ghost-host-retired: #2355/#2365/#2377** — this historical receipt's §1
++> "Measured evidence" records the probe against the retired no-server ghost
++> `supremeai-api.onrender.com` as measured at r1 build (2026-10-17); that
++> surface is now a plain-404 alias. The live gateway SSOT is
++> `https://supremeai-api-ulw0.onrender.com` (README service table,
++> `docs/CONSUMERS.md`); `probe_live_status_453.py` defaults to it since
++> #2365. Do NOT re-probe the ghost — `scripts/ci/ghost_host_guard.py`
++> enforces this class.
++
+ > Task: `bridge-20261017-live-telemetry-probe-453` · Issue: #453 (enhancement,
+ > repo:open; **claim state at build time: PENDING** — this order is submitted
+ > only after the operator sets `status:claimed` / an `<!-- atomic-claim -->`
+diff --git a/examples/curl-tests/run_e2e_smoke.ps1 b/examples/curl-tests/run_e2e_smoke.ps1
+index db603730..5bfd6408 100644
+--- a/examples/curl-tests/run_e2e_smoke.ps1
++++ b/examples/curl-tests/run_e2e_smoke.ps1
+@@ -10,6 +10,7 @@
+ #
+ # Environment overrides (identical to the sh mirror):
+ #   GATEWAY_URL           default: https://supremeai-api-ulw0.onrender.com
++#                         (README SSOT — ghost host retired #2355/#2365/#2377)
+ #   SUPREMEAI_API_KEY     required — monolith key-plane key (vault/env only)
+ #   MODELS                space-separated model rotation, default: "auto"
+ #   MAX_TOKENS            default: 32
+diff --git a/examples/curl-tests/run_e2e_smoke.sh b/examples/curl-tests/run_e2e_smoke.sh
+index c3673436..f026b64d 100644
+--- a/examples/curl-tests/run_e2e_smoke.sh
++++ b/examples/curl-tests/run_e2e_smoke.sh
+@@ -13,7 +13,9 @@
+ #
+ # Environment overrides:
+ #   GATEWAY_URL           default: https://supremeai-api-ulw0.onrender.com
+-#                         (repo client contract, examples/gateway_client.py)
++#                         (README SSOT service table; repo client contract,
++#                         examples/gateway_client.py — ghost host retired by
++#                         #2355/#2365/#2377, ghost_host_guard.py enforces)
+ #   SUPREMEAI_API_KEY     required — monolith key-plane-issued key (vault/env;
+ #                         never hardcode, SECRETS_MODEL.md)
+ #   MODELS                space-separated model rotation, default: "auto"
+diff --git a/scripts/ci/ghost_host_guard.py b/scripts/ci/ghost_host_guard.py
+new file mode 100644
+index 00000000..aa81c58d
+--- /dev/null
++++ b/scripts/ci/ghost_host_guard.py
+@@ -0,0 +1,258 @@
++#!/usr/bin/env python3
++"""scripts/ci/ghost_host_guard.py — retire the no-server ghost host, permanently.
++
++Root-cause closure for the ghost-host mis-attribution class (#2355 → #2348 →
++#2377). The retired no-server host (spelled out by GHOST_HOST below) answers
++plain-text 404 (`x-render-routing: no-server`) while the real
++gateway `supremeai-api-ulw0.onrender.com` (README service-table SSOT) serves
++200 healthy. Any probe/example/default still pointing at the ghost produces
++the exact "core-api DARK" false outage that #2348 filed and #2377 retracted.
++
++PR #2365 (cb1958d) retired 4 instances and named the class ("the defect is
++the class, not the instance") but landed no enforcement — 3 executable and
++4 documentation surfaces survived. This guard makes the CLASS structurally
++un-reintroducible:
++
++  - ZERO TOLERANCE on executable/config surfaces (*.py, *.sh, *.ps1, *.ts,
++    *.tsx, *.js, *.mjs, *.json, *.yaml, *.yml, *.toml, Dockerfile, _redirects,
++    vercel.json, and any extensionless executable): a ghost default there is
++    always a live trap — no marker can whitewash it.
++  - HISTORICAL-EVIDENCE lanes (docs/reports/**, docs/bridge/**) are allowed:
++    they are immutable measured-evidence receipts; rewriting them would
++    falsify the audit trail.
++  - Other Markdown (docs/**/*.md and any *.md elsewhere) may retain ghost
++    strings ONLY inside a retirement banner carrying the exact marker
++    `ghost-host-retired: #2355/#2365/#2377` within the first 20 lines.
++    Strip the banner, keep the string -> the guard fails. New ghost-bearing
++    docs must either fix their URLs or declare the same banner honestly.
++
++Modes (dual, house style):
++  --check      scan the tracked tree (git ls-files, fs-walk fallback) and
++               fail-closed on any violation; exit 0 clean, 1 findings.
++  --self-test  hermetic tempdir scenarios proving every rule above,
++               including the ulw0 real-host non-match.
++
++Stdlib-only, offline, deterministic. Exit codes: 0 pass, 1 findings,
++2 usage error.
++"""
++
++from __future__ import annotations
++
++import argparse
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++TAG = "[ghost-host-guard]"
++
++# Assembled at runtime: a scanner must name its target, but naming it as a
++# literal would put the ghost string into this very file for the guard to
++# trip on (self-scan is part of the live sweep). The concatenation keeps the
++# contiguous substring out of the source text.
++GHOST_HOST = "supremeai-api" "." "onrender.com"
++REAL_HOST = "supremeai-api-ulw0.onrender.com"
++BANNER_MARKER = "ghost-host-retired: #2355/#2365/#2377"
++BANNER_WINDOW_LINES = 20
++
++# Immutable measured-evidence receipts: occurrences there are the historical
++# record of probes actually made against the ghost (SENTRY_* series, bridge
++# closure receipts). Rewriting history is falsification; allowlisting is not.
++ALLOWED_PREFIXES = (
++    "docs/reports/",
++    "docs/bridge/",
++)
++
++# Executable/config surfaces: zero tolerance regardless of any banner.
++ZERO_TOLERANCE_SUFFIXES = (
++    ".py", ".sh", ".ps1", ".ts", ".tsx", ".js", ".mjs", ".cjs",
++    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg",
++)
++ZERO_TOLERANCE_NAMES = (
++    "Dockerfile", "_redirects", "vercel.json",
++)
++
++WALK_PRUNE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"}
++
++
++def is_zero_tolerance(rel: str) -> bool:
++    name = rel.rsplit("/", 1)[-1]
++    if name in ZERO_TOLERANCE_NAMES or rel in ZERO_TOLERANCE_NAMES:
++        return True
++    return rel.endswith(ZERO_TOLERANCE_SUFFIXES)
++
++
++def is_allowed_evidence(rel: str) -> bool:
++    return rel.startswith(ALLOWED_PREFIXES)
++
++
++def has_banner(text: str) -> bool:
++    head = text.splitlines()[:BANNER_WINDOW_LINES]
++    return any(BANNER_MARKER in line for line in head)
++
++
++def list_tracked_files(root: Path) -> list[str]:
++    """Tracked files via git (respects ignores); fs-walk fallback."""
++    try:
++        r = subprocess.run(
++            ["git", "ls-files", "-z"],
++            cwd=root, capture_output=True, timeout=60, check=True,
++        )
++        entries = [e for e in r.stdout.decode("utf-8", "replace").split("\0") if e]
++        if entries:
++            return sorted(entries)
++    except (OSError, subprocess.SubprocessError):
++        pass
++    out: list[str] = []
++    for base, dirs, files in __import__("os").walk(root):
++        dirs[:] = [d for d in dirs if d not in WALK_PRUNE_DIRS]
++        for f in files:
++            p = Path(base) / f
++            out.append(str(p.relative_to(root)))
++    return sorted(out)
++
++
++def scan(root: Path) -> list[str]:
++    """Return sorted violation strings for the tree rooted at `root`."""
++    violations: list[str] = []
++    for rel in list_tracked_files(root):
++        path = root / rel
++        try:
++            if path.is_symlink() or not path.is_file():
++                continue
++            raw = path.read_bytes()
++        except OSError:
++            continue
++        if b"\0" in raw[:8192]:  # binary heuristic
++            continue
++        text = raw.decode("utf-8", "replace")
++        if GHOST_HOST not in text:
++            continue
++        rel_norm = rel.replace("\\", "/")
++        if is_allowed_evidence(rel_norm):
++            continue
++        if is_zero_tolerance(rel_norm):
++            violations.append(
++                f"{rel_norm}: ghost host in EXECUTABLE/CONFIG surface "
++                f"(zero tolerance — point it at {REAL_HOST}, the README SSOT)"
++            )
++            continue
++        if text.endswith((".md", ".markdown", ".rst", ".txt")) or "/docs/" in f"/{rel_norm}":
++            if has_banner(text):
++                continue
++            violations.append(
++                f"{rel_norm}: ghost host in doc WITHOUT retirement banner — "
++                f"fix the URLs to {REAL_HOST} or add a top banner carrying "
++                f"the exact marker: {BANNER_MARKER}"
++            )
++            continue
++        violations.append(
++            f"{rel_norm}: ghost host in unrecognized surface class — "
++            f"fix to {REAL_HOST} or file an explicit allowlist amendment"
++        )
++    return sorted(violations)
++
++
++def run_check() -> int:
++    violations = scan(REPO_ROOT)
++    if violations:
++        print(f"{TAG} FAIL — {len(violations)} ghost-host violation(s):")
++        for v in violations:
++            print(f"  - {v}")
++        print(f"{TAG} real host: {REAL_HOST} (README service-table SSOT)")
++        return 1
++    print(f"{TAG} OK — no actionable ghost-host surfaces "
++          f"(evidence lanes + bannered historical docs only)")
++    return 0
++
++
++# --------------------------------------------------------------------------- #
++# self-test: hermetic scenarios, no repo mutation                              #
++# --------------------------------------------------------------------------- #
++
++def _make_tree(files: dict[str, str]) -> Path:
++    tmp = Path(tempfile.mkdtemp(prefix="ghost-guard-selftest-"))
++    for rel, content in files.items():
++        p = tmp / rel
++        p.parent.mkdir(parents=True, exist_ok=True)
++        p.write_text(content, encoding="utf-8")
++    return tmp
++
++
++def run_self_test() -> int:
++    failures: list[str] = []
++
++    def expect(label: str, cond: bool) -> None:
++        if not cond:
++            failures.append(label)
++
++    clean = _make_tree({
++        "examples/client.py": f'URL = "https://{REAL_HOST}/v1"\n',
++        "docs/CONSUMERS.md": f"Base URL: https://{REAL_HOST}\n",
++        "docs/reports/SENTRY_X.md": f"measured: {GHOST_HOST} 404 at 01:45Z\n",
++    })
++    expect("clean tree (real host + evidence lane) passes", scan(clean) == [])
++
++    trap = _make_tree({
++        "examples/run_smoke.sh": f'URL="${{GATEWAY_URL:-https://{GHOST_HOST}}}"\n',
++    })
++    expect("ghost in executable surface fails", len(scan(trap)) == 1)
++
++    no_banner = _make_tree({
++        "docs/LEGACY.md": f"see https://{GHOST_HOST}/v1/models\n",
++    })
++    expect("ghost in unbannered doc fails", len(scan(no_banner)) == 1)
++
++    bannered = _make_tree({
++        "docs/LEGACY.md": (
++            f"# old receipt\n\n> {BANNER_MARKER} — historical, ghost retired\n\n"
++            f"see https://{GHOST_HOST}/v1/models\n"
++        ),
++    })
++    expect("ghost in bannered doc passes", scan(bannered) == [])
++
++    stripped = _make_tree({
++        "docs/LEGACY.md": (
++            "# old receipt\n" + "\n" * 25
++            + f"line {BANNER_MARKER} beyond window\n"
++            + f"see https://{GHOST_HOST}/v1/models\n"
++        ),
++    })
++    expect("banner beyond 20-line window does not whitewash", len(scan(stripped)) == 1)
++
++    marker_on_code = _make_tree({
++        "scripts/probe.py": (
++            f"# {BANNER_MARKER}\nURL = 'https://{GHOST_HOST}/healthz'\n"
++        ),
++    })
++    expect("banner marker cannot whitewash executable surface",
++           len(scan(marker_on_code)) == 1)
++
++    ulw0 = _make_tree({"a.py": f'U = "https://{REAL_HOST}"\n'})
++    expect(f"{REAL_HOST} never matches the ghost pattern", scan(ulw0) == [])
++
++    expect("real repo tree passes --check semantics", scan(REPO_ROOT) == [])
++
++    if failures:
++        print(f"{TAG} SELF-TEST FAIL ({len(failures)}):")
++        for f in failures:
++            print(f"  - {f}")
++        return 1
++    print(f"{TAG} self-test OK — 8/8 scenarios pass")
++    return 0
++
++
++def main(argv: list[str] | None = None) -> int:
++    ap = argparse.ArgumentParser(description="Ghost no-server host guard (see module docstring)")
++    mode = ap.add_mutually_exclusive_group(required=True)
++    mode.add_argument("--check", action="store_true", help="scan the tracked tree, fail-closed")
++    mode.add_argument("--self-test", action="store_true", help="hermetic scenario suite")
++    args = ap.parse_args(argv)
++    if args.self_test:
++        return run_self_test()
++    return run_check()
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index fdaf7543..d40259cb 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -44,6 +44,8 @@
+     ["python", "scripts/ops/generate_script_index.py", "--check"],
+     ["python", "scripts/ci/skill_conformance_guard.py", "--self-test"],
+     ["python", "scripts/ci/skill_conformance_guard.py", "--check"],
++    ["python", "scripts/ci/ghost_host_guard.py", "--self-test"],
++    ["python", "scripts/ci/ghost_host_guard.py", "--check"],
+ ]
+ 
+ 
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index 6284c539..5cca7e08 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-29 21:43:53 UTC · **527 scripts** (492 py · 30 sh · 5 js/mjs · 0 other) across 8 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-30 10:22:52 UTC · **528 scripts** (493 py · 30 sh · 5 js/mjs · 0 other) across 8 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -86,7 +86,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `bridge/bridge_intake.py` | bridge_intake.py — public→private work bridge (v1). |
+ | `bridge/prune_merged_branches.sh` | prune_merged_branches.sh — post-merge head-branch housekeeping for Supremeai-bd/supremeai-open |
+ 
+-## scripts/ci/  (197 scripts)
++## scripts/ci/  (198 scripts)
+ 
+ | File | Purpose |
+ |---|---|
+@@ -183,6 +183,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/generate_status_proof.py` | Generate docs/generated/STATUS_PROOF.md and ENFORCE STATUS.md truthfulness. |
+ | `ci/generate_topology_mermaid.py` | Generate a secret-free Mermaid topology from the committed route graph. |
+ | `ci/generate_types.py` | generate_types.py — deterministic OpenAPI → TypeScript + Python type generation (issue #375, Phase 4). |
++| `ci/ghost_host_guard.py` | scripts/ci/ghost_host_guard.py — retire the no-server ghost host, permanently. |
+ | `ci/graph_health_audit.py` | Graph Health Auditor — SupremeAI Ecosystem Graph-এর স্বয়ংক্রিয় ডাক্তর (issue #2399). |
+ | `ci/group_closeout_janitor.py` | Group Closeout Janitor — Post-Group Repository Hygiene & Cleanup Engine. |
+ | `ci/hollow_read_guard.py` | Hollow-read guard — emptiness assertions at the consumption boundary. |
+diff --git a/tests/test_ghost_host_guard.py b/tests/test_ghost_host_guard.py
+new file mode 100644
+index 00000000..55e55536
+--- /dev/null
++++ b/tests/test_ghost_host_guard.py
+@@ -0,0 +1,174 @@
++#!/usr/bin/env python3
++"""tests/test_ghost_host_guard.py — fail-closed behavioral suite for #2377.
++
++Pins the ghost-host retirement contract delivered for #2377 (class closure of
++#2355 → #2348 → #2377; instance lineage #2365):
++
++  - zero tolerance: a ghost-host default in an executable/config surface
++    (scripts, examples, CI configs, _redirects, vercel.json, …) fails the
++    scan even when a banner marker is present — a marker documents history,
++    it never whitewashes a live trap;
++  - evidence lanes: docs/reports/** and docs/bridge/** are allowed (immutable
++    measured-evidence receipts; rewriting them would falsify the audit trail);
++  - banner contract: other Markdown may retain ghost strings only inside a
++    retirement banner carrying the exact marker `ghost-host-retired:
++    #2355/#2365/#2377` within the first 20 lines — stripped or late banners
++    fail-closed;
++  - real-host safety: `supremeai-api-ulw0.onrender.com` never matches the
++    ghost pattern (no false positive on the README SSOT);
++  - live sweep: the real tracked tree passes --check semantics (the #2377
++    instance fixes — both curl-tests smoke defaults + both SEQ handoff
++    banners — shipped in the same change);
++  - wiring SSOT: the guard is present in the LIVE run_all_guards.py roster,
++    never duplicated here.
++
++Design (zero-dependency doctrine, dual mode — pytest + stdlib runners):
++
++  - pytest:  pytest tests/test_ghost_host_guard.py
++  - stdlib:  python3 tests/test_ghost_host_guard.py  (plain runner)
++
++All tree scenarios are hermetic (tempdirs, offline, deterministic); the live
++sweep is read-only.
++"""
++
++from __future__ import annotations
++
++import sys
++import tempfile
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++GUARD = REPO_ROOT / "scripts" / "ci" / "ghost_host_guard.py"
++ROSTER = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
++
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
++import ghost_host_guard as guard
++
++
++def make_tree(files: dict[str, str]) -> Path:
++    tmp = Path(tempfile.mkdtemp(prefix="ghost-guard-test-"))
++    for rel, content in files.items():
++        p = tmp / rel
++        p.parent.mkdir(parents=True, exist_ok=True)
++        p.write_text(content, encoding="utf-8")
++    return tmp
++
++
++GHOST = guard.GHOST_HOST
++REAL = guard.REAL_HOST
++MARKER = guard.BANNER_MARKER
++
++
++# --------------------------------------------------------------------------- #
++# wiring SSOT                                                                  #
++# --------------------------------------------------------------------------- #
++
++def test_guard_module_is_pinned_in_live_roster() -> None:
++    roster = ROSTER.read_text(encoding="utf-8")
++    assert f'"scripts/ci/{GUARD.name}", "--self-test"' in roster
++    assert f'"scripts/ci/{GUARD.name}", "--check"' in roster
++
++
++# --------------------------------------------------------------------------- #
++# scan semantics                                                               #
++# --------------------------------------------------------------------------- #
++
++def test_clean_tree_passes() -> None:
++    tree = make_tree({
++        "examples/client.py": f'URL = "https://{REAL}/v1"\n',
++        "docs/CONSUMERS.md": f"Base URL: https://{REAL}\n",
++        "docs/reports/SENTRY_X.md": f"measured: {GHOST} 404 at 01:45Z\n",
++        "docs/bridge/closure.md": f"receipt: retired ghost {GHOST}\n",
++    })
++    assert guard.scan(tree) == []
++
++
++def test_ghost_in_executable_surface_fails() -> None:
++    tree = make_tree({
++        "examples/run_smoke.sh": f'URL="${{GATEWAY_URL:-https://{GHOST}}}"\n',
++        "examples/run_smoke.ps1": f"$u = 'https://{GHOST}'\n",
++        "studio/vercel.json": f'{{"url": "https://{GHOST}"}}\n',
++    })
++    violations = guard.scan(tree)
++    assert len(violations) == 3
++    assert all("zero tolerance" in v for v in violations)
++
++
++def test_banner_marker_cannot_whitewash_executable() -> None:
++    tree = make_tree({
++        "scripts/probe.py": f"# {MARKER}\nURL = 'https://{GHOST}/healthz'\n",
++    })
++    violations = guard.scan(tree)
++    assert len(violations) == 1
++    assert "zero tolerance" in violations[0]
++
++
++def test_unbannered_doc_fails() -> None:
++    tree = make_tree({
++        "docs/LEGACY.md": f"see https://{GHOST}/v1/models\n",
++    })
++    assert len(guard.scan(tree)) == 1
++
++
++def test_bannered_doc_passes() -> None:
++    tree = make_tree({
++        "docs/LEGACY.md": (
++            f"# old receipt\n\n> {MARKER} — historical, ghost retired\n\n"
++            f"see https://{GHOST}/v1/models\n"
++        ),
++    })
++    assert guard.scan(tree) == []
++
++
++def test_late_banner_outside_window_does_not_whitewash() -> None:
++    tree = make_tree({
++        "docs/LEGACY.md": (
++            "# old receipt\n" + "\n" * 25
++            + f"line {MARKER} beyond window\n"
++            + f"see https://{GHOST}/v1/models\n"
++        ),
++    })
++    assert len(guard.scan(tree)) == 1
++
++
++def test_real_host_never_matches_ghost_pattern() -> None:
++    tree = make_tree({
++        "README.md": f"| API Gateway | https://{REAL} |\n",
++        "scripts/probe.py": f'URL = "https://{REAL}"\n',
++        "studio/public/_redirects": f"/api/* https://{REAL}/api/:splat 200\n",
++    })
++    assert guard.scan(tree) == []
++
++
++def test_binary_files_are_skipped() -> None:
++    tmp = Path(tempfile.mkdtemp(prefix="ghost-guard-test-"))
++    (tmp / "blob.bin").write_bytes(b"\0" + GHOST.encode() + b"\0")
++    assert guard.scan(tmp) == []
++
++
++# --------------------------------------------------------------------------- #
++# live sweep (read-only, real tracked tree)                                    #
++# --------------------------------------------------------------------------- #
++
++def test_live_tree_passes_check_semantics() -> None:
++    assert guard.scan(REPO_ROOT) == []
++
++
++# --------------------------------------------------------------------------- #
++# stdlib dual-mode runner                                                      #
++# --------------------------------------------------------------------------- #
++
++if __name__ == "__main__":
++    failed = 0
++    for name, fn in sorted(
++        (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)
++    ):
++        try:
++            fn()
++            print(f"PASS {name}")
++        except AssertionError as exc:
++            failed += 1
++            print(f"FAIL {name}: {exc}")
++    total = len([k for k in globals() if k.startswith("test_")])
++    print(f"{total - failed} passed, {failed} failed")
++    sys.exit(1 if failed else 0)

@@ -434,20 +434,24 @@ PROMISE_MARKER_RE = re.compile(
 PROMISED_PATH_RE = re.compile(r"`(\w[\w.-]*(?:/[\w.-]+)+)`")
 MERGED_LANDING_WINDOW = 80  # /pulls?state=closed newest-updated window (one fetch per pick run)
 PREMISE_PROBE_TIMEOUT_S = 10.0
+TOWER_LANDING_FALLBACK_TIMEOUT_S = 20.0  # hard join cap for the tower fallback probe
 
 # বাংলা: প্রক্রিয়া-স্তরের একক ফেচ — প্রতি pick রানে সর্বোচ্চ একবার REST কল
 # (rate-limit নিয়ন্ত্রণ); ব্যর্থতাও ক্যাশ হয় (খালি তালিকা) যাতে একই রানের
 # পরবর্তী প্রার্থীরা বারবার নেটওয়ার্কে না যায়। ব্যর্থ ফেচ = কোনো demotion নয়
 # (fail-open দিক: ফিল্টার শুধু dispatch সরায়, কখনো ব্লক করে না)।
+# বাংলা (root-cause note, GLM Agent 22, Job 486813, লাইভ 2026-10-30): REST-অন্ধকার
+# (শেয়ার্ড IP-র 60 req/h বাজেট ফুরানো)-তে fail-open প্রিমাইজ-ডেলিভার্ড রো আবার
+# serve করত — একই সেশনে 11:22Z-এ #2792 demote, 11:37Z-এ একই বোর্ড-অবস্থায় serve
+# (মার্জড প্রমাণ #3209 ততক্ষণও main-এ)। তাই এখন REST ব্যর্থ হলে প্রমাণিত
+# tower fallback ট্রান্সপোর্ট (_tower_board_rows-এর সেই একই প্যাটার্ন) চলে —
+# সিদ্ধান্ত নয়, নির্ভরযোগ্যতা: merged-only সিগন্যাল ও fail-open অক্ষত।
 _LANDING_FETCH_DONE = False
 _LANDING_ROWS: list[dict[str, Any]] = []
 
 
-def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
-    global _LANDING_FETCH_DONE, _LANDING_ROWS
-    if _LANDING_FETCH_DONE:
-        return _LANDING_ROWS
-    _LANDING_FETCH_DONE = True
+def _rest_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
+    """Direct unauthenticated REST fetch of the closed-PR window; raises on any failure."""
     url = (
         f"https://api.github.com/repos/{UPSTREAM_REPO}/pulls"
         f"?state=closed&sort=updated&direction=desc&per_page={per_page}"
@@ -461,7 +465,170 @@ def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
     )
     with urllib.request.urlopen(req, timeout=PREMISE_PROBE_TIMEOUT_S) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
-    _LANDING_ROWS = list(payload if isinstance(payload, list) else [])
+    return list(payload if isinstance(payload, list) else [])
+
+
+def _map_tower_landing_rows(rows: Any) -> list[dict[str, Any]]:
+    """Map tower ``github.list_prs`` rows onto the REST shape scan B reads.
+
+    বাংলা: tower রেসপন্সে camelCase ``mergedAt`` থাকে এবং ``body`` থাকে না —
+    REST শেপে (``merged_at``, ``body=""``) ম্যাপ করা হয়; বিকৃত/number-হীন রো
+    বাদ। Scan B title+body দুটোই স্ক্যান করে, তাই body না থাকলেও title-citation
+    ধরা পড়ে (ল্যান্ডিং রিসিটের squash subject-এই বেশিরভাগ citation — লাইভ
+    প্রমাণ #3209 → #2792 demotion)। সৎ ট্রেডঅফ: fallback উইন্ডো title-only,
+    REST উইন্ডো title+body।
+    """
+    out: list[dict[str, Any]] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict) or row.get("number") is None:
+            continue
+        out.append(
+            {
+                "number": row.get("number"),
+                "title": row.get("title") or "",
+                "state": row.get("state") or "closed",
+                "merged_at": row.get("mergedAt") or row.get("merged_at"),
+                "body": row.get("body") or "",
+            }
+        )
+    return out
+
+
+def _parse_tower_landing_payload(body: str, call_id: str) -> list[Any]:
+    """Extract the tools/call result rows from an SSE-or-JSON tower body (pure).
+
+    বাংলা: body হয় SSE (``data:`` লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত
+    (_tower_board_rows-এর প্রমাণিত regex পদ্ধতি; বড় single-line পেলোড
+    splitlines/iter_lines-এ ভাঙে বলে পুরো body-র উপর regex চলে)। id-ম্যাচহীন বা
+    error-envelope উপেক্ষিত; পার্স-ব্যর্থতা = খালি তালিকা (কখনো raise নয় —
+    non-str ইনপুটও খালি তালিকা, bytes/int ইত্যাদির finditer-TypeError বন্ধ)।
+    """
+    body = body if isinstance(body, str) else ""
+    envelopes: list[dict[str, Any]] = []
+    for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+        try:
+            envelopes.append(json.loads(m.group(1)))
+        except json.JSONDecodeError:
+            pass
+    if not envelopes:
+        try:
+            envelopes.append(json.loads(body))
+        except json.JSONDecodeError:
+            return []
+    result: Any = None
+    for env in envelopes:
+        if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+            result = env.get("result")
+            break
+    text = ""
+    if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+        first = result["content"][0]
+        txt = first.get("text") if isinstance(first, dict) else None
+        if isinstance(txt, str):
+            text = txt
+    if not text:
+        return []
+    try:
+        rows = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def _tower_merged_landing_prs(
+    per_page: int, timeout_s: float = TOWER_LANDING_FALLBACK_TIMEOUT_S
+) -> list[dict[str, Any]]:
+    """Tower fallback transport for scan B (zero-credential, never hangs the pick path).
+
+    বাংলা: raw urllib streamable POST (initialize → initialized → tools/call
+    ``github.list_prs`` state=closed, limit=min(per_page,100)) — daemon thread +
+    hard join (_tower_board_rows-এর প্রমাণিত প্যাটার্ন; iter_lines chunk-boundary
+    বিভাজন এড়াতে bytes-স্তরে data-line এক্সট্র্যাক্ট)। যেকোনো ব্যর্থতা raise করে —
+    উপরের fail-open স্তর (নোটের try/except) সেটিকে সৎ serve-এ নামায়; টাইমআউটে
+    hard join পিক-পথ আটকায় না।
+    """
+    call_id = "cal-landing-fallback-1"
+    holder: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # lazy sibling import (same-dir or repo-root both resolve)
+
+            base = _mtc.MCP_SERVER_URL.rstrip("/")
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+                hdrs = dict(headers)
+                if sid:
+                    hdrs["mcp-session-id"] = sid
+                req = urllib.request.Request(
+                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode(
+                        "utf-8", errors="replace"
+                    )
+
+            sid, _ = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": call_id + "-init",
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                    },
+                },
+                None,
+            )
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            _, body = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": call_id,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "github.list_prs",
+                        "arguments": {
+                            "repo": UPSTREAM_REPO,
+                            "state": "closed",
+                            "limit": min(int(per_page), 100),
+                        },
+                    },
+                },
+                sid,
+                timeout=45,
+            )
+            holder["body"] = body
+        except Exception as exc:  # fallback must never raise out of the thread
+            holder["error"] = f"tower landing fallback failed ({type(exc).__name__})"
+
+    t = threading.Thread(target=_probe, daemon=True)
+    t.start()
+    t.join(timeout=timeout_s)
+    if t.is_alive():
+        raise TimeoutError("tower landing fallback timed out")
+    if holder.get("error"):
+        raise RuntimeError(str(holder["error"]))
+    return _map_tower_landing_rows(_parse_tower_landing_payload(str(holder.get("body") or ""), call_id))
+
+
+def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
+    global _LANDING_FETCH_DONE, _LANDING_ROWS
+    if _LANDING_FETCH_DONE:
+        return _LANDING_ROWS
+    _LANDING_FETCH_DONE = True
+    try:
+        _LANDING_ROWS = _rest_merged_landing_prs(per_page)
+        return _LANDING_ROWS
+    except Exception:  # REST dark ⇒ tower fallback; both dark ⇒ fail-open serve
+        pass
+    _LANDING_ROWS = _tower_merged_landing_prs(per_page)  # raise ⇒ upstream catch → serve
     return _LANDING_ROWS
 
 
@@ -658,6 +825,66 @@ def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> t
         f"latestClaim by {agent} expired ({age_s / 60.0:.0f}m age > {ttl_raw:g}m ttl)"
     )
 
+
+def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> str | None:
+    """#3315 — receipt-coverage demotion probe (pure, in-memory, never raises).
+
+    বাংলা: #2794-এর claim-probe লাইভ claim ধরে, কিন্তু খোলা (unmerged) bridge
+    WO/receipt যে রো-কে reference করে সেটা ধরে না — লাইভ প্রমাণ 2026-10-30:
+    #2360 dispatch হয়েছে রিসিপ্ট #3272 ফাইল হওয়ার ৪ মিনিট পরে, #2633 হয়েছে
+    রিসিপ্ট #3281-এর ১০ মিনিট পরে (দুই ক্ষেত্রেই latestClaim null ছিল, তাই
+    claim-probe পাস করেছিল); #1676-ও WO #3292-এর "detection half" রেফারেন্স
+    থাকা সত্ত্বেও dispatch হয়েছিল। এই প্রোব candidate-এর নম্বর বোর্ডের অন্য
+    কোনো খোলা Bridge-WO-আকৃতি সারির টাইটেলে আছে কি না দেখে সৎ note দেয় —
+    coverage মানে সেই রো-র কাজ ইন-ফ্লাইট (anti-stampede U5), পুনঃ-dispatch
+    ডুপ্লিকেট ওয়ার্ক অর্ডারের ঝুঁকি। ফিল্টার শুধু dispatch সরাতে পারে, আটকাতে
+    পারে না; `--issue N` explicit override escape-hatch থেকে যায়।
+
+    Board-local and pure: the WO titles ride the same in-memory list the
+    picker already holds (gh path and tower fallback alike), so this adds
+    zero network. Fail-open contract: any malformed row / parse error returns
+    None (the filter can only REMOVE a dispatch, never break the pick).
+    Conservative issuer gate: only titles containing "Bridge Work Order" count
+    as coverage issuers — a plain issue that merely cites #N is related work,
+    not a receipt for it. Number matches are word-bounded (`#N`, `row N`,
+    `bridge-YYYYMMDD-N`) so #263 never matches #2633.
+    """
+    try:
+        num_raw = item.get("number") if isinstance(item, dict) else None
+        if num_raw is None:
+            return None
+        n = int(num_raw)
+        pat_hash = re.compile(rf"(?<![0-9])#{n}(?![0-9])")
+        pat_row = re.compile(rf"(?<![0-9])row\s+{n}(?![0-9])")
+        pat_task = re.compile(rf"bridge-\d{{6,8}}-{n}(?![0-9])")
+        hits: list[str] = []
+        for row in board or []:
+            if not isinstance(row, dict):
+                continue  # malformed rows fail open
+            try:
+                if str(row.get("number", "")) == str(n):
+                    continue  # a row never covers itself
+                state = row.get("state")
+                if state is not None and str(state).lower() != "open":
+                    continue
+                title = str(row.get("title") or "")
+                if "Bridge Work Order" not in title:
+                    continue  # conservative issuer gate (receipt-shaped WOs only)
+                if pat_hash.search(title) or pat_row.search(title) or pat_task.search(title):
+                    hits.append(f"#{row.get('number')}")
+            except Exception:  # noqa: BLE001 — per-row fail-open
+                continue
+        if not hits:
+            return None
+        return (
+            "open bridge WO receipt already references this row "
+            f"({', '.join(hits[:3])}) — coverage in flight (anti-stampede U5); "
+            "explicit --issue override available"
+        )
+    except Exception:  # noqa: BLE001 — a demotion probe must never raise
+        return None
+
+
 def pick_next_issue(
     exclude: set[str] | list[str] | None = None,
     issues: list[dict[str, Any]] | None = None,
@@ -769,6 +996,37 @@ def pick_next_issue(
                     f"filtered from the pick — newest open sibling #{newest_sentry} carries the sentinel duty",
                 )
             candidates = survivors
+        # #3315 — receipt-coverage demotion (live mode only, sentry-precedent
+        # shape): a candidate covered by an OPEN bridge WO/receipt elsewhere on
+        # the same board is skipped BEFORE the priority sort (window-preserving:
+        # a covered candidate inside the top-FEEDBACK_PREVERIFY_TOPN window
+        # would otherwise burn a window slot plus a network probe on a row whose
+        # work is already in flight — live 2026-10-30: #2360 dispatched 4 min
+        # after receipt #3272, #2633 10 min after #3281). Pure mode (claim_probe
+        # is None) keeps the byte-identical pre-#3315 label-only contract for
+        # hermetic callers; the filter can only REMOVE a dispatch, never block
+        # one, and the explicit --issue N override stays the escape hatch.
+        coverage_survivors: list[dict[str, Any]] = []
+        covered = 0
+        for cand in candidates:
+            covered_note = _receipt_covered_note(cand, issues or [])
+            if covered_note is not None:
+                covered += 1
+                log_fn(
+                    "!",
+                    f"receipt-coverage demotion: #{cand.get('number')} skipped — {covered_note}",
+                )
+                continue
+            coverage_survivors.append(cand)
+        if covered:
+            candidates = coverage_survivors
+            if not candidates:
+                log_fn(
+                    "!",
+                    "receipt-coverage demotion: every open candidate is covered by an "
+                    "open bridge WO receipt — no clean pick this run (rerun later or "
+                    "dispatch explicitly via --issue N)",
+                )
     sorted_issues = sorted(candidates, key=priority_key)
     if claim_probe is None:
         # Pure mode — label-only pick, exactly the pre-#2794 contract (hermetic
@@ -1490,6 +1748,43 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
 # চালায় না। সৎ pre-push/pre-work rebase গার্ড (#161, #514) অক্ষত রাখা হলো —
 # এরা সত্যিকারের কাজ করে; ভবিষ্যতে বাস্তব কনজিউমার এলে সরাসরি wire করা যাবে।
 
+# বাংলা: বোর্ডের নিজস্ব টাইটেল-কনভেনশন — "verb(scope):" প্রিফিক্স রো-এর প্রকৃত
+# লেন নির্দেশ করে। লাইভ প্রমাণ 2026-10-30: #1690 "audit(api): …" (12:15Z) ও
+# #2360 "audit(federation): …" (12:16Z) দুটোই role=coder + task_type=IMPLEMENT
+# এনভেলপে ডিসপ্যাচ হয়েছিল, অথচ রো-দুটির নিজের বড়িই ঘোষণা করে auditor/report-only
+# লেন। ফলাফল: প্রমাণ-রিসিপ্ট রো বাস্তবায়ন-টাস্ক হিসেবে ডিসপ্যাচ হয়ে এজেন্ট-সাইকেল
+# নষ্ট হয় — ঠিক সেই অপচয়-শ্রেণি যেটা stale-incident/stale-claim গার্ডরা ঠেকাতে
+# চায় (root-cause fix: এক বার শ্রেণিবিন্যাস ঠিক, প্রতি-রো প্যাচ নয়)। লেবেল-সংকেত
+# (status:runway, gate:pre-landing) আগে চলে — টাইটেল-প্রিফিক্স শুধু অবশিষ্ট ক্ষেত্রে
+# ম্যাপ করে, তাই fix(ci)+status:runway আজও ci-fixer পায়। অ্যানকমন প্রিফিক্স
+# (fix/feat/chore …) অ-ম্যাপড → পুরোনো লজিক অপরিবর্তিত।
+# ইতিহাস: r1 চেষ্টা PR #3246-এ পৌঁছেছিল কিন্তু branch ফাইলে ভুল কনটেন্ট
+# (full_file-এ diff-টেক্সট) + পরবর্তী main কমিটে conflict — merge-অযোগ্য। এই r2
+# সংস্করণ বর্তমান main (418cdee) ট্রি-তে সরাসরি প্রয়োগকৃত।
+EVIDENCE_LANE_TITLE_ROLES: dict[str, str] = {
+    "audit": "task-auditor",
+    "report": "task-auditor",
+    "triage": "task-auditor",
+    "verify": "task-auditor",
+    "census": "task-auditor",
+    "ops": "task-auditor",
+    "dispatch": "task-auditor",
+    "guard": "platform-guardian",
+    "sentry": "platform-guardian",
+    "scout": "ecosystem-scout",
+}
+
+# বাংলা: envelope-এর task_type এখন role-থেকে সৎভাবে নেওয়া হয় — প্রমাণ-লেন রো
+# আর "IMPLEMENT" ভুখণ্ড পায় না (SPEC §2 task_type রেজিস্ট্রি: AUDIT/SCOUT/OPS/FIX)।
+ROLE_TASK_TYPES: dict[str, str] = {
+    "task-auditor": "AUDIT",
+    "auditor": "AUDIT",
+    "ecosystem-scout": "SCOUT",
+    "platform-guardian": "OPS",
+    "ci-fixer": "FIX",
+}
+
+
 def classify_task_role(
     title: str = "", labels: Iterable[str] = (), body: str = ""
 ) -> str:
@@ -1498,6 +1793,16 @@ def classify_task_role(
         return "ci-fixer"
     if "gate:pre-landing" in present:
         return "task-auditor"
+    # বাংলা: টাইটেল-প্রিফিক্স ম্যাপ — বোর্ডের "verb(scope):" কনভেনশন রো-এর লেন
+    # ঘোষণা করে; প্রথম টোকেন case-insensitive ম্যাচ (EVIDENCE_LANE_TITLE_ROLES)।
+    # কঠোর আকৃতি: টোকেনের পরে (ঐচ্ছিক স্পেস সহ) `(` বা `:` থাকতে হবে — কীওয়ার্ড
+    # বাক্য নয়। #489 চুক্তি: "audit readiness report"-জাতীয় কীওয়ার্ড-টাইটেল আর
+    # role আবিষ্কার করতে পারে না — সেরা coder ডিফল্টেই যায়।
+    head = str(title or "").lstrip().lower()
+    token_match = re.match(r"([a-z][a-z-]*)\s*[:(]", head)
+    mapped = EVIDENCE_LANE_TITLE_ROLES.get(token_match.group(1)) if token_match else None
+    if mapped is not None:
+        return mapped
     if "status:claimed" in present:
         return "coder"
     return "coder"
@@ -1566,6 +1871,12 @@ def build_task_envelope(
             log("!", f"[Envelope] unknown --role '{role_override}'; falling back to classified role '{classified}'")
             role = classified
 
+    # বাংলা: task_type এখন final role থেকে সৎ derivation (role_override-সহ) —
+    # প্রমাণ-লেন রো (audit/report/triage/verify/guard/scout টাইটেল) আর IMPLEMENT
+    # ভুখণ্ড পায় না (লাইভ #1690/#2360 মিস-ডিসপ্যাচ, 2026-10-30)। অজানা role →
+    # আগের আচরণ (IMPLEMENT)।
+    task_type = ROLE_TASK_TYPES.get(role, "IMPLEMENT")
+
     role_description = ROLE_RULES.get(
         role,
         ROLE_RULES["solver"] if role in ("coder", "solver") else "Execute role objectives strictly.",
@@ -1595,7 +1906,7 @@ def build_task_envelope(
         "output_format": "task-envelope-v1",
         "task_id": f"task-{issue_number}" if issue_number else "task-adhoc",
         "issue": issue_number,
-        "task_type": "IMPLEMENT",
+        "task_type": task_type,
         "group": resolved_group,
         "priority": _detect_priority(labels),
         "objective": title or ("Ad-hoc task — objective supplied by the calling agent." if not issue_number else ""),
@@ -2084,11 +2395,17 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # claim-first mandate অপরিবর্তিত (#1530-র zero-dispatch-change শৃঙ্খলা)।
             picked_issue = next((i for i in raw if str(i.get("number")) == picked), None)
             picked_labels = []
-            if isinstance(picked_issue, dict) and isinstance(picked_issue.get("labels"), list):
-                picked_labels = [
-                    str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
-                ]
-            classified = classify_task_role(labels=picked_labels)
+            picked_title = ""
+            if isinstance(picked_issue, dict):
+                # বাংলা: টাইটেলও প্রেরণ — classify_task_role-এর নতুন টাইটেল-প্রিফিক্স
+                # ম্যাপ (audit(/report(/guard(/scout(…) dispatch-পথেও কাজ করে; আগে
+                # labels-only কলে প্রমাণ-রিসিপ্ট রো coder-শ্রেণি হত।
+                picked_title = str(picked_issue.get("title", "") or "")
+                if isinstance(picked_issue.get("labels"), list):
+                    picked_labels = [
+                        str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
+                    ]
+            classified = classify_task_role(title=picked_title, labels=picked_labels)
             dispatch_role = args.role or "solver"
             if args.role and args.role not in SPECIALIST_ROLES and args.role not in ROLE_RULES:
                 log("!", f"unknown --role '{args.role}'; dispatching as solver")

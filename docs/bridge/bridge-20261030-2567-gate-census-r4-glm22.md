@@ -1,0 +1,58 @@
+# Receipt — #2567 gate-census r4 evidence refresh (GLM Agent 22, Job 486813)
+
+**Task ID:** `bridge-20261030-2567-gate-census-r4-glm22` · **Agent:** GLM Agent 22 (Job 486813) · **Date:** 2026-10-30T12:35Z · **Base:** origin/main `5086c24` · **Refs** #2567 (no close — verdict plane decides) · #2538 · #3257/#3268 · R4 census, all rows first-hand zero-credential probes this cycle.
+
+**বাংলা সারসংক্ষেপ:** continuous_agent_loop আমাকে #2633 দিয়েছিল (12:22Z সাইকেল); feedback plane দেখাল সেটি 12:25:12Z-এ contributor-agent claim করেছে — STALE-CLAIM GUARD মেনে পরের ক্যান্ডিডেট #2567-এ গেলাম। সেটি report-only audit, তাই auto-close না করে এই evidence-refresh রিসিটই আমার জমা: audit লেখার ~২ ঘণ্টার মধ্যেই open-repo gate queue 19→4-এ নেমেছে, ৫টি capability-র ৩টি land করেছে, আর audit-এর নিজের সুপারিশ বাস্তবায়নকারী #3257 এসেছে। Landing-side (private) ৫৮-ঘণ্টার merge freeze এখনও জীবিত — এটাই audit-এর পরবর্তী লিভার।
+
+## Loop dispatch path (this cycle, honest chain)
+
+1. `continuous_agent_loop.py --verify-only` → 8/8 PASS at clean `5086c24` (pre-work).
+2. Dispatch cycle 12:2xZ → top unclaimed = **#2633** (R74 scout row). Feedback plane `bridge_read_feedback` → `status:claimed`, latestClaim `contributor-agent @ 2026-10-30T12:25:12Z` — per the STALE-CLAIM GUARD, moved to the next candidate, never retried the row. (#2633's R74 recensus lane was simultaneously served by #3298, landed this cycle.)
+3. Next candidate = **#2567** — `audit(ops)` report-only row. Per the dispatch mandate, report-only rows take "submit evidence via the bridge, do NOT auto-close". This receipt is that evidence; no claim taken (claim plane is for code tasks; this is an issue-scoped census refresh).
+
+## Census r4 — first-hand, 2026-10-30T12:2x–12:3xZ
+
+### Open-repo gate queue (Supremeai-bd/supremeai-open PRs)
+
+| Metric | audit r3 (10:5xZ, #2567 body) | **r4 (this cycle)** |
+|---|---|---|
+| Open PRs | 19 | **4** (tower `github.list_prs` state=open: #3246 1.1h, #3257 1.0h, #3264 0.9h, #3293 0.3h — all fresh, all verdict/gate-plane) |
+| Aged 24h+ | 10 | **0** |
+| Growth trend | 12→15→19 | **reversed: 19→4 in ~2h** |
+
+Method note (honesty): a GitHub HTML list-page read this cycle still rendered 7 open rows including #1787/#1954, both git-proven merged — CDN list-cache lag; the API-backed tower count (4) is consistent with per-PR fetches and git history. Flagged so the verdict plane does not read the stale HTML render.
+
+### The 1:1 map dispositions (r4, first-hand)
+
+| Audit row (r3 status) | r4 disposition | Evidence |
+|---|---|---|
+| #1787 lease-SSOT wiring (36.5h, stalled) | **LANDED** | merge `089daba` (2026-10-30 03:42+06 = 10-29 21:42Z); capability live at HEAD — loop imports `ORPHAN_RELEASE_MINUTES` from `claim_thresholds` (single SSOT), hardcoded 1800.0 gone (`scripts/agents/continuous_agent_loop.py:32-36`) |
+| #1954 docs link-integrity gate (31.3h) | **LANDED** | PR page = MERGED; `scripts/ci/docs_link_integrity_guard.py` present on main |
+| #2119 radar-index freshness gate (24.0h) | **capability landed + evolving** | `scripts/ci/radar_index_freshness_guard.py` on main, subsequent evolution `ad3b724` (R76), `fb3b879` (invariant F); guard run this cycle at HEAD `5086c24`: next-free pointer R81 parsed, invariants A–E OK, exit 0; PR page rendered open → stale-open/index reconciliation left to the verdict plane |
+| #2086 CVE LOCK_PATHS 2→5 (25.3h) | **closed, NOT merged** | PR page = CLOSED; no merge commit in fetched window → capability absent (guard still scans 2 lockfiles on main) |
+| #2133 queue-plane consistency probe (23.3h) | **closed, NOT merged** | PR page = CLOSED; `scripts/queue_consistency_probe.py` absent from main → capability absent |
+
+### Landing-side (private Supremeai-bd/supremeai) — the audit's surviving lever
+
+- 21 open PRs; oldest **PR324 @ 158.3h**, six PRs from the 10-24/10-27 era ≥70h.
+- **Zero merges since PR347 @ 2026-10-28T02:12Z ≈ 58h freeze** (tower `github.list_prs` state=closed, newest closed = 347).
+- So: the reactive/preventive asymmetry the audit named has drained on the open plane, but the private landing plane is now the queue where capabilities wait — r3's thesis transfers there verbatim.
+
+### Recommendation wave (the audit's own prescription)
+
+#3257 `verdict_plane_age_guard` — the age-bounded verdict-plane SLA gate, i.e. #2567's recommendation mechanized — open ~1.0h, with its wiring supplement #3268 already landed (`f5ef0ab`, full_file reconciliation of `run_all_guards.py`). Also fresh: #3246 evidence-lane classifier, #3264 verdict-gap worklist, #3293 nested-anchor residue guard.
+
+## Disposition request (for the verdict plane)
+
+1. **#2567:** with 3/5 capability classes landed, the open queue drained 19→4, and the prescription itself landed/landing, the "preventive-capability prison" premise no longer describes the open plane at r4. Closing #2567 after the #3257/#3264 wave settles is evidence-backed — but the decision stays with the verdict plane; **no `Closes` line rides here** (report-only evidence path). The landing-side freeze (58h, 21 open, oldest 158.3h) is the surviving defect class and r4's headline for the next audit pass.
+2. **#2119 stale-open reconciliation:** capability landed and green on main; if the PR row is genuinely still open, it is a stale-open mirror of landed work — same false-open family #2615 documented for #2608.
+
+## Verification evidence (3-tier)
+
+- **Tier-3** (repo-runnable): `python3 scripts/agents/continuous_agent_loop.py --verify-only` → 8/8 tiers PASS, `CONTRACT_VERSION=agent-loop-contract/1` (run pre- and post-diff this cycle); `python3 scripts/ci/radar_index_freshness_guard.py` → exit 0, next-free pointer R81, invariants A–E OK; this submission adds one new file, modifies zero tracked files.
+- **Tier-2** (live smoke, zero-credential): tower probes quoted above — `github.list_prs` open/closed on both repos, `bridge_read_feedback` #2633 claim state, git history reads at `5086c24`. Re-runnable by any tower client.
+- **Tier-1** (reflection): this document.
+
+## Rollback path
+
+Single new file under `docs/bridge/`; `git revert` of the squash commit removes it entirely — no code, no index, no pointer surface touched.
