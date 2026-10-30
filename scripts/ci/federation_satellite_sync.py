@@ -60,6 +60,32 @@ DEPLOY_TARGETS: set[str] = {
     "Supremeai-bd/supremeai-studio",
 }
 
+# (#3441 root cause) Satellites whose OWN CI surface imports the domain mirror
+# as a Python package at satellite_root/<domain_name>/ (live evidence:
+# supremeai-core's tests/test_core_planner.py resolves `core.*` imports, and
+# its "🧪 Core Pytest & Lint" job died in collection for 3 consecutive nights
+# — Oct 28/29/30 — against a stale, incomplete shadow: core/dag_planner.py and
+# core/monitoring/logging_config.py absent, core/decision_engine.py outdated).
+# For these targets the nested same-name directory is NOT a stale #1676
+# artifact to delete — it is a REQUIRED import surface that must be kept
+# FRESH. The sync therefore re-copies the domain into the package path with
+# prune=True on every run: a sync-managed exact copy can never drift.
+PACKAGE_SHADOW_REFRESH_TARGETS: set[str] = {
+    "Supremeai-bd/supremeai-core",
+}
+
+# (#3441 root cause) Satellites the federation DELIBERATELY keeps outside the
+# sync token's reach (cloaked by admin decision). Only repos listed here may
+# degrade gracefully on permission-class clone/push failures; for every other
+# target such a failure while its domain changed in this push is a federation
+# drift event and MUST fail loudly (return False -> red sync job). The old
+# unconditional silent-True degraded the 54eda2f mega-landing (1614 core/
+# files, 2026-10-30T11:47Z) into a green no-op — the satellite went stale,
+# its shadow stayed stale, and the P0 surfaced 3 nights later with zero
+# signal. Populate this allowlist ONLY via a landing receipt documenting the
+# deliberate cloaking decision; the fail-closed default is empty.
+SATELLITE_CLOAK_ALLOWLIST: frozenset[str] = frozenset()
+
 # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
 # (source_rel_in_open, target_repo, target_rel_in_satellite)
 CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
@@ -227,7 +253,43 @@ def sync_workflows(src_wf_dir: Path, target_wf_dir: Path) -> None:
                 print(f"⚠️ Could not delete stale workflow file {t_file.name}: {e}")
 
 
-def prune_domain_self_shadows(satellite_root: Path, domain_name: str, mirror_root: Path) -> list[str]:
+def refresh_domain_package(mirror_dir: Path, satellite_root: Path, domain_name: str) -> int:
+    """(#3441 root cause) Maintain a fresh, sync-managed package copy.
+
+    Some satellites (supremeai-core today) import the domain mirror as a
+    Python package at satellite_root/<domain_name>/ from their OWN CI
+    (tests/test_core_planner.py -> `core.*`). A flat root mirror cannot
+    satisfy those absolute imports, so the nested copy is load-bearing —
+    but an UNMANAGED copy drifts (the stale shadow that red 3 nightly
+    runs). This helper rebuilds the package copy from the mirror with
+    prune=True on every sync: byte-exact, self-healing, and immune to the
+    split-brain drift #1676 documented, while keeping the satellite's own
+    import contract satisfied.
+
+    Returns the number of files written.
+    """
+    pkg_dst = satellite_root / domain_name
+    if pkg_dst.is_dir():
+        shutil.rmtree(pkg_dst, ignore_errors=True)
+    elif pkg_dst.exists():
+        pkg_dst.unlink()
+    pkg_dst.mkdir(parents=True, exist_ok=True)
+    copy_tree_contents(mirror_dir, pkg_dst, prune=True)
+    count = sum(1 for p in pkg_dst.rglob("*") if p.is_file())
+    print(
+        f"📦 [#3441] Refreshed sync-managed package copy '{domain_name}/' in "
+        f"satellite ({count} files) — the satellite's own `core.*` import "
+        "surface now tracks the mirror byte-identically."
+    )
+    return count
+
+
+def prune_domain_self_shadows(
+    satellite_root: Path,
+    domain_name: str,
+    mirror_root: Path,
+    policy: str = "prune",
+) -> list[str]:
     """(#1676 root cause) Fail-closed guard against domain self-shadow duplicates.
 
     A satellite that receives a domain mirror must never carry a top-level
@@ -240,12 +302,18 @@ def prune_domain_self_shadows(satellite_root: Path, domain_name: str, mirror_roo
     ever removes these orphans once created — this guard closes that gap for
     every satellite, permanently.
 
-    1. Start-gate (fail-closed): if the mirror in supremeai-open itself contains
-       a top-level `<domain_name>/` directory, raise — the contamination must be
-       fixed in the open mirror before any sync can proceed.
-    2. Satellite cleanup: remove `satellite_root/<domain_name>/` entirely and
-       return the removed paths, so every future sync run heals the satellite
-       instead of silently preserving stale duplicates.
+    1. Start-gate (fail-closed, both policies): if the mirror in
+       supremeai-open itself contains a top-level `<domain_name>/` directory,
+       raise — the contamination must be fixed in the open mirror before any
+       sync can proceed.
+    2. Satellite cleanup (policy="prune", the #1676 default): remove
+       `satellite_root/<domain_name>/` entirely and return the removed paths,
+       so every future sync run heals the satellite instead of silently
+       preserving stale duplicates.
+    3. Package-surface policy (policy="refresh_package", #3441): leave the
+       nested directory in place (the satellite's own CI imports it as a
+       package) — the caller refreshes it via refresh_domain_package() so it
+       becomes a fresh, sync-managed exact copy instead of a stale shadow.
     """
     removed: list[str] = []
     mirror_shadow = mirror_root / domain_name
@@ -255,6 +323,8 @@ def prune_domain_self_shadows(satellite_root: Path, domain_name: str, mirror_roo
             f"a top-level copy of its own domain name — remove the nested directory from "
             f"the supremeai-open mirror before syncing {domain_name}."
         )
+    if policy == "refresh_package":
+        return []
     shadow_root = satellite_root / domain_name
     if shadow_root.exists():
         for path in sorted(shadow_root.rglob("*")):
@@ -298,8 +368,16 @@ def sync_satellite(
         if r.returncode != 0:
             err = r.stderr.strip()
             if any(term in err.lower() for term in ("not found", "forbidden", "authentication", "permission")):
-                print(f"⚠️ [GRACEFUL-DEGRADATION] Target satellite {target_repo} cloaked or unauthorized: {err}. Skipping.")
-                return True
+                if target_repo in SATELLITE_CLOAK_ALLOWLIST:
+                    print(f"⚠️ [GRACEFUL-DEGRADATION] Target satellite {target_repo} is allow-listed cloaked: {err}. Skipping.")
+                    return True
+                print(
+                    f"::error::[#3441] Sync target {target_repo} is unreachable (clone failed: {err}) "
+                    "while its domain is in this run's sync set — failing loudly so the drift "
+                    "cannot hide behind a green job. Fix the token scope/repo access, or add "
+                    "the repo to SATELLITE_CLOAK_ALLOWLIST only via a documented cloaking receipt."
+                )
+                return False
             print(f"❌ Failed to clone {target_repo}: {err}")
             return False
 
@@ -407,12 +485,26 @@ def sync_satellite(
 
         # (#1676 root cause) Domain self-shadow guard — fail-closed on mirror
         # contamination, heal stale nested same-name copies on every satellite.
-        shadow_removed = prune_domain_self_shadows(tmp_repo, source_dir, src_path)
+        # (#3441 root cause) Package-surface satellites (supremeai-core) get
+        # their nested copy REFRESHED instead of deleted: their own CI imports
+        # the domain as a package, so a stale shadow reds their pytest
+        # collection and a deleted one ModuleNotFoundErrors it. Either way the
+        # copy must be sync-managed and byte-exact.
+        shadow_policy = (
+            "refresh_package"
+            if target_repo in PACKAGE_SHADOW_REFRESH_TARGETS
+            else "prune"
+        )
+        shadow_removed = prune_domain_self_shadows(
+            tmp_repo, source_dir, src_path, policy=shadow_policy
+        )
         if shadow_removed:
             print(
                 f"🧹 [#1676] Pruned self-shadow copies from {target_repo}: "
                 + ", ".join(shadow_removed)
             )
+        elif shadow_policy == "refresh_package":
+            refresh_domain_package(src_path, tmp_repo, source_dir)
 
         # Copy contract mirror pairs specific to this satellite
         for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
@@ -485,8 +577,16 @@ def sync_satellite(
 
             err = push_res.stderr.strip()
             if any(term in err.lower() for term in ("permission", "forbidden", "not found")):
-                print(f"⚠️ [GRACEFUL-DEGRADATION] Push to {target_repo} skipped due to permissions: {err}")
-                return True
+                if target_repo in SATELLITE_CLOAK_ALLOWLIST:
+                    print(f"⚠️ [GRACEFUL-DEGRADATION] Push to {target_repo} skipped (allow-listed cloaked): {err}")
+                    return True
+                print(
+                    f"::error::[#3441] Push to {target_repo}:main was denied ({err}) while its domain "
+                    "changed in this push — failing loudly instead of silently dropping the "
+                    "landing on the satellite (the exact muting that left supremeai-core stale "
+                    "for 3 nights). Fix token scope/branch policy or file a cloaking receipt."
+                )
+                return False
 
             # If rejected because remote contains concurrent work, fetch and reconcile
             if any(term in err.lower() for term in ("rejected", "fetch first", "non-fast-forward")):
@@ -941,6 +1041,18 @@ def self_test() -> bool:
         assert (repo_root / src_rel).exists(), (
             f"Archive mirror source '{src_rel}' must exist in repository root"
         )
+
+    # (#3441 root cause) Policy-target contracts: every satellite named in a
+    # shadow policy or the cloak allowlist must be a mapped federation target,
+    # or the policy silently applies to nothing (dual-SSOT drift class).
+    unknown_refresh = PACKAGE_SHADOW_REFRESH_TARGETS - DOMAIN_MAP.keys()
+    assert not unknown_refresh, (
+        f"PACKAGE_SHADOW_REFRESH_TARGETS contains non-federation targets: {unknown_refresh}"
+    )
+    unknown_cloak = set(SATELLITE_CLOAK_ALLOWLIST) - DOMAIN_MAP.keys()
+    assert not unknown_cloak, (
+        f"SATELLITE_CLOAK_ALLOWLIST contains non-federation targets: {unknown_cloak}"
+    )
 
     # Test copy_tree_contents with pruning
     with tempfile.TemporaryDirectory() as td:
