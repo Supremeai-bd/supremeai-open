@@ -37,7 +37,7 @@ Remaining disposition (close-as-recovered vs keep-open) is the filer/admin's; no
 
 - Zero-credential tower reads only (`github.workflow_runs` explicit repo; watchdog does its own POST). No writes anywhere; claim released after filing (`bridge_work_release`).
 - `continuous_agent_loop --verify-only`: 8/8 PASS at cycle start and pre-submit; `CONTRACT_VERSION=agent-loop-contract/1` final line.
-- `radar_index_freshness_guard --check`: exit 0 (index untouched; docs-only receipt).
+- `radar_index_freshness_guard --check`: **red on live main at read time (exit 1)** — a PRE-EXISTING citation-ghost from a landed sibling receipt (a bare pointer token in `docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md` prose, landed #3183), not from this receipt's two files (issue-number citations only). De-tokenized with an honest re-line in fixup `bridge-20261030-radar-ghost-detokenize-fixup-r1`; guard green re-verified pre-submit there. Index untouched by this receipt. *(Correction note, fixup r1: an earlier revision of this line read "exit 0" — a pipeline-swallowed exit code at cycle time; the fail-loud reading above is the honest one and supersedes it.)*
 
 ## Reflection
 
