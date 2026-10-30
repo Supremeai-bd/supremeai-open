@@ -94,7 +94,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph ALL_SATS ["🌐 7 Federation Pipelines (Studio, API, Browser, VSCode, Core, Monorepo, Open)"]
+    subgraph ALL_SATS ["🌐 6 Active Domain Federation Repositories (Studio, API, Core, Browser, VSCode, Open)"]
         RUNS["GitHub Actions Workflow Runs"]
     end
 
@@ -104,21 +104,18 @@ flowchart TD
     DEDUP -- "Already Open" --> NOOP["Clean Skip (Zero Spam)"]
     DEDUP -- "New Incident" --> INGEST["Create P0 Incident Sub-Issue<br>(Database ID linking via REST API)"]
     
-    INGEST --> HUB["🚨 [Federation Hub] #761<br>CI Failures & Incident Desk"]
+    INGEST --> DOMAIN_ANCHOR["🎯 Linked directly under Target Domain Anchor Hub<br>(#749, #750, #751, #754, #756, #762)"]
     
-    subgraph BOARD ["14 Persistent Anchor Hubs SSOT (gh issue list --search 'no:parent')"]
-        H761["#761 CI Incidents"]
-        H760["#760 Bridge Orders"]
+    subgraph BOARD ["Golden 6-Domain Anchor Hubs SSOT (gh issue list --search 'no:parent is:open')"]
         H749["#749 Studio UI"]
         H750["#750 API Gateway"]
         H751["#751 Core Moat"]
         H754["#754 VSCode Client"]
         H756["#756 Browser Engine"]
         H762["#762 Open Embassy"]
-        H_MORE["#752, #753, #755, #757, #758, #759"]
     end
     
-    HUB -.-> BOARD
+    DOMAIN_ANCHOR -.-> BOARD
 ```
 
 > Consuming the platform (not contributing)? Start at
