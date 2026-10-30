@@ -34,7 +34,8 @@ class TestFederationSatelliteSync(unittest.TestCase):
         targets, umbrella = sync_mod.detect_changed_targets(sync_mod.Path("/tmp"))
         self.assertIn("Supremeai-bd/supremeai-studio", targets)
         self.assertIn("Supremeai-bd/supremeai-api", targets)
-        self.assertTrue(umbrella)
+        # Umbrella is False per Golden 6-Domain architecture (monorepo syncs via nightly train)
+        self.assertFalse(umbrella)
 
     @patch("subprocess.run")
     def test_detect_changed_targets_empty(self, mock_run):
@@ -65,8 +66,9 @@ class TestFederationSatelliteSync(unittest.TestCase):
             (satellite / "infrastructure" / "proxy" / "wrangler.toml").write_text("k")
             mirror.mkdir()
             removed = sync_mod.prune_domain_self_shadows(satellite, "studio", mirror)
-            self.assertIn("studio/package.json", removed)
-            self.assertIn("studio/src/utils/api.ts", removed)
+            norm_removed = [p.replace("\\", "/") for p in removed]
+            self.assertIn("studio/package.json", norm_removed)
+            self.assertIn("studio/src/utils/api.ts", norm_removed)
             self.assertFalse((satellite / "studio").exists())
             # canonical root files and legitimate satellite-only dirs survive
             self.assertTrue((satellite / "src" / "utils" / "api.ts").exists())
