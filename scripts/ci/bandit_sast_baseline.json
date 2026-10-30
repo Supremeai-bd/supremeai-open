@@ -1,1926 +1,1907 @@
 {
- "findings": {
-  "browser/action_cascade.py": {
-   "B112": 1
-  },
-  "browser/ghost_tower/auto_login.py": {
-   "B105": 1,
-   "B110": 2
-  },
-  "browser/ghost_tower/cookie_sync_scheduler.py": {
-   "B310": 1
-  },
-  "browser/ghost_tower/credential_vault.py": {
-   "B107": 1,
-   "B110": 1
-  },
-  "browser/ghost_tower/gemini_web_engine.py": {
-   "B110": 2
-  },
-  "browser/ghost_tower/launch_manual_login.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "browser/ghost_tower/login_helper.py": {
-   "B110": 1
-  },
-  "browser/ghost_tower/multi_ai_sso_runner.py": {
-   "B110": 6
-  },
-  "browser/ghost_tower/stealth_browser_engine/semantic_extractor.py": {
-   "B101": 1
-  },
-  "browser/ghost_tower/sync_cookies_to_infisical.py": {
-   "B310": 3
-  },
-  "browser/runtime/semantic_extractor.py": {
-   "B101": 1
-  },
-  "browser/security.py": {
-   "B104": 1
-  },
-  "browser/server.py": {
-   "B104": 1,
-   "B110": 2,
-   "B112": 2
-  },
-  "browser/session_manager.py": {
-   "B110": 1
-  },
-  "core/_archive/batch-1/backend/debug_ci_boot.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/_archive/batch-1/backend/scripts/audit_import_walk.py": {
-   "B108": 1
-  },
-  "core/accessibility/wcag_compliance.py": {
-   "B105": 1
-  },
-  "core/adapters/red_team_adapter.py": {
-   "B105": 1
-  },
-  "core/adaptive_engine/approval_workflow.py": {
-   "B105": 1,
-   "B608": 10
-  },
-  "core/adaptive_engine/capability_registry.py": {
-   "B608": 11
-  },
-  "core/adaptive_engine/deployment_tracker.py": {
-   "B608": 5
-  },
-  "core/adaptive_engine/experience_db.py": {
-   "B108": 2
-  },
-  "core/adaptive_engine/governance.py": {
-   "B608": 2
-  },
-  "core/adaptive_engine/health_model.py": {
-   "B608": 3
-  },
-  "core/adaptive_engine/learning_loop.py": {
-   "B608": 7
-  },
-  "core/adaptive_engine/resource_registry.py": {
-   "B608": 5
-  },
-  "core/adaptive_engine/source_governance.py": {
-   "B608": 15
-  },
-  "core/adaptive_engine/task_engine.py": {
-   "B608": 8
-  },
-  "core/admin/god.py": {
-   "B108": 2
-  },
-  "core/advanced_reasoning.py": {
-   "B112": 1
-  },
-  "core/agents/code_vulnerability_scanner_agent.py": {
-   "B105": 1
-  },
-  "core/agents/ide/trio_adapters.py": {
-   "B404": 1,
-   "B603": 2
-  },
-  "core/agents/live/computer_agent.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/agents/research_assistant.py": {
-   "B310": 1,
-   "B314": 1,
-   "B405": 1
-  },
-  "core/agents/skill_ingestor.py": {
-   "B310": 1
-  },
-  "core/agents/skill_librarian.py": {
-   "B310": 1
-  },
-  "core/alembic_migrations/versions/j9k0l1m2n3o4_add_missing_live_model_tables.py": {
-   "B608": 1
-  },
-  "core/api/middleware.py": {
-   "B311": 3
-  },
-  "core/api/routes/admin.py": {
-   "B608": 1
-  },
-  "core/api/routes/admin_dashboard/endpoints_command.py": {
-   "B112": 1
-  },
-  "core/api/routes/admin_v1.py": {
-   "B112": 1
-  },
-  "core/api/routes/auth.py": {
-   "B105": 1
-  },
-  "core/api/routes/browser/_crown_jewel.py": {
-   "B324": 1
-  },
-  "core/api/routes/browser/_render_proxy.py": {
-   "B310": 1
-  },
-  "core/api/routes/browser/_session_store.py": {
-   "B324": 1
-  },
-  "core/api/routes/chat_upload.py": {
-   "B314": 1,
-   "B405": 1
-  },
-  "core/api/routes/integrations.py": {
-   "B105": 1
-  },
-  "core/api/routes/webhooks_ai.py": {
-   "B105": 1
-  },
-  "core/brain/mcp_client.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/brain/parallel_cloud_router.py": {
-   "B311": 1
-  },
-  "core/byoc/container_orchestrator.py": {
-   "B404": 1
-  },
-  "core/circles/governance_core.py": {
-   "B112": 1
-  },
-  "core/clients/render_api.py": {
-   "B310": 1
-  },
-  "core/competitive_kit.py": {
-   "B324": 2
-  },
-  "core/config_classification.py": {
-   "B105": 1
-  },
-  "core/config_fields.py": {
-   "B104": 1,
-   "B108": 1
-  },
-  "core/config_secrets.py": {
-   "B105": 4
-  },
-  "core/config_validator.py": {
-   "B104": 1
-  },
-  "core/connection_registry.py": {
-   "B608": 17
-  },
-  "core/container_auditor.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 1
-  },
-  "core/database/db_repository.py": {
-   "B608": 1
-  },
-  "core/db_schema_gate.py": {
-   "B310": 1
-  },
-  "core/docs/examples/retry_integration_example.py": {
-   "B108": 1,
-   "B311": 6
-  },
-  "core/ecosystem/standalone_app.py": {
-   "B104": 1,
-   "B608": 3
-  },
-  "core/ecosystem/users.py": {
-   "B608": 15
-  },
-  "core/evolution/auto_tuner.py": {
-   "B311": 1
-  },
-  "core/evolution/canary_manager.py": {
-   "B311": 1,
-   "B324": 1
-  },
-  "core/evolution/learning_pipeline.py": {
-   "B324": 1
-  },
-  "core/evolution/memory_consolidator.py": {
-   "B324": 1,
-   "B403": 1
-  },
-  "core/evolution/strategy_optimizer.py": {
-   "B311": 2
-  },
-  "core/evolution_module.py": {
-   "B311": 10
-  },
-  "core/external_agents/channels/mcp_channel.py": {
-   "B404": 1,
-   "B603": 3,
-   "B607": 2
-  },
-  "core/external_agents/control/job_api.py": {
-   "B101": 1,
-   "B110": 2
-  },
-  "core/external_agents/verification/artifact_bridge.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/external_agents/verification/git_verifier.py": {
-   "B404": 1,
-   "B603": 3,
-   "B607": 2
-  },
-  "core/external_agents/verification/pr_manager.py": {
-   "B110": 1,
-   "B310": 1,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/github/scripts/check-render-quota.py": {
-   "B310": 1
-  },
-  "core/github/scripts/ci_error_report.py": {
-   "B310": 1
-  },
-  "core/github/scripts/ci_smart_summary.py": {
-   "B310": 1
-  },
-  "core/github/scripts/ci_summary_v2.py": {
-   "B105": 1,
-   "B310": 3
-  },
-  "core/github/scripts/clean_action_logs.py": {
-   "B310": 3
-  },
-  "core/github/scripts/constitution/arch_preservation_gate.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/github/scripts/constitution/auto_close_on_failure.py": {
-   "B310": 1
-  },
-  "core/github/scripts/constitution/branch_creation_guard.py": {
-   "B310": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "core/github/scripts/constitution/engine.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/github/scripts/constitution/freshness_gate.py": {
-   "B110": 1,
-   "B310": 1,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/github/scripts/constitution/gates.py": {
-   "B310": 2,
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "core/github/scripts/constitution/heartbeat_check.py": {
-   "B404": 1
-  },
-  "core/github/scripts/constitution/lessons_check.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "core/github/scripts/constitution/report_gate_outcome.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/github/scripts/constitution/rules/base.py": {
-   "B110": 3,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/github/scripts/constitution/rules/rel001_no_silent_failure.py": {
-   "B110": 1
-  },
-  "core/github/scripts/constitution/rules/sec002_no_secret_hardcoding.py": {
-   "B110": 1
-  },
-  "core/github/scripts/constitution/template_gate.py": {
-   "B112": 1,
-   "B310": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "core/github/scripts/dependency_upgrader.py": {
-   "B404": 1,
-   "B603": 4,
-   "B607": 4
-  },
-  "core/github/scripts/detect-previous-failures.py": {
-   "B310": 1
-  },
-  "core/github/scripts/enforce_24h_gap.py": {
-   "B310": 1
-  },
-  "core/github/scripts/platform_agent_check.py": {
-   "B310": 1
-  },
-  "core/github/scripts/platform_deep_audit.py": {
-   "B310": 1,
-   "B324": 1
-  },
-  "core/github/scripts/pr_helper/ai_fix_generator.py": {
-   "B110": 1,
-   "B310": 1
-  },
-  "core/github/scripts/pr_helper/auto_fix_engine.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/github/scripts/pr_helper/ci_failure_collector.py": {
-   "B310": 1
-  },
-  "core/github/scripts/pr_helper/delta_analysis.py": {
-   "B314": 1,
-   "B405": 1
-  },
-  "core/github/scripts/pr_helper/hunk_isolation.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/github/scripts/pr_helper/intent_extractor.py": {
-   "B105": 1
-  },
-  "core/github/scripts/pr_helper/learning_guards.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 1
-  },
-  "core/github/scripts/service_preflight_check.py": {
-   "B310": 1
-  },
-  "core/github/scripts/supreme_ci.py": {
-   "B310": 4,
-   "B404": 1,
-   "B603": 3,
-   "B607": 2
-  },
-  "core/github/scripts/trigger_render_deploy.py": {
-   "B310": 3
-  },
-  "core/github/scripts/verify-render-deploy.py": {
-   "B310": 1
-  },
-  "core/human_behavior.py": {
-   "B311": 14
-  },
-  "core/integrations/e2b_adapter.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/integrations/telegram_bot.py": {
-   "B107": 1
-  },
-  "core/intelligence/precognitive_risk.py": {
-   "B311": 1
-  },
-  "core/intelligence/synaptic_memory.py": {
-   "B101": 1
-  },
-  "core/kaggle_orchestrator.py": {
-   "B107": 1,
-   "B324": 1
-  },
-  "core/knowledge_base.py": {
-   "B108": 2
-  },
-  "core/learning/evolution_bridge.py": {
-   "B105": 1
-  },
-  "core/learning/hypothesis_engine.py": {
-   "B105": 1
-  },
-  "core/learning/pattern_recognizer.py": {
-   "B324": 3
-  },
-  "core/llm/llm_gateway/completion.py": {
-   "B311": 1
-  },
-  "core/llm/llm_gateway/resilience.py": {
-   "B311": 1
-  },
-  "core/llm/provider_router.py": {
-   "B311": 1
-  },
-  "core/main.py": {
-   "B104": 1
-  },
-  "core/maintenance_pipeline.py": {
-   "B311": 1
-  },
-  "core/memory/mcp_server.py": {
-   "B104": 1
-  },
-  "core/messaging/gcp_pubsub_queue.py": {
-   "B101": 1
-  },
-  "core/microvm_sandbox.py": {
-   "B108": 2,
-   "B404": 1,
-   "B603": 3,
-   "B607": 3
-  },
-  "core/middleware/chaos_injector.py": {
-   "B311": 3
-  },
-  "core/models/execution_log.py": {
-   "B105": 1
-  },
-  "core/models/merge_learning_report.py": {
-   "B608": 1
-  },
-  "core/monitoring/logging_config.py": {
-   "B108": 1
-  },
-  "core/multi_platform_orchestrator.py": {
-   "B404": 1,
-   "B602": 1
-  },
-  "core/natural_file_presenter.py": {
-   "B311": 6
-  },
-  "core/observability/correlation_bridge.py": {
-   "B110": 1
-  },
-  "core/orchestration/periodic_task_scheduler.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/prompt_enhancement_engine.py": {
-   "B311": 1
-  },
-  "core/provider_rate_limiter.py": {
-   "B311": 1
-  },
-  "core/pyerrorfix/cli.py": {
-   "B110": 1
-  },
-  "core/pyerrorfix/core/scanner.py": {
-   "B112": 3
-  },
-  "core/repo_manager.py": {
-   "B404": 1,
-   "B603": 5,
-   "B607": 4
-  },
-  "core/resilience/chaos_engine.py": {
-   "B311": 2
-  },
-  "core/resilience/safety_rollback_manager.py": {
-   "B324": 1,
-   "B403": 1
-  },
-  "core/retry_handler.py": {
-   "B311": 4
-  },
-  "core/runner/agent_runner.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 1
-  },
-  "core/sandbox/docker_sandbox.py": {
-   "B108": 2,
-   "B404": 1,
-   "B603": 2
-  },
-  "core/sandbox/file_isolation_gate.py": {
-   "B108": 1
-  },
-  "core/scripts/superai_free_tier_monitor.py": {
-   "B108": 8
-  },
-  "core/secret_policy.py": {
-   "B105": 2
-  },
-  "core/security/audit/security_auditor.py": {
-   "B105": 1,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/security/injections/sql_prevention.py": {
-   "B608": 4
-  },
-  "core/security/protection/ssrf_protection.py": {
-   "B104": 1
-  },
-  "core/security/resource_guard.py": {
-   "B108": 1
-  },
-  "core/security/secret_vault.py": {
-   "B105": 3
-  },
-  "core/self_benchmark.py": {
-   "B311": 1
-  },
-  "core/self_evolution/agent_breeder.py": {
-   "B101": 1,
-   "B311": 7
-  },
-  "core/self_evolution/continual_learning/ewc.py": {
-   "B301": 1,
-   "B403": 1
-  },
-  "core/self_evolution/digital_twin/simulator.py": {
-   "B311": 4
-  },
-  "core/self_evolution/fitness_engine.py": {
-   "B105": 1
-  },
-  "core/services/auto_healer.py": {
-   "B311": 1
-  },
-  "core/services/browser/main.py": {
-   "B104": 1
-  },
-  "core/services/dynamic_ai/local_fallback.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/services/hitl/resume_token.py": {
-   "B105": 1
-  },
-  "core/services/memory_service.py": {
-   "B112": 1,
-   "B324": 1,
-   "B608": 1
-  },
-  "core/services/render_preflight_service.py": {
-   "B112": 1
-  },
-  "core/services/scraper/security.py": {
-   "B104": 1
-  },
-  "core/services/storage/gcp_firestore.py": {
-   "B101": 1
-  },
-  "core/services/tool_forge.py": {
-   "B102": 1
-  },
-  "core/services/video_to_code_pipeline.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/services/worker/main.py": {
-   "B104": 1
-  },
-  "core/skill_manager.py": {
-   "B102": 1
-  },
-  "core/skills/installer.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/social_growth.py": {
-   "B112": 1
-  },
-  "core/task_policy.py": {
-   "B105": 1
-  },
-  "core/testing/qa_suite.py": {
-   "B101": 2,
-   "B105": 1
-  },
-  "core/tier8/agent_evolution_engine.py": {
-   "B311": 14
-  },
-  "core/tools/agent_heartbeat/heartbeat.py": {
-   "B310": 1
-  },
-  "core/tools/autonomy/tools/autonomy_cycle.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/tools/autonomy/tools/deploy_guard.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/tools/browser/browser_stealth.py": {
-   "B311": 13
-  },
-  "core/tools/browser/playwright_browser_agent.py": {
-   "B311": 15
-  },
-  "core/tools/browser/stealth_http_client.py": {
-   "B311": 1
-  },
-  "core/tools/code/auto_test_generator.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/tools/code/code_smell_detector.py": {
-   "B103": 1,
-   "B404": 1,
-   "B603": 3,
-   "B607": 1
-  },
-  "core/tools/code/cot_reasoner.py": {
-   "B311": 2
-  },
-  "core/tools/code/dependency_manager_agent.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/tools/code/pre_commit_ai.py": {
-   "B404": 1,
-   "B603": 3
-  },
-  "core/tools/code/safe_executor.py": {
-   "B102": 1
-  },
-  "core/tools/devops/docker_sandbox.py": {
-   "B404": 1,
-   "B603": 5,
-   "B607": 2
-  },
-  "core/tools/devops/on_premise_deployer.py": {
-   "B105": 3
-  },
-  "core/tools/discovery_fabric/supremeai_discovery/source_scout.py": {
-   "B310": 1
-  },
-  "core/tools/gap_miner/tools/gap_miner.py": {
-   "B324": 1,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/tools/gap_miner/tools/incident_replay.py": {
-   "B324": 1
-  },
-  "core/tools/gap_miner/tools/prompt_distiller.py": {
-   "B324": 1
-  },
-  "core/tools/knowledge/codebase_exporter.py": {
-   "B404": 1,
-   "B603": 2
-  },
-  "core/tools/knowledge/git_knowledge_extractor.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "core/tools/learning/style_learner.py": {
-   "B324": 1
-  },
-  "core/tools/pipeline_recipe_compiler.py": {
-   "B106": 8
-  },
-  "core/tools/social/marketplace_agent.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "core/tools/social/telegram_bot/handler.py": {
-   "B105": 1
-  },
-  "core/tools/social/telegram_bot/router.py": {
-   "B105": 1
-  },
-  "core/tools/solution_synthesizer/tools/solution_synthesizer.py": {
-   "B310": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "core/tools/sso_integrator.py": {
-   "B105": 3
-  },
-  "core/web_ai_session_bridge.py": {
-   "B105": 1,
-   "B311": 2
-  },
-  "core/worker_service.py": {
-   "B104": 1,
-   "B105": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "evals/golden/run_eval.py": {
-   "B105": 1,
-   "B110": 1,
-   "B310": 1
-  },
-  "examples/gateway_client.py": {
-   "B110": 1,
-   "B310": 1
-  },
-  "examples/langchain-mcp-bot/bot.py": {
-   "B101": 1
-  },
-  "examples/mcp-client-py/client.py": {
-   "B310": 2
-  },
-  "examples/sdk-client-py/client.py": {
-   "B101": 1
-  },
-  "examples/webhook-verification/verify.py": {
-   "B107": 1
-  },
-  "gateway/dynamic_llm_router.py": {
-   "B101": 10
-  },
-  "gateway/gateway_shield_reference.py": {
-   "B101": 21
-  },
-  "gateway/memory.py": {
-   "B310": 3,
-   "B324": 1
-  },
-  "gateway/middleware/chaos_injector.py": {
-   "B311": 3
-  },
-  "gateway/middleware/correlation_id.py": {
-   "B110": 1
-  },
-  "gateway/routes/admin.py": {
-   "B608": 1
-  },
-  "gateway/routes/admin_dashboard/endpoints_command.py": {
-   "B112": 1
-  },
-  "gateway/routes/admin_v1.py": {
-   "B112": 1
-  },
-  "gateway/routes/auth.py": {
-   "B105": 1
-  },
-  "gateway/routes/browser/_crown_jewel.py": {
-   "B324": 1
-  },
-  "gateway/routes/browser/_render_proxy.py": {
-   "B310": 1
-  },
-  "gateway/routes/browser/_session_store.py": {
-   "B324": 1
-  },
-  "gateway/routes/chat_upload.py": {
-   "B314": 1,
-   "B405": 1
-  },
-  "gateway/routes/integrations.py": {
-   "B105": 1
-  },
-  "gateway/routes/webhooks_ai.py": {
-   "B105": 1
-  },
-  "gateway/sanitization.py": {
-   "B105": 1
-  },
-  "gateway/service/admin_auth.py": {
-   "B310": 2
-  },
-  "gateway/service/app.py": {
-   "B105": 2,
-   "B110": 2
-  },
-  "gateway/service/context_compiler.py": {
-   "B110": 1
-  },
-  "gateway/service/memory_store.py": {
-   "B110": 2
-  },
-  "gateway/service/passkey_auth.py": {
-   "B105": 1
-  },
-  "gateway/service/providers/web_session.py": {
-   "B311": 1
-  },
-  "gateway/service/redis_rate_limit.py": {
-   "B110": 1
-  },
-  "gateway/service/storage.py": {
-   "B110": 3
-  },
-  "gateway/services/auto_healer.py": {
-   "B311": 1
-  },
-  "gateway/services/browser/main.py": {
-   "B104": 1
-  },
-  "gateway/services/dynamic_ai/local_fallback.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "gateway/services/hitl/resume_token.py": {
-   "B105": 1
-  },
-  "gateway/services/memory_service.py": {
-   "B112": 1,
-   "B324": 1,
-   "B608": 1
-  },
-  "gateway/services/render_preflight_service.py": {
-   "B112": 1
-  },
-  "gateway/services/scraper/security.py": {
-   "B104": 1
-  },
-  "gateway/services/storage/gcp_firestore.py": {
-   "B101": 1
-  },
-  "gateway/services/tool_forge.py": {
-   "B102": 1
-  },
-  "gateway/services/video_to_code_pipeline.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "gateway/services/worker/main.py": {
-   "B104": 1
-  },
-  "infrastructure/mcp-control-plane/scripts/runtime/infisical_bootstrap.py": {
-   "B310": 1,
-   "B606": 1
-  },
-  "infrastructure/mcp-control-plane/sidecars/memory/graph_store.py": {
-   "B110": 1
-  },
-  "infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py": {
-   "B310": 2
-  },
-  "scripts/agents/acquire_role_slot.py": {
-   "B110": 1,
-   "B310": 1,
-   "B404": 1,
-   "B603": 8,
-   "B607": 8
-  },
-  "scripts/agents/agent_dashboard.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/agents/agent_identity.py": {
-   "B108": 2,
-   "B110": 4,
-   "B310": 1,
-   "B404": 2,
-   "B603": 10,
-   "B607": 9
-  },
-  "scripts/agents/agent_solution_memory.py": {
-   "B110": 2
-  },
-  "scripts/agents/automation_watchdog.py": {
-   "B310": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/agents/autonomy_persistence.py": {
-   "B101": 10
-  },
-  "scripts/agents/claim_ttl_expirer.py": {
-   "B101": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/agents/context_graph_resolver.py": {
-   "B101": 11
-  },
-  "scripts/agents/continuous_agent_loop.py": {
-   "B110": 1,
-   "B404": 1,
-   "B603": 3
-  },
-  "scripts/agents/create_blocker_issue.py": {
-   "B404": 1,
-   "B603": 5,
-   "B607": 4
-  },
-  "scripts/agents/create_discovery_issue.py": {
-   "B404": 2,
-   "B603": 2,
-   "B607": 1
-  },
-  "scripts/agents/create_issue.py": {
-   "B404": 1,
-   "B603": 10,
-   "B607": 8
-  },
-  "scripts/agents/credential_manager.py": {
-   "B105": 1,
-   "B107": 1,
-   "B108": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/agents/dispatch_browser_task.py": {
-   "B110": 5,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/agents/dynamic_credential_broker.py": {
-   "B110": 2,
-   "B404": 1,
-   "B603": 2,
-   "B607": 1
-  },
-  "scripts/agents/dynamic_naming.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/agents/dynamic_router.py": {
-   "B101": 22
-  },
-  "scripts/agents/ecosystem_scout_reference.py": {
-   "B101": 8,
-   "B106": 1
-  },
-  "scripts/agents/execution_executor.py": {
-   "B404": 1,
-   "B602": 1
-  },
-  "scripts/agents/gh_label_ensure.py": {
-   "B404": 1,
-   "B603": 2
-  },
-  "scripts/agents/group_taxonomy.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/agents/heartbeat_ping.py": {
-   "B310": 2
-  },
-  "scripts/agents/issue_fingerprint.py": {
-   "B324": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/agents/issue_revalidator.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/agents/loop_common.py": {
-   "B110": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/agents/mcp_presence_tracker.py": {
-   "B310": 1
-  },
-  "scripts/agents/mcp_tower_client.py": {
-   "B110": 4
-  },
-  "scripts/agents/pr_lifecycle_guard.py": {
-   "B310": 1
-  },
-  "scripts/agents/priority_queue_ledger.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 1
-  },
-  "scripts/agents/role_registry.py": {
-   "B101": 5
-  },
-  "scripts/agents/role_trigger_matrix.py": {
-   "B101": 35
-  },
-  "scripts/agents/rules_breaker.py": {
-   "B108": 1,
-   "B112": 15,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/agents/scope_gate.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/agents/scout_extractor.py": {
-   "B101": 14,
-   "B102": 1
-  },
-  "scripts/agents/self_healing_reporter.py": {
-   "B101": 10,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/agents/smart_context_selector.py": {
-   "B105": 2
-  },
-  "scripts/agents/smart_dispatcher.py": {
-   "B110": 6,
-   "B404": 1,
-   "B603": 8,
-   "B607": 8
-  },
-  "scripts/agents/web_agent_worker.py": {
-   "B101": 1,
-   "B110": 4,
-   "B112": 1,
-   "B310": 1,
-   "B311": 14,
-   "B404": 1,
-   "B602": 2
-  },
-  "scripts/agents/web_intent_engine.py": {
-   "B110": 4,
-   "B311": 20
-  },
-  "scripts/agents/web_session_client.py": {
-   "B311": 1
-  },
-  "scripts/bridge/bridge_intake.py": {
-   "B110": 1,
-   "B310": 2,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/admin_sovereignty_guard.py": {
-   "B101": 24
-  },
-  "scripts/ci/ai_pr_evaluator.py": {
-   "B110": 1,
-   "B310": 3,
-   "B324": 1,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/audit_suite.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/auto_bridge_pr_opener.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/auto_escalate_priority.py": {
-   "B110": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/bandit_sast_guard.py": {
-   "B101": 24,
-   "B404": 1,
-   "B603": 3,
-   "B607": 1
-  },
-  "scripts/ci/boundary_sanitization_guard.py": {
-   "B404": 1,
-   "B603": 3,
-   "B607": 3
-  },
-  "scripts/ci/bridge_opener_hardening_reference.py": {
-   "B101": 25
-  },
-  "scripts/ci/build_manual_task_report.py": {
-   "B105": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/build_release_evidence.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/build_status_proof.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 1
-  },
-  "scripts/ci/check_commit_sizing.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "scripts/ci/check_free_tier_limits.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/check_import_budget.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/check_mcp_policy_parity.py": {
-   "B404": 1,
-   "B603": 3
-  },
-  "scripts/ci/check_self_heal_token_usage.py": {
-   "B110": 1
-  },
-  "scripts/ci/check_single_frontend.py": {
-   "B112": 2
-  },
-  "scripts/ci/cleanup_group_branches.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/cleanup_stale_branches.py": {
-   "B404": 1,
-   "B603": 5,
-   "B607": 4
-  },
-  "scripts/ci/constitution_pointer_guard.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/contract_parity_guard.py": {
-   "B101": 4
-  },
-  "scripts/ci/controller_evidence_verify.py": {
-   "B404": 1,
-   "B602": 1,
-   "B604": 1
-  },
-  "scripts/ci/create_group_issue.py": {
-   "B110": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/cross_platform_invariant_guard.py": {
-   "B101": 40
-  },
-  "scripts/ci/deploy_doctor.py": {
-   "B310": 2,
-   "B404": 1,
-   "B603": 1,
-   "B605": 1,
-   "B607": 1
-  },
-  "scripts/ci/deploy_preflight_guard.py": {
-   "B101": 4,
-   "B105": 1,
-   "B404": 1,
-   "B603": 2
-  },
-  "scripts/ci/detect_changed_tests.py": {
-   "B404": 1,
-   "B603": 4,
-   "B607": 2
-  },
-  "scripts/ci/detect_deploy_targets.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/docs_garbage_tree_sweep.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/federation_anchors.py": {
-   "B101": 29,
-   "B110": 1,
-   "B310": 8,
-   "B404": 1,
-   "B603": 4,
-   "B607": 1
-  },
-  "scripts/ci/federation_ci_watchdog.py": {
-   "B101": 59,
-   "B310": 1,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/federation_satellite_sync.py": {
-   "B101": 20,
-   "B110": 2,
-   "B310": 1,
-   "B404": 1,
-   "B603": 30,
-   "B607": 30
-  },
-  "scripts/ci/frontend_performance_guard.py": {
-   "B101": 4
-  },
-  "scripts/ci/generate_changelog.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/generate_module_capability_matrix.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/generate_route_client_inventory.py": {
-   "B112": 1
-  },
-  "scripts/ci/generate_types.py": {
-   "B101": 16
-  },
-  "scripts/ci/group_closeout_janitor.py": {
-   "B110": 2,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/hourly_satellite_batcher.py": {
-   "B101": 53
-  },
-  "scripts/ci/infisical_loader.py": {
-   "B310": 1
-  },
-  "scripts/ci/ingest_pr_knowledge.py": {
-   "B101": 2,
-   "B310": 3,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/issue_queue_manager.py": {
-   "B110": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/issue_router.py": {
-   "B404": 1,
-   "B603": 3,
-   "B607": 2
-  },
-  "scripts/ci/issue_template_guard.py": {
-   "B101": 13
-  },
-  "scripts/ci/js_dep_cve_guard.py": {
-   "B101": 25,
-   "B310": 1,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/kaggle_learning_bridge.py": {
-   "B101": 8,
-   "B310": 4
-  },
-  "scripts/ci/ledger_check.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/license_ssot_guard.py": {
-   "B101": 25
-  },
-  "scripts/ci/mark_branch_state.py": {
-   "B110": 2,
-   "B310": 1,
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "scripts/ci/master_secret_shield.py": {
-   "B101": 3
-  },
-  "scripts/ci/mcp_conformance_selftest.py": {
-   "B310": 1
-  },
-  "scripts/ci/merge_gate.py": {
-   "B110": 2,
-   "B404": 1,
-   "B603": 4,
-   "B607": 1
-  },
-  "scripts/ci/merge_train_rollup.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 1
-  },
-  "scripts/ci/mirror_issue_to_open.py": {
-   "B310": 1
-  },
-  "scripts/ci/mirror_parent_linker.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/mission_passk.py": {
-   "B314": 1,
-   "B404": 1,
-   "B405": 1,
-   "B603": 1
-  },
-  "scripts/ci/mutation_lease.py": {
-   "B108": 1,
-   "B404": 1,
-   "B603": 6,
-   "B607": 5
-  },
-  "scripts/ci/openapi_breaking_guard.py": {
-   "B101": 22,
-   "B404": 2,
-   "B603": 3,
-   "B607": 2
-  },
-  "scripts/ci/pipeline_failure_register.py": {
-   "B110": 3,
-   "B310": 1,
-   "B324": 1,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/pr_improvement_regression_guard.py": {
-   "B101": 17,
-   "B105": 1
-  },
-  "scripts/ci/pr_patch_recorder.py": {
-   "B101": 7,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/probe_live_status.py": {
-   "B105": 1,
-   "B310": 1
-  },
-  "scripts/ci/probe_live_status_453.py": {
-   "B105": 1,
-   "B310": 1
-  },
-  "scripts/ci/production_certification.py": {
-   "B110": 2,
-   "B310": 4,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/production_mismatch_gate.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/project_health_check.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/purge_stale_workflow_runs.py": {
-   "B110": 1,
-   "B310": 2,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ci/record_merge_learning.py": {
-   "B310": 2
-  },
-  "scripts/ci/rejected_wo_rescue.py": {
-   "B105": 1
-  },
-  "scripts/ci/render_build_budget_guard.py": {
-   "B112": 1
-  },
-  "scripts/ci/render_build_quota_guard.py": {
-   "B101": 8,
-   "B310": 3
-  },
-  "scripts/ci/render_deploy_preflight.py": {
-   "B310": 1
-  },
-  "scripts/ci/run_all_guards.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/satellite_board_guard.py": {
-   "B310": 1
-  },
-  "scripts/ci/scan_secret_logs.py": {
-   "B105": 1
-  },
-  "scripts/ci/schedule_watchdog.py": {
-   "B112": 1,
-   "B310": 1
-  },
-  "scripts/ci/secondary_service_probes.py": {
-   "B310": 1
-  },
-  "scripts/ci/security_gate.py": {
-   "B101": 11
-  },
-  "scripts/ci/self_healing_reporter.py": {
-   "B101": 10
-  },
-  "scripts/ci/smart_priority_merger.py": {
-   "B108": 1,
-   "B310": 2,
-   "B404": 1,
-   "B603": 6,
-   "B607": 4
-  },
-  "scripts/ci/sprawl_guard.py": {
-   "B110": 2,
-   "B404": 1,
-   "B603": 4,
-   "B607": 4
-  },
-  "scripts/ci/staggered_rolling_train.py": {
-   "B101": 20
-  },
-  "scripts/ci/stale_claim_releaser.py": {
-   "B101": 4
-  },
-  "scripts/ci/sync_graph_to_memory.py": {
-   "B101": 6,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/task_dashboard.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ci/tenant_negative_battery.py": {
-   "B310": 1
-  },
-  "scripts/ci/validate_links.py": {
-   "B310": 1
-  },
-  "scripts/ci/validate_md_links.py": {
-   "B310": 2
-  },
-  "scripts/ci/validate_md_links_seq04.py": {
-   "B310": 2
-  },
-  "scripts/ci/vault_hygiene_check.py": {
-   "B105": 1,
-   "B310": 4
-  },
-  "scripts/ci/vendored_tree_guard.py": {
-   "B101": 6
-  },
-  "scripts/ci/vercel_deploy_preflight.py": {
-   "B310": 1
-  },
-  "scripts/ci/verify_canonical_startup.py": {
-   "B310": 2,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/knowledge/ingest_project_docs.py": {
-   "B310": 1
-  },
-  "scripts/ops/actions_quota_check.py": {
-   "B310": 1
-  },
-  "scripts/ops/advanced_analysis/api_contract_diff.py": {
-   "B112": 2
-  },
-  "scripts/ops/advanced_analysis/bengali_i18n_completeness_checker.py": {
-   "B112": 1
-  },
-  "scripts/ops/advanced_analysis/config_single_source_enforcer.py": {
-   "B104": 1,
-   "B108": 1
-  },
-  "scripts/ops/advanced_analysis/dependency_freshness_radar.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ops/advanced_analysis/duplicate_detector.py": {
-   "B112": 3
-  },
-  "scripts/ops/advanced_analysis/env_var_reconciler.py": {
-   "B112": 1
-  },
-  "scripts/ops/advanced_analysis/secret_rotation_reminder.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/ai/change_impact_detector.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ops/ai/evidence_bundle.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/ai/feature_store_sync.py": {
-   "B324": 1
-  },
-  "scripts/ops/ai/model_drift_detector.py": {
-   "B301": 1,
-   "B403": 1
-  },
-  "scripts/ops/ai/repository_metadata_index.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/ai/sandboxed_repair.py": {
-   "B404": 1,
-   "B603": 3,
-   "B607": 3
-  },
-  "scripts/ops/audit/system_deep_scan.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/audit/system_deep_scan_2026_09_15.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/audit/system_defect_scan.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/audit/system_defect_scan_2026_09_16.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/audit_env_usage.py": {
-   "B112": 1
-  },
-  "scripts/ops/audit_isolated_modules_and_capabilities.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ops/audit_observability.py": {
-   "B112": 1
-  },
-  "scripts/ops/auto_doctor.py": {
-   "B101": 12
-  },
-  "scripts/ops/backup/auto_cross_cloud_replicate.py": {
-   "B105": 3,
-   "B310": 1,
-   "B324": 1
-  },
-  "scripts/ops/backup/auto_firestore_backup.py": {
-   "B310": 1
-  },
-  "scripts/ops/backup/backup_telegram.py": {
-   "B404": 1,
-   "B603": 9,
-   "B607": 5
-  },
-  "scripts/ops/backup/create_desktop_backup.py": {
-   "B404": 1,
-   "B603": 9,
-   "B607": 5
-  },
-  "scripts/ops/backup/superai_backup_manager.py": {
-   "B202": 2,
-   "B324": 1,
-   "B404": 1,
-   "B603": 6,
-   "B607": 6
-  },
-  "scripts/ops/benchmark/superai_load_tester.py": {
-   "B310": 2
-  },
-  "scripts/ops/billing/fraud_detector.py": {
-   "B112": 1
-  },
-  "scripts/ops/billing/usage_reporter.py": {
-   "B105": 1
-  },
-  "scripts/ops/checkpoint_update.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "scripts/ops/codegraph_integration.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "scripts/ops/db/auto_migrate.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/db/ingest_knowledge.py": {
-   "B311": 1
-  },
-  "scripts/ops/deploy/add_secrets_to_infisical.py": {
-   "B310": 3
-  },
-  "scripts/ops/deploy/blue_green_deploy.py": {
-   "B404": 1,
-   "B602": 2
-  },
-  "scripts/ops/deploy/canary_deploy.py": {
-   "B404": 1,
-   "B603": 3
-  },
-  "scripts/ops/deploy/infrastructure_as_code_validator.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "scripts/ops/devops/_audit.py": {
-   "B310": 4
-  },
-  "scripts/ops/devops/check_render_status.py": {
-   "B113": 1
-  },
-  "scripts/ops/devops/cloud_watchman.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/devops/devops_security_scan.py": {
-   "B112": 1,
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "scripts/ops/devops/generate_modular_audits.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/devops/run_local_audit.py": {
-   "B310": 2
-  },
-  "scripts/ops/diagnostics/superai_console_detective.py": {
-   "B310": 1
-  },
-  "scripts/ops/git/auto_sync_main.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ops/git/cross_pr_collision_detector.py": {
-   "B110": 3,
-   "B404": 1,
-   "B603": 4,
-   "B607": 4
-  },
-  "scripts/ops/git/optional_poetry.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ops/git/push_as_agent.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "scripts/ops/gitlab_mirror_sync.py": {
-   "B101": 2,
-   "B110": 1,
-   "B310": 1
-  },
-  "scripts/ops/health/check_system_health.py": {
-   "B311": 1
-  },
-  "scripts/ops/health/superai_health_check.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 1
-  },
-  "scripts/ops/health_check.py": {
-   "B310": 1
-  },
-  "scripts/ops/ingest_project_docs.py": {
-   "B310": 1
-  },
-  "scripts/ops/lib/auto_discovery.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/lib/render_client.py": {
-   "B310": 1
-  },
-  "scripts/ops/maintenance/check_infisical_vault_synth.py": {
-   "B310": 2
-  },
-  "scripts/ops/maintenance/create_issue.py": {
-   "B310": 1
-  },
-  "scripts/ops/master_health_check.py": {
-   "B101": 7,
-   "B107": 3,
-   "B110": 4,
-   "B310": 4,
-   "B404": 1,
-   "B603": 3,
-   "B607": 1
-  },
-  "scripts/ops/operations/operational_truth_db.py": {
-   "B608": 1
-  },
-  "scripts/ops/pre_commit_hook.py": {
-   "B310": 2,
-   "B404": 1,
-   "B602": 1,
-   "B603": 11,
-   "B607": 11
-  },
-  "scripts/ops/pre_merge_guard.py": {
-   "B105": 1,
-   "B112": 1,
-   "B310": 5,
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ops/pre_push_hook.py": {
-   "B110": 2,
-   "B404": 1,
-   "B603": 6,
-   "B607": 5
-  },
-  "scripts/ops/quality/auto_dead_code_remover.py": {
-   "B404": 1,
-   "B603": 5,
-   "B607": 1
-  },
-  "scripts/ops/quality/auto_improve_coverage.py": {
-   "B314": 1,
-   "B404": 1,
-   "B405": 1,
-   "B603": 1
-  },
-  "scripts/ops/quality/self_audit_scan.py": {
-   "B324": 1
-  },
-  "scripts/ops/redis_quota_monitor.py": {
-   "B310": 2
-  },
-  "scripts/ops/refactor/superai_transform.py": {
-   "B404": 1,
-   "B602": 1
-  },
-  "scripts/ops/resource_collection/scrapers.py": {
-   "B310": 1
-  },
-  "scripts/ops/resource_scraping/awesome_go/scrape.py": {
-   "B310": 2
-  },
-  "scripts/ops/resource_scraping/awesome_python/scrape.py": {
-   "B310": 1
-  },
-  "scripts/ops/resource_scraping/awesome_selfhosted/scrape.py": {
-   "B310": 1
-  },
-  "scripts/ops/runtime/infisical_bootstrap.py": {
-   "B310": 1,
-   "B404": 1,
-   "B606": 1
-  },
-  "scripts/ops/safety_guard.py": {
-   "B103": 1,
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/scan_duplicate_plans.py": {
-   "B324": 1
-  },
-  "scripts/ops/security/audit_log_analyzer.py": {
-   "B105": 1,
-   "B311": 15,
-   "B608": 1
-  },
-  "scripts/ops/security/auto_repair_cloudflare_vault.py": {
-   "B310": 4
-  },
-  "scripts/ops/security/auto_secret_rotate.py": {
-   "B105": 1
-  },
-  "scripts/ops/security/auto_vulnerability_scanner.py": {
-   "B112": 2,
-   "B404": 1,
-   "B603": 2
-  },
-  "scripts/ops/security/check_dependencies.py": {
-   "B404": 1,
-   "B602": 1
-  },
-  "scripts/ops/security/delete_vault_duplicate_render_keys.py": {
-   "B310": 2
-  },
-  "scripts/ops/security/delete_vault_stale_keys.py": {
-   "B310": 2
-  },
-  "scripts/ops/security/fetch_ai_keys.py": {
-   "B310": 2
-  },
-  "scripts/ops/security/find_dead_code.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ops/security/generate_secrets.py": {
-   "B310": 2
-  },
-  "scripts/ops/security/idor_runtime_matrix.py": {
-   "B310": 2
-  },
-  "scripts/ops/security/repair_and_federate_cloudflare.py": {
-   "B310": 1
-  },
-  "scripts/ops/security/secrets_rotation_manager.py": {
-   "B105": 2
-  },
-  "scripts/ops/security/verify_token_rotation.py": {
-   "B105": 2,
-   "B310": 1
-  },
-  "scripts/ops/supremeai_toolkit/cli.py": {
-   "B110": 2
-  },
-  "scripts/ops/supremeai_toolkit/plan_guard.py": {
-   "B324": 1
-  },
-  "scripts/ops/supremeai_toolkit/reusability_audit.py": {
-   "B404": 1,
-   "B603": 1,
-   "B607": 1
-  },
-  "scripts/ops/supremeai_toolkit/standalone_check.py": {
-   "B404": 1,
-   "B603": 2,
-   "B607": 2
-  },
-  "scripts/ops/testing/alert_manager.py": {
-   "B107": 2
-  },
-  "scripts/ops/testing/api_contract_validator.py": {
-   "B311": 14
-  },
-  "scripts/ops/testing/mutation_testing.py": {
-   "B404": 1,
-   "B603": 1
-  },
-  "scripts/ops/testing/performance_benchmark.py": {
-   "B105": 1
-  },
-  "scripts/ops/update_cors_hosts.py": {
-   "B113": 3
-  },
-  "scripts/ops/verify_capabilities.py": {
-   "B101": 10
-  },
-  "scripts/ops/verify_infisical_env.py": {
-   "B310": 3
-  },
-  "scripts/tower/claim_quota_reference.py": {
-   "B101": 15
-  },
-  "scripts/tower/nightly_train_reference.py": {
-   "B101": 15
-  },
-  "scripts/tower/work_queue_query_reference.py": {
-   "B101": 9
-  },
-  "skills/installer.py": {
-   "B404": 1,
-   "B603": 1
+  "findings": {
+    "browser/action_cascade.py": {
+      "B112": 1
+    },
+    "browser/ghost_tower/auto_login.py": {
+      "B105": 1,
+      "B110": 2
+    },
+    "browser/ghost_tower/cookie_sync_scheduler.py": {
+      "B310": 1
+    },
+    "browser/ghost_tower/credential_vault.py": {
+      "B107": 1,
+      "B110": 1
+    },
+    "browser/ghost_tower/gemini_web_engine.py": {
+      "B110": 2
+    },
+    "browser/ghost_tower/launch_manual_login.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "browser/ghost_tower/login_helper.py": {
+      "B110": 1
+    },
+    "browser/ghost_tower/multi_ai_sso_runner.py": {
+      "B110": 6
+    },
+    "browser/ghost_tower/sync_cookies_to_infisical.py": {
+      "B310": 3
+    },
+    "browser/runtime/semantic_extractor.py": {
+      "B101": 1
+    },
+    "browser/security.py": {
+      "B104": 1
+    },
+    "browser/server.py": {
+      "B104": 1,
+      "B110": 2,
+      "B112": 2
+    },
+    "browser/session_manager.py": {
+      "B110": 1
+    },
+    "core/_archive/batch-1/backend/debug_ci_boot.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/_archive/batch-1/backend/scripts/audit_import_walk.py": {
+      "B108": 1
+    },
+    "core/accessibility/wcag_compliance.py": {
+      "B105": 1
+    },
+    "core/adapters/red_team_adapter.py": {
+      "B105": 1
+    },
+    "core/adaptive_engine/approval_workflow.py": {
+      "B105": 1,
+      "B608": 10
+    },
+    "core/adaptive_engine/capability_registry.py": {
+      "B608": 11
+    },
+    "core/adaptive_engine/deployment_tracker.py": {
+      "B608": 5
+    },
+    "core/adaptive_engine/experience_db.py": {
+      "B108": 2
+    },
+    "core/adaptive_engine/governance.py": {
+      "B608": 2
+    },
+    "core/adaptive_engine/health_model.py": {
+      "B608": 3
+    },
+    "core/adaptive_engine/learning_loop.py": {
+      "B608": 7
+    },
+    "core/adaptive_engine/resource_registry.py": {
+      "B608": 5
+    },
+    "core/adaptive_engine/source_governance.py": {
+      "B608": 15
+    },
+    "core/adaptive_engine/task_engine.py": {
+      "B608": 8
+    },
+    "core/admin/god.py": {
+      "B108": 2
+    },
+    "core/advanced_reasoning.py": {
+      "B112": 1
+    },
+    "core/agents/code_vulnerability_scanner_agent.py": {
+      "B105": 1
+    },
+    "core/agents/ide/trio_adapters.py": {
+      "B404": 1,
+      "B603": 2
+    },
+    "core/agents/live/computer_agent.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/agents/research_assistant.py": {
+      "B310": 1,
+      "B314": 1,
+      "B405": 1
+    },
+    "core/agents/skill_ingestor.py": {
+      "B310": 1
+    },
+    "core/agents/skill_librarian.py": {
+      "B310": 1
+    },
+    "core/alembic_migrations/versions/j9k0l1m2n3o4_add_missing_live_model_tables.py": {
+      "B608": 1
+    },
+    "core/api/middleware.py": {
+      "B311": 3
+    },
+    "core/api/routes/admin.py": {
+      "B608": 1
+    },
+    "core/api/routes/admin_dashboard/endpoints_command.py": {
+      "B112": 1
+    },
+    "core/api/routes/admin_v1.py": {
+      "B112": 1
+    },
+    "core/api/routes/auth.py": {
+      "B105": 1
+    },
+    "core/api/routes/browser/_crown_jewel.py": {
+      "B324": 1
+    },
+    "core/api/routes/browser/_render_proxy.py": {
+      "B310": 1
+    },
+    "core/api/routes/browser/_session_store.py": {
+      "B324": 1
+    },
+    "core/api/routes/chat_upload.py": {
+      "B314": 1,
+      "B405": 1
+    },
+    "core/api/routes/integrations.py": {
+      "B105": 1
+    },
+    "core/api/routes/webhooks_ai.py": {
+      "B105": 1
+    },
+    "core/brain/mcp_client.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/brain/parallel_cloud_router.py": {
+      "B311": 1
+    },
+    "core/byoc/container_orchestrator.py": {
+      "B404": 1
+    },
+    "core/circles/governance_core.py": {
+      "B112": 1
+    },
+    "core/clients/render_api.py": {
+      "B310": 1
+    },
+    "core/competitive_kit.py": {
+      "B324": 2
+    },
+    "core/config_classification.py": {
+      "B105": 1
+    },
+    "core/config_fields.py": {
+      "B104": 1,
+      "B108": 1
+    },
+    "core/config_secrets.py": {
+      "B105": 4
+    },
+    "core/config_validator.py": {
+      "B104": 1
+    },
+    "core/connection_registry.py": {
+      "B608": 17
+    },
+    "core/container_auditor.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 1
+    },
+    "core/database/db_repository.py": {
+      "B608": 1
+    },
+    "core/db_schema_gate.py": {
+      "B310": 1
+    },
+    "core/docs/examples/retry_integration_example.py": {
+      "B108": 1,
+      "B311": 6
+    },
+    "core/ecosystem/standalone_app.py": {
+      "B104": 1,
+      "B608": 3
+    },
+    "core/ecosystem/users.py": {
+      "B608": 15
+    },
+    "core/evolution/auto_tuner.py": {
+      "B311": 1
+    },
+    "core/evolution/canary_manager.py": {
+      "B311": 1,
+      "B324": 1
+    },
+    "core/evolution/learning_pipeline.py": {
+      "B324": 1
+    },
+    "core/evolution/memory_consolidator.py": {
+      "B324": 1,
+      "B403": 1
+    },
+    "core/evolution/strategy_optimizer.py": {
+      "B311": 2
+    },
+    "core/evolution_module.py": {
+      "B311": 10
+    },
+    "core/external_agents/channels/mcp_channel.py": {
+      "B404": 1,
+      "B603": 3,
+      "B607": 2
+    },
+    "core/external_agents/control/job_api.py": {
+      "B101": 1,
+      "B110": 2
+    },
+    "core/external_agents/verification/artifact_bridge.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/external_agents/verification/git_verifier.py": {
+      "B404": 1,
+      "B603": 3,
+      "B607": 2
+    },
+    "core/external_agents/verification/pr_manager.py": {
+      "B110": 1,
+      "B310": 1,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/github/scripts/check-render-quota.py": {
+      "B310": 1
+    },
+    "core/github/scripts/ci_error_report.py": {
+      "B310": 1
+    },
+    "core/github/scripts/ci_smart_summary.py": {
+      "B310": 1
+    },
+    "core/github/scripts/ci_summary_v2.py": {
+      "B105": 1,
+      "B310": 3
+    },
+    "core/github/scripts/clean_action_logs.py": {
+      "B310": 3
+    },
+    "core/github/scripts/constitution/arch_preservation_gate.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/github/scripts/constitution/auto_close_on_failure.py": {
+      "B310": 1
+    },
+    "core/github/scripts/constitution/branch_creation_guard.py": {
+      "B310": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "core/github/scripts/constitution/engine.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/github/scripts/constitution/freshness_gate.py": {
+      "B110": 1,
+      "B310": 1,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/github/scripts/constitution/gates.py": {
+      "B310": 2,
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "core/github/scripts/constitution/heartbeat_check.py": {
+      "B404": 1
+    },
+    "core/github/scripts/constitution/lessons_check.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "core/github/scripts/constitution/report_gate_outcome.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/github/scripts/constitution/rules/base.py": {
+      "B110": 3,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/github/scripts/constitution/rules/rel001_no_silent_failure.py": {
+      "B110": 1
+    },
+    "core/github/scripts/constitution/rules/sec002_no_secret_hardcoding.py": {
+      "B110": 1
+    },
+    "core/github/scripts/constitution/template_gate.py": {
+      "B112": 1,
+      "B310": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "core/github/scripts/dependency_upgrader.py": {
+      "B404": 1,
+      "B603": 4,
+      "B607": 4
+    },
+    "core/github/scripts/detect-previous-failures.py": {
+      "B310": 1
+    },
+    "core/github/scripts/enforce_24h_gap.py": {
+      "B310": 1
+    },
+    "core/github/scripts/platform_agent_check.py": {
+      "B310": 1
+    },
+    "core/github/scripts/platform_deep_audit.py": {
+      "B310": 1,
+      "B324": 1
+    },
+    "core/github/scripts/pr_helper/ai_fix_generator.py": {
+      "B110": 1,
+      "B310": 1
+    },
+    "core/github/scripts/pr_helper/auto_fix_engine.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/github/scripts/pr_helper/ci_failure_collector.py": {
+      "B310": 1
+    },
+    "core/github/scripts/pr_helper/delta_analysis.py": {
+      "B314": 1,
+      "B405": 1
+    },
+    "core/github/scripts/pr_helper/hunk_isolation.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/github/scripts/pr_helper/intent_extractor.py": {
+      "B105": 1
+    },
+    "core/github/scripts/pr_helper/learning_guards.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 1
+    },
+    "core/github/scripts/service_preflight_check.py": {
+      "B310": 1
+    },
+    "core/github/scripts/supreme_ci.py": {
+      "B310": 4,
+      "B404": 1,
+      "B603": 3,
+      "B607": 2
+    },
+    "core/github/scripts/trigger_render_deploy.py": {
+      "B310": 3
+    },
+    "core/github/scripts/verify-render-deploy.py": {
+      "B310": 1
+    },
+    "core/human_behavior.py": {
+      "B311": 14
+    },
+    "core/integrations/e2b_adapter.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/integrations/telegram_bot.py": {
+      "B107": 1
+    },
+    "core/intelligence/precognitive_risk.py": {
+      "B311": 1
+    },
+    "core/intelligence/synaptic_memory.py": {
+      "B101": 1
+    },
+    "core/kaggle_orchestrator.py": {
+      "B107": 1,
+      "B324": 1
+    },
+    "core/knowledge_base.py": {
+      "B108": 2
+    },
+    "core/learning/evolution_bridge.py": {
+      "B105": 1
+    },
+    "core/learning/hypothesis_engine.py": {
+      "B105": 1
+    },
+    "core/learning/pattern_recognizer.py": {
+      "B324": 3
+    },
+    "core/llm/llm_gateway/completion.py": {
+      "B311": 1
+    },
+    "core/llm/llm_gateway/resilience.py": {
+      "B311": 1
+    },
+    "core/llm/provider_router.py": {
+      "B311": 1
+    },
+    "core/main.py": {
+      "B104": 1
+    },
+    "core/maintenance_pipeline.py": {
+      "B311": 1
+    },
+    "core/memory/mcp_server.py": {
+      "B104": 1
+    },
+    "core/messaging/gcp_pubsub_queue.py": {
+      "B101": 1
+    },
+    "core/microvm_sandbox.py": {
+      "B108": 2,
+      "B404": 1,
+      "B603": 3,
+      "B607": 3
+    },
+    "core/middleware/chaos_injector.py": {
+      "B311": 3
+    },
+    "core/models/execution_log.py": {
+      "B105": 1
+    },
+    "core/models/merge_learning_report.py": {
+      "B608": 1
+    },
+    "core/monitoring/logging_config.py": {
+      "B108": 1
+    },
+    "core/multi_platform_orchestrator.py": {
+      "B404": 1,
+      "B602": 1
+    },
+    "core/natural_file_presenter.py": {
+      "B311": 6
+    },
+    "core/observability/correlation_bridge.py": {
+      "B110": 1
+    },
+    "core/orchestration/periodic_task_scheduler.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/prompt_enhancement_engine.py": {
+      "B311": 1
+    },
+    "core/provider_rate_limiter.py": {
+      "B311": 1
+    },
+    "core/pyerrorfix/cli.py": {
+      "B110": 1
+    },
+    "core/pyerrorfix/core/scanner.py": {
+      "B112": 3
+    },
+    "core/repo_manager.py": {
+      "B404": 1,
+      "B603": 5,
+      "B607": 4
+    },
+    "core/resilience/chaos_engine.py": {
+      "B311": 2
+    },
+    "core/resilience/safety_rollback_manager.py": {
+      "B324": 1,
+      "B403": 1
+    },
+    "core/retry_handler.py": {
+      "B311": 4
+    },
+    "core/runner/agent_runner.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 1
+    },
+    "core/sandbox/docker_sandbox.py": {
+      "B108": 2,
+      "B404": 1,
+      "B603": 2
+    },
+    "core/sandbox/file_isolation_gate.py": {
+      "B108": 1
+    },
+    "core/scripts/superai_free_tier_monitor.py": {
+      "B108": 8
+    },
+    "core/secret_policy.py": {
+      "B105": 2
+    },
+    "core/security/audit/security_auditor.py": {
+      "B105": 1,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/security/injections/sql_prevention.py": {
+      "B608": 4
+    },
+    "core/security/protection/ssrf_protection.py": {
+      "B104": 1
+    },
+    "core/security/resource_guard.py": {
+      "B108": 1
+    },
+    "core/security/secret_vault.py": {
+      "B105": 3
+    },
+    "core/self_benchmark.py": {
+      "B311": 1
+    },
+    "core/self_evolution/agent_breeder.py": {
+      "B101": 1,
+      "B311": 7
+    },
+    "core/self_evolution/continual_learning/ewc.py": {
+      "B301": 1,
+      "B403": 1
+    },
+    "core/self_evolution/digital_twin/simulator.py": {
+      "B311": 4
+    },
+    "core/self_evolution/fitness_engine.py": {
+      "B105": 1
+    },
+    "core/services/auto_healer.py": {
+      "B311": 1
+    },
+    "core/services/browser/main.py": {
+      "B104": 1
+    },
+    "core/services/dynamic_ai/local_fallback.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/services/hitl/resume_token.py": {
+      "B105": 1
+    },
+    "core/services/memory_service.py": {
+      "B112": 1,
+      "B324": 1,
+      "B608": 1
+    },
+    "core/services/render_preflight_service.py": {
+      "B112": 1
+    },
+    "core/services/scraper/security.py": {
+      "B104": 1
+    },
+    "core/services/storage/gcp_firestore.py": {
+      "B101": 1
+    },
+    "core/services/tool_forge.py": {
+      "B102": 1
+    },
+    "core/services/video_to_code_pipeline.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/services/worker/main.py": {
+      "B104": 1
+    },
+    "core/skill_manager.py": {
+      "B102": 1
+    },
+    "core/skills/installer.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/social_growth.py": {
+      "B112": 1
+    },
+    "core/task_policy.py": {
+      "B105": 1
+    },
+    "core/testing/qa_suite.py": {
+      "B101": 2,
+      "B105": 1
+    },
+    "core/tier8/agent_evolution_engine.py": {
+      "B311": 14
+    },
+    "core/tools/agent_heartbeat/heartbeat.py": {
+      "B310": 1
+    },
+    "core/tools/autonomy/tools/autonomy_cycle.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/tools/autonomy/tools/deploy_guard.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/tools/browser/browser_stealth.py": {
+      "B311": 13
+    },
+    "core/tools/browser/playwright_browser_agent.py": {
+      "B311": 15
+    },
+    "core/tools/browser/stealth_http_client.py": {
+      "B311": 1
+    },
+    "core/tools/code/auto_test_generator.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/tools/code/code_smell_detector.py": {
+      "B103": 1,
+      "B404": 1,
+      "B603": 3,
+      "B607": 1
+    },
+    "core/tools/code/cot_reasoner.py": {
+      "B311": 2
+    },
+    "core/tools/code/dependency_manager_agent.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/tools/code/pre_commit_ai.py": {
+      "B404": 1,
+      "B603": 3
+    },
+    "core/tools/code/safe_executor.py": {
+      "B102": 1
+    },
+    "core/tools/devops/docker_sandbox.py": {
+      "B404": 1,
+      "B603": 5,
+      "B607": 2
+    },
+    "core/tools/devops/on_premise_deployer.py": {
+      "B105": 3
+    },
+    "core/tools/discovery_fabric/supremeai_discovery/source_scout.py": {
+      "B310": 1
+    },
+    "core/tools/gap_miner/tools/gap_miner.py": {
+      "B324": 1,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/tools/gap_miner/tools/incident_replay.py": {
+      "B324": 1
+    },
+    "core/tools/gap_miner/tools/prompt_distiller.py": {
+      "B324": 1
+    },
+    "core/tools/knowledge/codebase_exporter.py": {
+      "B404": 1,
+      "B603": 2
+    },
+    "core/tools/knowledge/git_knowledge_extractor.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "core/tools/learning/style_learner.py": {
+      "B324": 1
+    },
+    "core/tools/pipeline_recipe_compiler.py": {
+      "B106": 8
+    },
+    "core/tools/social/marketplace_agent.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "core/tools/social/telegram_bot/handler.py": {
+      "B105": 1
+    },
+    "core/tools/social/telegram_bot/router.py": {
+      "B105": 1
+    },
+    "core/tools/solution_synthesizer/tools/solution_synthesizer.py": {
+      "B310": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "core/tools/sso_integrator.py": {
+      "B105": 3
+    },
+    "core/web_ai_session_bridge.py": {
+      "B105": 1,
+      "B311": 2
+    },
+    "core/worker_service.py": {
+      "B104": 1,
+      "B105": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "evals/golden/run_eval.py": {
+      "B105": 1,
+      "B110": 1,
+      "B310": 1
+    },
+    "examples/gateway_client.py": {
+      "B110": 1,
+      "B310": 1
+    },
+    "examples/langchain-mcp-bot/bot.py": {
+      "B101": 1
+    },
+    "examples/mcp-client-py/client.py": {
+      "B310": 2
+    },
+    "examples/sdk-client-py/client.py": {
+      "B101": 1
+    },
+    "examples/webhook-verification/verify.py": {
+      "B107": 1
+    },
+    "gateway/dynamic_llm_router.py": {
+      "B101": 10
+    },
+    "gateway/gateway_shield_reference.py": {
+      "B101": 21
+    },
+    "gateway/memory.py": {
+      "B310": 3,
+      "B324": 1
+    },
+    "gateway/middleware/chaos_injector.py": {
+      "B311": 3
+    },
+    "gateway/middleware/correlation_id.py": {
+      "B110": 1
+    },
+    "gateway/routes/admin.py": {
+      "B608": 1
+    },
+    "gateway/routes/admin_dashboard/endpoints_command.py": {
+      "B112": 1
+    },
+    "gateway/routes/admin_v1.py": {
+      "B112": 1
+    },
+    "gateway/routes/auth.py": {
+      "B105": 1
+    },
+    "gateway/routes/browser/_crown_jewel.py": {
+      "B324": 1
+    },
+    "gateway/routes/browser/_render_proxy.py": {
+      "B310": 1
+    },
+    "gateway/routes/browser/_session_store.py": {
+      "B324": 1
+    },
+    "gateway/routes/chat_upload.py": {
+      "B314": 1,
+      "B405": 1
+    },
+    "gateway/routes/integrations.py": {
+      "B105": 1
+    },
+    "gateway/routes/webhooks_ai.py": {
+      "B105": 1
+    },
+    "gateway/sanitization.py": {
+      "B105": 1
+    },
+    "gateway/service/admin_auth.py": {
+      "B310": 2
+    },
+    "gateway/service/app.py": {
+      "B105": 2,
+      "B110": 2
+    },
+    "gateway/service/context_compiler.py": {
+      "B110": 1
+    },
+    "gateway/service/memory_store.py": {
+      "B110": 2
+    },
+    "gateway/service/passkey_auth.py": {
+      "B105": 1
+    },
+    "gateway/service/providers/web_session.py": {
+      "B311": 1
+    },
+    "gateway/service/redis_rate_limit.py": {
+      "B110": 1
+    },
+    "gateway/service/storage.py": {
+      "B110": 3
+    },
+    "gateway/services/auto_healer.py": {
+      "B311": 1
+    },
+    "gateway/services/browser/main.py": {
+      "B104": 1
+    },
+    "gateway/services/dynamic_ai/local_fallback.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "gateway/services/hitl/resume_token.py": {
+      "B105": 1
+    },
+    "gateway/services/memory_service.py": {
+      "B112": 1,
+      "B324": 1,
+      "B608": 1
+    },
+    "gateway/services/render_preflight_service.py": {
+      "B112": 1
+    },
+    "gateway/services/scraper/security.py": {
+      "B104": 1
+    },
+    "gateway/services/storage/gcp_firestore.py": {
+      "B101": 1
+    },
+    "gateway/services/tool_forge.py": {
+      "B102": 1
+    },
+    "gateway/services/video_to_code_pipeline.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "gateway/services/worker/main.py": {
+      "B104": 1
+    },
+    "infrastructure/mcp-control-plane/scripts/runtime/infisical_bootstrap.py": {
+      "B310": 1,
+      "B606": 1
+    },
+    "infrastructure/mcp-control-plane/sidecars/memory/graph_store.py": {
+      "B110": 1
+    },
+    "infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py": {
+      "B310": 2
+    },
+    "scripts/agents/acquire_role_slot.py": {
+      "B110": 1,
+      "B310": 1,
+      "B404": 1,
+      "B603": 8,
+      "B607": 8
+    },
+    "scripts/agents/agent_dashboard.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/agents/agent_identity.py": {
+      "B108": 2,
+      "B110": 4,
+      "B310": 1,
+      "B404": 2,
+      "B603": 10,
+      "B607": 9
+    },
+    "scripts/agents/agent_solution_memory.py": {
+      "B110": 2
+    },
+    "scripts/agents/automation_watchdog.py": {
+      "B310": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/agents/autonomy_persistence.py": {
+      "B101": 10
+    },
+    "scripts/agents/claim_ttl_expirer.py": {
+      "B101": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/agents/context_graph_resolver.py": {
+      "B101": 11
+    },
+    "scripts/agents/continuous_agent_loop.py": {
+      "B110": 1,
+      "B404": 1,
+      "B603": 3
+    },
+    "scripts/agents/create_blocker_issue.py": {
+      "B404": 1,
+      "B603": 5,
+      "B607": 4
+    },
+    "scripts/agents/create_discovery_issue.py": {
+      "B404": 2,
+      "B603": 2,
+      "B607": 1
+    },
+    "scripts/agents/create_issue.py": {
+      "B404": 1,
+      "B603": 10,
+      "B607": 8
+    },
+    "scripts/agents/credential_manager.py": {
+      "B105": 1,
+      "B107": 1,
+      "B108": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/agents/dispatch_browser_task.py": {
+      "B110": 5,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/agents/dynamic_credential_broker.py": {
+      "B110": 2,
+      "B404": 1,
+      "B603": 2,
+      "B607": 1
+    },
+    "scripts/agents/dynamic_naming.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/agents/dynamic_router.py": {
+      "B101": 22
+    },
+    "scripts/agents/ecosystem_scout_reference.py": {
+      "B101": 8,
+      "B106": 1
+    },
+    "scripts/agents/execution_executor.py": {
+      "B404": 1,
+      "B602": 1
+    },
+    "scripts/agents/gh_label_ensure.py": {
+      "B404": 1,
+      "B603": 2
+    },
+    "scripts/agents/group_taxonomy.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/agents/heartbeat_ping.py": {
+      "B310": 2
+    },
+    "scripts/agents/issue_fingerprint.py": {
+      "B324": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/agents/issue_revalidator.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/agents/loop_common.py": {
+      "B110": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/agents/mcp_presence_tracker.py": {
+      "B310": 1
+    },
+    "scripts/agents/mcp_tower_client.py": {
+      "B110": 4
+    },
+    "scripts/agents/pr_lifecycle_guard.py": {
+      "B310": 1
+    },
+    "scripts/agents/priority_queue_ledger.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 1
+    },
+    "scripts/agents/role_registry.py": {
+      "B101": 5
+    },
+    "scripts/agents/role_trigger_matrix.py": {
+      "B101": 35
+    },
+    "scripts/agents/rules_breaker.py": {
+      "B108": 1,
+      "B112": 15,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/agents/scope_gate.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/agents/scout_extractor.py": {
+      "B101": 14,
+      "B102": 1
+    },
+    "scripts/agents/self_healing_reporter.py": {
+      "B101": 10,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/agents/smart_context_selector.py": {
+      "B105": 2
+    },
+    "scripts/agents/smart_dispatcher.py": {
+      "B110": 6,
+      "B404": 1,
+      "B603": 8,
+      "B607": 8
+    },
+    "scripts/agents/web_agent_worker.py": {
+      "B101": 1,
+      "B110": 4,
+      "B112": 1,
+      "B310": 1,
+      "B311": 14,
+      "B404": 1,
+      "B602": 2
+    },
+    "scripts/agents/web_intent_engine.py": {
+      "B110": 4,
+      "B311": 20
+    },
+    "scripts/agents/web_session_client.py": {
+      "B311": 1
+    },
+    "scripts/bridge/bridge_intake.py": {
+      "B110": 1,
+      "B310": 2,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/admin_sovereignty_guard.py": {
+      "B101": 24
+    },
+    "scripts/ci/ai_pr_evaluator.py": {
+      "B110": 1,
+      "B310": 3,
+      "B324": 1,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/audit_suite.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/auto_bridge_pr_opener.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/auto_escalate_priority.py": {
+      "B110": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/bandit_sast_guard.py": {
+      "B101": 24,
+      "B404": 1,
+      "B603": 3,
+      "B607": 1
+    },
+    "scripts/ci/boundary_sanitization_guard.py": {
+      "B404": 1,
+      "B603": 3,
+      "B607": 3
+    },
+    "scripts/ci/bridge_opener_hardening_reference.py": {
+      "B101": 25
+    },
+    "scripts/ci/build_manual_task_report.py": {
+      "B105": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/build_release_evidence.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/build_status_proof.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 1
+    },
+    "scripts/ci/check_commit_sizing.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "scripts/ci/check_free_tier_limits.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/check_import_budget.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/check_mcp_policy_parity.py": {
+      "B404": 1,
+      "B603": 3
+    },
+    "scripts/ci/check_self_heal_token_usage.py": {
+      "B110": 1
+    },
+    "scripts/ci/check_single_frontend.py": {
+      "B112": 2
+    },
+    "scripts/ci/cleanup_group_branches.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/cleanup_stale_branches.py": {
+      "B404": 1,
+      "B603": 5,
+      "B607": 4
+    },
+    "scripts/ci/constitution_pointer_guard.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/contract_parity_guard.py": {
+      "B101": 4
+    },
+    "scripts/ci/controller_evidence_verify.py": {
+      "B404": 1,
+      "B602": 1,
+      "B604": 1
+    },
+    "scripts/ci/create_group_issue.py": {
+      "B110": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/cross_platform_invariant_guard.py": {
+      "B101": 40
+    },
+    "scripts/ci/deploy_doctor.py": {
+      "B310": 2,
+      "B404": 1,
+      "B603": 1,
+      "B605": 1,
+      "B607": 1
+    },
+    "scripts/ci/deploy_preflight_guard.py": {
+      "B101": 4,
+      "B105": 1,
+      "B404": 1,
+      "B603": 2
+    },
+    "scripts/ci/detect_changed_tests.py": {
+      "B404": 1,
+      "B603": 4,
+      "B607": 2
+    },
+    "scripts/ci/detect_deploy_targets.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/docs_garbage_tree_sweep.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/federation_anchors.py": {
+      "B101": 29,
+      "B110": 1,
+      "B310": 8,
+      "B404": 1,
+      "B603": 4,
+      "B607": 1
+    },
+    "scripts/ci/federation_ci_watchdog.py": {
+      "B101": 59,
+      "B310": 1,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/federation_satellite_sync.py": {
+      "B101": 20,
+      "B110": 2,
+      "B310": 1,
+      "B404": 1,
+      "B603": 30,
+      "B607": 30
+    },
+    "scripts/ci/frontend_performance_guard.py": {
+      "B101": 4
+    },
+    "scripts/ci/generate_changelog.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/generate_module_capability_matrix.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/generate_route_client_inventory.py": {
+      "B112": 1
+    },
+    "scripts/ci/generate_types.py": {
+      "B101": 16
+    },
+    "scripts/ci/group_closeout_janitor.py": {
+      "B110": 2,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/hourly_satellite_batcher.py": {
+      "B101": 53
+    },
+    "scripts/ci/infisical_loader.py": {
+      "B310": 1
+    },
+    "scripts/ci/ingest_pr_knowledge.py": {
+      "B101": 2,
+      "B310": 3,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/issue_queue_manager.py": {
+      "B110": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/issue_router.py": {
+      "B404": 1,
+      "B603": 3,
+      "B607": 2
+    },
+    "scripts/ci/issue_template_guard.py": {
+      "B101": 13
+    },
+    "scripts/ci/js_dep_cve_guard.py": {
+      "B101": 25,
+      "B310": 1,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/kaggle_learning_bridge.py": {
+      "B101": 8,
+      "B310": 4
+    },
+    "scripts/ci/ledger_check.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/license_ssot_guard.py": {
+      "B101": 25
+    },
+    "scripts/ci/mark_branch_state.py": {
+      "B110": 2,
+      "B310": 1,
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "scripts/ci/master_secret_shield.py": {
+      "B101": 3
+    },
+    "scripts/ci/mcp_conformance_selftest.py": {
+      "B310": 1
+    },
+    "scripts/ci/merge_gate.py": {
+      "B110": 2,
+      "B404": 1,
+      "B603": 4,
+      "B607": 1
+    },
+    "scripts/ci/merge_train_rollup.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 1
+    },
+    "scripts/ci/mirror_issue_to_open.py": {
+      "B310": 1
+    },
+    "scripts/ci/mirror_parent_linker.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/mission_passk.py": {
+      "B314": 1,
+      "B404": 1,
+      "B405": 1,
+      "B603": 1
+    },
+    "scripts/ci/mutation_lease.py": {
+      "B108": 1,
+      "B404": 1,
+      "B603": 6,
+      "B607": 5
+    },
+    "scripts/ci/openapi_breaking_guard.py": {
+      "B101": 22,
+      "B404": 2,
+      "B603": 3,
+      "B607": 2
+    },
+    "scripts/ci/pipeline_failure_register.py": {
+      "B110": 3,
+      "B310": 1,
+      "B324": 1,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/pr_improvement_regression_guard.py": {
+      "B101": 17,
+      "B105": 1
+    },
+    "scripts/ci/pr_patch_recorder.py": {
+      "B101": 7,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/probe_live_status.py": {
+      "B105": 1,
+      "B310": 1
+    },
+    "scripts/ci/probe_live_status_453.py": {
+      "B105": 1,
+      "B310": 1
+    },
+    "scripts/ci/production_certification.py": {
+      "B110": 2,
+      "B310": 4,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/production_mismatch_gate.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/project_health_check.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/purge_stale_workflow_runs.py": {
+      "B110": 1,
+      "B310": 2,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ci/record_merge_learning.py": {
+      "B310": 2
+    },
+    "scripts/ci/rejected_wo_rescue.py": {
+      "B105": 1
+    },
+    "scripts/ci/render_build_budget_guard.py": {
+      "B112": 1
+    },
+    "scripts/ci/render_build_quota_guard.py": {
+      "B101": 8,
+      "B310": 3
+    },
+    "scripts/ci/render_deploy_preflight.py": {
+      "B310": 1
+    },
+    "scripts/ci/run_all_guards.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/satellite_board_guard.py": {
+      "B310": 1
+    },
+    "scripts/ci/scan_secret_logs.py": {
+      "B105": 1
+    },
+    "scripts/ci/schedule_watchdog.py": {
+      "B112": 1,
+      "B310": 1
+    },
+    "scripts/ci/secondary_service_probes.py": {
+      "B310": 1
+    },
+    "scripts/ci/security_gate.py": {
+      "B101": 11
+    },
+    "scripts/ci/self_healing_reporter.py": {
+      "B101": 10
+    },
+    "scripts/ci/smart_priority_merger.py": {
+      "B108": 1,
+      "B310": 2,
+      "B404": 1,
+      "B603": 6,
+      "B607": 4
+    },
+    "scripts/ci/sprawl_guard.py": {
+      "B110": 2,
+      "B404": 1,
+      "B603": 4,
+      "B607": 4
+    },
+    "scripts/ci/staggered_rolling_train.py": {
+      "B101": 20
+    },
+    "scripts/ci/stale_claim_releaser.py": {
+      "B101": 4
+    },
+    "scripts/ci/sync_graph_to_memory.py": {
+      "B101": 6,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/task_dashboard.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/tenant_negative_battery.py": {
+      "B310": 1
+    },
+    "scripts/ci/validate_links.py": {
+      "B310": 1
+    },
+    "scripts/ci/vault_hygiene_check.py": {
+      "B105": 1,
+      "B310": 4
+    },
+    "scripts/ci/vendored_tree_guard.py": {
+      "B101": 6
+    },
+    "scripts/ci/vercel_deploy_preflight.py": {
+      "B310": 1
+    },
+    "scripts/ci/verify_canonical_startup.py": {
+      "B310": 2,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/knowledge/ingest_project_docs.py": {
+      "B310": 1
+    },
+    "scripts/ops/actions_quota_check.py": {
+      "B310": 1
+    },
+    "scripts/ops/advanced_analysis/api_contract_diff.py": {
+      "B112": 2
+    },
+    "scripts/ops/advanced_analysis/bengali_i18n_completeness_checker.py": {
+      "B112": 1
+    },
+    "scripts/ops/advanced_analysis/config_single_source_enforcer.py": {
+      "B104": 1,
+      "B108": 1
+    },
+    "scripts/ops/advanced_analysis/dependency_freshness_radar.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ops/advanced_analysis/duplicate_detector.py": {
+      "B112": 3
+    },
+    "scripts/ops/advanced_analysis/env_var_reconciler.py": {
+      "B112": 1
+    },
+    "scripts/ops/advanced_analysis/secret_rotation_reminder.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/ai/change_impact_detector.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ops/ai/evidence_bundle.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/ai/feature_store_sync.py": {
+      "B324": 1
+    },
+    "scripts/ops/ai/model_drift_detector.py": {
+      "B301": 1,
+      "B403": 1
+    },
+    "scripts/ops/ai/repository_metadata_index.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/ai/sandboxed_repair.py": {
+      "B404": 1,
+      "B603": 3,
+      "B607": 3
+    },
+    "scripts/ops/audit/system_deep_scan.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/audit/system_defect_scan.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/audit_env_usage.py": {
+      "B112": 1
+    },
+    "scripts/ops/audit_isolated_modules_and_capabilities.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ops/audit_observability.py": {
+      "B112": 1
+    },
+    "scripts/ops/auto_doctor.py": {
+      "B101": 12
+    },
+    "scripts/ops/backup/auto_cross_cloud_replicate.py": {
+      "B105": 3,
+      "B310": 1,
+      "B324": 1
+    },
+    "scripts/ops/backup/auto_firestore_backup.py": {
+      "B310": 1
+    },
+    "scripts/ops/backup/backup_telegram.py": {
+      "B404": 1,
+      "B603": 9,
+      "B607": 5
+    },
+    "scripts/ops/backup/create_desktop_backup.py": {
+      "B404": 1,
+      "B603": 9,
+      "B607": 5
+    },
+    "scripts/ops/backup/superai_backup_manager.py": {
+      "B202": 2,
+      "B324": 1,
+      "B404": 1,
+      "B603": 6,
+      "B607": 6
+    },
+    "scripts/ops/benchmark/superai_load_tester.py": {
+      "B310": 2
+    },
+    "scripts/ops/billing/fraud_detector.py": {
+      "B112": 1
+    },
+    "scripts/ops/billing/usage_reporter.py": {
+      "B105": 1
+    },
+    "scripts/ops/checkpoint_update.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "scripts/ops/codegraph_integration.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "scripts/ops/db/auto_migrate.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/db/ingest_knowledge.py": {
+      "B311": 1
+    },
+    "scripts/ops/deploy/add_secrets_to_infisical.py": {
+      "B310": 3
+    },
+    "scripts/ops/deploy/blue_green_deploy.py": {
+      "B404": 1,
+      "B602": 2
+    },
+    "scripts/ops/deploy/canary_deploy.py": {
+      "B404": 1,
+      "B603": 3
+    },
+    "scripts/ops/deploy/infrastructure_as_code_validator.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "scripts/ops/devops/_audit.py": {
+      "B310": 4
+    },
+    "scripts/ops/devops/check_render_status.py": {
+      "B113": 1
+    },
+    "scripts/ops/devops/cloud_watchman.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/devops/devops_security_scan.py": {
+      "B112": 1,
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "scripts/ops/devops/generate_modular_audits.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/devops/run_local_audit.py": {
+      "B310": 2
+    },
+    "scripts/ops/diagnostics/superai_console_detective.py": {
+      "B310": 1
+    },
+    "scripts/ops/git/auto_sync_main.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ops/git/cross_pr_collision_detector.py": {
+      "B110": 3,
+      "B404": 1,
+      "B603": 4,
+      "B607": 4
+    },
+    "scripts/ops/git/optional_poetry.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ops/git/push_as_agent.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "scripts/ops/gitlab_mirror_sync.py": {
+      "B101": 2,
+      "B110": 1,
+      "B310": 1
+    },
+    "scripts/ops/health/check_system_health.py": {
+      "B311": 1
+    },
+    "scripts/ops/health/superai_health_check.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 1
+    },
+    "scripts/ops/health_check.py": {
+      "B310": 1
+    },
+    "scripts/ops/ingest_project_docs.py": {
+      "B310": 1
+    },
+    "scripts/ops/lib/auto_discovery.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/lib/render_client.py": {
+      "B310": 1
+    },
+    "scripts/ops/maintenance/check_infisical_vault_synth.py": {
+      "B310": 2
+    },
+    "scripts/ops/maintenance/create_issue.py": {
+      "B310": 1
+    },
+    "scripts/ops/master_health_check.py": {
+      "B101": 7,
+      "B107": 3,
+      "B110": 4,
+      "B310": 4,
+      "B404": 1,
+      "B603": 3,
+      "B607": 1
+    },
+    "scripts/ops/operations/operational_truth_db.py": {
+      "B608": 1
+    },
+    "scripts/ops/pre_commit_hook.py": {
+      "B310": 2,
+      "B404": 1,
+      "B602": 1,
+      "B603": 11,
+      "B607": 11
+    },
+    "scripts/ops/pre_merge_guard.py": {
+      "B105": 1,
+      "B112": 1,
+      "B310": 5,
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ops/pre_push_hook.py": {
+      "B110": 2,
+      "B404": 1,
+      "B603": 6,
+      "B607": 5
+    },
+    "scripts/ops/quality/auto_dead_code_remover.py": {
+      "B404": 1,
+      "B603": 5,
+      "B607": 1
+    },
+    "scripts/ops/quality/auto_improve_coverage.py": {
+      "B314": 1,
+      "B404": 1,
+      "B405": 1,
+      "B603": 1
+    },
+    "scripts/ops/quality/self_audit_scan.py": {
+      "B324": 1
+    },
+    "scripts/ops/redis_quota_monitor.py": {
+      "B310": 2
+    },
+    "scripts/ops/refactor/superai_transform.py": {
+      "B404": 1,
+      "B602": 1
+    },
+    "scripts/ops/resource_collection/scrapers.py": {
+      "B310": 1
+    },
+    "scripts/ops/resource_scraping/awesome_go/scrape.py": {
+      "B310": 2
+    },
+    "scripts/ops/resource_scraping/awesome_python/scrape.py": {
+      "B310": 1
+    },
+    "scripts/ops/resource_scraping/awesome_selfhosted/scrape.py": {
+      "B310": 1
+    },
+    "scripts/ops/runtime/infisical_bootstrap.py": {
+      "B310": 1,
+      "B404": 1,
+      "B606": 1
+    },
+    "scripts/ops/safety_guard.py": {
+      "B103": 1,
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/scan_duplicate_plans.py": {
+      "B324": 1
+    },
+    "scripts/ops/security/audit_log_analyzer.py": {
+      "B105": 1,
+      "B311": 15,
+      "B608": 1
+    },
+    "scripts/ops/security/auto_repair_cloudflare_vault.py": {
+      "B310": 4
+    },
+    "scripts/ops/security/auto_secret_rotate.py": {
+      "B105": 1
+    },
+    "scripts/ops/security/auto_vulnerability_scanner.py": {
+      "B112": 2,
+      "B404": 1,
+      "B603": 2
+    },
+    "scripts/ops/security/check_dependencies.py": {
+      "B404": 1,
+      "B602": 1
+    },
+    "scripts/ops/security/delete_vault_stale_keys.py": {
+      "B310": 2
+    },
+    "scripts/ops/security/fetch_ai_keys.py": {
+      "B310": 2
+    },
+    "scripts/ops/security/find_dead_code.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ops/security/generate_secrets.py": {
+      "B310": 2
+    },
+    "scripts/ops/security/idor_runtime_matrix.py": {
+      "B310": 2
+    },
+    "scripts/ops/security/repair_and_federate_cloudflare.py": {
+      "B310": 1
+    },
+    "scripts/ops/security/secrets_rotation_manager.py": {
+      "B105": 2
+    },
+    "scripts/ops/security/verify_token_rotation.py": {
+      "B105": 2,
+      "B310": 1
+    },
+    "scripts/ops/supremeai_toolkit/cli.py": {
+      "B110": 2
+    },
+    "scripts/ops/supremeai_toolkit/plan_guard.py": {
+      "B324": 1
+    },
+    "scripts/ops/supremeai_toolkit/reusability_audit.py": {
+      "B404": 1,
+      "B603": 1,
+      "B607": 1
+    },
+    "scripts/ops/supremeai_toolkit/standalone_check.py": {
+      "B404": 1,
+      "B603": 2,
+      "B607": 2
+    },
+    "scripts/ops/testing/alert_manager.py": {
+      "B107": 2
+    },
+    "scripts/ops/testing/api_contract_validator.py": {
+      "B311": 14
+    },
+    "scripts/ops/testing/mutation_testing.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ops/testing/performance_benchmark.py": {
+      "B105": 1
+    },
+    "scripts/ops/update_cors_hosts.py": {
+      "B113": 3
+    },
+    "scripts/ops/verify_capabilities.py": {
+      "B101": 10
+    },
+    "scripts/ops/verify_infisical_env.py": {
+      "B310": 3
+    },
+    "scripts/tower/claim_quota_reference.py": {
+      "B101": 15
+    },
+    "scripts/tower/nightly_train_reference.py": {
+      "B101": 15
+    },
+    "scripts/tower/work_queue_query_reference.py": {
+      "B101": 9
+    },
+    "skills/installer.py": {
+      "B404": 1,
+      "B603": 1
+    },
+    "scripts/ci/validate_md_links.py": {
+      "B310": 2
+    }
+  },
+  "meta": {
+    "command": "bandit -q -r --exclude tests/conftest -f json <targets>",
+    "dated": "2026-10-28",
+    "doctrine": "shrink-only ratchet: entries may only be REMOVED (in the same change that fixes them); counts may only shrink. New (path, id) pairs or grown counts are drift.",
+    "exclusions": [
+      "test-pattern files (test_*.py, *_test.py, conftest.py, any tests/ dir)",
+      "core/examples/sample_buggy.py (labeled teaching sample)",
+      "paths outside the scan targets"
+    ],
+    "head": "dfb9604 2026-10-28",
+    "issue": 1809,
+    "tool": "bandit",
+    "tool_version": "1.9.4",
+    "totals": {
+      "files": 488,
+      "findings_in_baseline": 2366,
+      "pairs": 927
+    }
   }
- },
- "meta": {
-  "command": "bandit -q -r --exclude tests/conftest -f json <targets>",
-  "dated": "2026-10-28",
-  "doctrine": "shrink-only ratchet: entries may only be REMOVED (in the same change that fixes them); counts may only shrink. New (path, id) pairs or grown counts are drift.",
-  "exclusions": [
-   "test-pattern files (test_*.py, *_test.py, conftest.py, any tests/ dir)",
-   "core/examples/sample_buggy.py (labeled teaching sample)",
-   "paths outside the scan targets"
-  ],
-  "head": "dfb9604 2026-10-28",
-  "issue": 1809,
-  "tool": "bandit",
-  "tool_version": "1.9.4",
-  "totals": {
-   "files": 488,
-   "findings_in_baseline": 2366,
-   "pairs": 927
-  }
- }
 }

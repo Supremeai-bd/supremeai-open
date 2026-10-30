@@ -20,7 +20,6 @@ Usage:
 Exit codes: 0 = zero dead links; 1 = at least one dead link (fail-closed).
 Stdlib-only, zero runtime deps (mirrors boundary_sanitization_guard style).
 """
-
 from __future__ import annotations
 
 import argparse
@@ -113,19 +112,13 @@ def check_file(path: Path, repo_root: Path, external: bool, report: list[str]) -
             fragment = frag or None
 
         if target:
-            resolved = (
-                (repo_root / target.lstrip("/"))
-                if target.startswith("/")
-                else (base / target)
-            )
+            resolved = (repo_root / target.lstrip("/")) if target.startswith("/") else (base / target)
             if not resolved.exists():
                 dead += 1
                 report.append(f"DEAD file      {path}: {target}")
                 continue
             if fragment and resolved.suffix.lower() in (".md", ".markdown"):
-                tgt_slugs = headings_of(
-                    resolved.read_text(encoding="utf-8", errors="replace")
-                )
+                tgt_slugs = headings_of(resolved.read_text(encoding="utf-8", errors="replace"))
                 if fragment not in tgt_slugs:
                     dead += 1
                     report.append(f"DEAD anchor    {path}: {target}#{fragment}")
@@ -137,37 +130,23 @@ def check_file(path: Path, repo_root: Path, external: bool, report: list[str]) -
 
 
 def head_ok(url: str, timeout: int = 12) -> bool:
-    req = urllib.request.Request(
-        url, method="HEAD", headers={"User-Agent": "link-validator/1.0"}
-    )
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "link-validator/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status < 400
-    except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError):
+    except Exception:
         try:  # some hosts reject HEAD → retry GET
-            req2 = urllib.request.Request(
-                url, headers={"User-Agent": "link-validator/1.0"}
-            )
+            req2 = urllib.request.Request(url, headers={"User-Agent": "link-validator/1.0"})
             with urllib.request.urlopen(req2, timeout=timeout) as resp:
                 return resp.status < 400
-        except (
-            urllib.error.URLError,
-            OSError,
-            TimeoutError,
-            ConnectionError,
-            ValueError,
-        ):
+        except Exception:
             return False
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument(
-        "paths", nargs="*", default=None, help="files or dirs (default: repo root)"
-    )
-    ap.add_argument(
-        "--external", action="store_true", help="HEAD-probe external http(s) URLs"
-    )
+    ap.add_argument("paths", nargs="*", default=None, help="files or dirs (default: repo root)")
+    ap.add_argument("--external", action="store_true", help="HEAD-probe external http(s) URLs")
     args = ap.parse_args()
 
     repo_root = Path(__file__).resolve().parents[2]
@@ -180,9 +159,7 @@ def main() -> int:
             files.extend(sorted(p for p in t.rglob("*.md") if not p.is_dir()))
         elif t.suffix.lower() in (".md", ".markdown"):
             files.append(t)
-    files = [
-        f for f in files if ".git" not in f.parts and "node_modules" not in f.parts
-    ]
+    files = [f for f in files if ".git" not in f.parts and "node_modules" not in f.parts]
 
     report: list[str] = []
     checked = 0
@@ -191,9 +168,7 @@ def main() -> int:
         checked += 1
         dead_total += check_file(f, repo_root, args.external, report)
 
-    print(
-        f"validate_md_links_seq04: files={checked} dead_links={dead_total} external_probes={'on' if args.external else 'off'}"
-    )
+    print(f"validate_md_links_seq04: files={checked} dead_links={dead_total} external_probes={'on' if args.external else 'off'}")
     for line in report:
         print(line)
     return 1 if dead_total else 0
