@@ -1906,7 +1906,7 @@ DEFAULT_MERGED_ROLES: dict[str, str] = {
 }
 
 ROLE_RULES: dict[str, str] = {
-    "solver": "Unlimited concurrent solvers allowed. Solve root cause, verify boundary, and submit PR.",
+    "solver": "Unlimited concurrent solvers allowed. Solve root cause, verify boundary, write all required migrations/configs/tests end-to-end (no partial work), and submit PR.",
     "auditor": "6 repo codebase-এ যা যা সমস্যা আছে তা পুঙ্খানুপুঙ্খ অডিট ও সমাধান বের করা।",
     "ecosystem-scout": "সারা বিশ্বের যেকোনো জায়গা থেকে SupremeAI-এর জন্য সবচেয়ে লাভজনক ও উপকারী হবে এমন জিনিস ও ইনোভেশন খুঁজে আনা। শুধুমাত্র লাইভ প্রমাণসহ কংক্রিট, বাস্তবায়নযোগ্য ফাইন্ডিং ফাইল করা যাবে; অনুমাননির্ভর/হাইপ টিকেট কঠোরভাবে নিষিদ্ধ; কোড এডিট নয়।",
     "human-eye": "আমাদের কাস্টমার যেন সর্বোত্তম ও শ্রেষ্ঠ এক্সপেরিয়েন্স পায় তার জন্য প্রয়োজনীয় সমস্ত UI/UX ও পারফরম্যান্স নিশ্চিত করা।",
@@ -1919,7 +1919,8 @@ COMMON_RULES = """=== UNIVERSAL INVARIANTS (ALL ROLES MUST FOLLOW) ===
 2. Boundary: Zero satellite code in repo root (src/*, service/*, packages/*).
 3. Superior Replacement: Discard broken legacy code/tests; never hack new code to appease past errors.
 4. Verification: No direct push to protected branches; all PRs require local proof.
-5. P0 Drainage & Anti-Stampede: Architectural P0 blockers supersede all routine audits/scout tickets; idempotency check mandatory."""
+5. P0 Drainage & Anti-Stampede: Architectural P0 blockers supersede all routine audits/scout tickets; idempotency check mandatory.
+6. Full-Scope Completeness: Solvers/coders must NEVER leave partial work. Database schemas, migrations, configuration, environment wiring, and tests must be completed in the exact same PR."""
 
 def log(icon: str, msg: str) -> None:
     try:
