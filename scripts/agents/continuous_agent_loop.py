@@ -825,6 +825,66 @@ def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> t
         f"latestClaim by {agent} expired ({age_s / 60.0:.0f}m age > {ttl_raw:g}m ttl)"
     )
 
+
+def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> str | None:
+    """#3315 — receipt-coverage demotion probe (pure, in-memory, never raises).
+
+    বাংলা: #2794-এর claim-probe লাইভ claim ধরে, কিন্তু খোলা (unmerged) bridge
+    WO/receipt যে রো-কে reference করে সেটা ধরে না — লাইভ প্রমাণ 2026-10-30:
+    #2360 dispatch হয়েছে রিসিপ্ট #3272 ফাইল হওয়ার ৪ মিনিট পরে, #2633 হয়েছে
+    রিসিপ্ট #3281-এর ১০ মিনিট পরে (দুই ক্ষেত্রেই latestClaim null ছিল, তাই
+    claim-probe পাস করেছিল); #1676-ও WO #3292-এর "detection half" রেফারেন্স
+    থাকা সত্ত্বেও dispatch হয়েছিল। এই প্রোব candidate-এর নম্বর বোর্ডের অন্য
+    কোনো খোলা Bridge-WO-আকৃতি সারির টাইটেলে আছে কি না দেখে সৎ note দেয় —
+    coverage মানে সেই রো-র কাজ ইন-ফ্লাইট (anti-stampede U5), পুনঃ-dispatch
+    ডুপ্লিকেট ওয়ার্ক অর্ডারের ঝুঁকি। ফিল্টার শুধু dispatch সরাতে পারে, আটকাতে
+    পারে না; `--issue N` explicit override escape-hatch থেকে যায়।
+
+    Board-local and pure: the WO titles ride the same in-memory list the
+    picker already holds (gh path and tower fallback alike), so this adds
+    zero network. Fail-open contract: any malformed row / parse error returns
+    None (the filter can only REMOVE a dispatch, never break the pick).
+    Conservative issuer gate: only titles containing "Bridge Work Order" count
+    as coverage issuers — a plain issue that merely cites #N is related work,
+    not a receipt for it. Number matches are word-bounded (`#N`, `row N`,
+    `bridge-YYYYMMDD-N`) so #263 never matches #2633.
+    """
+    try:
+        num_raw = item.get("number") if isinstance(item, dict) else None
+        if num_raw is None:
+            return None
+        n = int(num_raw)
+        pat_hash = re.compile(rf"(?<![0-9])#{n}(?![0-9])")
+        pat_row = re.compile(rf"(?<![0-9])row\s+{n}(?![0-9])")
+        pat_task = re.compile(rf"bridge-\d{{6,8}}-{n}(?![0-9])")
+        hits: list[str] = []
+        for row in board or []:
+            if not isinstance(row, dict):
+                continue  # malformed rows fail open
+            try:
+                if str(row.get("number", "")) == str(n):
+                    continue  # a row never covers itself
+                state = row.get("state")
+                if state is not None and str(state).lower() != "open":
+                    continue
+                title = str(row.get("title") or "")
+                if "Bridge Work Order" not in title:
+                    continue  # conservative issuer gate (receipt-shaped WOs only)
+                if pat_hash.search(title) or pat_row.search(title) or pat_task.search(title):
+                    hits.append(f"#{row.get('number')}")
+            except Exception:  # noqa: BLE001 — per-row fail-open
+                continue
+        if not hits:
+            return None
+        return (
+            "open bridge WO receipt already references this row "
+            f"({', '.join(hits[:3])}) — coverage in flight (anti-stampede U5); "
+            "explicit --issue override available"
+        )
+    except Exception:  # noqa: BLE001 — a demotion probe must never raise
+        return None
+
+
 def pick_next_issue(
     exclude: set[str] | list[str] | None = None,
     issues: list[dict[str, Any]] | None = None,
@@ -936,6 +996,37 @@ def pick_next_issue(
                     f"filtered from the pick — newest open sibling #{newest_sentry} carries the sentinel duty",
                 )
             candidates = survivors
+        # #3315 — receipt-coverage demotion (live mode only, sentry-precedent
+        # shape): a candidate covered by an OPEN bridge WO/receipt elsewhere on
+        # the same board is skipped BEFORE the priority sort (window-preserving:
+        # a covered candidate inside the top-FEEDBACK_PREVERIFY_TOPN window
+        # would otherwise burn a window slot plus a network probe on a row whose
+        # work is already in flight — live 2026-10-30: #2360 dispatched 4 min
+        # after receipt #3272, #2633 10 min after #3281). Pure mode (claim_probe
+        # is None) keeps the byte-identical pre-#3315 label-only contract for
+        # hermetic callers; the filter can only REMOVE a dispatch, never block
+        # one, and the explicit --issue N override stays the escape hatch.
+        coverage_survivors: list[dict[str, Any]] = []
+        covered = 0
+        for cand in candidates:
+            covered_note = _receipt_covered_note(cand, issues or [])
+            if covered_note is not None:
+                covered += 1
+                log_fn(
+                    "!",
+                    f"receipt-coverage demotion: #{cand.get('number')} skipped — {covered_note}",
+                )
+                continue
+            coverage_survivors.append(cand)
+        if covered:
+            candidates = coverage_survivors
+            if not candidates:
+                log_fn(
+                    "!",
+                    "receipt-coverage demotion: every open candidate is covered by an "
+                    "open bridge WO receipt — no clean pick this run (rerun later or "
+                    "dispatch explicitly via --issue N)",
+                )
     sorted_issues = sorted(candidates, key=priority_key)
     if claim_probe is None:
         # Pure mode — label-only pick, exactly the pre-#2794 contract (hermetic
