@@ -259,6 +259,8 @@ tree for content inspection (stdlib-only, still minutes-bounded):
    before PR creation (AGENTS.md Step 4: no claim, no work).
 9. **Knowledge Sharing Guard (#392)** — verifies PR body carries filled Reflection Evidence
    (`why` + `alternatives_rejected`).
+10. **Tower Verification Signature Guard (#hybrid-agent)** — verifies external agent PR carries
+    valid Tower verification signatures (`## Reflection Evidence` and 3-Tier test evidence).
 
 ## 6. Submission flow (Pathway 1 wiring)
 

@@ -210,8 +210,7 @@ def heal_freshness(api: Callable, apply: bool, report: GuardReport) -> None:
         head_ref = pr["head"]["ref"]
         if not is_bot_lane(head_ref):
             continue  # মানুষের লেন — হস্তক্ষেপ নয়
-        base_sha = pr["base"]["sha"]
-        cmp_res = api(f"repos/{REPO}/compare/{base_sha}...{pr['head']['sha']}")
+        cmp_res = api(f"repos/{REPO}/compare/main...{head_ref}")
         if behind_count(cmp_res) <= 0:
             continue
         if not apply:
