@@ -1,41 +1,42 @@
 # GLM Agent 14 — Worklog (Job ID 486785)
 
-> #3524 founder-mandate archive-এর পরে প্রথম পোস্ট-আর্কাইভ receipt — পুরনো
-> ৫-সাইকেল ইতিহাস (bridge-20261030-identity-glm14.md, r2 743aa27 / r3 765e052)
-> supremeai-archive-এ; এই ফাইল ছোট (durable facts only), প্রতি সাইকেলে in-place replace।
+> পোস্ট-আর্কাইভ receipt (পুরনো ৫-সাইকেল ইতিহাস supremeai-archive-এ);
+> ছোট ফাইল (durable facts only), প্রতি সাইকেলে in-place replace।
 
 ## Durable outcomes (আগের সাইকেল থেকে, প্রমাণসহ)
 
-- **R86 root-cause fix ADOPTED:** আমার ফাইল করা #3487 (stale-base full_file
-  clobber-শ্রেণি) বন্ধ হয়েছে — PR #3513 (5ab0f4e) fail-closed CAS gate
-  `evaluateFullFileGate()` landed করেছে (STALE_BASE_MISSING / _UNVERIFIED /
-  _ERROR ladder; new-file lane খোলা)। ২টি স্বতন্ত্র corroboration ছিল
-  (#3499, #3501)।
-- **AGENTS.md contract-accuracy fix merged:** PR #3509 (5a1b822) —
-  alternativesRejected বাধ্যতামূলক ফিল্ড + #2333 Stale-Base Pin bullet যোগ
-  (WO #3508)।
-- Registration: GLM Agent 14 / Job 486785; প্রতিটি সাইকেলে loop-dispatch
-  মানা হয় (Invariant 7)।
+- **R86 root-cause fix ADOPTED:** আমার ফাইল করা #3487 বন্ধ — PR #3513
+  (5ab0f4e) fail-closed baseSha CAS gate landed (STALE_BASE_MISSING/_UNVERIFIED/
+  _ERROR ladder; new-file lane খোলা)। Corroborations #3499/#3501।
+- **AGENTS.md contract-accuracy fix merged:** PR #3509 (5a1b822)।
+- **Cycle 6-৭ (01:14+08) — সব MERGED:** AGENTS.md fail-closed drift fix
+  (#3605 → PR #3612); studio AI-image lazy-load perf fix (#3606 → PR #3610;
+  প্রমাণ: tsc 0, vitest 129 ফাইল/708 পাস, eslint 0); post-archive receipt r1
+  (PR #3617); CI #3615 triage — PR #3614 = আমার #3612-এর U4-duplicate,
+  guard সঠিক ছিল (WO #3627/PR #3628; GLM Agent 20-র স্বতন্ত্র receipt-ও
+  merged → দ্বৈত নিশ্চিতকরণ)। First-lander-wins CAS অর্থনীতি দুইবার প্রমাণিত।
+- Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 6 (2026-10-31 01:14+08) — human-eye dispatch: drift-record + studio perf
+## Cycle 8 (2026-10-31 02:14+08) — rules-breaker dispatch: **P0 security finding**
 
-- **Dispatch:** board 69 open, সব WO-receipt-covered → কোনো solver pick নেই;
-  role = human-eye (UI/UX + perf ম্যান্ডেট); preflight zero open P0।
-- **#3513 live-verified:** fresh-session tools/list-এ bridge_submit schema-তে
-  STALE_BASE_MISSING + fail-closed আছে, fail-open নেই — tower deployed।
-- **Invariant 8 drift-record (নিজেই ঠিক করলাম):** AGENTS.md L68 এখনও
-  "absent baseSha proceeds unchecked (fail-open)" বলছিল — landed gate-এর
-  সরাসরি বিরোধ (#3509-শ্রেণির পুনরাবৃত্তি)। Issue #3605 → docs-only fix →
-  WO #3611 / PR #3612 (closes #3605; verdict-ladder সঠিক টেক্সট, #3404/#3438
-  history pointer রাখা)।
-- **Human-eye studio audit + fix:** 19টি `<img>` সাইটের মধ্যে মাত্র ১টি lazy;
-  সবচেয়ে গরম দুটি history-surface eager — UnifiedChatBubble.tsx:186 ও
-  admin/shared/ActionCard.tsx:166। Issue #3606 → ২-লাইন fix
-  (`loading="lazy" decoding="async"`, FilesPage-প্যাটার্ন) → WO #3609 /
-  PR #3610 (closes #3606)।
-- **প্রমাণ:** studio `tsc --noEmit` exit 0; সম্পূর্ণ suite **129 ফাইল / 708
-  test পাস**; eslint ০ error (২টি pre-existing #2522 warning, অস্পৃশ্ট লাইন)।
-  উভয় সাবমিটে baseSha pin → দুটোই `checked-fresh` (gate dogfood live-প্রমাণ)।
-- **Env:** loop-probe অনুযায়ী `git config core.hooksPath .githooks` activate
-  করা হয়েছে (Board-Freshness pre-push gate আর অন্ধকারে নেই)।
-- Refs: #3487 #3513 #3509 #3605 #3606 #3609 #3611 (PR #3610 #3612) #3524।
+- **Dispatch:** board-এ clean solver pick নেই (সব receipt-covered);
+  role = rules-breaker (সিকিউরিটি/tech-debt/logical-gap ম্যান্ডেট)।
+- **P0 ফাইন্ডিং (#3663):** unauthenticated tower session **global-admin
+  হয়ে যায়** — `http_server.ts` L1020/L988 `role ?? "admin"` fail-open default
+  (কোডের নিজের বাংলা কমেন্ট: "TEMPORARY (PRE-PRODUCTION)… admin role পাবে")
+  + L935 `effectiveGlobalAdmin = isGlobalAdmin || activeRole === "admin"`
+  (role-নাম = admin-ক্ষমতা)। Live-প্রমাণ (সম্পূর্ণ non-destructive, কোনো
+  destructive call নয়): anonymous `client_list` → scope `*`, 88 rows,
+  **৪৬-এর role `admin`**, ২০ row-তে visitor-IP identifier, প্রতি client-এর
+  `scopes` দৃশ্যমান; tenant filter no-op; anonymous tools/list-এ destructive/
+  secret-class tools (autonomy_kill_switch, tenant_create, slot_revoke,
+  github_list_secrets…) enumerable; `autonomy.kill_switch` handler-এ কোনো
+  HITL/RBAC লাইন নেই (কোড-প্রমাণ); system_health ২১-service internal URL
+  inventory ফাঁস। Token leak **নেই** (keys-scan প্রমাণ) — একমাত্র ভালো gate।
+- **Envelope সিদ্ধান্ত:** ৪-লাইন fix (`?? "viewer"` + role-shortcut বাদ +
+  born-red guard test) কিন্তু blast radius = ২২+ live builder-এর session
+  identity → deploy-policy/HITL judgment = owner lane; তাই evidence-only,
+  no Closes, no auto-close (loop-এর নিজের routing rule অনুযায়ী)।
+- **প্রত্যাশিত প্রভাব:** #3663 এখন board-এর P0 row — পরের সব dispatch-এর
+  preflight এটা দেখবে; P0 Drainage (U5) অনুযায়ী fleet-এর মনোযোগ এই লেনে।
+- Refs: #3663 (P0) · #3513 (fail-closed ডকট্রিন precedent) · #2512 · U5/U6।
