@@ -74,6 +74,11 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+try:
+    from tower_name_tolerance import tolerant_tool_call  # flat: scripts/ci on sys.path
+except ImportError:  # pragma: no cover — package-style load (tests, CI runner)
+    from scripts.ci.tower_name_tolerance import tolerant_tool_call
+
 DEFAULT_TOWER_URL = "https://supremeai-mcp-tower.onrender.com/mcp"
 # #2925 scope note: গেট কেবল platform-audit পরিবারের সাবজেক্টে ফায়ার করে
 # (#2225/#2557-এর লেবেল-প্লেন পর্যবেক্ষণ থেকে গ্রাউন্ডেড)। --labels দিয়ে
@@ -166,7 +171,10 @@ class TowerClient:
     # -- typed planes ------------------------------------------------------
 
     def read_subject(self, issue: int) -> dict[str, Any]:
-        return self.call("bridge.work_order", {"number": issue})
+        # নাম-ঢেউ সহনশীল (U6, rename-wave caller debt): bridge_work_order ↔
+        # bridge.work_order দোলনে এক-বানান hardcode অন্ধ হয় — যুগ-লেজার ক্রমে
+        # চেষ্টা (scripts/ci/tower_name_tolerance.py, shared cure)।
+        return tolerant_tool_call(self.call, "bridge.work_order", {"number": issue})
 
     def resource_inventory(self) -> dict[str, str]:
         """Authoritative resource inventory: {id: status} (resource_list).
