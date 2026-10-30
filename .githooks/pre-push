@@ -56,6 +56,7 @@ if test "${1:-}" = "--self-test"; then
     mkdir "$sandbox/work" "$sandbox/remote.git"
     (
         cd "$sandbox/work" || exit 2
+        fails=0   # fail-closed tally: any scenario FAIL must reach the exit code
         git init -q --bare ../remote.git
         git init -q .
         # Pin the branch name to main regardless of git's init.defaultBranch.
@@ -80,7 +81,7 @@ if test "${1:-}" = "--self-test"; then
         D=$(git rev-parse HEAD)
         printf 'refs/heads/feature-fresh %s refs/heads/feature-fresh %s\n' "$D" "$A" \
             | sh "$HOOK" origin "$FED_URL" >/dev/null 2>&1 \
-            && echo "PASS fresh-branch-accepted" || echo "FAIL fresh-branch-accepted"
+            && echo "PASS fresh-branch-accepted" || { echo "FAIL fresh-branch-accepted"; fails=$((fails + 1)); }
 
         # S3: stale branch (main advanced past the branch point) -> REJECT
         git checkout -q main
@@ -92,7 +93,7 @@ if test "${1:-}" = "--self-test"; then
         git push -q --no-verify origin main
         printf 'refs/heads/feature-stale %s refs/heads/feature-stale %s\n' "$B" "$A" \
             | sh "$HOOK" origin "$FED_URL" >/dev/null 2>&1 \
-            && echo "FAIL stale-branch-rejected" || echo "PASS stale-branch-rejected"
+            && { echo "FAIL stale-branch-rejected"; fails=$((fails + 1)); } || echo "PASS stale-branch-rejected"
 
         # S4: non-fast-forward update (history rewrite = force) -> REJECT
         git checkout -qb feature-force "$A"
@@ -105,24 +106,31 @@ if test "${1:-}" = "--self-test"; then
         E_NEW=$(git rev-parse HEAD)
         printf 'refs/heads/feature-force %s refs/heads/feature-force %s\n' "$E_NEW" "$E_OLD" \
             | sh "$HOOK" origin "$FED_URL" >/dev/null 2>&1 \
-            && echo "FAIL force-push-rejected" || echo "PASS force-push-rejected"
+            && { echo "FAIL force-push-rejected"; fails=$((fails + 1)); } || echo "PASS force-push-rejected"
 
         # S5: direct push to main -> REJECT
         C=$(git rev-parse main)
         printf 'refs/heads/main %s refs/heads/main %s\n' "$C" "$A" \
             | sh "$HOOK" origin "$FED_URL" >/dev/null 2>&1 \
-            && echo "FAIL direct-main-rejected" || echo "PASS direct-main-rejected"
+            && { echo "FAIL direct-main-rejected"; fails=$((fails + 1)); } || echo "PASS direct-main-rejected"
 
         # S6: deletion of main -> REJECT
         printf 'refs/heads/main %s refs/heads/main %s\n' \
             0000000000000000000000000000000000000000 "$C" \
             | sh "$HOOK" origin "$FED_URL" >/dev/null 2>&1 \
-            && echo "FAIL main-deletion-rejected" || echo "PASS main-deletion-rejected"
+            && { echo "FAIL main-deletion-rejected"; fails=$((fails + 1)); } || echo "PASS main-deletion-rejected"
 
         # S7: unrelated remote -> ACCEPT (guard not applicable)
         printf 'refs/heads/feature-fresh %s refs/heads/feature-fresh %s\n' "$D" "$A" \
             | sh "$HOOK" origin https://example.com/other/repo.git >/dev/null 2>&1 \
-            && echo "PASS unrelated-remote-accepted" || echo "FAIL unrelated-remote-accepted"
+            && echo "PASS unrelated-remote-accepted" || { echo "FAIL unrelated-remote-accepted"; fails=$((fails + 1)); }
+
+        if test "$fails" -eq 0; then
+            echo "self-test: 6/6 scenarios PASS"
+        else
+            echo "self-test: $fails scenario(s) FAILED"
+        fi
+        test "$fails" -eq 0
     )
     rc=$?
     rm -rf "$sandbox"
