@@ -2695,6 +2695,15 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             log("!", _tower_queue_floor())
     else:
         picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt)
+        # When only a handful of code-fixable issues remain, hand off to cadence
+        # roles so other agents can create new work instead of starving.
+        claimable_remaining = sum(
+            1 for i in raw
+            if not (EXCLUDED_LABELS & set(label_names(i)))
+            and (i.get("state") is None or str(i.get("state")).lower() == "open")
+        )
+        if claimable_remaining <= 5:
+            picked = None
         if picked:
             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
             # status:runway → ci-fixer, gate:pre-landing → task-auditor হলেও
