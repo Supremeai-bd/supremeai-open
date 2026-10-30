@@ -11,7 +11,7 @@ definition of each method — behavior is identical to the original monolith.
 
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from ...config import settings  # Fixed import path - using relative import
 from ...observability.providers.langfuse_adapter import LangfuseAdapter

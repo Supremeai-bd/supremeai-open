@@ -24,7 +24,7 @@ import httpx
 
 from core.errors.error_bus import with_error_bus
 from core.llm.telemetry import track_llm_call
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from ...config import settings  # Fixed import path - using relative import
 from ...cost_guard import CostGuard  # Fixed import path - using relative import
