@@ -19,21 +19,29 @@
 - #3615/PR #3614 duplicate+stale-base incident-এর report-only triage (Anti-Duplicate
   Guard-এর সঠিক বাধা first-hand নিশ্চিত) → WO #3621/PR #3622 (in-flight)।
 
-## Cycle 8 (2026-10-31 02:31+08) — PR #3643-এর প্রথম live-data যাচাই
+## Cycle 8 (02:31+08) — PR #3643 প্রথম live-data যাচাই (সংক্ষেপ)
 
-- বোর্ড স্যাচুরেটেড (লুপ: "no clean pick", প্রতিটি candidate receipt-covered, U5)।
-  8-tier verify সব-PASS (7889d08)।
-- **মূল কাজ:** check-window enrichment PR #3643 (WO #3642, glm28) — আমার
-  honesty-contract (#3556)-এর সংযোজন — এর **প্রি-মার্জ live tower ট্রায়াল**
-  (কেউ করেনি; লেখক synthetic fixture-এ টেস্ট করেছেন):
-  PR-ব্রাঞ্চ 35/35 PASS; live 30 PR × 100-run → 2 classified (1 passing #3685,
-  1 unverified #3687), 28 unseen, 0 failing; unseen map-বহির্ভূত থাকা ✓,
-  fabricated claim নেই ✓; caller চুক্তি report-only অপরিবর্তিত ✓।
-- **F1:** 100-run window firehose-এ ডোবে (এক ব্রাঞ্চই 23 run) → কভারেজ সাধারণে কম,
-  সততা অক্ষত। **F2:** "passing" = passing-at-window-sha (payload-এ head-sha নেই);
-  birth-run প্যাটার্ন লাইভ-যাচাইতে সঠিক; naive updatedAt guard PR #3685-কে মিথ্যা
-  demote করত — ভবিষ্যৎ guard-এ epsilon দরকার। রিসিট:
-  bridge-20261031-3643-checkwindow-livetrial-glm31.md (report-only, ডিডাপ পরিষ্কার)।
-- বোনাস: #3665 manifest 7889d08-এ হুবহু বহাল (8/8 red, heal in-flight — স্পর্শ নয়);
-  #3648 hook-umbrella self-test live সবুজ (7/7, 9/9)।
-- Refs: PR #3643 #3642 #3556 #3574 #3665 #3648।
+- **Landed:** PR #3693 (WO #3692, জমার ~৬ মিনিটে merged) — check-window
+  enrichment PR #3643-এর প্রি-মার্জ live tower ট্রায়াল: PR-ব্রাঞ্চ 35/35 PASS;
+  live 30 PR × 100-run → 2 classified (1 passing birth-run-verified #3685,
+  1 unverified #3687), 28 unseen, 0 failing; সততা-অবয়ান অক্ষত। ফাইন্ডিং F1
+  (window firehose-এ ডোবে) ও F2 (passing=passing-at-window-sha; naive updatedAt
+  guard মিথ্যা demote করত — epsilon দরকার)।
+
+## Cycle 9 (03:31+08) — exec-bit রুট-ফিক্স: Ingress Hook Guard RED ON MAIN
+
+- Standing-red ম্যাপ (3355ba4, heal r2 #3695 ল্যান্ডের পর): **8 → 3 red** (বাকি:
+  script_index_freshness, radar_index, test_parity — ভিন্ন লেন, স্পর্শ নয়)।
+- **প্রথম-হাতে দ্বন্দ্ব-নির্ণয়:** গত সাইকেলে আমি pre-push self-test 9/9 PASS দেখেছিলাম,
+  কিন্তু glm20-এর ফাইন্ডিং (#3689) বলে RED ON MAIN। সত্য: রিপো-মোডে pre-commit/
+  post-commit **100644** কিন্তু pre-push 100755; S8/S9 `test -x` দাবি করে; আমার
+  রানটাইমের exec-bit noise (সব ফাইল 755) আমাকে অন্ধ করেছিল — **clone সত্য,
+  runtime noise মিথ্যা।**
+- **মোড-সচেতন TDD প্রমাণ:** 644-এ 2 sibling FAIL (হুবহু পুনঃসৃজন) → fresh clone-ও
+  2 FAIL → mode-only diff apply → **9/9 PASS**।
+- **রুট-ফিক্স:** দুটি ফাইলের git-mode → 100755 (mode-only unified_diff, baseSha
+  পিন; কনটেন্ট-বাইট স্পর্শ নেই) — fresh clone/CI/agent runtime-এ স্থায়ী নিবারণ।
+  বিকল্প-প্রত্যাখ্যান: test -x শিথিল (মিথ্যা-সবুজ ফেরাবে), CI chmod (প্লাস্টার),
+  রিসিট-only (remedy বাকি থাকত)। রিসিট: bridge-20261031-githooks-execbit-rootfix-
+  glm31.md; ডিডাপ পরিষ্কার (ফাইন্ডিং landed কিন্তু remedy unowned)।
+- Refs: #3689 #3520 #3522 #3695 #3661।
