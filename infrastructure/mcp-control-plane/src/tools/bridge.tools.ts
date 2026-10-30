@@ -15,6 +15,9 @@ import {
 } from "../lib/bridge_test_wiring.js";
 import { applyLabelFallback, type VerdictSource } from "../lib/bridge_verdicts.js";
 import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
+import {
+  parseClaimMarkers,
+} from "../lib/claim_markers.js";
 import { RequestContextStore } from "../policy/auth.context.js";
 
 export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
@@ -337,67 +340,19 @@ export function filterPublicQueue<T extends { labels: readonly string[] }>(items
   return { kept, filtered: items.length - kept.length };
 }
 
-/** One atomic-claim marker (label plane + comment plane, Invariant #430). */
-export interface ParsedClaimMarker {
-  agent: string;
-  issueNumber: number;
-  ts: Date;
-  ttlMinutes: number;
-}
-
-export interface ClaimMarkerView {
-  first: ParsedClaimMarker | null;
-  latest: ParsedClaimMarker | null;
-}
-
-const ATOMIC_CLAIM_RE = /<!--\s*atomic-claim:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+),ttl=(\d+)m\s*-->/;
-
-/**
- * Parse ALL atomic-claim markers from an issue's comments — the SAME regex
- * and legacy-JSON fallback the live work.claim handler uses (latest ts wins,
- * first ts = original claim for the total-lease budget). Pure + offline.
- */
-export function parseClaimMarkers(comments: ReadonlyArray<{ body?: unknown }>): ClaimMarkerView {
-  let first: ParsedClaimMarker | null = null;
-  let latest: ParsedClaimMarker | null = null;
-  for (const c of comments ?? []) {
-    const body = typeof c?.body === "string" ? c.body : "";
-    if (!body) continue;
-    let marker: ParsedClaimMarker | null = null;
-    const match = ATOMIC_CLAIM_RE.exec(body);
-    if (match) {
-      const ts = new Date(match[3] ?? "");
-      if (!isNaN(ts.getTime())) {
-        marker = {
-          issueNumber: parseInt(match[1] ?? "0", 10),
-          agent: match[2] ?? "unknown",
-          ts,
-          ttlMinutes: parseInt(match[4] ?? "30", 10) || 30,
-        };
-      }
-    } else if (body.includes("<!-- atomic-claim -->") && body.includes('"claimedAt"')) {
-      // Legacy JSON marker fallback (same shape the live handler accepts).
-      try {
-        const jsonMatch = /```json\s*(\{[\s\S]*?\})\s*```/.exec(body);
-        const parsed = jsonMatch ? JSON.parse(jsonMatch[1]) : null;
-        const ts = parsed?.claimedAt ? new Date(parsed.claimedAt) : null;
-        if (ts && !isNaN(ts.getTime())) {
-          marker = {
-            issueNumber: typeof parsed.issueNumber === "number" ? parsed.issueNumber : 0,
-            agent: typeof parsed.claimedBy === "string" ? parsed.claimedBy : "legacy-agent",
-            ts,
-            ttlMinutes: typeof parsed.leaseMinutes === "number" ? parsed.leaseMinutes : 30,
-          };
-        }
-      } catch { /* malformed legacy marker — ignore */ }
-    }
-    if (marker) {
-      if (!latest || marker.ts > latest.ts) latest = marker;
-      if (!first || marker.ts < first.ts) first = marker;
-    }
-  }
-  return { first, latest };
-}
+// Claim-marker parsing extracted to src/lib/claim_markers.ts (house pattern:
+// pure decision cores live in src/lib, replayable offline). The lib is
+// EPOCH-AWARE: release markers (new `<!-- atomic-claim-release:... -->` and
+// legacy prose) CLOSE the claim epoch — fixes the release-blind-spot where
+// latestClaim kept projecting a released claim (live instances #2557 c51,
+// #2201, #3093). Re-exported here for API compat.
+export {
+  parseClaimMarkers,
+  ATOMIC_CLAIM_RE,
+  ATOMIC_CLAIM_RELEASE_RE,
+  LEGACY_RELEASE_RE,
+} from "../lib/claim_markers.js";
+export type { ClaimMarkerView, ParsedClaimMarker } from "../lib/claim_markers.js";
 
 export const CLAIM_LEASE_MINUTES = 30;
 export const MAX_TOTAL_LEASE_MINUTES = 180;
@@ -1706,36 +1661,17 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           { headers, timeoutMs: 15_000 }
         );
 
-        let latestClaim: { agent: string; ts: Date; ttlMinutes: number } | null = null;
-        if (commentsRes.ok && Array.isArray(commentsRes.data)) {
-          for (const c of commentsRes.data) {
-            const body = c.body || "";
-            // Match <!-- atomic-claim:issue=123,agent=xyz,ts=...,ttl=30m --> or legacy JSON marker
-            const match = /<!--\s*atomic-claim:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+),ttl=(\d+)m\s*-->/.exec(body);
-            if (match) {
-              const claimTs = new Date(match[3]);
-              if (!isNaN(claimTs.getTime())) {
-                if (!latestClaim || claimTs > latestClaim.ts) {
-                  latestClaim = { agent: match[2], ts: claimTs, ttlMinutes: parseInt(match[4], 10) || 30 };
-                }
-              }
-            } else if (body.includes("<!-- atomic-claim -->") && body.includes('"claimedAt"')) {
-              // Legacy JSON marker fallback
-              try {
-                const jsonMatch = /```json\s*(\{[\s\S]*?\})\s*```/.exec(body);
-                if (jsonMatch) {
-                  const parsed = JSON.parse(jsonMatch[1]);
-                  const claimTs = new Date(parsed.claimedAt);
-                  if (!isNaN(claimTs.getTime())) {
-                    if (!latestClaim || claimTs > latestClaim.ts) {
-                      latestClaim = { agent: parsed.claimedBy || "legacy-agent", ts: claimTs, ttlMinutes: parsed.leaseMinutes || 30 };
-                    }
-                  }
-                }
-              } catch {}
-            }
-          }
-        }
+        // Step 2b: parse the claim epoch via the SHARED parser (SSOT).
+        // The inline duplicate here ignored release markers — the divergence
+        // class behind the release-blind-spot: after bridge.work.release the
+        // stale claim stayed "live" for up to its full TTL, so fresh claimers
+        // hit CLAIM_CONFLICT_OTHER inside the zombie window. The epoch-aware
+        // lib closes the epoch on release markers AND legacy release prose.
+        const claimEpoch =
+          commentsRes.ok && Array.isArray(commentsRes.data)
+            ? parseClaimMarkers(commentsRes.data ?? [])
+            : { first: null, latest: null };
+        const latestClaim = claimEpoch.latest;
 
         const now = new Date();
         const ttlMs = (latestClaim?.ttlMinutes || 30) * 60 * 1000;
