@@ -14,6 +14,7 @@ Traffic-police logic:
 from __future__ import annotations
 import argparse, json, os, re, subprocess, sys, threading, time, urllib.request
 from collections.abc import Callable, Iterable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +31,15 @@ TRIAGE_RECEIPTS_FILE = REPO_ROOT / "scripts" / "agents" / "incident_triage_recei
 # Support both direct repo-root imports (scripts.agents.claim_thresholds) and
 # same-dir execution (claim_thresholds).
 try:
-    from scripts.agents.claim_thresholds import ORPHAN_RELEASE_MINUTES  # noqa: E402
+    from scripts.agents.claim_thresholds import (  # noqa: E402
+        ORPHAN_RELEASE_MINUTES,
+        RECEIPT_COVERAGE_TTL_MINUTES,
+    )
 except ImportError:
-    from claim_thresholds import ORPHAN_RELEASE_MINUTES  # noqa: E402
+    from claim_thresholds import (  # noqa: E402
+        ORPHAN_RELEASE_MINUTES,
+        RECEIPT_COVERAGE_TTL_MINUTES,
+    )
 
 ISSUE_LEASE_SECONDS = ORPHAN_RELEASE_MINUTES * 60.0  # 30-minute autonomous lease (Rule 9 parity without GitHub claim friction)
 
@@ -1010,7 +1017,31 @@ def _probe_premise_delivered(item: dict[str, Any]) -> str | None:
         return None
 
 
-def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> str | None:
+def _parse_epoch(value: Any) -> float | None:
+    """ISO-8601 ("…Z" সহ) বা numeric-epoch → epoch-সেকেন্ড; ব্যর্থতায় None।
+
+    বাংলা: বোর্ড-রোর createdAt দুই প্লেনেই ISO-8601 আকারে আসে (tower:
+    "2026-10-30T18:21:13Z"; gh: --json createdAt)। যেকোনো malformed/অনুপস্থিত
+    মান None — কলার সৎ-রক্ষণাবেক্ষণভাবে (conservative) সেটাকে "টাটকা" ধরবে।
+    """
+    try:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except Exception:  # noqa: BLE001 — একটি পার্স-প্রোব কখনো raise করবে না
+        return None
+
+
+def _receipt_covered_note(
+    item: dict[str, Any],
+    board: list[dict[str, Any]],
+    now_epoch: float | None = None,
+) -> str | None:
     """#3315 — receipt-coverage demotion probe (pure, in-memory, never raises).
 
     বাংলা: #2794-এর claim-probe লাইভ claim ধরে, কিন্তু খোলা (unmerged) bridge
@@ -1032,6 +1063,19 @@ def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> 
     as coverage issuers — a plain issue that merely cites #N is related work,
     not a receipt for it. Number matches are word-bounded (`#N`, `row N`,
     `bridge-YYYYMMDD-N`) so #263 never matches #2633.
+
+    বাংলা (TTL expiry — saturation livelock-এর রুট-কজ ফিক্স, GLM Agent 18
+    J486801; প্রমাণ #3634 saturation #2, #3600 strand census): receipt ফাইল
+    করা সস্তা, কিন্তু event-driven auto-landing পুরোনো receipt-PR আর কখনো
+    revisit করে না — ফলে খোলা receipt অনন্তকাল টার্গেট-রোকে demote করতে
+    পারত (#2756 ৪-তম সাইকেল, #3600 নিজের receipt-এ ৫৪s-এ আবৃত; বোর্ড ৯২+
+    রো-তে স্থায়ী NO-PICK)। এখন TTL-এর চেয়ে পুরোনো covering receipt আর
+    demote করে না — coverage তখন "in-flight" নয়, "stranded" (threshold-এর
+    এক-সত্য-উৎস claim_thresholds.RECEIPT_COVERAGE_TTL_MINUTES = 120; in-flight
+    receipt মিনিটে land হয়: #3578 44s, #3599 ~3min — stranded ঘণ্টায় ঘণ্টা)।
+    সৎ-রক্ষণাবেক্ষণ: createdAt অনুপস্থিত/অপার্সযোগ্য হলে সেই রো টাটকা গণ্য
+    হবে (pre-fix আচরণ অক্ষত); মিশ্র কভারেজে (টাটকা + পুরোনো) টাটকাটাই demote
+    করে; expiry নীরব — closed covering row-এর মতোই বিদ্যমান শব্দার্থ।
     """
     try:
         num_raw = item.get("number") if isinstance(item, dict) else None
@@ -1041,7 +1085,9 @@ def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> 
         pat_hash = re.compile(rf"(?<![0-9])#{n}(?![0-9])")
         pat_row = re.compile(rf"(?<![0-9])row\s+{n}(?![0-9])")
         pat_task = re.compile(rf"bridge-\d{{6,8}}-{n}(?![0-9])")
-        hits: list[str] = []
+        ttl_s = RECEIPT_COVERAGE_TTL_MINUTES * 60.0
+        now = time.time() if now_epoch is None else now_epoch
+        demoters: list[str] = []  # টাটকা (TTL-এর ভেতরের) covering receipt
         for row in board or []:
             if not isinstance(row, dict):
                 continue  # malformed rows fail open
@@ -1054,15 +1100,21 @@ def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> 
                 title = str(row.get("title") or "")
                 if "Bridge Work Order" not in title:
                     continue  # conservative issuer gate (receipt-shaped WOs only)
-                if pat_hash.search(title) or pat_row.search(title) or pat_task.search(title):
-                    hits.append(f"#{row.get('number')}")
+                if not (
+                    pat_hash.search(title) or pat_row.search(title) or pat_task.search(title)
+                ):
+                    continue
+                created = _parse_epoch(row.get("createdAt"))
+                if created is not None and (now - created) >= ttl_s:
+                    continue  # stale receipt: coverage stranded, demotion expires
+                demoters.append(f"#{row.get('number')}")
             except Exception:  # noqa: BLE001 — per-row fail-open
                 continue
-        if not hits:
+        if not demoters:
             return None
         return (
             "open bridge WO receipt already references this row "
-            f"({', '.join(hits[:3])}) — coverage in flight (anti-stampede U5); "
+            f"({', '.join(demoters[:3])}) — coverage in flight (anti-stampede U5); "
             "explicit --issue override available"
         )
     except Exception:  # noqa: BLE001 — a demotion probe must never raise
@@ -1888,6 +1940,11 @@ def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], st
                         "title": row.get("title"),
                         "state": row.get("state") or "open",
                         "labels": labels,
+                        # বাংলা: receipt-coverage TTL expiry (saturation livelock
+                        # রুট-কজ, GLM Agent 18 J486801) — tower পেলোডে createdAt
+                        # থাকা সত্ত্বেও আগের ম্যাপিং এটি ফেলে দিত, ফলে stale-
+                        # receipt শনাক্ত অসম্ভব ছিল। gh প্লেনও এখন এই ফিল্ড দেয়।
+                        "createdAt": row.get("createdAt"),
                     }
                 )
             outcome["rows"] = board
@@ -2797,7 +2854,10 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
     cmd = [
         "gh", "issue", "list",
         "--repo", UPSTREAM_REPO,
-        "--json", "number,labels",
+        # createdAt: receipt-coverage TTL expiry (saturation livelock রুট-কজ,
+        # GLM Agent 18 J486801) — stale-receipt শনাক্তে বোর্ড-রোতে জন্মতারিখ
+        # দরকার; tower fallback প্লেনেও একই ফিল্ড সংরক্ষিত হয়।
+        "--json", "number,labels,createdAt",
         "--state", "open",
         # R78/J484751: 100 → 200 — pick_next_issue()-র নিজস্ব gh-কোয়েরির সাথে উইন্ডো
         # SSOT-প্যারিটি; লাইভ বোর্ডে ১১৫+ খোলা সারি থাকায় ১০০-র জানালা নীরবে
