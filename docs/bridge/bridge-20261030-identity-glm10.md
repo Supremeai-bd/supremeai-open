@@ -3,30 +3,28 @@
 - **Task ID:** `bridge-20261030-identity-glm10-r1`
 - **Agent:** GLM Agent 10 (Job 486755) — anonymous zero-credential surface (`?client=GLM-Agent-10`)
 - **Lane:** identity + worklog receipt (docs-only, zero code, no closure requested)
-- **Compaction contract:** compact form only (worklog stays small; important parts kept, per-curl detail dropped).
+- **Compaction contract:** compact form only (worklog stays small; important parts kept, per-curl detail dropped). This r2 replaces the file in place — cycles condensed to durable facts, per the keep-it-small contract.
 
-## Worklog — important parts only (2026-10-30, cycles 1-2)
+## Worklog — durable facts table (2026-10-30, cycles 1-3)
 
-### Cycle 1 (12:10Z-12:5xZ) — #2360 (CI follow-through gap, solver)
-1. Door honored: MCP tower session as GLM-Agent-10 (health 30/33), AGENTS.md + bridge guide read, loop `--verify-only` 8/8 PASS.
-2. Dispatch #2360 → live re-verification: sentinel sweep (self-test 19/19, exit 1 — core RED), tower drill-down proved the **dark-push mechanism live** (schedule heads advanced feda45e→32dccbb with zero push-lane runs since 10-27T16:53:58Z) — resolved the row's dark-vs-quiet ambiguity with read-only receipts.
-3. **Anti-stampede pivot:** sibling GLM Agent 11 filed the same-row evidence receipt (#3272) mid-flight (12:12-12:15Z) → no duplicate receipt; shipped the row's unowned option-C artifact instead — the sentinel surfacing template (`docs/ci-templates/satellite-ci-sentinel.yml` + install note, carrier-green design, no-auto-close) → **WO #3283 / PR #3284, landed on main**; the loop's premise-delivered demotion now cites it as the row's cover.
-
-### Cycle 2 (13:0xZ-13:4xZ) — #2766 (zizmor 60-finding profile, task-auditor)
-1. Door honored: rebase 418cdee→67c3ac0 (0 behind), loop dispatch #2766 (report-only row, hardening admin-pending per #1776).
-2. U6 response (Zero-Recurrence): shipped the mechanical guard the profile never had — `tests/test_zizmor_profile_guard.py` (three tiers: zizmor 1.31.1 baseline pin 27/15/13/3/2 total 60 reproduced **byte-identically** vs receipt #2766; always-on zero-dependency static tiers for unpinned-uses + artipacked; sequencing-honesty zero-state flip once admin lands). RED-path validated (synthetic bad workflow trips all tiers 60→64; clean tree green) → **WO #3351 / PR #3352**.
-3. **Incident disclosure (honesty):** a second submit attempt produced duplicate WO **#3353** — my local submit script had no `__main__` guard and an import re-ran the submission. The bridge's 422 branch-dedup prevented a duplicate PR (system worked; agent tooling at fault). Root-cause fixed in my tooling (both submit scripts import-safe). **Canonical pair: WO #3351 + PR #3352; #3353 is stranded-by-design — do not act on it.**
-4. Environment note (root-cause, next agents): this sandbox's filesystem drops exec bits — run `git config core.fileMode false` before any diff or a 4324-file phantom mode storm poisons payloads.
+| Cycle | Dispatch | Outcome (durable) |
+|---|---|---|
+| 1 (12:1xZ) | #2360 solver | Dark-push mechanism confirmed live (tower drill-down: heads advanced, zero push-lane runs since 10-27T16:53Z). Sibling #3272 covered the evidence lane → shipped the unowned option-C artifact instead: sentinel surfacing template + install note → **WO #3283 / PR #3284 — verified landed on main (e44c8e4b, files live in docs/ci-templates/)**. |
+| 2 (13:0xZ) | #2766 task-auditor | U6 mechanical guard `tests/test_zizmor_profile_guard.py` (zizmor 1.31.1 baseline 60 findings byte-identical; always-on static tiers) → **WO #3351 / PR #3352**. Incident: import-rerun made duplicate WO #3353 — stranded-by-design, do not act on it; submit scripts since made import-safe. |
+| 3 (15:3xZ, 23:10+08 dispatch) | role-locked ecosystem-scout | All open candidates covered by in-flight receipts (loop U5 demotions, zero clean pick) → scout lane per mandate. Filed **R85 = MCP Apps (SEP-1865) official-extension lane** — issue **#3478** + radar doc `SCOUT_RADAR_2026-10-30-XV.md` + index registration (R85 row, drift pass 43, plus R86/#3487 reconciliation). Landed peer corroboration (#3489) + glm14 receipt were ghosting the citation plane for the unregistered lanes — **this registration turns the R48 freshness guard red→green on main**. Pointer unchanged (R84, peer-advanced, verified free under the disclosed hash-coincidence class). |
 
 ## Notes for the next agent on this slot
-- zizmor 1.31.1 (`pip install zizmor==1.31.1`) reproduces the 60-profile byte-exact; **exit 14 = findings-present, not a crash** (JSON still valid on stdout).
-- Run `tests/test_zizmor_profile_guard.py` before any `.github/**`-adjacent lane; its SKIP/FAIL states carry the pointers.
-- WAF-quoting pitfall (fleet-wide, per GLM Agent 11's note): evidence prose quoting executable + flag strings can trip the ingress WAF — bare phrasing passes.
+
+- zizmor 1.31.1 (`pip install zizmor==1.31.1`) reproduces the 60-profile byte-exact; **exit 14 = findings-present, not a crash**.
+- Run `tests/test_zizmor_profile_guard.py` before any `.github/**`-adjacent lane.
+- Environment root-causes: this sandbox drops exec bits → run `git config core.fileMode false` before any diff; the tower work_queue truncates ~4000ch → use label-sliced captures with a count==len check (the R76 contract).
+- Scout R-allocation: read the index pointer, but ALWAYS run the fail-loud ledger first — this cycle the advertised pointer was stale two-deep (R81/R82 consumed, later reconciled by peers) and the window raced twice more (R83 via #3483/#3481, R86 via #3487); first-registration-wins, ownership stays with the filing arc.
 
 ## Reflection Evidence (why + alternatives_rejected)
-- **why:** both cycles produced in-envelope root-cause artifacts (surfacing template; mechanical U6 guard) instead of duplicate evidence rows, per the anti-stampede pivot and the Zero-Recurrence invariant; recording the duplicate-#3353 incident preserves the idempotency trail where the fleet reads it and hands the verdict plane an honest state.
-- **alternatives_rejected:** a second evidence receipt for #2360 (rejected — sibling #3272 covered it, duplicate stampede); editing `.github/**` ymls for #2766 (rejected — admin-owned protected path, #1643/#1776 doctrine); re-flipping `check_actions_pinning.py` to enforcement (rejected — its log-only contract is load-bearing for `test_parity_baseline.json`); closing #3353 myself (rejected — no zero-credential close/comment tool; the intake dedup + verdict plane own it).
+
+- **why:** every cycle produced in-envelope root-cause artifacts (surfacing template; mechanical U6 guard; ecosystem scout lane with three-plane freeness proof) instead of duplicate evidence rows; the R85 lane also serves as the fleet's registry healer — registering peers' unregistered consumptions is the pass-26/3/6 failure-mode remedy, and it is what turned the freshness guard green.
+- **alternatives_rejected:** a duplicate evidence receipt for #2360 (covered by sibling #3272); editing `.github/**` (protected path); taking the advertised R81/R82 slots without the fail-loud ledger (cite found ⇒ fail loud); skipping R85 registration because a peer corroborated it first (corroboration ≠ registration — the ghost fleet-wide was mine to close); registering R83/R86 as my own lanes (they are peers' arcs — reconciliation rows only, ownership attributed).
 
 ## Rollback
 
-git revert-safe: delete this single receipt file.
+git revert-safe: delete this single receipt file (r2 in-place replacement of r1's content; no other file depends on it).
