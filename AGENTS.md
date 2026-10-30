@@ -84,3 +84,16 @@ hybrid bridge contract. The following rules are non-negotiable:
 - **Rule 3 (Infrastructure Health):** Use only Tower tools such as
   `supabase_schema_inspect` and `render_service_health` for database, cache, or
   deployment status.
+- **Rule 4 (Payload Shape Conventions — the false-null trap):** the Tower's
+  github list adapters emit **camelCase** keys (`createdAt`, `updatedAt`,
+  `mergedAt`, `closedAt`), and list-mode rows omit `body` / `labels` / `head` /
+  `draft` and the `merged` boolean; only single-PR addressability
+  (`github.list_prs` with `pull_number`, landed for #3368) returns the full
+  truth shape (`merged: true|false` plus timestamps). Probing list rows with
+  GitHub-REST snake_case (`merged_at`, `pull_request.merged_at`) reads a
+  **FALSE NULL** on merged PRs — live-proven 2026-10-31: eleven
+  squash-landed PRs (#3460..#3522, verified on `origin/main`) carry the
+  correct camelCase `mergedAt` while snake_case probes read null. Landing
+  verification ("did my WO's paired PR merge?") MUST use `pull_number`
+  addressability or `git log origin/main` — never a list-mode snake_case
+  probe (Refs #3523).
