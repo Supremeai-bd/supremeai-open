@@ -370,6 +370,52 @@ def check_existing_mirror(
     return None
 
 
+def label_pr_lane_failure(
+    repo: str,
+    pr_num: int,
+    run_id: int | str,
+    html_url: str,
+    token: str | None = None,
+) -> bool:
+    """In-place update for PR-lane CI failures: label PR and target issue directly without creating a new issue.
+    
+    Zero-issue-duplication policy: adds 'ci-failed' and 'status:unclaimed' labels to the PR
+    and any target issue cited via 'Closes #N' in the PR body.
+    """
+    tok = token or get_default_token()
+    # 1. Label the PR itself
+    code, pr_data = gh_api(f"repos/{repo}/pulls/{pr_num}", token=tok)
+    if code != 200 or not isinstance(pr_data, dict):
+        print(f"[watchdog] Could not fetch PR #{pr_num} on {repo} (HTTP {code}). Falling back.")
+        return False
+    
+    # Add ci-failed and status:unclaimed to the PR
+    gh_api(
+        f"repos/{repo}/issues/{pr_num}/labels",
+        token=tok,
+        method="POST",
+        data={"labels": ["ci-failed", "status:unclaimed"]},
+    )
+    print(f"✅ [watchdog] Marked PR #{pr_num} as 'ci-failed' and 'status:unclaimed' in-place.")
+
+    # 2. Check if the PR links to an issue via Closes/Fixes/Resolves #N
+    pr_body = pr_data.get("body") or ""
+    closes_match = re.search(r"(?:closes|fixes|resolves)\s+#(\d+)", pr_body, re.IGNORECASE)
+    if closes_match:
+        target_issue_num = int(closes_match.group(1))
+        gh_api(
+            f"repos/{OPEN_REPO}/issues/{target_issue_num}/labels",
+            token=tok,
+            method="POST",
+            data={"labels": ["ci-failed", "status:unclaimed"]},
+        )
+        print(
+            f"✅ [watchdog] Marked target issue #{target_issue_num} as 'ci-failed' and 'status:unclaimed' in-place."
+        )
+
+    return True
+
+
 def mirror_failure(
     repo: str,
     workflow_name: str,
@@ -380,7 +426,21 @@ def mirror_failure(
     error_summary: str = "",
     token: str | None = None,
 ) -> bool:
-    """Mirror CI failure as a sub-issue under CI Failure Hub #761 (visible, claimable, stays until fixed)."""
+    """Mirror CI failure.
+    
+    Policy:
+      - PR-lane failures (<N>/merge): in-place label update on PR and target issue (no new duplicate issue created).
+      - Production branch (main): mirrored as a tracked sub-issue under CI Failure Hub #761.
+    """
+    lane = classify_failure_lane(branch)
+    if lane != "production":
+        pr_num = pr_number_from_merge_ref(branch)
+        if pr_num is not None:
+            labeled = label_pr_lane_failure(repo, pr_num, run_id, html_url, token=token)
+            if labeled:
+                print(f"[watchdog] PR-lane CI failure on PR #{pr_num} handled in-place (no duplicate issue created).")
+                return True
+
     # Dedup: scan open issues for this run's marker (paginated).
     page = 1
     while True:

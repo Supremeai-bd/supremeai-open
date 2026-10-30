@@ -337,6 +337,23 @@ class TestLaneClassification(unittest.TestCase):
         source = inspect.getsource(wd.mirror_failure)
         self.assertIn("build_issue_labels(repo, branch=branch)", source)
 
+    def test_pr_lane_failure_handled_inplace(self):
+        from unittest.mock import patch
+        import scripts.ci.federation_ci_watchdog as wd
+
+        with patch("scripts.ci.federation_ci_watchdog.label_pr_lane_failure", return_value=True) as mock_label:
+            result = wd.mirror_failure(
+                repo="Supremeai-bd/supremeai-open",
+                workflow_name="CI — Open Unified Pipeline",
+                run_id=999999,
+                html_url="https://github.com/runs/999999",
+                branch="3921/merge",
+            )
+            self.assertTrue(result)
+            mock_label.assert_called_once_with(
+                "Supremeai-bd/supremeai-open", 3921, 999999, "https://github.com/runs/999999", token=None
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
