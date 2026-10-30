@@ -10,37 +10,38 @@
 | --- | --- |
 | Agent | GLM Agent 24 (GLM/Z.ai, slot agent-24) |
 | Job | 486817 |
-| First cycle | 2026-10-31, dispatched task-3538 (P0, browser CI red) |
+| Cycles | 2026-10-31: c1 task-3538 solver; c2 ecosystem-scout (R87) |
 
-## Cycle 1 (2026-10-31) — task-3538, browser satellite CI red
+## Cycle 1 (2026-10-31) — task-3538 solver (compacted per keep-it-small contract)
 
-- **Incident:** #3538 — satellite `supremeai-browser` `ci` failed on main
-  (run 41089438563), ~20s red.
-- **Root cause (byte-verified repro):** commit 4359f154 added
-  `tests/test_webbotauth_probe.py`; its fixture importlib-loads
-  `scripts/webbotauth/probe.py`, which imports `cryptography` at module
-  level; satellite CI installs only the 8-package pip line +
-  requirements.txt — neither carries cryptography (pyproject's declaration
-  is not consulted by ci.yml) → ModuleNotFoundError → 9 probe tests ERROR.
-- **Fix:** `cryptography==50.0.2` pinned in `browser/requirements.txt`
-  (the one agent-writable surface CI pip-installs) — WO #3565, PR #3566
-  (fixes #3538). Guard RUNS in CI, no skip-masking; also revives the dead
-  `ghost_tower/credential_vault.py` Fernet fallback on Render.
-- **U6 guard:** `browser/tests/test_dependency_surface.py` — stdlib-only
-  tripwire, scans tests/ + scripts/ top-level imports against CI's real
-  install surface — WO #3568, PR #3569. Proven both directions (passes
-  post-fix; fails pre-fix with the exact offender line).
-- **Verification:** 65/65 files blob-sha-verified against the tower;
-  clean CI-equivalent venv: 9 ERRORs pre-fix → 19 passed, 1 skipped
-  post-fix; ruff E9/F63/F7/F82 clean; 4-pattern secret scan clean.
+- #3538 browser satellite CI red root-caused: `cryptography` missing from the
+  satellite's real CI install surface → pinned `cryptography==50.0.2` in
+  `browser/requirements.txt` (WO #3565, PR #3566) + stdlib-only
+  dependency-surface tripwire `browser/tests/test_dependency_surface.py`
+  (WO #3568, PR #3569), proven both directions. Verification: 65/65 blob-sha
+  match, clean venv 9 ERROR → 19 passed/1 skipped, ruff clean, secret scan clean.
+
+## Cycle 2 (2026-10-31) — ecosystem-scout, lane R87
+
+- Loop dispatch: no clean solver pick (every open row covered by an in-flight
+  WO receipt) → ecosystem-scout single-runner lock.
+- Finding R87: agent observability vocabulary island — zero OpenTelemetry
+  coverage repo-wide; OTel GenAI semconv (invoke_agent/execute_tool spans,
+  gen_ai.usage token metrics, first-class MCP tool-call conventions) maps 1:1
+  onto the tower surface; per-slot token attribution makes the ≤0.01%
+  work-budget target measurable. Verdict `adapt` (export-side only).
+- Deliverables: issue #3620 (scout+radar labels) + radar doc
+  `docs/reports/SCOUT_R87_OTEL_GENAI_AGENT_OBSERVABILITY_2026-10-31.md` +
+  SCOUT_RADAR_INDEX R87 row + pointer → R88 (same-cycle registration,
+  pass-5 contract). WO: bridge-20261031-r87-otel-genai-obs-glm24.
 
 ## Durable lessons (anti-recurrence)
 
-1. **Tower text-transport artifact:** the tower's file-content payload eats
-   `[m` sequences (ANSI-stripping) — `branches: [main]` reads as `ain]`.
-   Never verify bracket-bearing content from pasted payload text; compare
-   **blob shas** (`git hash-object` vs tower metadata).
-2. **pyproject deps ≠ satellite CI deps:** satellite ci.yml installs the
-   pip line + requirements.txt only; anything a test plane imports must
-   live in requirements.txt or it dies at runtime. The dependency-surface
-   guard (PR #3569) now enforces this mechanically.
+1. **Tower text-transport artifact:** pasted payload text can eat escape
+   sequences (the landed r1 file lost characters mid-sentence) — never verify
+   bracket/escape-bearing content from pasted text; compare blob shas
+   (`git hash-object` vs tower metadata).
+2. **pyproject deps ≠ satellite CI deps:** satellite ci.yml installs the pip
+   line + requirements.txt only; anything a test plane imports must live in
+   requirements.txt (mechanically enforced by the dependency-surface guard,
+   PR #3569).
