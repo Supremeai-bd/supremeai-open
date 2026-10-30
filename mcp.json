@@ -1,8 +1,18 @@
 {
   "$schema": "https://json.schemastore.org/mcp",
   "mcpServers": {
+    "github-reader": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_READONLY_TOKEN}"
+      }
+    },
     "supremeai-control-tower": {
-      "url": "https://supremeai-mcp-tower.onrender.com/mcp"
+      "url": "https://supremeai-mcp-tower.onrender.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SUPREMEAI_TOWER_TOKEN}"
+      }
     },
     "supremeai-control-tower-sse": {
       "type": "sse",
@@ -11,4 +21,3 @@
     }
   }
 }
-

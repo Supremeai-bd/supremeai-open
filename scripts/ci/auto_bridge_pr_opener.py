@@ -113,10 +113,16 @@ def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
             except json.JSONDecodeError:
                 pass
 
+        title = issue.get("title", "")
+        # Filter out report-only / audit receipts from executable stranded queue
+        if re.search(r"\b(report-only|docs-only|receipt|evidence\s+(addendum|refresh))\b", title, re.IGNORECASE):
+            print(f"ℹ️ Skipping report-only receipt work order #{issue.get('number')}: '{title}'", file=sys.stderr)
+            continue
+
         stranded.append(
             {
                 "issue_number": issue.get("number"),
-                "title": issue.get("title", ""),
+                "title": title,
                 "branch": branch,
                 "body": body,
             }
@@ -188,9 +194,26 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
         run_cmd(["git", "config", "user.email", "bot@supremeai.org"])
         reb_code, _, reb_err = run_cmd(["git", "rebase", "origin/main"])
         if reb_code != 0:
-            print(f"   ❌ Rebase failed with conflict: {reb_err}. Aborting.")
+            print(f"   ❌ Rebase failed with conflict: {reb_err}. Auto-recovering...")
             run_cmd(["git", "rebase", "--abort"])
             run_cmd(["git", "checkout", "-"])
+            # Self-healing: mark work order as conflicting/rejected and close to prevent permanent stranded clutter
+            run_cmd([
+                "gh", "issue", "comment", str(issue_num),
+                "--repo", UPSTREAM_REPO,
+                "--body", f"<!-- auto-bridge:conflict-close -->\n❌ **Automatic Closure**: Branch `{branch}` has git rebase conflicts against `origin/main`.\n\nError: `{reb_err}`\nPer Invariant 1 (Dual-Rebase) & Invariant 3 (Superior Replacement), this stranded work order is closed. Please rebase locally against fresh `origin/main` before resubmitting."
+            ])
+            run_cmd([
+                "gh", "issue", "edit", str(issue_num),
+                "--repo", UPSTREAM_REPO,
+                "--add-label", "bridge:rejected,conflict:needs-rebase",
+                "--remove-label", "bridge:queued"
+            ])
+            run_cmd([
+                "gh", "issue", "close", str(issue_num),
+                "--repo", UPSTREAM_REPO,
+                "--reason", "not planned"
+            ])
             return False
         # Push rebased branch back to remote
         print(f"   🚀 Pushing rebased branch to origin/{branch}...")

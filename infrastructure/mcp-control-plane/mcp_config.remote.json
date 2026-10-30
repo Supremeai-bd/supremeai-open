@@ -1,5 +1,12 @@
 {
   "mcpServers": {
+    "github-reader": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<GITHUB_READONLY_TOKEN_FROM_INFISICAL>"
+      }
+    },
     "supremeai-control-tower": {
       "url": "https://<YOUR-MCP-HOST>/mcp",
       "headers": {
@@ -11,6 +18,6 @@
     "protocol": "streamable-http",
     "authentication": "bearer-token",
     "defaultRole": "viewer",
-    "note": "Any MCP-compatible AI client can use the same endpoint and admin-issued token. Start with viewer access and explicitly promote only when needed. Replace placeholders and keep this file out of source control."
+    "note": "github-reader is read-only (GITHUB_READONLY_TOKEN). Tower uses admin-issued bearer token. Replace placeholders and keep this file out of source control."
   }
 }
