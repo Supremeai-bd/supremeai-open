@@ -40,8 +40,13 @@ core/.secrets/
 
 
 
-# Runtime health-report outputs
-reports/
+# Runtime health-report outputs (root-anchored).
+# A bare `reports/` matched every directory named `reports` at any depth and
+# shadowed the tracked evidence plane `docs/reports/` (137 files): new files
+# there were refused by plain `git add` and ignore-respecting traversals
+# (rg/scan tooling) saw none of the tree. Anchor to the root so runtime
+# outputs stay ignored while the evidence plane stays visible. (#3047 item 19)
+/reports/
 
 # Agent continuous loop runtime state
 scripts/agents/agent_cadence_state.json
