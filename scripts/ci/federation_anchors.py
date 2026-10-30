@@ -5,13 +5,16 @@ Defines the permanent Anchor Hub parent issues hosted on Supremeai-bd/supremeai-
 All automated CI failure reports, bridge sync work orders, rejections, and agent tasks
 attach strictly as Sub-Issues under their respective repository's Anchor Hub.
 
-Topology Architecture (Golden 8-Satellite Architecture):
-  - Strictly 8 Active Primary Anchor Hubs (#749 Studio, #750 API, #751 Core, #754 VSCode,
-    #756 Browser, #760 Bridge/Archive, #761 Monorepo CI, #762 Open Embassy).
-  - 6 Transit Hubs (#752 Command, #753 Skills, #755 Agents, #757 SDK, #758 Infra, #759 MCP)
-    have been permanently consolidated into Supremeai-bd/supremeai-api and Supremeai-bd/supremeai-vscode.
-  - Root board query `gh issue list --search "no:parent is:open"` returns strictly the active anchor hubs.
-  - All granular tasks, CI failures, and bridge sync orders are child sub-issues.
+Topology Architecture (Golden 6-Domain Architecture):
+  - Strictly 6 Active Primary Domain Anchor Hubs (#749 Studio, #750 API, #751 Core, #754 VSCode,
+    #756 Browser, #762 Open Embassy).
+  - 8 Historical / Consolidated / Infrastructure Hubs:
+    * 6 Historical Transit Hubs (#752 Command, #753 Skills, #755 Agents, #757 SDK, #758 Infra, #759 MCP)
+      permanently consolidated into API (#750) and VSCode (#754).
+    * 2 Operational / Cold Storage Desks (#760 Archive/Bridge, #761 Monorepo/CI Desk) retired
+      in favor of in-place failure tracking and direct repository sync.
+  - Root board query `gh issue list --search "no:parent is:open"` returns strictly the active domain anchor hubs.
+  - All granular tasks are child sub-issues.
 """
 
 from __future__ import annotations
@@ -53,19 +56,17 @@ ANCHOR_HUBS: dict[str, int] = {
     "Supremeai-bd/supremeai-open": 762,
 }
 
-# Active 8 Primary Anchor Hubs per Golden 8-Satellite Topology (FEDERATION_ORGANIZATION_PLAN.md §2.1)
+# Active 6 Primary Domain Anchor Hubs (Core Live Repositories with Active Domain Mirrors)
 ACTIVE_ANCHOR_HUBS: dict[str, int] = {
     "Supremeai-bd/supremeai-studio": 749,
     "Supremeai-bd/supremeai-api": 750,
     "Supremeai-bd/supremeai-core": 751,
     "Supremeai-bd/supremeai-vscode": 754,
     "Supremeai-bd/supremeai-browser": 756,
-    "Supremeai-bd/supremeai-archive": 760,
-    "Supremeai-bd/supremeai": 761,
     "Supremeai-bd/supremeai-open": 762,
 }
 
-# Consolidated / Retired Anchor Hubs (Merged into supremeai-api & supremeai-vscode)
+# Consolidated / Retired Anchor Hubs (Merged domains + Retired operational desks)
 RETIRED_ANCHOR_HUBS: dict[str, int] = {
     "Supremeai-bd/supremeai-command": 752,
     "Supremeai-bd/supremeai-skills": 753,
@@ -73,6 +74,8 @@ RETIRED_ANCHOR_HUBS: dict[str, int] = {
     "Supremeai-bd/supremeai-sdk": 757,
     "Supremeai-bd/supremeai-infrastructure": 758,
     "Supremeai-bd/supremeai-mcp-control-plane": 759,
+    "Supremeai-bd/supremeai-archive": 760,
+    "Supremeai-bd/supremeai": 761,
 }
 
 # Specialized Hubs
@@ -438,18 +441,18 @@ def self_test() -> int:
     assert len(ANCHOR_HUBS) == 14, (
         f"Must have 14 total historical anchor hubs in lookup, found {len(ANCHOR_HUBS)}"
     )
-    assert len(ACTIVE_ANCHOR_HUBS) == 8, (
-        f"Must have strictly 8 active anchor hubs, found {len(ACTIVE_ANCHOR_HUBS)}"
+    assert len(ACTIVE_ANCHOR_HUBS) == 6, (
+        f"Must have strictly 6 active domain anchor hubs, found {len(ACTIVE_ANCHOR_HUBS)}"
     )
-    assert len(RETIRED_ANCHOR_HUBS) == 6, (
-        f"Must have strictly 6 consolidated anchor hubs, found {len(RETIRED_ANCHOR_HUBS)}"
+    assert len(RETIRED_ANCHOR_HUBS) == 8, (
+        f"Must have strictly 8 consolidated/retired anchor hubs, found {len(RETIRED_ANCHOR_HUBS)}"
     )
 
     # 2. Unique issue numbers
     numbers = list(ANCHOR_HUBS.values())
     assert len(set(numbers)) == 14, "Anchor issue numbers must all be distinct"
-    assert len(set(ACTIVE_ANCHOR_HUBS.values())) == 8, "Active anchor issue numbers must all be distinct"
-    assert len(set(RETIRED_ANCHOR_HUBS.values())) == 6, "Retired anchor issue numbers must all be distinct"
+    assert len(set(ACTIVE_ANCHOR_HUBS.values())) == 6, "Active anchor issue numbers must all be distinct"
+    assert len(set(RETIRED_ANCHOR_HUBS.values())) == 8, "Retired anchor issue numbers must all be distinct"
 
     # 3. Sequential 749-762 range
     expected_range = set(range(749, 763))
@@ -502,7 +505,7 @@ def verify_live(token: str | None = None) -> int:
     )
     errors = 0
 
-    print("--- Active 8 Primary Anchor Hubs ---")
+    print("--- Active 6 Primary Domain Anchor Hubs ---")
     for repo_name, issue_num in sorted(ACTIVE_ANCHOR_HUBS.items(), key=lambda x: x[1]):
         url = f"https://api.github.com/repos/{OPEN_REPO}/issues/{issue_num}"
         headers = {
