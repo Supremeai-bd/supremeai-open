@@ -128,6 +128,32 @@ class TestFederationSatelliteSync(unittest.TestCase):
             self.assertEqual(removed, [])
             self.assertTrue((satellite / "core" / "stale_symbol.py").exists())
 
+    def test_package_shadow_policy_spares_gateway_package(self):
+        # (#3649 root cause, 2026-10-31) supremeai-api joined core in the
+        # package-surface class: the #1772 package-true layout made the
+        # satellite's Dockerfile CMD import `gateway.service.app:app` from
+        # the nested copy, so satellite_root/gateway/ is load-bearing. Under
+        # the default prune policy the shadow guard deleted the fresh tree
+        # right after the api block copied it — 5 Render builds died at
+        # `COPY gateway/ gateway/` (13:02-16:23Z, commit e7694bc) while the
+        # root Dockerfile stayed byte-identical to the mirror (sha 68c1d307).
+        # The refresh_package policy must leave the tree for the caller to
+        # refresh, never delete it.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            satellite = sync_mod.Path(tmp) / "sat"
+            mirror = sync_mod.Path(tmp) / "mirror"
+            (satellite / "gateway" / "service").mkdir(parents=True)
+            (satellite / "gateway" / "serve.py").write_text("pkg")
+            mirror.mkdir()
+            removed = sync_mod.prune_domain_self_shadows(
+                satellite, "gateway", mirror, policy="refresh_package"
+            )
+            self.assertEqual(removed, [])
+            self.assertTrue((satellite / "gateway" / "serve.py").exists())
+            self.assertTrue((satellite / "gateway" / "service").is_dir())
+
     def test_refresh_domain_package_builds_fresh_pruned_copy(self):
         import tempfile
 
@@ -176,6 +202,9 @@ class TestFederationSatelliteSync(unittest.TestCase):
         self.assertTrue(set(sync_mod.PACKAGE_SHADOW_REFRESH_TARGETS) <= set(sync_mod.DOMAIN_MAP))
         self.assertTrue(set(sync_mod.SATELLITE_CLOAK_ALLOWLIST) <= set(sync_mod.DOMAIN_MAP))
         self.assertIn("Supremeai-bd/supremeai-core", sync_mod.PACKAGE_SHADOW_REFRESH_TARGETS)
+        # (#3649) the api satellite's Dockerfile imports gateway.service.app:app
+        # from the nested copy — it must never ride the default prune policy.
+        self.assertIn("Supremeai-bd/supremeai-api", sync_mod.PACKAGE_SHADOW_REFRESH_TARGETS)
 
     def test_cloak_allowlist_default_is_empty(self):
         # Fail-closed default: nothing may silently degrade until an admin
