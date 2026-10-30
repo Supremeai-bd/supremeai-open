@@ -11,7 +11,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from core.monitoring.logging_config import logger
+try:
+    from .monitoring.logging_config import logger
+except ImportError:
+    try:
+        from core.monitoring.logging_config import logger
+    except ImportError:
+        from monitoring.logging_config import logger
 
 
 class AgentRole(str, Enum):
