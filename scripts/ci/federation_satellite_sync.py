@@ -72,6 +72,17 @@ DEPLOY_TARGETS: set[str] = {
 # prune=True on every run: a sync-managed exact copy can never drift.
 PACKAGE_SHADOW_REFRESH_TARGETS: set[str] = {
     "Supremeai-bd/supremeai-core",
+    # (#3649 root cause, 2026-10-31) supremeai-api joins core in the
+    # package-surface class: the #1772 package-true layout made the satellite's
+    # Dockerfile CMD import `gateway.service.app:app` from the nested copy, so
+    # `satellite_root/gateway/` is load-bearing exactly like core's `core.*`.
+    # With the default prune policy the #1676 shadow guard deleted the fresh
+    # gateway/ tree right after the api block copied it — every Render build
+    # then died at `COPY gateway/ gateway/` ("/gateway": not found; 5 failed
+    # auto-deploys 13:02-16:23Z, commit e7694bc) while the Dockerfile at the
+    # satellite root stayed perfectly in sync. Same lesson as #3441: a
+    # package-surface satellite must get refresh_package, never prune.
+    "Supremeai-bd/supremeai-api",
 }
 
 # (#3441 root cause) Satellites the federation DELIBERATELY keeps outside the
@@ -102,12 +113,15 @@ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
 ]
 
 ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
-ARCHIVE_MIRROR_PAIRS: list[tuple[str, str]] = [
-    (
-        "docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md",
-        "adrs/ADR-008-OPEN_FOUNDATION_BOUNDARY.md",
-    ),
-]
+# (#3524 collateral, #3629 lane, 2026-10-31) The founder-mandate docs migration
+# moved the whole docs/ tree — including docs/adrs/ — to supremeai-archive, so
+# every open-side mirror SOURCE below ceased to exist and the last pair went
+# permanently dead (its archive destination adrs/ADR-008-*.md is now the SSOT).
+# The stale pair made self_test() fail-closed on every run ("Archive mirror
+# source ... must exist"), reding main's test suite and the --self-test gate.
+# The mechanism stays for future open->archive record mirrors; list pairs only
+# while their open-side source genuinely exists.
+ARCHIVE_MIRROR_PAIRS: list[tuple[str, str]] = []
 
 # Post-sync sentinel verification (#1689): mirror<->satellite pairs that must stay
 # byte-identical. The manifest scripts/ci/satellite_sentinels.json is config-driven;
