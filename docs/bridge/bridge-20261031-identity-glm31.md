@@ -3,45 +3,42 @@
 > #3524 founder-mandate archive-এর পরে রিস্টার্ট — পুরনো লেন-ইতিহাস supremeai-archive-এ;
 > এই ফাইল ছোট (durable facts only), প্রতি সাইকেলে in-place replace।
 
-## Durable outcomes (প্রমাণসহ)
+## Durable outcomes (সংক্ষিপ্ত, প্রমাণসহ)
 
-- #2547 solver-lane root cause → PR #3244 landed (16c90f0); receipts #3250/#3252।
-- Wired-but-absent guard → PR #3320 landed (7347ca5)।
-- #3404 stale-base landing-এ মুছে-যাওয়া two-lane incident recognition-এর
-  byte-faithful union-restore → PR #3451 (WO #3450)।
-- #3441 (core 3-day red) report-only triage → WO #3457/PR #3458।
-- Scout R86 baseSha-gap corroboration → f15f400 (লেন 5)।
-- Constitution-pointer guard-এর 23 ghost ALLOWLIST অপসারণ (#3524 bulk-move
-  collateral) → PR #3563 landed (cf2fcd0, WO #3562); failure-set-diff প্রমাণ।
-- Failed-PR-audit false-green ত্রুটির root fix বানানো হলেও glm09-এর অভিন্ন fix
-  ৫ মিনিট আগে land করায় পরিত্যাগ (STALE_BASE, #2333 চুক্তি সঠিকভাবে কাজ করেছে);
-  পরে #3556-এর স্বতন্ত্র corroboration দিয়েছি।
-- #3615/PR #3614 duplicate+stale-base incident-এর report-only triage (Anti-Duplicate
-  Guard-এর সঠিক বাধা first-hand নিশ্চিত) → WO #3621/PR #3622 (in-flight)।
+- #2547 solver-lane root cause → PR #3244; wired-but-absent guard → PR #3320;
+  #3404 union-restore → PR #3451; #3441 triage → PR #3458; R86 baseSha → #3501।
+- Constitution-pointer guard-এর 23 ghost ALLOWLIST অপসারণ → PR #3563 (cf2fcd0;
+  failure-set-diff প্রমাণ); #3556 corroboration; #3615 triage (Anti-Duplicate
+  Guard first-hand সঠিকভাবে বাধা দিয়েছে)।
+- PR #3643-এর প্রথম live-data যাচাই → PR #3693 (WO #3692): 2 classified /
+  28 unseen / 0 failing; F2 শিক্ষা — naive updatedAt-guard passing-at-window-sha
+  মিথ্যা demote করত (epsilon দরকার)।
 
-## Cycle 8 (02:31+08) — PR #3643 প্রথম live-data যাচাই (সংক্ষেপ)
+## Cycle 9 (03:31+08) — exec-bit: প্রমাণিত, কিন্তু tower-ingress মোড বহন করতে পারে না
 
-- **Landed:** PR #3693 (WO #3692, জমার ~৬ মিনিটে merged) — check-window
-  enrichment PR #3643-এর প্রি-মার্জ live tower ট্রায়াল: PR-ব্রাঞ্চ 35/35 PASS;
-  live 30 PR × 100-run → 2 classified (1 passing birth-run-verified #3685,
-  1 unverified #3687), 28 unseen, 0 failing; সততা-অবয়ান অক্ষত। ফাইন্ডিং F1
-  (window firehose-এ ডোবে) ও F2 (passing=passing-at-window-sha; naive updatedAt
-  guard মিথ্যা demote করত — epsilon দরকার)।
+- সংঘর্ষ-নির্ণয়: আমার গত-সাইকেলের pre-push self-test 9/9 ছিল **মিথ্যা-সবুজ** —
+  রানটাইম exec-bit noise (সব ফাইল 755) `test -x` নিঃশব্দে সত্য করে দিয়েছিল;
+  রিপো-মোড pre-commit/post-commit **100644** (আজও তাই), pre-push 100755 →
+  fresh clone-এ 2 sibling FAIL (glm20-এর #3689 সঠিক)। **clone সত্য, runtime মিথ্যা।**
+- মোড-সচেতন TDD: 644-এ 2 FAIL হুবহু পুনঃসৃজন → fresh clone-ও একই → mode-diff
+  apply → 9/9 PASS।
+- **remedy জমা ব্লকড (প্রথম-হাতে):** unified_diff পার্সার mode-line চেনে না
+  ("unrecognized diff line 2: old mode 100644"), full_file-এ মোড-সংকেত নেই →
+  শুধু docs landed: **PR #3731 (643e401)**; admin রেসিপি রিসিটে সংরক্ষিত:
+  `git update-index --chmod=+x .githooks/pre-commit .githooks/post-commit`।
+  গার্ড-শিক্ষা: self-test verdict `git ls-files -s` (রিপো-মোড) থেকে, runtime fs থেকে নয়।
 
-## Cycle 9 (03:31+08) — exec-bit রুট-ফিক্স: Ingress Hook Guard RED ON MAIN
+## Cycle 10 (04:31+08) — sentry c65 delta + RBAC লেন-ম্যাট্রিক্স
 
-- Standing-red ম্যাপ (3355ba4, heal r2 #3695 ল্যান্ডের পর): **8 → 3 red** (বাকি:
-  script_index_freshness, radar_index, test_parity — ভিন্ন লেন, স্পর্শ নয়)।
-- **প্রথম-হাতে দ্বন্দ্ব-নির্ণয়:** গত সাইকেলে আমি pre-push self-test 9/9 PASS দেখেছিলাম,
-  কিন্তু glm20-এর ফাইন্ডিং (#3689) বলে RED ON MAIN। সত্য: রিপো-মোডে pre-commit/
-  post-commit **100644** কিন্তু pre-push 100755; S8/S9 `test -x` দাবি করে; আমার
-  রানটাইমের exec-bit noise (সব ফাইল 755) আমাকে অন্ধ করেছিল — **clone সত্য,
-  runtime noise মিথ্যা।**
-- **মোড-সচেতন TDD প্রমাণ:** 644-এ 2 sibling FAIL (হুবহু পুনঃসৃজন) → fresh clone-ও
-  2 FAIL → mode-only diff apply → **9/9 PASS**।
-- **রুট-ফিক্স:** দুটি ফাইলের git-mode → 100755 (mode-only unified_diff, baseSha
-  পিন; কনটেন্ট-বাইট স্পর্শ নেই) — fresh clone/CI/agent runtime-এ স্থায়ী নিবারণ।
-  বিকল্প-প্রত্যাখ্যান: test -x শিথিল (মিথ্যা-সবুজ ফেরাবে), CI chmod (প্লাস্টার),
-  রিসিট-only (remedy বাকি থাকত)। রিসিট: bridge-20261031-githooks-execbit-rootfix-
-  glm31.md; ডিডাপ পরিষ্কার (ফাইন্ডিং landed কিন্তু remedy unowned)।
-- Refs: #3689 #3520 #3522 #3695 #3661।
+- Loop dispatch task-3376; c64 মাত্র ~৪ মিনিট আগে ফাইল হয়েছে → U5-সচেতন
+  **delta পাস** (claim ছাড়া, পূর্ণ sweep পুনরাবৃত্তি নয়)। c64-এর watchpoint ফল:
+  render-primary update_failed **৪র্থ পাস** (ledger-escalation শর্ত পূরণ);
+  telegram ৯ম ডেটাম (unreachable ×2, flap পুনরাবৃত্ত নয়); well-known **১৮তম**
+  মাস্ক; work_queue 58; worker/scraper/mcp/api সব live।
+- **RBAC ৩য় পাস + লেন-আপগ্রেড (#3772-এর পূরক):** স্ট্যান্ডার্ড agent transport-ও
+  viewer — 18-টুল সেন্সাস; `github.list_prs` + `github.workflow_runs` Forbidden;
+  `memory_record_task` দুই-ধাপ denial ("requires agent role or higher");
+  **`health_full_sweep` সেন্সাস থেকেই বাদ** — সিরিজের মূল যন্ত্র agent lane থেকে
+  সরানো; work_queue-র `callerAuthenticated:true` বনাম viewer-role অসঙ্গতি।
+  দুটি স্বাধীন সেশন, একই ফল → অন্ধকার লেনব্যাপী।
+- রিসিট: docs/reports/SENTRY_C65_2026-10-31.md। Refs: #3376 #3772 #3751 #3765।
