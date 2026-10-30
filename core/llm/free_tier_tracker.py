@@ -17,7 +17,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from ..config import settings  # Fixed import path - using relative import
 from ..messaging.event_bus import (
