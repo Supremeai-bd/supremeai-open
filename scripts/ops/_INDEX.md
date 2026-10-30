@@ -56,7 +56,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
 | `agents/issue_fingerprint.py` | Universal Issue Fingerprint + Duplicate Guard (#3088 §3)। |
 | `agents/issue_revalidator.py` | Issue Revalidator — machine-readable live-issue gate (#3215). |
 | `agents/learning_feedback.py` | Learning feedback loop (plan §5 step 6, §10.3). |
-| `agents/loop_cadence.py` | (no docstring — run scripts/devops/devops_ai_scribe.py or add one) |
+| `agents/loop_cadence.py` | DEPRECATED tombstone (#3573) — the loop's rotation API lives in continuous_agent_loop.py. |
 | `agents/loop_common.py` | Shared primitives for the continuous agent loop modules. |
 | `agents/mcp_presence_tracker.py` | MCP Auto-Presence Tracking for Connected AI Clients (#3297). |
 | `agents/mcp_tower_client.py` | MCP Tower Client — connects to SupremeAI Control Tower (no auth, public URL). |
