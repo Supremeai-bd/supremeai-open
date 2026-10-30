@@ -455,15 +455,27 @@ class TestDarkScanHonesty(unittest.TestCase):
     def test_live_fetch_failure_sets_dark_state(self):
         # The LIVE fetcher (not an injected one) must flip the dark flag on
         # any failure — that is the exact silent path this R2 closes.
+        # R3 update (item 15, GLM Agent 05): the fetcher now has TWO
+        # transports (REST first, tower second, one shared cache). With every
+        # urlopen patched dark, both transports fail, and the live fetcher
+        # raises HONESTLY (the R3 contract pinned in
+        # test_landing_fetch_tower_fallback.py) while still flipping the dark
+        # flag and caching the darkness — the note's fail-open layer serves
+        # the row, never blocks. The R2-era silent-return shape would be a
+        # false-green here: the raise is the honesty signal itself.
         cal._LANDING_FETCH_FAILED = False
         cal._LANDING_FETCH_DONE = False
         with unittest.mock.patch.object(
             cal.urllib.request, "urlopen", side_effect=OSError("rate limited")
         ):
-            rows = cal._fetch_merged_landing_prs(80)
-        self.assertEqual(rows, [])
+            with self.assertRaises(RuntimeError):
+                cal._fetch_merged_landing_prs(80)
+        self.assertEqual(cal._LANDING_ROWS, [])
         self.assertTrue(cal._LANDING_FETCH_FAILED)
+        self.assertEqual(cal._LANDING_PLANE, "dark")
         self.assertIsNotNone(cal.landing_crossscan_advisory())
+        # darkness is cached: a later candidate re-networks nothing
+        self.assertEqual(cal._fetch_merged_landing_prs(80), [])
         cal._LANDING_FETCH_DONE = True  # keep the module cache coherent
 
     def test_envelope_carries_dark_advisory_in_board_note(self):

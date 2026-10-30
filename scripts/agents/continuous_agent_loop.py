@@ -522,44 +522,39 @@ RECEIPT_LABEL = "bridge:receipt"
 MERGED_LANDING_WINDOW = 80  # /pulls?state=closed newest-updated window (one fetch per pick run)
 PREMISE_PROBE_TIMEOUT_S = 10.0
 
-# বাংলা: প্রক্রিয়া-স্তরের একক ফেচ — প্রতি pick রানে সর্বোচ্চ একবার REST কল
-# (rate-limit নিয়ন্ত্রণ); ব্যর্থতাও ক্যাশ হয় (খালি তালিকা) যাতে একই রানের
-# পরবর্তী প্রার্থীরা বারবার নেটওয়ার্কে না যায়। ব্যর্থ ফেচ = কোনো demotion নয়
-# (fail-open দিক: ফিল্টার শুধু dispatch সরায়, কখনো ব্লক করে না)।
-_LANDING_FETCH_DONE = False
-_LANDING_ROWS: list[dict[str, Any]] = []
-# item 15 R2 (GLM Agent 23): a failed fetch used to be indistinguishable from
-# a healthy empty scan — the fail-open dispatch was SILENT, so a rate-limited
-# run re-dispatched premise-delivered rows as fresh work with no trace (live
-# 2026-10-30: same sandbox, run 1 demoted #2360 via the citation scan, run 3
-# re-picked it after the anonymous 60 req/h quota burned out; #3351's landed
-# artifact rode the same dark run). The failure is now a first-class state
-# surfaced at the pick log and on the task envelope's board_note.
-_LANDING_FETCH_FAILED = False
-
-
+# Transport-resilient scan B (item 15 R3) — RESTORATION + UNION of two clobbered lanes.
+# Live anatomy: PR #3266 (GLM Agent 22, Job 486813, landed 11:50Z) gave scan B a
+# second transport (anonymous REST first, zero-credential tower github.list_prs
+# second) to cure the chronic shared-egress 403 darkness; PR #3404 (GLM Agent
+# 23's R2 dark-honesty advisory) then landed against the SAME region and its
+# conflict resolution silently dropped the #3266 transports — leaving the
+# landed pins RED on main (caught live 2026-10-30 ~14:0xZ: run 1 demoted a
+# premise-delivered row, the quota-dark re-run re-served it, exactly the
+# duplicate-minting class this scan exists to stop). This block restores the
+# #3266 transports byte-faithfully AND keeps the #3404 honesty layer (dark
+# flag + advisory + plane tag) that main already pins — neither lane's work is
+# lost this time. Contract: fail-open (both dark ⇒ honest raise that the
+# note's fail-open layer serves), merged-only signal, one fetch per pick run.
 def landing_crossscan_advisory() -> str | None:
     """Honest dark-scan advisory, or None when the scan never failed.
 
     বাংলা: fail-open dispatch থাকবে (never-raise চুক্তি অটুট), কিন্তু আর নীরব নয় —
-    ফেচ-ব্যর্থতা হলে রিসিভিং এজেন্ট envelope-এই দেখবে যে premise স্ক্যান অন্ধকার
-    ছিল, দাবি করার আগে নিজে যাচাই করতে হবে। Hermetic callers (injected
-    fetch_merged) এই গ্লোবাল স্পর্শ করে না — তাদের জন্য সবসময় None।
+    দুই ট্রান্সপোর্টই (REST + tower) অন্ধকার হলে রিসিভিং এজেন্ট envelope-এই
+    দেখবে যে premise স্ক্যান চলেনি, দাবি করার আগে নিজে যাচাই করতে হবে।
+    Hermetic callers (injected fetch_merged) এই গ্লোবাল স্পর্শ করে না।
     """
     if not _LANDING_FETCH_FAILED:
         return None
     return (
-        "landing cross-scan DARK this run (anonymous /pulls fetch failed — "
-        "rate-limit/timeout/parse): merged-citation premise scan was not "
-        "performed; re-verify the row's premise on live main before claiming"
+        "landing cross-scan DARK this run (both transports failed — anonymous "
+        "/pulls REST and tower github.list_prs): merged-citation premise scan "
+        "was not performed; re-verify the row's premise on live main before "
+        "claiming"
     )
 
 
-def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
-    global _LANDING_FETCH_DONE, _LANDING_ROWS
-    if _LANDING_FETCH_DONE:
-        return _LANDING_ROWS
-    _LANDING_FETCH_DONE = True
+def _rest_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
+    """Direct unauthenticated REST fetch of the closed-PR window; raises on any failure."""
     url = (
         f"https://api.github.com/repos/{UPSTREAM_REPO}/pulls"
         f"?state=closed&sort=updated&direction=desc&per_page={per_page}"
@@ -571,16 +566,204 @@ def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
             "User-Agent": "supremeai-agent-loop-landing-receipt-probe",
         },
     )
-    global _LANDING_FETCH_FAILED  # single-writer run-scoped cache
+    with urllib.request.urlopen(req, timeout=PREMISE_PROBE_TIMEOUT_S) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    return list(payload if isinstance(payload, list) else [])
+
+
+TOWER_LANDING_FALLBACK_TIMEOUT_S = 45.0  # hard join cap for the tower probe thread
+
+
+def _map_tower_landing_rows(rows: Any) -> list[dict[str, Any]]:
+    """Map tower ``github.list_prs`` rows onto the REST shape scan B reads.
+
+    বাংলা: tower রেসপন্সে camelCase ``mergedAt`` থাকে এবং ``body`` থাকে না —
+    REST শেপে (``merged_at``, ``body=""``) ম্যাপ করা হয়; বিকৃত/number-হীন রো
+    বাদ। Scan B title+body দুটোই স্ক্যান করে, তাই body না থাকলেও title-citation
+    ধরা পড়ে (ল্যান্ডিং রিসিটের squash subject-এই বেশিরভাগ citation — লাইভ
+    প্রমাণ #3209 → #2792 demotion)। সৎ ট্রেডঅফ: fallback উইন্ডো title-only,
+    REST উইন্ডো title+body। কখনো raise করে না।
+    """
     try:
-        with urllib.request.urlopen(req, timeout=PREMISE_PROBE_TIMEOUT_S) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except Exception:  # fail-open, but NOT silent (item 15 R2)
-        _LANDING_FETCH_FAILED = True
-        _LANDING_ROWS = []
+        out: list[dict[str, Any]] = []
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict) or row.get("number") is None:
+                continue
+            out.append(
+                {
+                    "number": row.get("number"),
+                    "title": row.get("title") or "",
+                    "state": row.get("state") or "closed",
+                    "merged_at": row.get("mergedAt") or row.get("merged_at"),
+                    "body": row.get("body") or "",
+                }
+            )
+        return out
+    except Exception:  # noqa: BLE001 — fail-open
+        return []
+
+
+def _parse_tower_landing_payload(body: Any, call_id: str) -> list[Any]:
+    """Extract the tools/call result rows from an SSE-or-JSON tower body (pure).
+
+    বাংলা: body হয় SSE (``data:`` লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত
+    (_tower_board_rows-এর প্রমাণিত পদ্ধতি)। id-ম্যাচহীন বা error-envelope
+    উপেক্ষিত; পার্স-ব্যর্থতা = খালি তালিকা (কখনো raise নয় — non-str ইনপুটও
+    খালি তালিকা)।
+    """
+    try:
+        if body is None:
+            return []
+        if isinstance(body, (bytes, bytearray)):
+            body = bytes(body).decode("utf-8", "replace")
+        body = body if isinstance(body, str) else str(body)
+        envelopes: list[dict[str, Any]] = []
+        for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+            try:
+                envelopes.append(json.loads(m.group(1)))
+            except Exception:
+                pass
+        if not envelopes:
+            try:
+                envelopes.append(json.loads(body))
+            except Exception:
+                return []
+        result: Any = None
+        for env in envelopes:
+            if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+                result = env.get("result")
+                break
+        text = ""
+        if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+            first = result["content"][0]
+            txt = first.get("text") if isinstance(first, dict) else None
+            if isinstance(txt, str):
+                text = txt
+        if not text:
+            return []
+        try:
+            rows = json.loads(text)
+        except Exception:
+            return []
+        return rows if isinstance(rows, list) else []
+    except Exception:  # noqa: BLE001 — fail-open
+        return []
+
+
+def _tower_merged_landing_prs(
+    per_page: int, timeout_s: float = TOWER_LANDING_FALLBACK_TIMEOUT_S
+) -> list[dict[str, Any]]:
+    """Tower fallback transport for scan B (zero-credential, never hangs the pick path).
+
+    বাংলা: raw urllib streamable POST (initialize → initialized → tools/call
+    ``github.list_prs`` state=closed, limit=min(per_page,100)) — daemon thread +
+    hard join (_tower_board_rows-এর প্রমাণিত প্যাটার্ন)। যেকোনো ব্যর্থতা raise করে —
+    উপরের fail-open স্তর (নোটের try/except) সেটিকে সৎ serve-এ নামায়; টাইমআউটে
+    hard join পিক-পথ আটকায় না।
+    """
+    call_id = "cal-landing-fallback-1"
+    holder: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # lazy sibling import (same-dir or repo-root both resolve)
+
+            base = _mtc.MCP_SERVER_URL.rstrip("/")
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+                hdrs = dict(headers)
+                if sid:
+                    hdrs["mcp-session-id"] = sid
+                req = urllib.request.Request(
+                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode(
+                        "utf-8", errors="replace"
+                    )
+
+            sid, _ = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": call_id + "-init",
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                    },
+                },
+                None,
+            )
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            _, body = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": call_id,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "github.list_prs",
+                        "arguments": {
+                            "repo": UPSTREAM_REPO,
+                            "state": "closed",
+                            "limit": min(int(per_page), 100),
+                        },
+                    },
+                },
+                sid,
+                timeout=45,
+            )
+            holder["body"] = body
+        except Exception as exc:  # noqa: BLE001 — fallback must never raise out of the thread
+            holder["error"] = f"tower landing fallback failed ({type(exc).__name__})"
+
+    t = threading.Thread(target=_probe, daemon=True)
+    t.start()
+    t.join(timeout=timeout_s)
+    if t.is_alive():
+        raise TimeoutError("tower landing fallback timed out")
+    if holder.get("error"):
+        raise RuntimeError(str(holder["error"]))
+    return _map_tower_landing_rows(_parse_tower_landing_payload(str(holder.get("body") or ""), call_id))
+
+
+# প্রক্রিয়া-স্তরের একক ফেচ — প্রতি pick রানে সর্বোচ্চ একবার REST কল, REST অন্ধকার
+# হলে একবার tower কল (rate-limit নিয়ন্ত্রণ); ব্যর্থতাও ক্যাশ হয় (খালি তালিকা) যাতে
+# একই রানের পরবর্তী প্রার্থীরা বারবার নেটওয়ার্কে না যায়। দুই ট্রান্সপোর্টই অন্ধকার
+# হলে সৎ raise — নোটের fail-open স্তর সেটাকে serve-এ নামায় (কখনো ব্লক করে না)।
+_LANDING_FETCH_DONE = False
+_LANDING_ROWS: list[dict[str, Any]] = []
+_LANDING_FETCH_FAILED = False
+_LANDING_PLANE = "rest"  # rest | tower | dark — which transport answered this run
+
+
+def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
+    global _LANDING_FETCH_DONE, _LANDING_ROWS, _LANDING_FETCH_FAILED, _LANDING_PLANE
+    if _LANDING_FETCH_DONE:
         return _LANDING_ROWS
-    _LANDING_ROWS = list(payload if isinstance(payload, list) else [])
-    return _LANDING_ROWS
+    _LANDING_FETCH_DONE = True
+    _LANDING_PLANE = "rest"
+    try:
+        _LANDING_ROWS = list(_rest_merged_landing_prs(per_page))
+        _LANDING_FETCH_FAILED = False
+        return _LANDING_ROWS
+    except Exception:  # noqa: BLE001 — REST dark: fall through to the tower fallback
+        pass
+    _LANDING_PLANE = "tower"
+    try:
+        _LANDING_ROWS = list(_tower_merged_landing_prs(per_page))
+        _LANDING_FETCH_FAILED = False
+        return _LANDING_ROWS
+    except Exception:  # noqa: BLE001 — both dark: honest raise, cached darkness
+        _LANDING_PLANE = "dark"
+        _LANDING_ROWS = []
+        _LANDING_FETCH_FAILED = True
+        raise
 
 
 def _promised_artifact_paths(body: str) -> list[str]:
