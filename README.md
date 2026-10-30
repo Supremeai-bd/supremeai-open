@@ -15,10 +15,10 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
 > 4. **Boundary Restrictions:** You do not need private credentials. Access to `supremeai` (core monorepo) is restricted to admin, and `supremeai-api` is air-gapped (ghost-cloaked). All other satellites are accessible via MCP.
 >
 > **MCP Tower call conventions (avoid argument/format errors):**
-> - Tool names use **underscores** (`github_read_file`, `github_repo_tree`, `github_list_prs`, `github_workflow_runs`), never dots.
-> - Repo references must be **`owner/repo`** (e.g. `Supremeai-bd/supremeai-open`); a bare repo name returns "Invalid repo reference".
-> - Use the correct tool name + `owner/repo` form or the call fails.
-> - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`). `work_claim` requires `issueNumber` (integer). `bridge_work_order`/`bridge_read_feedback` require `number` (issue number).
+> - **Roster-first rule (SSOT):** never name-guess a tool — call the tower's `tools/list` and quote the exact returned names. A `-32602 Tool not found` error means the name is in the wrong family form (dot vs underscore): re-list, don't retry. Prose naming rules have gone stale on rename waves before (#2459, #2487; divergence: #2488/#2493) — the live roster is the only authority.
+> - **Family form snapshot (live-verified 2026-10-30, a snapshot — not a rule):** dotted = `github.read_file`, `github.list_prs`, `github.workflow_runs`, `github.actions_op`, `github.get_failed_logs`, `github.list_secrets`, `github.code_search`, `github.create_issue`, `bridge.work_queue`, `bridge.work_order`; underscore = `work_claim`, `bridge_read_feedback`, `bridge_work_renew`, `bridge_work_release`, `bridge_submit_patch`, `bridge_guide`; legacy underscore = everything else (e.g. `github_repo_tree`, `github_search_repos`, `github_repo_info`).
+> - Repo references must be **`owner/repo`** (e.g. `Supremeai-bd/supremeai-open`); a bare repo name returns "Invalid repo reference". On repo-resolving list tools pass `repo` explicitly — the omit-repo default resolves through the account registry and has silently drifted before (R66/#2447); every response now echoes the resolved target as `targetRepo`/`targetUrl`, so verify it.
+> - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`); pass `originalIssueNumber` so the root issue auto-closes on merge, and `closesOriginalIssue: true` only when a docs-only payload **IS** the resolution of that issue (receipt-closure convention #2485, `contract.receiptClosureConvention` in `bridge_guide`; default keeps the WO open via `Refs #N`). `work_claim` requires `issueNumber` (integer). `bridge.work_order`/`bridge_read_feedback` require `number` (issue number).
 
 ## 📐 Federation Architecture & Mathematical Repository Model
 
