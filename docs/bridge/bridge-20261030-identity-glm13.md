@@ -4,33 +4,22 @@
 - **Agent:** GLM Agent 13 (Job 486783) — anonymous zero-credential surface; no bearer slot claimed
 - **Lane:** identity + worklog receipt (docs-only, zero code, no closure requested)
 
-## Worklog (one cycle, 2026-10-30 11:13Z–11:30Z)
+## Worklog (compacted 2026-10-30 ~15:30Z — durable facts only)
 
-1. **Door honored:** MCP tower handshake (session `bf774508`, 158 tools) → AGENTS.md +
-   loop dispatch read → `continuous_agent_loop.py --task-envelope` run → task-3195
-   dispatched (P2, area:ci, PR-lane incident mirroring Run 41042525263).
-2. **U3 stale-guard verification BEFORE claiming** (all read-only tower probes):
-   `get_failed_logs` shows the auto-landing job failed on
-   `GraphQL: Pull Request has merge conflicts (mergePullRequest)` after all tests and
-   guards passed — conflict-blind landing exit, not a code failure; peer triage already
-   merged (#3199, commit `d9be19f`, green as main run 7573); PR #3192 now **closed
-   unmerged** (`mergedAt` null); main **11× consecutively green** on the same workflow
-   (runs 7560–7596, 10 distinct HEADs, 10:41:15Z→11:01:01Z, zero newer main reds) —
-   2× the ≥5-green supersession bar (#3050).
-3. **Claim + closure receipt served:** atomic claim `GRANT_NEW` on #3195 at 11:17:27Z;
-   closure record filed as WO #3213 / PR #3214 (`closesOriginalIssue: true` →
-   `Closes #3195`), following the CI3019 closure-record precedent (#3051). Root-cause
-   framing: a PR-lane incident row is invisible to the main-run supersession demotion,
-   so without a deliberate receipt it re-dispatches forever and every agent re-derives
-   the same ground truth — the receipt deletes the treadmill instance at the source.
-4. **Verification:** loop `--verify-only` 8/8 PASS at work-start and pre-submit;
-   dual-rebase honored (work-start on `28658fb`, pre-push rebased onto `166e957`,
-   0 behind); docs-only single file `docs/ops/CI3195_CLOSURE_2026-10-30.md`; zero
-   `.github/`/protected-path content; reflection why + alternatives_rejected in the WO.
-5. **Prior-cycle reconciliation (same day):** the task-2377 ghost-host guard from this
-   agent's earlier cycle landed byte-identical in main via PR #3172 (`e0c742b`,
-   `Closes #2377`; `scripts/ci/ghost_host_guard.py` diff-vs-main is empty) — no residual
-   submission owed.
+- **Cycles 1–2 (merged):** closure receipt for #3195 (PR-lane treadmill class:
+  invisible to the #3050 main-run supersession — needs a deliberate receipt once the
+  PR closes; landed via WO #3213/PR #3214) and #3093 verdict receipt (ARW outage
+  pinned to one missing env var on render-mcp, flip-probe criterion defined; landed
+  via PR #3279). Claim-release discipline + 8-tier verify + dual-rebase held on both.
+- **Cycle 4 (this PR):** covered board (no clean pick) → ARW three-layer live-state
+  receipt `docs/ops/ARW_LIVESTATE_THREELAYER_2026-10-30.md`: L1 config FIXED (43-key
+  census), L2 route FIXED (primary `live` after core runs 44/45 green), L3 auth 401
+  LIVE with the missing key name source-derived (`SUPREMEAI_BACKEND_SERVICE_TOKEN`,
+  env.ts:119). Report-only, zero claims, `action_render_deploy` not invoked.
+- **Standing slot facts:** PR-lane CI incident rows need deliberate closure receipts;
+  conflict-aware auto-landing remedy already sketched in merged #3199 — do not
+  re-derive; `action_render_deploy` and other destructive-class tools stay
+  admin/HITL-lane for agents (build-logs-first doctrine).
 
 ## Notes for the next agent on this slot
 
