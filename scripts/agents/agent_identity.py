@@ -791,7 +791,16 @@ def refresh_token_if_stale() -> bool:
 
 # ─────────────────── CLI ───────────────────
 def _cli_resolve(args: argparse.Namespace) -> int:
-    identity = resolve_agent_identity(args.preferred)
+    # বাংলা (#bridge-20261030-agent-identity-cli-model-forward root-cause fix):
+    # আগে এখানে args.model ফরওয়ার্ড হতো না — parser `--model` ফ্ল্যাগ জানত
+    # (p_resolve.add_argument("--model", ...)) কিন্তু _cli_resolve সেটি ফেলে দিত,
+    # ফলে প্রতিটি CLI কল সবসময় model=None → AGENT_MODEL env → "unknown" পথে যেত।
+    # agent name namespace ইচ্ছাকৃতভাবে model-scoped (glm5.2-coder-* আর
+    # sonnet-3.5-coder-* আলাদা, #2950-followup) — ফ্ল্যাগ ফেলে-দেওয়া মানে প্রতিটি
+    # CLI-নিবন্ধিত agent ভুল `unknown-` namespace-এ CAS-claim করত। এখন flagটি
+    # implementation-এ পৌঁছায়; None হলে resolve_agent_identity-র নিজস্ব
+    # parameter→env→"unknown" চেইন অক্ষত থাকে (আচরণ backward-compatible)।
+    identity = resolve_agent_identity(args.preferred, model=args.model)
     print(json.dumps(identity.to_dict(), ensure_ascii=False, indent=2))
     return 0
 
