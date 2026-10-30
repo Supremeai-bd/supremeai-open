@@ -1250,7 +1250,8 @@ def main() -> int:
 
     only = None
     if args.files:
-        only = [p if p.is_absolute() else root / p for p in args.files]
+        paths = [Path(p) for p in args.files]
+        only = [p if p.is_absolute() else root / p for p in paths]
         only = [p for p in only if p.is_file()]
 
     r = sweep(root, only)
