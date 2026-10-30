@@ -80,6 +80,61 @@ Fix gateway routing drift.
         facts = ingest_mod.format_learned_facts(992, role, k, "Fix gateway routing drift")
         self.assertEqual(len(facts), 2)
 
+    def test_parse_touched_files_from_diff(self):
+        sample_diff = """diff --git a/scripts/agent.py b/scripts/agent.py
+index 123456..789abc 100644
+--- a/scripts/agent.py
++++ b/scripts/agent.py
+@@ -1,3 +1,3 @@
+-old
++new
+diff --git a/tests/test_agent.py b/tests/test_agent.py
+index abc123..def456 100644
+--- a/tests/test_agent.py
++++ b/tests/test_agent.py
+"""
+        files = ingest_mod.parse_touched_files_from_diff(sample_diff)
+        self.assertEqual(files, ["scripts/agent.py", "tests/test_agent.py"])
+
+    def test_run_ingest_with_diff_metadata(self):
+        sample_diff = "diff --git a/foo.py b/foo.py\n+print('hello')"
+        envelope = {
+            "schema": "pr-knowledge-envelope/2",
+            "role": "coder",
+            "knowledge": {
+                "fix_mechanism": "Mechanism",
+                "why_this_way": "Why",
+                "alternatives_rejected": [{"method": "alt", "why_rejected": "no"}],
+                "pitfalls_to_avoid": ["pitfall"],
+            },
+        }
+        body = f"<!-- pr-knowledge-envelope v2 -->\n{ingest_mod.json.dumps(envelope)}\n<!-- /pr-knowledge-envelope -->"
+        ok = ingest_mod.run_ingest(
+            pr_num=999,
+            body=body,
+            title="Test Diff Ingest",
+            dry_run=True,
+            diff_text=sample_diff,
+        )
+        self.assertTrue(ok)
+
+    def test_read_text_safe_encodings(self):
+        import tempfile
+        # Test UTF-8
+        with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+            f.write("hello utf8".encode("utf-8"))
+            p_utf8 = f.name
+        self.assertEqual(ingest_mod.read_text_safe(p_utf8), "hello utf8")
+
+        # Test UTF-16 LE with BOM
+        with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+            f.write(b"\xff\xfe" + "hello utf16".encode("utf-16le"))
+            p_utf16 = f.name
+        self.assertEqual(ingest_mod.read_text_safe(p_utf16), "hello utf16")
+
+        Path(p_utf8).unlink(missing_ok=True)
+        Path(p_utf16).unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()
