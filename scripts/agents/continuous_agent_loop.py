@@ -204,8 +204,20 @@ STALE_INCIDENT_GREEN_RUNS = 5
 STALE_INCIDENT_PROBE_TIMEOUT_S = 10.0
 STALE_INCIDENT_RUNS_WINDOW = 60  # per_page for the runs fetch (newest-first)
 
-_INCIDENT_RUN_RE = re.compile(r"Run\s*#(\d+)", re.IGNORECASE)
-_INCIDENT_FAIL_MARKER = " failed on main"
+# GLM Agent 07 (Job 486733, 2026-10-30): the recognition shape was
+# " failed on main" only — but the bridge mirror stamps PR-lane incidents as
+# "... failed on <ref> (Run #N)" (e.g. " failed on 3192/merge"), so every
+# PR-lane incident stayed servable forever after going stale. Live witness:
+# "fix(ci): [open] CI — Open Unified Pipeline failed on 3192/merge
+# (Run #41042525263)" was dispatched at 11:07Z with 11 newer green main runs
+# (#7560-#7596, zero reds) already on the board. The ref token is
+# recognition-only: staleness is still judged on MAIN-branch supersession
+# (same-workflow, >=N greens, zero newer reds) exactly per the #3050
+# contract — a title that names ANY ref must not bypass the U3 filter.
+_INCIDENT_TITLE_RE = re.compile(
+    r"\s+failed on (?P<ref>[^\s()]+)\s*\(Run\s*#(?P<run>\d+)\)",
+    re.IGNORECASE,
+)
 
 
 def _incident_stale_note(
@@ -216,7 +228,9 @@ def _incident_stale_note(
     """#3050 — demotion note for a superseded CI-failure incident, else None.
 
     Recognizes the mirror's incident-title shape
-    "...[<state>] <workflow> failed on main (Run #<id>)"; resolves the run's
+    "...[<state>] <workflow> failed on <ref> (Run #<id>)" (ref = main, a
+    PR-lane merge ref like 3192/merge, or any branch — recognition only,
+    the staleness judgment stays main-scoped); resolves the run's
     workflow name and run_number via the runs surface, then checks whether
     min_green (default STALE_INCIDENT_GREEN_RUNS) SUCCESS runs of the same
     workflow on main exist strictly newer than it with zero newer FAILURES
@@ -227,16 +241,14 @@ def _incident_stale_note(
     """
     n_green = STALE_INCIDENT_GREEN_RUNS if min_green is None else min_green
     title = str(item.get("title", ""))
-    if _INCIDENT_FAIL_MARKER not in title:
-        return None
-    run_match = _INCIDENT_RUN_RE.search(title)
-    if not run_match:
+    title_match = _INCIDENT_TITLE_RE.search(title)
+    if not title_match:
         return None
     try:
-        incident_run_id = int(run_match.group(1))
+        incident_run_id = int(title_match.group("run"))
     except ValueError:
         return None
-    head = title.split(_INCIDENT_FAIL_MARKER)[0]
+    head = title[: title_match.start()]
     if "] " not in head:
         return None
     workflow = head.rsplit("] ", 1)[1].strip()
