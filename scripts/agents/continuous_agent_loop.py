@@ -1067,6 +1067,86 @@ def _probe_premise_delivered(item: dict[str, Any]) -> str | None:
         return None
 
 
+# CI-ingress row demotion (referenced-PR-landed, U3 family extension):
+# live evidence 2026-10-31 ~22:2xZ — the loop served #3858 ("fix(ci): PR #3534
+# failing checks") minutes after the referenced PR itself landed green
+# (merged as eed3470, 45/45 checks passed), and served sibling #3857 whose
+# referenced PR was superseded by r4 (#3655). The existing guards miss this
+# shape because the citation relation is INVERTED: item 15 looks for merged
+# PRs that CITE the row, while a CI-ingress row names the PR in its own
+# TITLE and the PR never cites the row back. The probe reuses the SAME
+# single per-run landing fetch item 15 already pays for (zero extra
+# network), and demotes only on the airtight premise: the referenced PR is
+# verifiably MERGED in the fetched window. Closed-unmerged (supersession,
+# e.g. #3537) stays served — that judgement needs the successor-PR
+# identity, which is owner/U3-lane, not mechanical. Fail-open by
+# construction; the filter can only REMOVE a dispatch, never block one;
+# explicit --issue N override passes through.
+CI_ROW_PR_TITLE_RE = re.compile(r"\bPR\s*#(\d+)\b")
+CI_ROW_PREMISE_WORDS = ("failing check", "checks failed", "check failure")
+
+
+def _ci_row_pr_landed_note(
+    item: dict[str, Any],
+    fetch_merged: Callable[[int], list[dict[str, Any]]] | None = None,
+) -> str | None:
+    """Demotion note for CI-ingress rows whose referenced PR already landed.
+
+    বাংলা: CI-ingress সারির টাইটেল নিজেই রেফারেন্স-PR-কে নাম ধরে ("fix(ci):
+    PR #N failing checks …") কিন্তু PR কখনো সারিকে cite করে না — তাই item 15
+    এর cross-scan এই শ্রেণি দেখতেই পায় না। প্রোব টাইটেল থেকে PR নম্বর পার্স
+    করে (boundary-safe), একই রানের শেয়ার্ড landing fetch-এ সেই PR সত্যিই
+    merged কি না দেখে; merged হলে সৎ note-সহ demote। Conservative premise
+    gate: টাইটেলে "failing check(s)"/"checks failed"/"check failure" না থাকলে
+    ধরা হয় না (একটি সাধারণ "PR #N" উল্লেখ related-work, incident নয়)।
+    closed-unmerged PR কখনো demote করে না — supersession-বিচার owner-lane।
+    যেকোনো parse/fetch-ব্যর্থতা None (fail-open: সারি অপরিবর্তিত সার্ভ)।
+    """
+    try:
+        title = str((item or {}).get("title") or "")
+        if not any(word in title.lower() for word in CI_ROW_PREMISE_WORDS):
+            return None
+        m = CI_ROW_PR_TITLE_RE.search(title)
+        if not m:
+            return None
+        pr_num = int(m.group(1))
+        if fetch_merged is None:
+            fetch_merged = _fetch_merged_landing_prs
+        rows = fetch_merged(MERGED_LANDING_WINDOW) or []
+        for pr in rows:
+            if not isinstance(pr, dict):
+                continue  # malformed rows fail open
+            try:
+                if int(pr.get("number")) != pr_num:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            if not pr.get("merged_at"):
+                continue  # closed-unmerged: supersession is not mechanical
+            short = str(pr.get("title") or "").strip()[:80]
+            return (
+                "CI-incident premise resolved (referenced-PR-landed probe, U3): the row's "
+                f"own referenced PR #{pr_num} already landed green (merged, \"{short}\") — "
+                "the failing-check incident is superseded by the landing; "
+                "skip-with-evidence, never re-solve"
+            )
+        return None
+    except Exception:  # noqa: BLE001 — a demotion probe must never raise
+        return None
+
+
+def _probe_ci_row_pr_landed(item: dict[str, Any]) -> str | None:
+    """Live-plane wrapper handed to pick_next_issue as ci_landed_probe.
+
+    Never raises (the pick path's never-raise contract); hermetic callers
+    inject fetch_merged into _ci_row_pr_landed_note directly instead.
+    """
+    try:
+        return _ci_row_pr_landed_note(item)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _parse_epoch(value: Any) -> float | None:
     """ISO-8601 ("…Z" সহ) বা numeric-epoch → epoch-সেকেন্ড; ব্যর্থতায় None।
 
@@ -1591,6 +1671,7 @@ def pick_next_issue(
     incident_probe: Callable[[dict[str, Any]], str | None] | None = None,
     premise_probe: Callable[[dict[str, Any]], str | None] | None = None,
     triage_probe: Callable[[dict[str, Any]], str | None] | None = None,
+    ci_landed_probe: Callable[[dict[str, Any]], str | None] | None = None,
 ) -> str | None:
     # বাংলা: log_fn=None → call-time-এ log-এ ফলব্যাক। ডিফল্ট-প্যারামিটারে সরাসরি log
     # লিখলে def-time evaluation-এ NameError হত — log() এই ফাইলে pick_next_issue-
@@ -1868,6 +1949,22 @@ def pick_next_issue(
             dark = landing_crossscan_advisory()
             if dark:
                 log_fn("!", f"pick pre-verify: #{num} {dark}")
+        if ci_landed_probe is not None:
+            # U3 family extension — referenced-PR-landed demotion: a CI-ingress
+            # row ("fix(ci): PR #N failing checks …") whose own referenced PR
+            # already landed green is skipped IN THE SAME RUN (advance to the
+            # next candidate), the same skip-and-advance shape as the live-claim,
+            # incident, triage and premise filters. Fail-open: probe errors serve
+            # the row (never-raise contract); the filter can only REMOVE a
+            # dispatch, never block one.
+            try:
+                landed_note = ci_landed_probe(item)
+            except Exception as exc:  # noqa: BLE001
+                landed_note = None
+                log_fn("!", f"pick pre-verify: #{num} ci-landed probe raised {type(exc).__name__} — serving row unchanged")
+            if landed_note:
+                log_fn("!", f"pick pre-verify: #{num} skipped — {landed_note}; advancing to next candidate (U3 referenced-PR-landed demotion)")
+                continue
         if note and not note.startswith("no active claim"):
             log_fn("!", f"pick pre-verify: #{num} {note} — proceeding on labels (live advisory to the agent stays in force)")
         return num
@@ -3420,7 +3517,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # বাংলা: SPEC §4b stdout-purity — envelope-মোডে pick-প্রি-ভেরিফাই অ্যাডভাইজরি
             # stderr-এ যায় (log_fn=_stderr_log), stdout শুধুই envelope JSON; ডিসপ্যাচ-পথে
             # (নিচের সাইট) default log_fn=log অপরিবর্তিত — stdout-মার্কার গণনা অক্ষত।
-            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt)
+            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt, ci_landed_probe=_probe_ci_row_pr_landed)
             if picked:
                 target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
                 # বাংলা: board query-র list payload-এ title থাকে না (gh issue list
@@ -3525,7 +3622,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # never raises/hangs (see _tower_queue_floor).
             log("!", _tower_queue_floor())
     else:
-        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt)
+        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt, ci_landed_probe=_probe_ci_row_pr_landed)
         if picked:
             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
             # status:runway → ci-fixer, gate:pre-landing → task-auditor হলেও
