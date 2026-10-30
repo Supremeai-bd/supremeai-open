@@ -181,7 +181,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
         repo: z.string().optional().describe("Target repository name" + repoDefaultNote()),
         per_page: z.number().int().min(1).max(100).optional().describe(
-          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+          "GitHub-REST page-size, fully honored (#2614 live-verified): precedence per_page ?? limit ?? default 5, clamped to GitHub's 1..100 envelope. A 5-row response means params were dropped (e.g. camelCase perPage), not a page-lock — re-probe with per_page=100 before filing an outage"),
         limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
         runId: z.string().optional().describe("Run ID (required for get_failed_logs)"),
       },
@@ -221,7 +221,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
         per_page: z.number().int().min(1).max(100).optional().describe(
-          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+          "GitHub-REST page-size, fully honored (#2614 live-verified): precedence per_page ?? limit ?? default 5, clamped to GitHub's 1..100 envelope. A 5-row response means params were dropped (e.g. camelCase perPage), not a page-lock — re-probe with per_page=100 before filing an outage"),
         limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
       },
       outputSchema: targetEchoSchema,
@@ -352,7 +352,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
         state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
         per_page: z.number().int().min(1).max(100).optional().describe(
-          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+          "GitHub-REST page-size, fully honored (#2614 live-verified): precedence per_page ?? limit ?? default 5, clamped to GitHub's 1..100 envelope. A 5-row response means params were dropped (e.g. camelCase perPage), not a page-lock — re-probe with per_page=100 before filing an outage"),
         limit: z.number().optional().describe("Max number of PRs (default: 5)"),
       },
       outputSchema: targetEchoSchema,
