@@ -24,6 +24,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -494,12 +495,79 @@ def self_test() -> int:
     return 0
 
 
+def _check_rate_limit(tok: str | None) -> tuple[int | None, int | None]:
+    """Zero-quota quota probe: GET /rate_limit does not consume the core budget.
+
+    Returns (remaining, reset_epoch) for the core resource, or (None, None) when
+    the probe itself cannot complete — the pre-flight must never block a
+    verification that would otherwise succeed.
+    """
+    url = "https://api.github.com/rate_limit"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "SupremeAI-Federation-Anchors/1.0",
+    }
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        core = (data or {}).get("resources", {}).get("core", {})
+        remaining = core.get("remaining")
+        reset = core.get("reset")
+        if isinstance(remaining, int) and isinstance(reset, int):
+            return remaining, reset
+        return None, None
+    except Exception:
+        return None, None
+
+
+def _quota_reset_utc(reset_epoch: int | None) -> str:
+    """Render a rate-limit reset epoch as a UTC ISO instant (fail-honest on None)."""
+    if reset_epoch is None:
+        return "unknown"
+    try:
+        return datetime.fromtimestamp(reset_epoch, tz=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+    except (ValueError, OverflowError, OSError):
+        return "unknown"
+
+
+def _httperror_quota_hint(exc: urllib.error.HTTPError) -> str:
+    """Turn a bare 'HTTP Error 403' into an actionable quota diagnosis."""
+    remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
+    reset_raw = exc.headers.get("X-RateLimit-Reset") if exc.headers else None
+    reset_epoch = int(reset_raw) if reset_raw and reset_raw.isdigit() else None
+    return (
+        f"quota exhausted (remaining={remaining}, "
+        f"resets {_quota_reset_utc(reset_epoch)} UTC); "
+        "unauthenticated ceiling is 60 req/h per IP — set GITHUB_TOKEN to raise it"
+    )
+
+
 def verify_live(token: str | None = None) -> int:
     """Verify against live GitHub API that active Anchor Hubs are open and retired anchors are closed."""
     tok = token or get_default_token()
     print(
         "🔍 [verify-live] Verifying active and retired Anchor Hubs on Supremeai-bd/supremeai-open..."
     )
+
+    # Zero-quota pre-flight: 14 anchor queries cannot fit inside a nearly-empty
+    # unauthenticated budget (60 req/h per IP, shared across the agent fleet).
+    # Failing fast with the reset time beats 8 partial successes followed by
+    # 403 noise (and never blocks a run that has budget — probe failure degrades).
+    remaining, reset_epoch = _check_rate_limit(tok)
+    if remaining is not None and remaining < len(ANCHOR_HUBS):
+        print(
+            f"❌ [verify-live] GitHub API quota too low to verify {len(ANCHOR_HUBS)} "
+            f"anchors: remaining={remaining}, resets {_quota_reset_utc(reset_epoch)} "
+            "UTC. Re-run later or set GITHUB_TOKEN. (0 of "
+            f"{len(ANCHOR_HUBS)} anchors verified — NOT a clean pass.)"
+        )
+        return 1
+
     errors = 0
 
     print("--- Active 8 Primary Anchor Hubs ---")
@@ -525,6 +593,10 @@ def verify_live(token: str | None = None) -> int:
                     errors += 1
                 else:
                     print(f"✅ Active Anchor #{issue_num}: {title} [state: {state}]")
+        except urllib.error.HTTPError as exc:
+            hint = f" — {_httperror_quota_hint(exc)}" if exc.code == 403 else f" (HTTP {exc.code})"
+            print(f"❌ Failed to query Anchor #{issue_num} ({repo_name}): {exc}{hint}")
+            errors += 1
         except Exception as exc:
             print(f"❌ Failed to query Anchor #{issue_num} ({repo_name}): {exc}")
             errors += 1
@@ -552,6 +624,10 @@ def verify_live(token: str | None = None) -> int:
                     errors += 1
                 else:
                     print(f"✅ Retired Anchor #{issue_num}: {title} [state: {state} (consolidated)]")
+        except urllib.error.HTTPError as exc:
+            hint = f" — {_httperror_quota_hint(exc)}" if exc.code == 403 else f" (HTTP {exc.code})"
+            print(f"❌ Failed to query Anchor #{issue_num} ({repo_name}): {exc}{hint}")
+            errors += 1
         except Exception as exc:
             print(f"❌ Failed to query Anchor #{issue_num} ({repo_name}): {exc}")
             errors += 1
