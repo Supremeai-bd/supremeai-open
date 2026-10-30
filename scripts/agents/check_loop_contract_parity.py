@@ -173,8 +173,24 @@ def main() -> int:
             f"jq filter for guard 7, found {len(pipe_lines)}"
         )
     else:
+        # Strip '#' comments from the captured frozenset block before scanning
+        # for quoted strings. The SSOT block carries prose comments, and one of
+        # them quotes a live WO-body sentence verbatim ("report-only, no
+        # closure request; Recovery: N/A" — #2756/#2766 family). A naive
+        # findall minted that sentence into a ghost label, so every guard-7
+        # waste warning named a label that has never existed and can never
+        # match a real row (observed 2026-10-31 on main 51be809; the warning
+        # also flows into the parity-OK summary every PR run). Labels in this
+        # SSOT are lowercase-name tokens that never contain '#', and no string
+        # literal in the block has ever contained '#', so cutting each line at
+        # the first '#' cannot corrupt a real label — and if that invariant
+        # ever breaks, guard 7 fails loudly on the resulting label mismatch
+        # (fail-closed), never silently.
+        loop_labels_block = "\n".join(
+            ln.split("#", 1)[0] for ln in loop_labels_m.group(1).splitlines()
+        )
         loop_labels = {
-            s.lower() for s in re.findall(r'"([^"]+)"', loop_labels_m.group(1))
+            s.lower() for s in re.findall(r'"([^"]+)"', loop_labels_block)
         }
         labels_m = re.search(r"select\(\(\[([^\]]*)\]", pipe_lines[0])
         if labels_m is None:
