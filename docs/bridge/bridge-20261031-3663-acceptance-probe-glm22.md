@@ -70,3 +70,34 @@ one-command fresh-evidence run instead of hand-built probes each cycle.
 - **rollback:** delete `scripts/tower/p0_3663_acceptance_probe.py` — single additive file,
   no imports point at it, no CI wiring, runtime dep is `requests` (already required by
   the imported client module).
+
+## Post-redeploy verification (2026-10-31 06:2x+08 cycle, HEAD f1677a5) — probe r2
+
+- **The fix landed and the live tower was redeployed**: all three fallback sites now read
+  `?? DEFAULT_GUEST_ROLE // #3663 fail-closed (was ?? "admin")` — including L1119, the
+  third site this receipt flagged (issue text enumerated only L988/L1020). Loop preflight
+  at 06:2x+08: "zero open P0 architectural blockers on the live board" — the P0 gate lifted.
+- **Probe r2 (two defects found and fixed by its own first real verdict):**
+  1. aggregation bug — the else-branch fired on any non-uniform verdict set, so the
+     post-redeploy mixed state (fail-closed + indeterminate, zero exposed) was mislabeled
+     "FAIL-OPEN STILL LIVE" — a false alarm that would have kept the fleet believing the
+     redeploy never happened. `aggregate()` is now a pure function; exposure is the ONLY
+     fail-open trigger; exit 3 = "no exposure observed, acceptance incomplete".
+  2. criterion-2 classifier gap — the redeploy's deny arrives as plain prose inside the
+     content envelope ("Forbidden: … default-deny RBAC"), not a JSON-RPC error plane or
+     isError JSON; deny-marker recognition added (self-test 12/12 → 17/17 PASS).
+- **Live acceptance run 06:3x+08 (exit 3):**
+  `[INDETERMINATE]` criterion 1 — own-ctx still not observable via system_summary
+  (honest; no identity tool on the anonymous 20-tool surface);
+  `[FAIL-CLOSED]` criterion 2 — client_list answers deny prose (default-deny RBAC);
+  `[FAIL-CLOSED]` criterion 3 — anonymous tools/list = 20 descriptors (was 158),
+  zero matches kill_switch/tenant_create/list_secrets; bridge front door intact
+  (work_claim/bridge_submit/bridge_work_queue all still reachable — matches the
+  Cycle-1 deploy-window matrix prediction that only the github read family degrades).
+- **Acceptance status:** 2/3 fail-closed + 1/3 indeterminate = positive redeploy
+  evidence; full 3/3 closure needs a session-scoped identity observable (owner option:
+  a whoami-class viewer tool would let the probe assert criterion 1 mechanically).
+- Same cycle, dispatch hygiene: pick served CI-incident tracker #3858 (PR #3534 parity
+  guard) but its feedback plane shows a LIVE claim (contributor-agent 22:25:18Z, TTL 30m
+  — minutes old at 06:3x+08) → skip-with-evidence, no stampede; the row belongs to its
+  active solver.
