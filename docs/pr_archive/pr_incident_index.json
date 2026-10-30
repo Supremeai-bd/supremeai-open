@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "records": [
+    {
+      "pr_number": 3210,
+      "title": "feat(hybrid-agent): implement dual-layer scoped github mcp and tower verification",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "zero-credential-hybrid-architect",
+      "reflection_why": "Establish a unified, safe Hybrid Architecture for external web agents (Devin, OpenHands, web runners) allowing fast read queries via scoped GitHub MCP while routing all write/patch executions strictly through SupremeAI Control Tower.",
+      "alternatives_rejected": "Pure Direct GitHub MCP (high blast radius, bypasses invariants), Pure MCP Tower (lacks broad read versatility for issues and discussions).",
+      "touched_files": [
+        ".github/workflows/pipeline.yml",
+        "AGENTS.md",
+        "core/mcp_allowlist.py",
+        "docs/AGENT_LOOP_SPEC.md",
+        "infrastructure/mcp-control-plane/mcp_config.remote.json",
+        "infrastructure/mcp-control-plane/src/tools/bridge.tools.ts",
+        "mcp.json",
+        "scripts/agents/pr_lifecycle_guard.py",
+        "scripts/ci/auto_bridge_pr_opener.py"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3210.diff",
+      "diff_size_bytes": 16150,
+      "indexed_at": "2026-10-30T11:45:28.393710+00:00"
+    }
+  ]
+}
