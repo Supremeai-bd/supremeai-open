@@ -629,6 +629,65 @@ class PrePushRebaseGuard(unittest.TestCase):
         source = inspect.getsource(cal.pre_work_rebase_guard)
         self.assertIn("pre_push_rebase_guard()", source)
 
+    def test_43_dispatch_cycle_wires_work_start_freshness(self):
+        # #3891 wire-zero root fix (U6 mechanical guard): the guard stayed
+        # defined-but-unwired since #1551 and a stale-tree loop run re-derived
+        # fixed failures as live ground truth ("zombie darkness"). The dispatch
+        # cycle MUST call the wiring helper pre-dispatch — removing the call
+        # re-breaks the loop leg and fails this test.
+        source = inspect.getsource(cal.run_dispatch_cycle)
+        self.assertIn("wire_work_start_freshness", source)
+
+    def test_44_freshness_helper_offline_skip_honest(self):
+        # offline = no fetch (network call) — the guard is honestly skipped,
+        # same discipline as step_2_rules()'s offline behavior.
+        calls = []
+
+        def counting_run(cmd, cwd=None, check=False):
+            calls.append(" ".join(cmd))
+            return (0, "", "")
+
+        cal.run_cmd = counting_run
+        line = cal.wire_work_start_freshness(True)
+        self.assertIn("offline", line)
+        self.assertIn("skipped", line)
+        self.assertEqual(calls, [], "offline mode must not invoke any git command")
+
+    def test_45_freshness_helper_fresh_tree(self):
+        cal.run_cmd = self._script(
+            [
+                ("git fetch", (0, "", "")),
+                ("git rev-list", (0, "0\n", "")),
+            ]
+        )
+        line = cal.wire_work_start_freshness(False)
+        self.assertIn("fresh", line)
+        self.assertIn("0 behind", line)
+
+    def test_46_freshness_helper_stale_tree_auto_rebases(self):
+        cal.run_cmd = self._script(
+            [
+                ("git fetch", (0, "", "")),
+                ("git rev-list", (0, "55\n", "")),
+                ("git rebase", (0, "", "")),
+            ]
+        )
+        line = cal.wire_work_start_freshness(False)
+        self.assertIn("55", line)
+        self.assertIn("auto-rebased", line)
+
+    def test_47_freshness_helper_fail_proceeds_tagged(self):
+        # Scout #3891 remedy-3: hard-abort rejected — a guard failure yields
+        # the honest behind-count and dispatch proceeds tagged.
+        cal.run_cmd = self._script(
+            [
+                ("git fetch", (128, "", "network down")),
+            ]
+        )
+        line = cal.wire_work_start_freshness(False)
+        self.assertIn("could not sync", line)
+        self.assertIn("proceeds tagged", line)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
