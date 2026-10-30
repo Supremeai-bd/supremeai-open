@@ -37,6 +37,14 @@ GUARDS: list[list[str]] = [
     # the live check reads two external commit planes and belongs to the
     # cadence lane, not the per-PR roster.
     ["python", "scripts/ci/open_core_sync_staleness_watchdog.py", "--self-test"],
+    # PR-lane strand tripwire (post-#3418 landing family): self-test only in
+    # the roster — the live check reads the tower PR plane and belongs to the
+    # cadence lane, same doctrine as the watchdogs above.
+    ["python", "scripts/ci/pr_landing_age_guard.py", "--self-test"],
+    # Radar pointer⇄pin co-obligation guard (#3624 class): self-test only in
+    # the roster — --check/--check-ref read the git/index planes and belong
+    # to the registration-PR author's pre-push step (#3483 literal rule).
+    ["python", "scripts/ci/radar_pointer_pin_guard.py", "--self-test"],
     ["python", "scripts/ci/closure_live_state_gate.py", "--self-test"],
     ["python", "scripts/ci/license_ssot_guard.py", "--check"],
     ["python", "scripts/ci/contract_codegen_guard.py", "--check"],

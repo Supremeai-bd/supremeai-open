@@ -1,10 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "Mirror<->satellite sentinel pairs that federation_satellite_sync.py --verify-only checks byte-identical after every sync (#1689). Each pair maps an open-repo path to the satellite-repo surface the sync contract maintains. Extend this manifest to grow the sweep; no code edit needed.",
   "provenance": {
     "issue": 1689,
     "auditorSweep": "7-point parity sweep, 2026-10-27T21:04Z (SupremeAI Federation Auditor, Job 478524)",
-    "liveVerification": "2026-10-28T05:30+08:00 by zai-mcp-tower-agent run 7: 6/7 pairs byte-identical by git blob SHA; gateway/main.py<->supremeai-api:main.py confirmed drifted (satellite root main.py = 956-line unsanitized revision vs 1046-line hardened mirror)"
+    "liveVerification": "2026-10-28T05:30+08:00 by zai-mcp-tower-agent run 7: 6/7 pairs byte-identical by git blob SHA; gateway/main.py<->supremeai-api:main.py confirmed drifted (satellite root main.py = 956-line unsanitized revision vs 1046-line hardened mirror)",
+    "v2Extension": "#3656 (2026-10-31): added the Dockerfile-load-bearing gateway/ package sentinels - #1772's package-true layout made COPY gateway/ gateway/ build-critical on supremeai-api, but v1 pinned only root artifacts, so the scheduled gate was blind to the #3649 failed-deploy drift class (satellite gateway/ absent, live-verified with positive control)"
   },
   "pairs": [
     {
@@ -42,6 +43,18 @@
       "open": "examples/gateway_client.py",
       "satellite": "Supremeai-bd/supremeai-api",
       "path": "scripts/clients/gateway_client.py"
+    },
+    {
+      "open": "gateway/__init__.py",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "gateway/__init__.py",
+      "note": "Dockerfile-load-bearing package marker (#1772 COPY gateway/ gateway/); satellite absence = the #3649 failed-deploy drift class (#3656)"
+    },
+    {
+      "open": "gateway/main.py",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "gateway/main.py",
+      "note": "package entrypoint required by COPY gateway/ gateway/ and the gateway.* import namespace (#1772); distinct surface from the root main.py pair above (#3656)"
     }
   ]
 }

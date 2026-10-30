@@ -15,6 +15,11 @@
 #      commit provenance is immutable.
 #   4. No stale branches: if origin/main advanced past the branch's merge-base,
 #      the push is rejected until the branch is rebased (Board-Freshness #4177).
+#   5. Sibling-hook umbrella (--self-test only): the pre-commit (7/7) and
+#      post-commit (behavioral) verifications ride inside this self-test
+#      because CI's ingress_hook_guard executes ONLY this entrypoint —
+#      the #3520 acceptance landed via the agent-landable .githooks/ lane
+#      (#3646), leaving the protected .github/ pipeline untouched.
 #
 # Install:   git config core.hooksPath .githooks
 # Self-test: sh .githooks/pre-push --self-test   (offline, uses a temp sandbox)
@@ -125,8 +130,63 @@ if test "${1:-}" = "--self-test"; then
             | sh "$HOOK" origin https://example.com/other/repo.git >/dev/null 2>&1 \
             && echo "PASS unrelated-remote-accepted" || { echo "FAIL unrelated-remote-accepted"; fails=$((fails + 1)); }
 
+        # ── S8–S10: sibling-hook umbrella (#3646 → #3520 acceptance, agent lane)
+        # CI's ingress_hook_guard executes ONLY this self-test (pipeline.yml:
+        # `sh .githooks/pre-push --self-test`), so the pre-commit/post-commit
+        # verification that #3520 asked CI to run rides HERE — inside the
+        # landable .githooks/ lane, leaving the protected .github/ untouched.
+        # Without this umbrella a future regression of the landed hook blobs
+        # (pre-commit c9cdeae-era repairs, #3522) could never red the CI.
+        HOOKS_DIR="$(dirname "$HOOK_ABS")"
+
+        # S8: pre-commit sibling — exec-bit + shell syntax + its own fail-closed
+        # 7/7 self-test (hermetic sandbox, offline), executed end-to-end.
+        PC="$HOOKS_DIR/pre-commit"
+        if test -f "$PC" && test -x "$PC" && sh -n "$PC" 2>/dev/null \
+            && sh "$PC" --self-test >/dev/null 2>&1; then
+            echo "PASS pre-commit-sibling-verified"
+        else
+            echo "FAIL pre-commit-sibling-verified (exec-bit/sh -n/self-test — git silently skips a non-executable hook)"
+            fails=$((fails + 1))
+        fi
+
+        # S9: post-commit sibling — exec-bit + shell syntax + real-repo
+        # behavior: after a commit it must exit 0 and print the agent-loop
+        # reminders (it offers no --self-test mode of its own).
+        POC="$HOOKS_DIR/post-commit"
+        poc_ok=0
+        if test -f "$POC" && test -x "$POC" && sh -n "$POC" 2>/dev/null; then
+            poc_out=$(sh "$POC" 2>/dev/null) && \
+                printf '%s' "$poc_out" | grep -q "Successfully recorded" && \
+                printf '%s' "$poc_out" | grep -q "verify-only" && poc_ok=1
+        fi
+        if test "$poc_ok" -eq 1; then
+            echo "PASS post-commit-sibling-verified"
+        else
+            echo "FAIL post-commit-sibling-verified (exec-bit/sh -n/behavior — reminders must print and exit 0)"
+            fails=$((fails + 1))
+        fi
+
+        # S10: negative control — the umbrella predicate must REJECT a broken
+        # sibling (exec-bit stripped copy), so rot can never re-enter through
+        # a silent pass (#3522 fail-closed doctrine, guard-the-guard).
+        PC_TAMPER="$sandbox/tampered-pre-commit"
+        if cp "$PC" "$PC_TAMPER" 2>/dev/null; then
+            chmod 644 "$PC_TAMPER"
+            if test -x "$PC_TAMPER" && sh -n "$PC_TAMPER" 2>/dev/null && sh "$PC_TAMPER" --self-test >/dev/null 2>&1; then
+                echo "FAIL negative-control-rejected-broken-sibling"
+                fails=$((fails + 1))
+            else
+                echo "PASS negative-control-rejected-broken-sibling"
+            fi
+            rm -f "$PC_TAMPER"
+        else
+            echo "FAIL negative-control-rejected-broken-sibling (setup: no pre-commit sibling to tamper)"
+            fails=$((fails + 1))
+        fi
+
         if test "$fails" -eq 0; then
-            echo "self-test: 6/6 scenarios PASS"
+            echo "self-test: 9/9 scenarios PASS"
         else
             echo "self-test: $fails scenario(s) FAILED"
         fi
@@ -645,7 +705,12 @@ for line in $updates; do
         else
             radar_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
         fi
-        radar_surface=$(printf '%s\n' "$radar_changed" | grep -E '^docs/SCOUT_RADAR_2026-10-28.*\.md$' || true)
+        # #3557: the day-one glob (SCOUT_RADAR_2026-10-28*) went dark once radar
+        # docs moved to dated names (SCOUT_RADAR_2026-10-30-XV.md) and the #3524
+        # founder migration retired loose radar files entirely — index-only pushes
+        # (the SSOT itself!) never engaged this gate. Trigger widened to the index
+        # plus any dated radar doc; the guard's invariant battery decides.
+        radar_surface=$(printf '%s\n' "$radar_changed" | grep -E '^docs/SCOUT_RADAR(_INDEX\.md|_[0-9]{4}-[0-9]{2}-[0-9]{2}.*\.md)$' || true)
         if [ -n "$radar_surface" ]; then
             hook_py=""
             if python3 -c "import sys" >/dev/null 2>&1; then

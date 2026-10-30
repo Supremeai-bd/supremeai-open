@@ -131,37 +131,38 @@ await check("verified credential authenticates and adopts the LIVE role", async 
   assert.equal(session.credentialId, clientCredentialId(authSlotId));
 });
 
-await check("URL ALONE (no credential) -> pre-production admin role fallback", async () => {
+await check("URL ALONE (no credential) -> fail-closed viewer fallback (#3663)", async () => {
   const session = await resolveSlotSession(fakeReq("/mcp?client=auth-slot"), { role: null, tenantId: "tenant_default" });
-  assert.equal(session.authenticated, true);
-  assert.equal(session.role, "admin", "pre-production: uncredentialed URL caller receives temporary admin role");
+  assert.equal(session.authenticated, false, "the URL alone is never authentication (#48/#3663)");
+  assert.equal(session.role, "viewer", "uncredentialed URL caller lands on the fail-closed guest default");
+  assert.ok(!session.scopes.includes("*"), "fallback scopes must never be omni");
   assert.equal(session.slotVerified, false);
   assert.equal(session.fallbackReason, "slot-credential-missing");
 });
 
-await check("/agents/<slot>/sse URL without credential -> pre-production admin fallback", async () => {
+await check("/agents/<slot>/sse URL without credential -> fail-closed viewer fallback (#3663)", async () => {
   const session = await resolveSlotSession(fakeReq("/agents/auth-slot/sse"), { role: null, tenantId: "tenant_default" });
-  assert.equal(session.role, "admin");
-  assert.equal(session.authenticated, true);
+  assert.equal(session.role, "viewer");
+  assert.equal(session.authenticated, false);
 });
 
-await check("wrong credential -> pre-production admin fallback", async () => {
+await check("wrong credential -> fail-closed viewer fallback (#3663)", async () => {
   const session = await resolveSlotSession(fakeReq("/agents/auth-slot/sse", { slotToken: "slot_bogus" }), {
     role: null,
     tenantId: "tenant_default",
   });
-  assert.equal(session.role, "admin");
+  assert.equal(session.role, "viewer");
   assert.equal(session.fallbackReason, "slot-credential-mismatch");
 });
 
-await check("pending slot: even the CORRECT credential cannot authenticate (falls back to pre-production admin role)", async () => {
+await check("pending slot: even the CORRECT credential cannot authenticate (falls back to fail-closed viewer)", async () => {
   const pending = provisionSlot({ name: "pending-slot", role: "admin" });
   const session = await resolveSlotSession(fakeReq("/mcp?client=pending-slot", { slotToken: pending.credential }), {
     role: null,
     tenantId: "tenant_default",
   });
-  assert.equal(session.authenticated, true);
-  assert.equal(session.role, "admin");
+  assert.equal(session.authenticated, false, "an unapproved slot must not authenticate (#3663)");
+  assert.equal(session.role, "viewer");
   assert.equal(session.fallbackReason, "slot-not-approved");
 });
 
@@ -188,8 +189,8 @@ await check("suspension terminates access on the immediate-next check", async ()
   assert.equal(after.reason, "slot-suspended");
 
   const session = await resolveSlotSession(fakeReq("/mcp?client=auth-slot", { slotToken: authSlot.credential }), { role: null, tenantId: "tenant_default" });
-  assert.equal(session.authenticated, true, "a suspended slot falls back to pre-production admin role");
-  assert.equal(session.role, "admin");
+  assert.equal(session.authenticated, false, "a suspended slot falls back to the fail-closed viewer (#3663)");
+  assert.equal(session.role, "viewer");
 });
 
 await check("reinstate restores access", async () => {
@@ -263,7 +264,7 @@ await check("unverified named guest (?client=...) is NOT subjected to fail-close
   try {
     const session = await resolveSlotSession(fakeReq("/sse?client=unverified-guest"), { role: null, tenantId: "tenant_default" });
     assert.equal(session.slotVerified, false, "uncredentialed caller must not be slotVerified");
-    assert.equal(session.role, "agent", "uncredentialed caller falls back to pre-production agent role");
+    assert.equal(session.role, "viewer", "uncredentialed caller falls back to the fail-closed guest default (#3663)");
     // Verify that assertSlotAuthorization on a non-slot identity does not fail-close with slot-store-unreachable
     const namedId = session.client?.id ?? "named_unverified-guest";
     const verdict = await assertSlotAuthorization(namedId);

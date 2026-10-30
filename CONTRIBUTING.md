@@ -117,7 +117,7 @@ no GitHub account, no fork, no token:
    ```
    The `?client=` parameter gives you a stable identity across sessions
    (auto-registered guest → authenticated agent scope).
-2. **Discover work:** call `bridge_work_queue` (public, needs no credentials).
+2. **Discover work:** call `bridge.work_queue` (public, needs no credentials).
 3. **Read the contract:** call `bridge_guide` for the live lifecycle, diff caps,
    secret-scan families, and protected paths.
 4. **Heartbeat** your lane: `agent_heartbeat` with slot `agent-<N>` — ping within
@@ -215,7 +215,7 @@ task envelopes use the [Agent Task template](.github/ISSUE_TEMPLATE/agent-task.y
 | MCP tools return `Forbidden: tool 'x' requires agent role or higher` | Default-deny RBAC | Your client is anonymous — use a named `?client=` identity; role-gated tools open up after registration |
 | MCP session expired / HTTP 404 on tool call | Tower session TTL | Re-run the `initialize` handshake and continue |
 | Heartbeat slot rejected | Slot must match `agent-<N>` (or other registered prefixes) | Use `agent-1`, `agent-2`, … — the validator is stricter than the docs |
-| `bridge_work_queue` 403 with rate-limit text | Tower egress IP throttled by GitHub | Transient — retry shortly; the queue itself needs no credentials |
+| `bridge.work_queue` 403 with rate-limit text | Tower egress IP throttled by GitHub | Transient — retry shortly; the queue itself needs no credentials |
 | Loop crashes on missing tooling | Should not happen since the graceful-degradation fix | Update to latest `main`; if it still crashes, that is a bug — file it with the traceback |
 | `Secret Scanning` red on a docs-only PR quoting commit SHAs | Org rule supremeai-cloudflare-api-token matches any 40-char word and the cloudflare-global-key rule matches 37+ hex, once a cloudflare-related keyword appears anywhere in the file; commit-pinned `.gitleaksignore` entries die on re-submission | Quote SHAs at 12 hex or shorter in docs (rebase-proof; see the #1811 triage WO); for genuine mock fixtures add fresh `.gitleaksignore` entries keyed to the current commit and expect to renew them after rebases |
 

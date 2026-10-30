@@ -11,9 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
-import re
 import shutil
-import subprocess
 import sys
 
 FEDERATION_ROOT = pathlib.Path(__file__).resolve().parents[2].parent

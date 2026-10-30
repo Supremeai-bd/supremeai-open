@@ -86,7 +86,7 @@ const GUEST_DOCK_APPS = [
   { id: 'academies', label: 'Academies', to: '/academies', description: 'Interactive lessons with saved progress.' },
   { id: 'knowledge', label: 'Knowledge', to: '/knowledge', description: 'Browse the public knowledge base.' },
   { id: 'models', label: 'Models', to: '/models', description: 'Meet the relay models and pick a tone.' },
-  { id: 'jarvis', label: 'Jarvis HUD', to: '/jarvis', description: 'Full-screen voice cockpit experience.' },
+  { id: 'jarvis', label: 'Jarvis HUD', to: '/jarvis', description: 'Full-screen voice experience.' }, // FRONTEND_SIMPLICITY rule 43: no "cockpit" in user-facing copy
 ];
 
 export function GuestChat() {

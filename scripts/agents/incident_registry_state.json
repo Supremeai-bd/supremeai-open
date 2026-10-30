@@ -1,0 +1,20 @@
+{
+  "schema": "incident-registry-state/1",
+  "updated_at": "2026-10-30T21:24:55.231287+00:00",
+  "incidents": {
+    "4529f7a0f8416d0d": {
+      "fingerprint": "4529f7a0f8416d0d",
+      "environment": "production",
+      "service": "render-primary",
+      "normalized_error": "update_failed",
+      "affected_component": "service-health",
+      "root_cause_family": "render-deploy",
+      "canonical_issue_number": null,
+      "active_pr_number": null,
+      "status": "open",
+      "first_seen_at": "2026-10-30T21:22:04.843583+00:00",
+      "last_seen_at": "2026-10-30T21:24:55.231271+00:00",
+      "evidence_count": 3
+    }
+  }
+}

@@ -36,6 +36,14 @@ Verdict routing (single bookkeeping):
        পিছনে গেলে বা নথিভুক্ত row token অদৃশ্য হলে FAIL (stale-branch
        whole-file overwrite class, pass-9/22/23); forward motion কখনো fail
        করে না। /1 baseline থাকলে honest-skip — কখনো মিথ্যা PASS নয়।
+    G  pin-truth (#3557) — লাইভ-রিপো sweep টেস্টের pin literal আর index-
+       বিজ্ঞাপিত pointer-এর অমিল FAIL: "Bump this literal ONLY together with
+       a landed index-pointer advance" নিয়মটি এতদিন ছিল শুধু গদ্য — #3483
+       pointer R81→R84 এগিয়ে পিন 81-এ রেখে দিলে কোনো গেট ধরেনি এবং
+       test_live_repo_sweep_passes লাইভ main-এ তিন ল্যান্ডিং ধরে লাল থাকল
+       (CI pytest-শূন্য, হুক-ট্রিগার glob দিন-একের SCOUT_RADAR_2026-10-28*
+       নামে আটকে)। পিন literal-ই pointer-এর দ্বিতীয় সৎ কপি — অমিল মানেই
+       একটি ল্যান্ডিং চুক্তি ভেঙেছে; গঠনগত, floor-অযোগ্য।
 
 Pointer↔board agreement predicate (#2372 option B / #2392 component 2,
 offline plane — the guard binary stays network-free per the Never-do):
@@ -110,6 +118,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD_TAG = "[radar-index-freshness-guard]"
 INDEX_REL = "docs/SCOUT_RADAR_INDEX.md"
 BASELINE_PATH = Path("scripts/ci/radar_index_freshness_baseline.json")
+# Invariant G (#3557): the live pin's carrier — the pytest file whose
+# test_live_repo_sweep_passes sweeps REPO_ROOT and asserts the pointer.
+TEST_REL = "tests/test_radar_index_freshness_guard.py"
+LIVE_SWEEP_TEST = "test_live_repo_sweep_passes"
 
 EXCLUDED_DIRS = {
     ".git", "node_modules", "venv", ".venv", "env", ".env",
@@ -118,7 +130,11 @@ EXCLUDED_DIRS = {
 }
 VENDORED_PREFIX = ".agents/skills/"  # #1725 lane — report-only, never agent-fixed
 
-INDEX_PATH_RE = re.compile(r"^docs/SCOUT_RADAR_2026-10-28.*\.md$")
+# (#3557 superior-replacement) the day-one INDEX_PATH_RE
+# ("^docs/SCOUT_RADAR_2026-10-28.*\.md$") is deleted: it had zero callers and
+# carried the stale day-one filename glob that left the pre-push trigger dark
+# once radar docs moved to dated names (SCOUT_RADAR_2026-10-30-XV.md) and the
+# founder-migration (#3524) retired loose radar files entirely.
 
 # The advertised pointer. Real corpus forms (verified at aa9de7b):
 #   "next free: **R51**" / "next free = R37" / "next free to R39" /
@@ -380,6 +396,57 @@ def invariant_e(
     return findings, True
 
 
+LIVE_PIN_RE = re.compile(r'assert\s+r\["pointer"\]\s*==\s*(\d+)')
+
+
+def invariant_g(
+    pointer: int | None, test_text: str | None, root: Path,
+) -> tuple[list[dict], bool]:
+    """Pin-truth — the live-repo test's pin literal must equal the pointer (#3557).
+
+    বাংলা (#3557 root-cause): পিন-অনুগম্য নিয়মটি এতদিন ছিল শুধু টেস্ট-কমেন্টের
+    গদ্য — #3483 pointer R81→R84 এগিয়ে পিন 81-এ রেখে দিলে invariant A–E-র কেউ
+    ধরেনি (E forward-motion-সহনশীল ডিজাইনেই), আর RED টেস্টটা লাইভ main-এ তিন
+    ল্যান্ডিং ধরে বেঁচে থাকল কারণ CI-তে pytest শূন্যবার চলে এবং pre-push হুকের
+    ট্রিগার glob দিন-একের SCOUT_RADAR_2026-10-28* নামে আটকে ছিল। এই invariant
+    পিন literal-কে pointer-এর যান্ত্রিক প্রতিধ্বনি বানায়: দুই কপির অমিল =
+    কোনো না কোনো ল্যান্ডিং pin-accompanies-pointer চুক্তি ভেঙেছে — guard সময়েই
+    fail loud, মানুষের সতর্কতার উপর ভরসা নয় (Zero-Recurrence Invariant)।
+
+    Honest-skip শৃঙ্খলা (কখনো মিথ্যা PASS নয়):
+    - hermetic fixture tree (tests/ ডিরেক্টরিই নেই) → নীরব skip — পিনের বাহক
+      সেখানে থাকারই কথা নয়; বাকি দাঁতগুলো ঘুরতে থাকে;
+    - tests/ ডিরেক্টরি আছে কিন্তু পিন-ফাইল নেই → গঠনগত "pin-file-missing" FAIL
+      (পিন-শৃঙ্খলির বাহকই মুছে গেলে শৃঙ্খলিটাও নেই — CI-শূন্য প্লেনে এটাই একমাত্র
+      সনাক্তকারী);
+    - live sweep block বা পিন literal অনুপস্থিত → গঠনগত FAIL (বাহকের ভেতরের
+      চুক্তি-আকৃতিই বদলে গেলে পিন-তুলনা অসম্ভব)।
+
+    তুলনার নিয়ম: live block-এর প্রতিটি pin literal pointer-এর সমান হতে হবে —
+    ভবিষ্যৎ-প্রমাণ (কেউ একাধিক assertion যোগ করলে সবগুলোই সৎ কপি হতে বাধ্য)।
+    """
+    if pointer is None:
+        # pointer-missing is B's finding; nothing to compare against.
+        return [], False
+    tests_dir = root / "tests"
+    if not tests_dir.is_dir():
+        # Hermetic fixture tree — the pin's carrier legitimately doesn't exist.
+        return [], False
+    if test_text is None:
+        return [{"kind": "pin-file-missing", "path": TEST_REL}], True
+    block = section(test_text, f"def {LIVE_SWEEP_TEST}(", "\ndef ")
+    if not block:
+        return [{"kind": "pin-block-missing", "test": LIVE_SWEEP_TEST}], True
+    pins = [int(m.group(1)) for m in LIVE_PIN_RE.finditer(block)]
+    if not pins:
+        return [{"kind": "pin-literal-missing", "test": LIVE_SWEEP_TEST}], True
+    findings: list[dict] = []
+    for pin in pins:
+        if pin != pointer:
+            findings.append({"kind": "pin-drifted", "was": pin, "now": pointer})
+    return findings, True
+
+
 def validate_queue_capture(queue: object, source: str = "queue artifact") -> None:
     """Fail-loud completeness check on a captured bridge.work_queue artifact
     (#2691 / R76 — the pass-33 drift-log hardening, own-lane carrier).
@@ -632,11 +699,30 @@ def render(
     drift: list[dict], improvements: list[dict], pointer: int | None,
     d: list[dict] | None = None, d_ran: bool = False,
     e: list[dict] | None = None, e_ran: bool = False,
+    g: list[dict] | None = None, g_ran: bool = False,
 ) -> None:
     if d is None:
         d = []
     if e is None:
         e = []
+    if g is None:
+        g = []
+    for f in g:
+        if f["kind"] == "pin-drifted":
+            _evidence(f"G-FAIL pin-drifted: test pin asserts {f['was']} but the index "
+                      f"advertises R{f['now']} — a landed pointer advance skipped the "
+                      "pin bump (pin-accompanies-pointer broken; #3557 invariant G)")
+        elif f["kind"] == "pin-file-missing":
+            _evidence(f"G-FAIL pin-file-missing: {f['path']} is gone — the pin-accompanies-"
+                      "pointer carrier is lost (#3557 invariant G; CI runs no pytest, "
+                      "this gate is the only detector)")
+        elif f["kind"] == "pin-block-missing":
+            _evidence(f"G-FAIL pin-block-missing: def {f['test']} vanished from the pin file "
+                      "— the live-sweep pin contract changed shape (#3557 invariant G)")
+        elif f["kind"] == "pin-literal-missing":
+            _evidence(f"G-FAIL pin-literal-missing: no assert r[\"pointer\"] == <N> literal "
+                      f"inside def {f['test']} — the pin discipline's second honest copy "
+                      "is gone (#3557 invariant G)")
     for f in e:
         if f["kind"] == "roster-pointer-regressed":
             _evidence(f"E-FAIL roster-pointer-regressed: pointer {f['was']} -> {f['now']} "
@@ -681,8 +767,8 @@ def render(
         for d in drift:
             _evidence(f"DRIFT {d['kind']}: key={d['key']} {d['now']}/{d['allowed']}")
         _evidence(f"FAIL {len(a) + len(b) + len(unpinned)} invariant finding(s), {len(drift)} ratchet drift — the floor may never grow")
-    elif a or b or unpinned or e:
-        _evidence("FAIL radar-index freshness invariants violated (see A-FAIL/B-FAIL/C-FAIL/E-FAIL lines)")
+    elif a or b or unpinned or e or g:
+        _evidence("FAIL radar-index freshness invariants violated (see A-FAIL/B-FAIL/C-FAIL/E-FAIL/G-FAIL lines)")
     elif d:
         _evidence(f"PINNED {len(d)} commit-subject ghost(s) in the landing window — "
                   "pre-existing debt, shrink-only (#2187); register the row to shrink")
@@ -694,6 +780,10 @@ def render(
         pass  # E-FAIL lines already emitted above — never reached on a fail verdict
     elif e_ran:
         _evidence("OK invariant E: roster agrees with the enforced baseline — no pointer regression, no row eviction (#2392)")
+    if g:
+        pass  # G-FAIL lines already emitted above — never reached on a fail verdict
+    elif g_ran:
+        _evidence(f"OK invariant G: test pin literal agrees with the advertised pointer R{pointer} (#3557 pin-truth)")
 
 
 def sweep(
@@ -712,10 +802,18 @@ def sweep(
     # #2187: invariant D rides the same sweep — global commit-plane scan,
     # not scoped to --files (pre-push content limits stay A/B/C-scoped).
     ghosts, d_ran = invariant_d(root, bases)
+    # #3557: invariant G rides the same sweep — the pin literal in the repo's
+    # own test file is the pointer's second honest copy; drift there is the
+    # landed-pin-accompanies-pointer contract broken. Structural, never floorable.
+    test_path = root / TEST_REL
+    test_text = (test_path.read_text(encoding="utf-8", errors="replace")
+                 if test_path.is_file() else None)
+    g, g_ran = invariant_g(pointer, test_text, root)
     rows_range = (min(bases), max(bases)) if bases else None
     return {"pointer": pointer, "a": a, "b": b, "cits": cits,
             "report_only": report_only, "rows": rows_range,
-            "d": ghosts, "d_ran": d_ran, "row_tokens": row_tokens}
+            "d": ghosts, "d_ran": d_ran, "row_tokens": row_tokens,
+            "g": g, "g_ran": g_ran}
 
 
 def self_test() -> bool:
@@ -1092,6 +1190,43 @@ def self_test() -> bool:
               {"scope": "label:scout", "count": 1, "totalOpen": 1,
                "workOrders": [{"number": 1, "title": "x"}]})))
 
+    # F21: invariant G — pin-truth (#3557), the test-literal-vs-pointer plane.
+    # Red-first discipline: the fixture replays the exact live drift pair
+    # (pointer advertised R84, pin left at 81 by #3483) that stayed RED on
+    # main across three landings because no gate compared the two copies.
+    # Scope honesty is fixture-pinned: fixture trees without tests/ must
+    # NEVER fire (the pin's carrier legitimately doesn't exist there).
+    live_block = (
+        "def test_live_repo_sweep_passes() -> None:\n"
+        "    r = guard.sweep(REPO_ROOT)\n"
+        '    assert r["pointer"] == 84, "pointer drifted"\n'
+        "\n\n"
+    )
+    g_root = tree({INDEX_REL: index(84, [1])})
+    (g_root / "tests").mkdir()
+    g_file = g_root / "tests" / "test_radar_index_freshness_guard.py"
+    g_file.write_text(live_block, encoding="utf-8")
+    r = sweep(g_root)
+    check("F21a-matching-pin-passes", r["g_ran"] and not r["g"])
+    g_file.write_text(live_block.replace("== 84", "== 81"), encoding="utf-8")
+    r = sweep(g_root)
+    check("F21b-pin-drift-fires-naming-was-now",
+          any(f["kind"] == "pin-drifted" and f["was"] == 81 and f["now"] == 84
+              for f in r["g"]))
+    g_file.write_text("def unrelated_test() -> None:\n    pass\n", encoding="utf-8")
+    r = sweep(g_root)
+    check("F21c-missing-live-block-fails",
+          any(f["kind"] == "pin-block-missing" for f in r["g"]))
+    g_file.unlink()
+    r = sweep(g_root)
+    check("F21d-deleted-pin-file-fails",
+          any(f["kind"] == "pin-file-missing" for f in r["g"]))
+    # F21e: a fixture tree with NO tests/ directory at all — the pin's carrier
+    # legitimately doesn't exist there, so G honest-skips silently (never a
+    # fabricated PASS, never a spurious FAIL).
+    r = sweep(tree({INDEX_REL: index(4, [1])}))
+    check("F21e-fixture-tree-honest-skip", not r["g_ran"] and not r["g"])
+
     print(f"{'SELF-TEST OK: radar_index_freshness_guard' if ok else 'SELF-TEST FAILED: radar_index_freshness_guard'}")
     return ok
 
@@ -1263,6 +1398,9 @@ def main() -> int:
     # #2392 invariant E: roster regression (pointer revert / row eviction) —
     # the pass-23 deferred check. Structural, never floorable.
     e_findings, e_ran = invariant_e(r["pointer"], r["row_tokens"], baseline)
+    # #3557 invariant G: pin-truth — the test file's pin literal is the
+    # pointer's second honest copy. Structural, never floorable.
+    g_findings, g_ran = r["g"], r["g_ran"]
     # #2187: invariant D joins the SAME shrink-only ratchet — commit-subject
     # keys are never in the born-empty floor, so any ghost is fresh drift,
     # and a registered row (base now in the registry) makes it vanish.
@@ -1274,14 +1412,16 @@ def main() -> int:
             "a": r["a"], "b": r["b"], "citationGhosts": r["cits"],
             "commitSubjectGhosts": r["d"], "commitPlaneScanned": r["d_ran"],
             "rosterRegressions": e_findings, "rosterChecked": e_ran,
+            "pinTruthFindings": g_findings, "pinTruthChecked": g_ran,
             "reportOnly": r["report_only"], "drift": drift,
             "improvements": improvements,
-            "verdict": "fail" if (r["a"] or r["b"] or drift or e_findings) else "pass",
+            "verdict": "fail" if (r["a"] or r["b"] or drift or e_findings or g_findings) else "pass",
         }, indent=2, ensure_ascii=False))
     else:
         render(r["a"], r["b"], r["cits"], r["report_only"], drift, improvements, r["pointer"],
-               d=r["d"], d_ran=r["d_ran"], e=e_findings, e_ran=e_ran)
-    return 1 if (r["a"] or r["b"] or drift or e_findings) else 0
+               d=r["d"], d_ran=r["d_ran"], e=e_findings, e_ran=e_ran,
+               g=g_findings, g_ran=g_ran)
+    return 1 if (r["a"] or r["b"] or drift or e_findings or g_findings) else 0
 
 
 if __name__ == "__main__":
