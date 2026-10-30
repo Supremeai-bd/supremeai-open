@@ -71,7 +71,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # dead by AST Name-load + zero consumer imports incl. _archive delegates)
 # and re-measured with this file's own _scan_live_scope -> 384 across a
 # smaller file set. Shrink-only preserved: 384 < 388 < 446.
-BASELINE_UNUSED_IMPORTS = 365
+# Re-armed 2026-10-30 r5 heal (post-#3016/#3017 window): slice-r1 landings added 5 dead
+# bindings (core/marketplace_registry_sync.py: re/sys/dataclass/asdict;
+# tests/test_hollow_read_guard.py: json). All 5 removed (AST + word-boundary verified
+# dead, zero string-annotation uses); re-measured with this scanner -> 363.
+BASELINE_UNUSED_IMPORTS = 363
 
 # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
 # Each binding below was verified dead by AST Name-load analysis + word-boundary

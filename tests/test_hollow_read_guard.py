@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import io
 import contextlib
-import json
 import sys
 import unittest
 from pathlib import Path
