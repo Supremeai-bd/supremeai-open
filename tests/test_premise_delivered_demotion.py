@@ -178,6 +178,79 @@ class TestPremiseDeliveredCheckB(unittest.TestCase):
         note = cal._premise_delivered_note(self._row_plain(2794), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
         self.assertIsNotNone(note)
 
+    def test_merged_compound_citation_demotes(self):
+        # Live miss (2026-10-30 12:52Z): merged #3338's subject carried the
+        # row as "R1776/#2766" — slash-adjacent, no whitespace — the keyword
+        # regex sailed past it and the loop re-dispatched #2766 ~20 minutes
+        # after its own evidence refresh landed. Re-land r3: #3348's heal
+        # was silently reverted by #3404's stale-base full-file landing.
+        rows = [
+            _pr(
+                3338,
+                "report(guard): R1776/#2766 evidence refresh r2 — zizmor 1.31.1 rescan on current main (bridge-20261030-r1776-zizmor-refresh-glm25)",
+            )
+        ]
+        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+        self.assertIsNotNone(note)
+        self.assertIn("#3338", note)
+        self.assertIn("R1776/#2766", note)
+
+    def test_merged_hash_compound_citation_demotes(self):
+        rows = [_pr(3400, "evidence refresh #1776/#2766 — zero-delta receipt")]
+        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+        self.assertIsNotNone(note)
+        self.assertIn("#1776/#2766", note)
+
+    def test_lowercase_compound_citation_demotes(self):
+        # "receipt r1776/#2766" defeats the KEYWORD form ("receipt" is not
+        # adjacent to #2766) — the compound form must carry it, case-blind.
+        rows = [_pr(3401, "rescan r3 receipt r1776/#2766")]
+        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+        self.assertIsNotNone(note)
+
+    def test_bare_r_idiom_demotes_parent_row(self):
+        # The same receipt names the parent row bare ("R1776") — the loop's
+        # next #1776 serve must see the fresh family receipt too.
+        rows = [
+            _pr(
+                3338,
+                "report(guard): R1776/#2766 evidence refresh r2 — zizmor 1.31.1 rescan on current main",
+            )
+        ]
+        note = cal._premise_delivered_note(self._row_plain(1776), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+        self.assertIsNotNone(note)
+        self.assertIn("R1776", note)
+
+    def test_bare_number_mention_serves(self):
+        # Non-delivery: bare "#N" with no delivery keyword and no compound
+        # slash is related-work context, never a landing receipt.
+        rows = [_pr(3402, "per #2766 precedent the refresh method stays pinned-version")]
+        self.assertIsNone(
+            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+        )
+
+    def test_compound_number_boundary_safe(self):
+        rows = [_pr(3403, "R1776/#27661 wrong-row compound")]
+        self.assertIsNone(
+            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+        )
+
+    def test_bare_r_idiom_number_boundary_safe(self):
+        # "R17760" must not demote row 1776 (boundary), and the title carries
+        # NO standalone "R1776" token.
+        rows = [_pr(3404, "R17760 and R17761 tokens only")]
+        self.assertIsNone(
+            cal._premise_delivered_note(self._row_plain(1776), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+        )
+
+    def test_branch_slug_alone_never_demotes_compound_check(self):
+        # A branch slug WITHOUT the R-token (plain dash-number) must not
+        # demote: dash-adjacency is not a compound citation form.
+        rows = [_pr(3405, "watchdog live run (bridge-20261030-2766-watchdog-live-run-r1) (#3405)")]
+        self.assertIsNone(
+            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+        )
+
     def test_raising_fetcher_fails_open(self):
         def boom(per_page):
             raise RuntimeError("rate limited")
@@ -455,15 +528,27 @@ class TestDarkScanHonesty(unittest.TestCase):
     def test_live_fetch_failure_sets_dark_state(self):
         # The LIVE fetcher (not an injected one) must flip the dark flag on
         # any failure — that is the exact silent path this R2 closes.
+        # R3 update (item 15, GLM Agent 05): the fetcher now has TWO
+        # transports (REST first, tower second, one shared cache). With every
+        # urlopen patched dark, both transports fail, and the live fetcher
+        # raises HONESTLY (the R3 contract pinned in
+        # test_landing_fetch_tower_fallback.py) while still flipping the dark
+        # flag and caching the darkness — the note's fail-open layer serves
+        # the row, never blocks. The R2-era silent-return shape would be a
+        # false-green here: the raise is the honesty signal itself.
         cal._LANDING_FETCH_FAILED = False
         cal._LANDING_FETCH_DONE = False
         with unittest.mock.patch.object(
             cal.urllib.request, "urlopen", side_effect=OSError("rate limited")
         ):
-            rows = cal._fetch_merged_landing_prs(80)
-        self.assertEqual(rows, [])
+            with self.assertRaises(RuntimeError):
+                cal._fetch_merged_landing_prs(80)
+        self.assertEqual(cal._LANDING_ROWS, [])
         self.assertTrue(cal._LANDING_FETCH_FAILED)
+        self.assertEqual(cal._LANDING_PLANE, "dark")
         self.assertIsNotNone(cal.landing_crossscan_advisory())
+        # darkness is cached: a later candidate re-networks nothing
+        self.assertEqual(cal._fetch_merged_landing_prs(80), [])
         cal._LANDING_FETCH_DONE = True  # keep the module cache coherent
 
     def test_envelope_carries_dark_advisory_in_board_note(self):

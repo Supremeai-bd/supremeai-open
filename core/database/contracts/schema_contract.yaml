@@ -179,6 +179,52 @@ tables:
       observed_at: {required: true}
       metadata: {required: false}
 
+  # --- #3699 drift class (2026-10-31): objects the code depends on that were
+  # never encoded here, so the guard could not see them. All required:false
+  # for now — live production is currently missing pieces of each (schema
+  # check must not be born-red, #3544 lesson); flip to required:true in the
+  # same PR that lands the owner-lane migrations.
+  ai_memory:
+    required: false
+    note: >-
+      code surface: core/database/supabase/ai_memory_phase_c.sql + 8 modules
+      (synaptic_dream, advanced_model_router, knowledge/*). Live prod throws
+      "permission denied for table ai_memory" (SynapticDream prune) — the
+      phase-C GRANTs (lines 209-210) were never applied to the app role.
+      Owner-lane: run ai_memory_phase_c.sql grants; then flip required:true.
+    columns:
+      id: {required: true}
+      user_id: {required: false}          # NULL = system row
+      session_id: {required: true}
+      agent_type: {required: true}
+      task_type: {required: true}
+      content: {required: false}
+      summary: {required: true}
+      agent_id: {required: false}
+      memory_type: {required: false}
+      importance_score: {required: false}
+      metadata: {required: true}
+      created_at: {required: true}
+      updated_at: {required: true}
+      embedding: {required: false}        # vector(384); introspection-visibility varies by role
+
+  usage_metrics:
+    required: false
+    note: >-
+      code surface: core/api/routes/usage_metrics.py + core/startup/usage_metrics_aggregator.py
+      (upsert path). Live prod lacks metric_date ("Could not find the
+      'metric_date' column", #3699). Owner-lane: add the column + table
+      grants; then flip required:true.
+    columns:
+      metric_date: {required: true}       # the column prod is missing today
+      tenant_id: {required: true}
+      total_requests: {required: true}
+      total_tokens: {required: true}
+      total_cost: {required: true}
+      unique_users: {required: false}
+      avg_latency_ms: {required: false}
+      error_rate: {required: false}
+
   # Tables referenced by the *original* 001_initial_schema.sql but not
   # present in the live, evolved production architecture. Tracked as
   # informational only (required: false at the table level) so CI doesn't
@@ -200,3 +246,19 @@ tables:
   hitl_approvals:
     required: false
     note: "not present in production; confirm still needed"
+
+# RPC functions the application calls via supabase .rpc("name", ...).
+# New section (#3699, 2026-10-31): the guard previously could only express
+# tables/columns/indexes, so function-class drift (e.g. "Could not find the
+# function public.exec_sql") was invisible to it by construction.
+# checked via information_schema.routines (schema public), read-only.
+functions:
+  exec_sql:
+    required: false
+    note: >-
+      called at 5 sites (core/api/routes/scheduled_tasks.py:76,
+      deep_research.py:126, branch_conversations.py:79+95,
+      prompt_templates.py:281) but NO in-repo migration defines it — the
+      definition exists only by hand on prod, which is the drift itself.
+      Owner-lane: version a security-definer exec_sql (locked search_path,
+      service_role-only EXECUTE) as a migration; then flip required:true.

@@ -10,11 +10,25 @@
  * invisible to value-pins. The fix: per-file opt-in baseSha declared at
  * branch-cut time; the Tower re-reads main pre-land and rejects with
  * STALE_BASE_ERROR on any drift (main-advanced / file-deleted).
+ *
+ * #3487 extension (2026-10-30): the opt-in checkpoint left the destructive
+ * class open — a stale-base payload WITHOUT a declared baseSha sailed through
+ * unchecked (witness: #3404's landing wiped co-landed pick-plane guards;
+ * restoration trail #3439/#3451, #3465, #3438, #3409 = 4 PRs + 1 open WO in
+ * ~6 hours). The fail-closed CAS gate (evaluateFullFileGate, RFC 9110
+ * If-Match pattern) is welded here: missing base on an existing path ->
+ * STALE_BASE_MISSING; unreadable main -> STALE_BASE_UNVERIFIED; the
+ * brand-new-file lane stays open; the #2333 verdicts pass through unchanged.
  */
 import {
   evaluateBaseStaleness,
+  evaluateFullFileGate,
   staleBaseErrorText,
+  staleBaseMissingErrorText,
+  staleBaseUnverifiedErrorText,
   STALE_BASE_ERROR_PREFIX,
+  STALE_BASE_MISSING_PREFIX,
+  STALE_BASE_UNVERIFIED_PREFIX,
   type MainBlobState,
 } from "./src/lib/bridge_staleness.js";
 
@@ -100,11 +114,75 @@ check("verdicts partition into exactly the three actions", new Set(all.map((v) =
 const blob: MainBlobState = { exists: true };
 check("MainBlobState tolerates missing sha field (defensive)", evaluateBaseStaleness(CUT_SHA_2314_BASE, blob).verdict === "stale");
 
+// ─── 7. #3487 fail-closed gate: missing base on an existing path ────────────
+section("7. #3487 gate — existing path, no declared base -> STALE_BASE_MISSING (the #3404 replay)");
+// The exact shape that burned the day: a full_file overwrite of a path that
+// exists on main, computed against an unknown base, with NO baseSha declared.
+// The #2333 checkpoint skipped it silently; the gate must reject it.
+const missing = evaluateFullFileGate("docs/bridge/bridge-20261030-identity-glm14.md", undefined, { exists: true, sha: MAIN_ADVANCED_SHA }, 200);
+check("existing path + undefined baseSha -> reject", missing.verdict === "reject");
+check(
+  "rejection carries the STALE_BASE_MISSING prefix",
+  missing.verdict === "reject" && missing.error.startsWith(STALE_BASE_MISSING_PREFIX)
+);
+check("null baseSha is equally precondition-less", (() => {
+  const v = evaluateFullFileGate("x.md", null, { exists: true, sha: MAIN_ADVANCED_SHA }, 200);
+  return v.verdict === "reject" && v.error.startsWith(STALE_BASE_MISSING_PREFIX);
+})());
+const missingText = staleBaseMissingErrorText("docs/SCOUT_RADAR_INDEX.md");
+check("missing-error names the offending path", missingText.includes("docs/SCOUT_RADAR_INDEX.md"));
+check("missing-error cites #3487 and the #3404 clobber family", missingText.includes("#3487") && missingText.includes("#3404"));
+check("missing-error teaches the re-read + declare contract", missingText.includes("git rev-parse main:<path>"));
+check("missing-error keeps the new-file lane documented", missingText.includes("Brand-new files must omit baseSha"));
+
+// ─── 8. #3487 fail-closed gate: unreadable main -> STALE_BASE_UNVERIFIED ────
+section("8. #3487 gate — main blob unreadable (non-404) -> STALE_BASE_UNVERIFIED");
+// Was: fail-open "skipped-api-error" disclosure, landing unverified. The PUT
+// below needs the same API — a GET-fails/PUT-works partial failure is exactly
+// the unguarded window, so the gate now closes it.
+const unverified = evaluateFullFileGate("src/x.ts", CUT_SHA_2314_BASE, undefined, 503);
+check("undefined mainBlob -> reject even with a declared base", unverified.verdict === "reject");
+check(
+  "rejection carries the STALE_BASE_UNVERIFIED prefix",
+  unverified.verdict === "reject" && unverified.error.startsWith(STALE_BASE_UNVERIFIED_PREFIX)
+);
+const unvNoBase = evaluateFullFileGate("src/x.ts", undefined, undefined, 429);
+check("undefined mainBlob rejects without a declared base too", unvNoBase.verdict === "reject" && unvNoBase.error.startsWith(STALE_BASE_UNVERIFIED_PREFIX));
+const unvText = staleBaseUnverifiedErrorText("src/x.ts", 503);
+check("unverified-error names the path and the HTTP status", unvText.includes("src/x.ts") && unvText.includes("HTTP 503"));
+check("unverified-error cites #3487 fail-closed rationale", unvText.includes("#3487") && unvText.includes("fail-closed"));
+check("unverified-error instructs retry, never silent", unvText.includes("Retry the submission") && unvText.includes("never silent"));
+
+// ─── 9. #3487 gate: the brand-new-file lane stays open ──────────────────────
+section("9. #3487 gate — brand-new path stays open (no base required, no block)");
+const newFile = evaluateFullFileGate("docs/bridge/brand-new-receipt.md", undefined, { exists: false }, 404);
+check("404 on main + no baseSha -> allow", newFile.verdict === "allow");
+check("allow carries the new-file-no-base disclosure", newFile.verdict === "allow" && newFile.disclosure === "new-file-no-base");
+// Declared base on an absent path still rejects via the #2333 resurrection
+// guard (a full_file (re)creation would silently resurrect a deleted file).
+const resurrect = evaluateFullFileGate("docs/ledger/deleted.md", CUT_SHA_2314_BASE, { exists: false }, 404);
+check("declared base on absent path -> reject (resurrection guard kept)", resurrect.verdict === "reject");
+check("resurrection rejection is the #2333 STALE_BASE_ERROR", resurrect.verdict === "reject" && resurrect.error.startsWith(STALE_BASE_ERROR_PREFIX));
+
+// ─── 10. #3487 gate: declared-base passthrough (fresh + stale) ──────────────
+section("10. #3487 gate — declared base passes through the #2333 verdicts unchanged");
+const gateFresh = evaluateFullFileGate("docs/x.md", CUT_SHA_2314_BASE, { exists: true, sha: CUT_SHA_2314_BASE }, 200);
+check("bit-identical base -> allow checked-fresh", gateFresh.verdict === "allow" && gateFresh.disclosure === "checked-fresh");
+const gateStale = evaluateFullFileGate("docs/x.md", CUT_SHA_2314_BASE, { exists: true, sha: MAIN_ADVANCED_SHA }, 200);
+check("moved blob -> reject with the #2333 STALE_BASE_ERROR text", gateStale.verdict === "reject" && gateStale.error.startsWith(STALE_BASE_ERROR_PREFIX));
+check("stale rejection still carries both shas", gateStale.verdict === "reject" && gateStale.error.includes(CUT_SHA_2314_BASE) && gateStale.error.includes(MAIN_ADVANCED_SHA));
+check("empty-string baseSha on an existing path is precondition-less -> reject", (() => {
+  const v = evaluateFullFileGate("docs/x.md", "", { exists: true, sha: MAIN_ADVANCED_SHA }, 200);
+  return v.verdict === "reject" && v.error.startsWith(STALE_BASE_MISSING_PREFIX);
+})());
+check("gate partitions into exactly allow/reject", [missing, unverified, newFile, resurrect, gateFresh, gateStale].every((v) => v.verdict === "allow" || v.verdict === "reject"));
+check("every rejection carries a non-empty re-readable error", [missing, unverified, resurrect, gateStale].every((v) => v.verdict === "reject" && v.error.length > 40));
+
 // ─── Verdict ────────────────────────────────────────────────────────────────
 console.log("\n=============================================");
 if (failures === 0) {
-  console.log("ALL BRIDGE STALENESS TESTS PASSED (#2333)");
+  console.log("ALL BRIDGE STALENESS TESTS PASSED (#2333 + #3487 fail-closed gate)");
 } else {
-  console.error(`${failures} TEST(S) FAILED (#2333)`);
+  console.error(`${failures} TEST(S) FAILED (#2333 + #3487 fail-closed gate)`);
 }
 process.exit(failures === 0 ? 0 : 1);

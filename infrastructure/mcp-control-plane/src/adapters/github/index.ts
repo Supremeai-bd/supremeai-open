@@ -1,5 +1,6 @@
 import { buildAccountRegistry } from "../../registry/account.registry.js";
 import { httpRequest, bearerAuth } from "../../lib/http.js";
+import { pullsEndpoint, pullsQuery } from "../../lib/github_pagination.js";
 
 const DEFAULT_BASE_URL = "https://api.github.com/repos/Supremeai-bd/supremeai";
 
@@ -138,9 +139,44 @@ export async function searchCode(query: string, repo?: string, limit: number = 1
 
 export const codeSearch = searchCode;
 
-export async function listPullRequests(accountId: string, state: string = "open", limit: number = 5): Promise<unknown> {
+export async function listPullRequests(
+  accountId: string,
+  state: string = "open",
+  limit: number = 5,
+  opts?: { pullNumber?: number; sort?: string; direction?: string },
+): Promise<unknown> {
   const { apiKey: token, baseUrl } = getAccountConfig(accountId);
-  const res = await httpRequest(`${baseUrl}/pulls?state=${state}&per_page=${limit}`, {
+  // #3368 / R81: single-PR addressability — the creation-ordered window
+  // cannot answer "state of PR N" for any PR outside the newest ~100
+  // ranks; REST GET /pulls/{number} can, at any rank (state/merged/
+  // merged_at/closed_at — exactly the verdict-plane fields the #2567-class
+  // re-verifications needed). pullNumber overrides the list knobs entirely.
+  if (opts?.pullNumber !== undefined && opts.pullNumber !== null) {
+    const res = await httpRequest(pullsEndpoint(baseUrl, opts.pullNumber), {
+      headers: githubHeaders(token),
+    });
+    if (!res.ok || typeof res.data !== "object" || res.data === null) {
+      const errorMsg =
+        res.data && typeof res.data === "object" && "message" in (res.data as Record<string, unknown>)
+          ? String((res.data as Record<string, unknown>).message)
+          : `Failed to fetch PR #${opts.pullNumber} (HTTP ${res.status})`;
+      throw new Error(`GitHub API error: ${errorMsg}`);
+    }
+    const pr = res.data as any;
+    return [{
+      number: pr.number,
+      title: pr.title,
+      state: pr.state,
+      merged: pr.merged,
+      mergedAt: pr.merged_at,
+      closedAt: pr.closed_at,
+      user: pr.user?.login,
+      htmlUrl: pr.html_url,
+      createdAt: pr.created_at,
+      updatedAt: pr.updated_at,
+    }];
+  }
+  const res = await httpRequest(`${baseUrl}/pulls?${pullsQuery(state, limit, opts?.sort, opts?.direction)}`, {
     headers: githubHeaders(token),
   });
   if (!res.ok || !Array.isArray(res.data)) {

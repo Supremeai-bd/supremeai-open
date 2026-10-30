@@ -106,7 +106,9 @@ export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [typedText, setTypedText] = useState('');
-  const fullText = 'What is the current health status of our AI swarm across satellites?';
+  // FRONTEND_SIMPLICITY rule 43 (jargon ban): user-facing demo copy must
+  // describe the user goal — "swarm" is on the banned list.
+  const fullText = 'What is the current health status of my AI assistants?';
 
   // ROOT-CAUSE FIX (Our Story tab hash navigation): SPA pushState does not
   // auto-scroll, so navigating to /#features or /#demo from another page

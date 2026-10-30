@@ -8,9 +8,8 @@ owner: coder
 last_verified: 2026-10-29
 related_docs:
   - AGENTS.md
-  - AGENT_RULES.md
   - docs/AGENT_LOOP_SPEC.md
-  - docs/CONTRIBUTING.md
+  - CONTRIBUTING.md
 source_issue: 26
 source_pr: null
 supersedes: []
@@ -47,7 +46,7 @@ or hooks on these strings.
    closed issue, an unparseable contract, or a duplicate-PR preflight hit
    aborts the cycle.
 2. **Rules** — verify the constitution is present and readable (`AGENTS.md`,
-   `AGENT_RULES.md`). Fail-closed on absence.
+   `.github/PULL_REQUEST_TEMPLATE.md`; the loop's RULE_FRESHNESS_FILES). Fail-closed on absence.
 3. **Inspect State** — git worktree hygiene gate. A dirty worktree stops the cycle
    (bypassable only via `--force`, which integrators should treat as test-only).
 4. **Branch** — ensure the isolated working branch for the task (auto-created session
@@ -63,7 +62,7 @@ or hooks on these strings.
    YAML (7-`##`-section template), the derived evidence list, and the claim. With
    `--auto-pr` the runner submits via `gh pr create`; with `--fork-owner` (Pathway 2)
    it pushes to the named fork and opens the PR from there. `Closes #N` must ride in
-   the commit message (squash-merge auto-close doctrine, AGENT_RULES U8).
+   the commit message (squash-merge auto-close doctrine, AGENTS.md Invariant 4).
 8. **Return** — board-freshness re-poll and cycle completion report. The cycle ends
    with a fresh view of the board so the next cycle never acts on stale state.
 
@@ -141,7 +140,6 @@ retrying a broken harness unchanged is the wrong response.
 
 ## Related Documents
 
-- [AGENTS.md](../AGENTS.md) — agent entrypoint, zero-admin pathways
-- [AGENT_RULES.md](../AGENT_RULES.md) — policy source (U1–U10, P0–P7)
+- [AGENTS.md](../AGENTS.md) — agent entrypoint, zero-admin pathways, policy invariants
 - [docs/AGENT_LOOP_SPEC.md](./AGENT_LOOP_SPEC.md) — envelope schema §2, canonical flag surface §4b, open guards §5
-- [docs/CONTRIBUTING.md](./CONTRIBUTING.md) — contributor quickstart and submission paths
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — contributor quickstart and submission paths

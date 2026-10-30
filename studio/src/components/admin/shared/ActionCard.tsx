@@ -163,7 +163,8 @@ export function ActionCard({ rawContent, onSaveToProject, onPreview }: ActionCar
       {type === 'image' && (
         <div className="flex flex-col gap-2">
           <div className="relative rounded-lg overflow-hidden border border-slate-800 max-h-64 bg-slate-950">
-            <img src={content} alt="AI Generated" className="w-full h-auto object-contain mx-auto" />
+            {/* Perf (#3606): history images lazy-load — matches FilesPage. */}
+            <img src={content} alt="AI Generated" loading="lazy" decoding="async" className="w-full h-auto object-contain mx-auto" />
           </div>
         </div>
       )}

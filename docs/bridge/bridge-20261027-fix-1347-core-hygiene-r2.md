@@ -1,3 +1,0 @@
-# 🌉 Bridge Work Order — [P2] Fix: core god-init cleanup, honest exports, selfcheck extraction (fix for #1347)
-
-Implements the fix for parent issue #1347 / bridge-20261027-core-hygiene. Patches: core/__init__.py (god-init 14,902 -> 10,202 chars; triple-fallback import chains flattened to one canonical package-relative path per symbol; 11 permanently-None deleted symbols removed from module and __all__), NEW core/selfcheck.py (self-check functions extracted, lazy re-export via PEP 562 keeps the public API unchanged), NEW tests/test_core_exports.py (integrity invariant: every __all__ entry resolvable, never permanently-None). The underscore-archive move needs git-history surgery and stays an operator follow-up from the parent issue.

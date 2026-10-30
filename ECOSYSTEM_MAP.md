@@ -185,4 +185,4 @@ Reusable building blocks (cross-federation SSOT): `scripts/ci/boundary_sanitizat
 
 ---
 
-**Related:** [`AGENTS.md`](./AGENTS.md) (constitution) · [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) (contributor guide) · [`docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`](./docs/OPS_ACTIONS_QUOTA_RUNBOOK.md) (quota & diet)
+**Related:** [`AGENTS.md`](./AGENTS.md) (constitution) · [`CONTRIBUTING.md`](./CONTRIBUTING.md) (contributor guide) · [`OPS_ACTIONS_QUOTA_RUNBOOK.md`](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md) (quota & diet)

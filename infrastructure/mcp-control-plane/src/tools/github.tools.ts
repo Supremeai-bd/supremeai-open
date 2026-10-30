@@ -354,16 +354,26 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
         per_page: z.number().int().min(1).max(100).optional().describe(
           "GitHub-REST page-size, fully honored (#2614 live-verified): precedence per_page ?? limit ?? default 5, clamped to GitHub's 1..100 envelope. A 5-row response means params were dropped (e.g. camelCase perPage), not a page-lock — re-probe with per_page=100 before filing an outage"),
         limit: z.number().optional().describe("Max number of PRs (default: 5)"),
+        pull_number: z.number().int().min(1).optional().describe(
+          "#3368 (R81): single-PR addressability — fetch exactly PR N at any creation rank via REST GET /pulls/{N} (returns state/merged/merged_at/closed_at). Overrides state/per_page/limit/sort entirely; use this to re-verify an old PR's live verdict without falling back to the 403-budget anon API"),
+        sort: z.enum(["created", "updated", "long-running"]).optional().describe(
+          "#3368 (R81): REST-native window sort — 'updated' + direction=desc reaches recently-touched old PRs beyond the creation-desc window"),
+        direction: z.enum(["asc", "desc"]).optional().describe(
+          "#3368 (R81): sort direction (REST default: desc)"),
       },
       outputSchema: targetEchoSchema,
     },
-    async ({ accountId, repo, state, per_page, limit }) => {
+    async ({ accountId, repo, state, per_page, limit, pull_number, sort, direction }) => {
       const target = repo || accountId || "github-primary";
       const targetUrl = repoUrlFor(accountId, repo);
       const deny = assertRepoReadAccess("github.list_prs", target, targetUrl);
       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
       try {
-        const prs = await listPullRequests(target, state ?? "open", resolvePerPage(per_page, limit));
+        const prs = await listPullRequests(target, state ?? "open", resolvePerPage(per_page, limit), {
+          pullNumber: pull_number,
+          sort,
+          direction,
+        });
         return {
           content: [{ type: "text", text: JSON.stringify(prs, null, 2) }],
           structuredContent: describeTarget(targetUrl),

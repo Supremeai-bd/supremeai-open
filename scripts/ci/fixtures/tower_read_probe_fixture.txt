@@ -1,0 +1,13 @@
+# tower_read_file_artifact_probe.py — canonical fixture (v1, 2026-10-30)
+# Ground truth for the live byte-compare: every line below exercises one
+# bracket class observed in the wild (core ci.yml + CORE_CI_TRIAGE capture).
+# Do NOT reflow or re-wrap: the probe diffs this file's exact bytes against
+# the tower github.read_file payload for the same path@ref.
+branches: [main]
+branches: [ main ]
+keep-brackets: [pousr] and [A-Za-z0-9]{36,} and [ -f requirements.txt ]
+sgr-class: [m and [0;32m and [1;33m and [42m and [38;5;196m
+digits: [1m and [2;3;4m
+edge: [Mm] and [mm] and word[mend and trailing[m
+none: this line has no brackets at all
+matrix: [1m, 2m]

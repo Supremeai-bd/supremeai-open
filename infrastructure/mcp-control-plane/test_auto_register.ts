@@ -35,7 +35,11 @@ assert.ok(grokSse.id.startsWith("guest_xai_"), `unexpected guest id: ${grokSse.i
 assert.equal(grokSse.provider, "xai");
 assert.equal(grokSse.protocol, "sse");
 assert.equal(grokSse.status, "active");
-assert.equal(grokSse.role, "admin"); // pre-production default: admin role until production ready
+// #3663 (P0 root-cause): guests are born viewer with viewer scopes — the
+// pre-production "admin" default was the unauthenticated global-admin hole.
+assert.equal(grokSse.role, "viewer");
+assert.deepEqual(grokSse.scopes, defaultClientScopes("viewer"));
+assert.ok(!grokSse.scopes.includes("*"), "guest scopes must never be omni");
 
 // 3. Idempotency: the same client reconnecting reuses its record.
 const grokAgain = autoRegisterGuestClient(fakeReq("Mozilla/5.0 Grok/1.0 xAI"), "sse");
