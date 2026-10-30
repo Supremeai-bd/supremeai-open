@@ -40,7 +40,7 @@ ALLOWLIST: dict[str, str] = {
     "scripts/agents/self_healing_reporter.py": "covered by test_self_healing_reporter",
     "scripts/agents/context_graph_resolver.py": "covered by test_s08_mistake_immunity",
     "scripts/agents/role_registry.py": "covered by test_s09_role_trigger_matrix",
-    "scripts/agents/loop_cadence.py": "covered by test_agent_cadence",
+    "scripts/agents/loop_cadence.py": "deprecated tombstone (#3573) — docstring-only stub, rotation API lives in continuous_agent_loop.py (covered by test_agent_cadence)",
     "scripts/agents/loop_common.py": "covered by test_constitution_freshness, test_ci_guards",
     "scripts/agents/agent_cadence.json": "config, not code",
     "scripts/agents/controller_evidence_verify.py": "covered by test_controller_evidence",

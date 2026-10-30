@@ -1,3 +1,0 @@
-# 🌉 Bridge Work Order — [P1] Fix: streaming chat, retry discipline and typed errors for the shared client service (fix for #1333)
-
-Implements the full fix for parent issue #1333 / bridge-20261027-client-streaming-retry. Patch: packages/shared-services/src/services/SupremeAIService.ts. streamChatMessage() via native fetch + ReadableStream SSE against POST /api/v1/stream/chat; requestWithRetry() x2 exponential + jitter on network/5xx/429; timeout 10000ms -> configurable, default 120s; typed ApiError replaces silent catches; completion prefix-hash cache + cap. FIM endpoint remains a backend follow-up.

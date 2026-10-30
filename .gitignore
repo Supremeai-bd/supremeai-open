@@ -51,5 +51,9 @@ core/.secrets/
 /reports/
 
 # Agent continuous loop runtime state
+# (#3573: agent_cadence_state.json is orphaned by the event-driven regime —
+# the rotation state now lives in agent_rotation_state.json; keep the old
+# name ignored so stale timer-regime files can never resurface in git.)
 scripts/agents/agent_cadence_state.json
+scripts/agents/agent_rotation_state.json
 scripts/agents/dispatched_issues_state.json

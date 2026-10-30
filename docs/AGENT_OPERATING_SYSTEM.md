@@ -10,7 +10,7 @@
 > (every failure becomes a permanent rule).
 
 This document does not replace any SSOT — it maps and connects them:
-[`AGENTS.md`](../AGENTS.md) (constitution), [`CONTRIBUTING.md`](CONTRIBUTING.md)
+[`AGENTS.md`](../AGENTS.md) (constitution), [`CONTRIBUTING.md`](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/CONTRIBUTING.md)
 (paths, caps, gates), [`AGENT_LOOP_SPEC.md`](AGENT_LOOP_SPEC.md) (task envelope,
 8 evidence tiers), and the live `bridge_guide` tool (runtime contract). Parity
 guards fail any drift between them.

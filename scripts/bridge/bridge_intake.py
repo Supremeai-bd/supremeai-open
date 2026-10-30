@@ -488,6 +488,44 @@ def clone(repo: str, token: str, dest: Path, depth: int = 50) -> str:
     return str(dest)
 
 
+def ensure_diffable_base(public_dir: str, branch: str) -> None:
+    """Three-dot diff-এর আগে merge-base connectivity guarantee (#3723 রুট-কজ)।
+
+    বাংলা: `--depth=50` shallow clone-এ WO ব্রাঞ্চের base main-টিপ থেকে >~50 কমিট
+    পেছনে গেলে দুই shallow object-window **ডিসজয়েন্ট** হয় — main window হলো
+    {T..T-49}, ব্রাঞ্চ ফেচ সেট হলো {branch-tip, base..আরও গভীরে}; base-এর ঠিক
+    উপরের কমিটগুলো (T-50..T-53) কোনো সেটেই পড়ে না → `git diff A...B` rc=128
+    "no merge base"। ব্যর্থতাটি deterministic — main যত এগোয় base তত আরও দূরে
+    সরে, তাই প্রতিটি re-run হুবহু একইভাবে ব্যর্থ হয় এবং WO চিরকাল
+    `bridge:in-gates`-এ আটকে থাকে। প্রমাণিত শিকার (একই 15:59Z ব্যাচ রান):
+    #3382 15:59:10Z, #3380 15:59:24Z, #3335 15:59:40Z, #3292 15:59:55Z —
+    C60 base তখন ৫৪ কমিট পেছনে ছিল (rev-list দিয়ে যাচাইকৃত), window ৫০।
+
+    সেলফ-হিল: প্রথম probe ব্যর্থ হলে **একবার** `--unshallow` (open repo-র ফুল
+    history ≈ 20MB .git — সস্তা, tmp clone-এ জীবনে একবারই) + ব্রাঞ্চ re-fetch,
+    তারপর re-probe। তবুও base না মিললে fail-closed শিক্ষণীয় টোকেন — কখনো ভুল
+    বা অনুমান-নির্ভর base-এ নীরব diff নয় (orphan ব্রাঞ্চ/rewritten history-তেও
+    স্পষ্ট নাম-সহ ব্যর্থ হয়)। ফ্রেশ WO-র ফাস্ট-পাথ অপরিবর্তিত: একটি মাত্র
+    merge-base কল (প্রায়-ফ্রি), unshallow কখনোই ট্রিগার হয় না (টেস্ট দিয়ে
+    পিন করা)।
+    """
+    probe = ["git", "merge-base", "origin/main", f"origin/{branch}"]
+    if run(probe, cwd=public_dir, check=False).returncode == 0:
+        return
+    # Shallow-window miss (#3723) — একবার full-depth heal, তারপর re-probe।
+    run(["git", "fetch", "--quiet", "--unshallow", "origin"], cwd=public_dir, check=False)
+    run(
+        ["git", "fetch", "--quiet", "origin", f"refs/heads/{branch}:refs/remotes/origin/{branch}"],
+        cwd=public_dir,
+    )
+    if run(probe, cwd=public_dir, check=False).returncode != 0:
+        raise BridgeError(
+            f"BRANCH_BASE_UNREACHABLE: origin/{branch} shares no merge base with origin/main "
+            f"even at full depth (orphaned branch or rewritten history) — fail-closed, "
+            f"refusing three-dot diff (#3723)"
+        )
+
+
 def fetch_patch(public_dir: str, branch: str, token: str) -> tuple[str, list[str]]:
     """Branch প্রমাণ (ls-remote) → explicit refspec fetch → (diff, files)।
 
@@ -501,6 +539,7 @@ def fetch_patch(public_dir: str, branch: str, token: str) -> tuple[str, list[str
         ["git", "fetch", "--quiet", "origin", f"refs/heads/{branch}:refs/remotes/origin/{branch}"],
         cwd=public_dir,
     )
+    ensure_diffable_base(public_dir, branch)
     diff = run(["git", "diff", f"origin/main...origin/{branch}"], cwd=public_dir).stdout
     files_out = run(["git", "diff", "--name-only", f"origin/main...origin/{branch}"], cwd=public_dir).stdout
     files = [line.strip() for line in files_out.splitlines() if line.strip()]

@@ -4,6 +4,7 @@ import {
   clientCredentialId,
   clientMatchesToken,
   defaultClientScopes,
+  DEFAULT_GUEST_ROLE,
   getClient,
   isRegistryNetworkBacked,
   lastStoreVerificationAt,
@@ -400,12 +401,18 @@ function viewerFallback(
 ): SlotSession {
   const guest = autoRegisterGuestClient(req, protocol, tenantId);
   recordSlotAudit({ slotId, operation: "connect", outcome: "denied", reason, clientIp, tenantId });
-  // Pre-production: URL connect gets "admin" role
-  const fallbackRole: UserRole = "admin";
+  // #3663 (P0 root-cause): this fallback previously returned role "admin"
+  // with authenticated:true and ["*"] scopes — the literal opposite of its
+  // own name and of the #48 law it implements ("the URL alone is NEVER
+  // authentication"). The session now carries the DEFAULT_GUEST_ROLE
+  // (viewer) with authenticated:false, so an unverified caller lands in the
+  // public_viewer surface: the zero-credential bridge lane stays open, and
+  // every privileged tool/registry path denies by default.
+  const fallbackRole: UserRole = DEFAULT_GUEST_ROLE;
   return {
     client: guest,
     role: fallbackRole,
-    authenticated: true,
+    authenticated: false,
     scopes: defaultClientScopes(fallbackRole),
     slotId,
     slotVerified: false,

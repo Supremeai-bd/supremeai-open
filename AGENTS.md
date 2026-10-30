@@ -36,12 +36,16 @@ All agents live, enter, and execute through exactly two unified pillars:
   5. **P0 Drainage & Anti-Stampede Invariant:** Open architectural blockers (`P0-critical`) supersede all speculative research, routine audits, and lower-priority work. Agents and Bridge pipelines MUST verify idempotency (zero duplicate work orders, zero duplicate issues/PRs for the same task/branch) before filing or claiming.
   6. **Zero-Recurrence Invariant (Anti-Regression & Continuous Learning):** Every identified mistake, defect, false closure, or contract violation MUST have an automated mechanical guard or test written against it. A mistake once discovered and remediated MUST NEVER recur. Machine enforcement supersedes human vigilance.
   7. **Loop-Driven Determinism:** Agents NEVER guess, speculate, or arbitrarily pick tasks. The continuous autonomous loop (`continuous_agent_loop.py`) is the sole SSOT for task assignment, dispatching, and role constraints. "The loop is the permission (U10)."
+  8. **Universal Defect Ownership & Anti-Blindspot Invariant:** Whenever an agent discovers, uncovers, or observes ANY unhandled defect, pipeline failure (such as failed unmerged PRs or silent gate rejections), architectural blindspot, or unowned failure anywhere in the federation during execution, the agent MUST NEVER ignore, bypass, or silently discard it. The agent must record, claim, or surface an actionable structured work order with proper deduplication before considering its cycle complete. Avoidance of discovered defects is strictly prohibited.
+  9. **Full-Scope Completeness Invariant (End-to-End Implementation):** Agents (specifically `solver`, `coder`, `ci-fixer`) MUST NEVER deliver half-done or partial solutions. When a task requires database changes, schema migrations, environment configurations, security rules (RLS), or API wiring, the agent MUST write and submit the migration/config files as part of the exact same patch or PR. Leaving database schemas unmigrated, configs unmapped, or tests unwritten while marking a task "fixed" or "complete" is strictly prohibited.
 - **MUST AVOID:**
   - **NO Direct Push:** Never push directly to satellites or protected branches without PR gate.
   - **NO Root Shadowing:** Never put satellite code in repo root (`src/*`, `service/*`, `packages/*`).
   - **NO Ghost Fixes:** Never mask errors or fix issues not reproduced on live `main`.
+  - **NO Incomplete / Half-Baked Submissions:** Never claim a task or bug is resolved when the underlying database migration, configuration, or integration dependency remains missing or unapplied.
   - **NO Backlog Starvation / Duplicate Stampede:** Never bypass open P0 blockers to create or pick up fast-follow research tickets, and never spawn duplicate PRs/work orders for the same task.
   - **NO Speculative Dispatch:** Never manually claim or work on issues outside the loop's dispatch envelope.
+  - **NO Defect Avoidance / Blindspot Bypassing:** Never observe a broken pipeline, failed unmerged PR, or system defect and walk away without mechanical recording or remediation.
 
 **Beyond these guardrails, you have absolute freedom on HOW to solve your task. Never ask for permission.**
 
@@ -58,7 +62,16 @@ hybrid bridge contract. The following rules are non-negotiable:
 - **Single Write Gateway (Enforced):** No external agent may commit to GitHub
   or open a direct PR. Every code change MUST arrive through the Tower's
   `bridge_submit` / `bridge_submit_patch` API (`taskId`, `files`, `summary`,
-  `reflectionWhy`, `testsEvidence`, `agentIdentity`).
+  `reflectionWhy`, `alternativesRejected`, `testsEvidence`, `agentIdentity`).
+- **Stale-Base Pin (fail-closed CAS gate — #3487, PR #3513):** for
+  `full_file` on a path that already exists, always pin the CURRENT landed
+  blob sha as `files[].baseSha` (`git rev-parse HEAD:<path>` on a freshly
+  rebased tree). The gate is **fail-closed**: a stale `baseSha` is rejected
+  with `STALE_BASE_ERROR`; an existing path with **no declared `baseSha`** is
+  rejected with `STALE_BASE_MISSING`; an unverifiable main read rejects with
+  `STALE_BASE_UNVERIFIED`; only a **brand-new path** (absent on main) may omit
+  it. This closes the fail-open vector that let #3404's stale landing revert
+  co-landed work (#3438 burn trail).
 - **Credential Zero-Leak Rule:** No agent may print or expose GitHub tokens or
   secrets in plaintext in console output or prompt logs. Secrets are loaded
   from Infisical into memory only (`GITHUB_READONLY_TOKEN`).
@@ -70,8 +83,22 @@ hybrid bridge contract. The following rules are non-negotiable:
   discussions, and history.
 - **Rule 2 (Submission / PR):** Never call direct GitHub push tools. Send code
   changes through the Tower `bridge_submit` / `bridge_submit_patch` API with
-  `taskId`, `files`, `summary`, `reflectionWhy`, `testsEvidence`, and
-  `agentIdentity`.
+  `taskId`, `files`, `summary`, `reflectionWhy`, `alternativesRejected`,
+  `testsEvidence`, `agentIdentity`, and per-file `baseSha` pinned to the
+  current blob (see Stale-Base Pin above).
 - **Rule 3 (Infrastructure Health):** Use only Tower tools such as
   `supabase_schema_inspect` and `render_service_health` for database, cache, or
   deployment status.
+- **Rule 4 (Payload Shape Conventions — the false-null trap):** the Tower's
+  github list adapters emit **camelCase** keys (`createdAt`, `updatedAt`,
+  `mergedAt`, `closedAt`), and list-mode rows omit `body` / `labels` / `head` /
+  `draft` and the `merged` boolean; only single-PR addressability
+  (`github.list_prs` with `pull_number`, landed for #3368) returns the full
+  truth shape (`merged: true|false` plus timestamps). Probing list rows with
+  GitHub-REST snake_case (`merged_at`, `pull_request.merged_at`) reads a
+  **FALSE NULL** on merged PRs — live-proven 2026-10-31: eleven
+  squash-landed PRs (#3460..#3522, verified on `origin/main`) carry the
+  correct camelCase `mergedAt` while snake_case probes read null. Landing
+  verification ("did my WO's paired PR merge?") MUST use `pull_number`
+  addressability or `git log origin/main` — never a list-mode snake_case
+  probe (Refs #3523).

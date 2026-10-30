@@ -32,6 +32,13 @@ import urllib.request
 import uuid
 from typing import Dict, List, Optional, Tuple
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 MARKER_OPEN_V2 = "<!-- pr-knowledge-envelope v2 -->"
 MARKER_CLOSE_V2 = "<!-- /pr-knowledge-envelope -->"
 MARKER_OPEN_V1 = "<!-- pr-evidence-envelope v1 -->"
@@ -345,12 +352,197 @@ def upsert_to_qdrant(url: str, key: str, collection: str, point: dict) -> bool:
         return False
 
 
+def read_text_safe(path: str) -> str:
+    """Read text file with auto-detection of UTF-16 and UTF-8 encoding."""
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
+        return raw.decode("utf-16", errors="replace")
+    elif raw.startswith(b"\xef\xbb\xbf"):
+        return raw.decode("utf-8-sig", errors="replace")
+    return raw.decode("utf-8", errors="replace")
+
+
+def parse_touched_files_from_diff(diff_text: str) -> List[str]:
+    """Extract distinct modified file paths from a unified git diff."""
+    if not diff_text:
+        return []
+    matches = re.findall(r"^diff --git a/(.+?) b/", diff_text, flags=re.MULTILINE)
+    seen = set()
+    result = []
+    for path in matches:
+        p = path.strip()
+        if p and p not in seen:
+            seen.add(p)
+            result.append(p)
+    return result
+
+
+def fetch_pr_diff(pr_num: int) -> Tuple[str, List[str]]:
+    """Fetch PR unified diff and touched files list using local cache or gh CLI fallback."""
+    if pr_num <= 0:
+        return "", []
+
+    diff_text = ""
+    touched_files: List[str] = []
+
+    # 1. Local archive cache (e.g. F:/pr diff/pr_<num>.diff)
+    for archive_dir in ["F:/pr diff", "F:\\pr diff", os.path.expanduser("~/.cache/pr_diffs")]:
+        candidate = os.path.join(archive_dir, f"pr_{pr_num}.diff")
+        if os.path.isfile(candidate):
+            try:
+                diff_text = read_text_safe(candidate)
+                if diff_text:
+                    touched_files = parse_touched_files_from_diff(diff_text)
+                    return diff_text, touched_files
+            except Exception:
+                pass
+
+    # 2. Try gh pr diff
+    try:
+        res = subprocess.run(
+            ["gh", "pr", "diff", str(pr_num)],
+            capture_output=True,
+            timeout=25,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout:
+            diff_text = res.stdout.decode("utf-8", errors="replace")
+            touched_files = parse_touched_files_from_diff(diff_text)
+    except Exception as err:
+        print(f"::notice::gh pr diff #{pr_num} unavailable ({err})", file=sys.stderr)
+
+    # 3. Fallback: local git diff if on merge commit referencing this PR
+    if not diff_text:
+        try:
+            head_msg_res = subprocess.run(
+                ["git", "log", "-1", "--pretty=%B"],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+            head_msg = head_msg_res.stdout.decode("utf-8", errors="replace")
+            if f"#{pr_num}" in head_msg:
+                git_diff_res = subprocess.run(
+                    ["git", "diff", "HEAD~1..HEAD"],
+                    capture_output=True,
+                    timeout=20,
+                    check=False,
+                )
+                if git_diff_res.returncode == 0 and git_diff_res.stdout:
+                    diff_text = git_diff_res.stdout.decode("utf-8", errors="replace")
+                    touched_files = parse_touched_files_from_diff(diff_text)
+        except Exception:
+            pass
+
+    # 4. Save to local archive if folder exists
+    if diff_text:
+        for archive_dir in ["F:/pr diff", "F:\\pr diff"]:
+            if os.path.isdir(archive_dir):
+                target_file = os.path.join(archive_dir, f"pr_{pr_num}.diff")
+                if not os.path.isfile(target_file):
+                    try:
+                        with open(target_file, "w", encoding="utf-8", errors="replace") as out_f:
+                            out_f.write(diff_text)
+                    except Exception:
+                        pass
+
+    return diff_text, touched_files
+
+
+def run_query_file(file_path: str) -> int:
+    """Find past PRs and commits that modified a file."""
+    print(f"=== Searching PR history for file: {file_path} ===")
+    clean_path = file_path.replace("\\", "/").strip()
+
+    # 1. Check local git log
+    try:
+        res = subprocess.run(
+            ["git", "log", "-n", "10", "--oneline", "--", clean_path],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout:
+            print("\nRecent git commits touching this file:")
+            print(res.stdout.decode("utf-8", errors="replace").strip())
+    except Exception as err:
+        print(f"git log check error: {err}")
+
+    # 2. Check local F:/pr diff archive if present
+    for archive_dir in ["F:/pr diff", "F:\\pr diff"]:
+        if os.path.isdir(archive_dir):
+            print(f"\nChecking local diff archive ({archive_dir})...")
+            matches = []
+            target_name = os.path.basename(clean_path)
+            for entry in os.scandir(archive_dir):
+                if entry.name.endswith(".diff"):
+                    try:
+                        with open(entry.path, "r", encoding="utf-8", errors="replace") as fh:
+                            content = fh.read(64000)
+                            if clean_path in content or target_name in content:
+                                matches.append(entry.name.replace(".diff", ""))
+                    except Exception:
+                        continue
+            if matches:
+                print(f"Found {len(matches)} matching PR diffs in local archive: {', '.join(matches[:15])}")
+            else:
+                print("No direct matches in local diff archive header scan.")
+            break
+
+    # 3. Check Supabase knowledge_base if env is set
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    if supabase_url and supabase_key:
+        print("\nQuerying Supabase knowledge_base...")
+        try:
+            query_url = f"{supabase_url.rstrip('/')}/rest/v1/knowledge_base?select=id,title,domain,metadata&limit=10"
+            req = urllib.request.Request(
+                query_url,
+                headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                records = json.loads(resp.read().decode("utf-8"))
+                found = 0
+                for rec in records:
+                    meta = rec.get("metadata", {})
+                    files = meta.get("touched_files", [])
+                    if any(clean_path in f for f in files):
+                        found += 1
+                        print(f"- {rec.get('title')} (PR #{meta.get('pr_number')})")
+                if found == 0:
+                    print("No indexed PRs in Supabase matching this exact path yet.")
+        except Exception as err:
+            print(f"Supabase query error: {err}")
+
+    return 0
+
+
+def run_query_pr(pr_num: int) -> int:
+    """Inspect stored knowledge and diff snippet for a PR."""
+    print(f"=== Inspecting PR #{pr_num} ===")
+    diff_text, touched_files = fetch_pr_diff(pr_num)
+    print(f"Touched files ({len(touched_files)}):")
+    for f in touched_files[:20]:
+        print(f"  - {f}")
+    if len(touched_files) > 20:
+        print(f"  ... and {len(touched_files) - 20} more files")
+
+    print(f"\nDiff size: {len(diff_text.encode('utf-8'))} bytes")
+    if diff_text:
+        print("\n--- Diff Snippet (first 1000 chars) ---")
+        print(diff_text[:1000])
+    return 0
+
+
 def run_ingest(
     pr_num: int,
     body: str,
     title: str = "",
     author: str = "agent",
     dry_run: bool = False,
+    touched_files: Optional[List[str]] = None,
+    diff_text: Optional[str] = None,
 ) -> bool:
     """Main extraction and ingestion routine."""
     data, version = extract_envelope_json(body)
@@ -364,6 +556,18 @@ def run_ingest(
         return False
 
     print(f"[OK] PR #{pr_num} validated as Role '{role}' ({version})")
+
+    # Fetch PR diff and touched files if not provided
+    if pr_num > 0 and diff_text is None:
+        diff_text, files_from_diff = fetch_pr_diff(pr_num)
+        if not touched_files:
+            touched_files = files_from_diff
+
+    if not touched_files and diff_text:
+        touched_files = parse_touched_files_from_diff(diff_text)
+
+    diff_snippet = diff_text[:5000] if diff_text else ""
+    diff_size_bytes = len(diff_text.encode("utf-8")) if diff_text else 0
 
     # 1. Prepare Supabase knowledge_base record
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -384,6 +588,10 @@ def run_ingest(
             "role": role,
             "version": version,
             "ingested_at": now,
+            "touched_files": touched_files or [],
+            "files_count": len(touched_files or []),
+            "diff_snippet": diff_snippet,
+            "diff_size_bytes": diff_size_bytes,
         },
         "updated_at": now,
     }
@@ -392,8 +600,9 @@ def run_ingest(
     facts = format_learned_facts(pr_num, role, knowledge, title)
 
     # 3. Prepare Qdrant Vector Point
+    files_str = f"\nTouched files: {', '.join(touched_files[:10])}" if touched_files else ""
     semantic_summary = (
-        f"PR #{pr_num} Role: {role}\nTitle: {title}\n"
+        f"PR #{pr_num} Role: {role}\nTitle: {title}{files_str}\n"
         + "\n".join([f"{k}: {v}" for k, v in knowledge.items() if isinstance(v, (str, list))])
     )
 
@@ -434,6 +643,7 @@ def run_ingest(
                     "role": role,
                     "title": title,
                     "summary": semantic_summary[:1200],
+                    "touched_files": (touched_files or [])[:20],
                     "timestamp": now,
                     "source": "pr_knowledge_envelope",
                 },
@@ -504,11 +714,19 @@ def main() -> int:
     parser.add_argument("--author", type=str, default="agent", help="PR author")
     parser.add_argument("--dry-run", action="store_true", help="Parse and validate without database writes")
     parser.add_argument("--self-test", action="store_true", help="Run offline contract self-tests")
+    parser.add_argument("--query-file", type=str, help="Search PR knowledge base / local cache for past PRs touching a file")
+    parser.add_argument("--query-pr", type=int, help="Inspect stored diff and knowledge for a specific PR")
 
     args = parser.parse_args()
 
     if args.self_test:
         return run_self_test()
+
+    if args.query_file:
+        return run_query_file(args.query_file)
+
+    if args.query_pr:
+        return run_query_pr(args.query_pr)
 
     if args.body_file:
         with open(args.body_file, "r", encoding="utf-8") as fh:
@@ -516,14 +734,23 @@ def main() -> int:
         return 0 if run_ingest(args.pr_num or 0, body, title=args.title, author=args.author, dry_run=args.dry_run) else 1
 
     if args.pr_num:
-        cmd = ["gh", "pr", "view", str(args.pr_num), "--json", "body,title,author"]
+        cmd = ["gh", "pr", "view", str(args.pr_num), "--json", "body,title,author,files"]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            info = json.loads(res.stdout)
+            res = subprocess.run(cmd, capture_output=True, check=True)
+            info = json.loads(res.stdout.decode("utf-8", errors="replace"))
             body = info.get("body", "")
             title = args.title or info.get("title", "")
             author = args.author or info.get("author", {}).get("login", "unknown")
-            return 0 if run_ingest(args.pr_num, body, title=title, author=author, dry_run=args.dry_run) else 1
+            files_info = info.get("files", [])
+            touched_files = [f["path"] for f in files_info if "path" in f] if files_info else None
+            return 0 if run_ingest(
+                args.pr_num,
+                body,
+                title=title,
+                author=author,
+                dry_run=args.dry_run,
+                touched_files=touched_files,
+            ) else 1
         except Exception as err:
             print(f"::warning::Failed to fetch PR #{args.pr_num} via gh: {err}", file=sys.stderr)
             return 0  # Fail-soft: do not fail merge pipeline
