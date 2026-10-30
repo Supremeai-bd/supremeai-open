@@ -16,30 +16,37 @@
   remedy surface.
 - Slot r1 landed (PR #3619, f1d09eb): independent post-land verification of
   the R78-mirror PR-audit tower fallback (#3601/#3602, dc3f945).
-- Slot r2 landed (PR #3664, 0870206): auditor cycle on the 92-row saturated
-  board; zero duplicate audit rows filed; baseSha-at-compose-time discipline.
+- Slot r2 landed (PR #3664, 0870206): auditor cycle, 92-row saturated board.
+- Slot r3 landed (PR #3705, 30d08cf): first P0-drain hold (security P0
+  #3663); --issue override rejected per U7/U10 + owner-lane boundary.
 
-## 2026-10-31 03:19+08 cycle — P0-drain hold (first in this lane)
+## 2026-10-31 04:19+08 cycle — solver dispatch on #3354, skip-with-evidence
 
-1. Door honored; worktree reset to origin/main 957119c (0 behind). Preflight
-   flagged for the first time in this lane: **1 open P0 — #3663**
-   (unauthenticated tower sessions resolve to GLOBAL-ADMIN via fail-open
-   `?? "admin"` default). The loop held cadence roles per the P0 Drainage
-   Invariant ("System is draining P0-critical architectural backlog").
-2. P0 #3663 dedup-check: bridge plane already carries three in-flight
-   receipt WOs (#3682, #3676, #3672) and landed independent verification
-   PR #3677 with the concurred disposition "report-only, no patch, no
-   Closes — owner lane". The loop demoted the row accordingly; `--issue`
-   override was NOT used — self-dispatching against the loop's own demotion
-   would violate loop-driven determinism (U7/U10) and the owner-lane
-   boundary. Re-probed live: issue still open, labels P0-critical +
-   status:unclaimed + security (fix work itself remains owner-lane pending).
-3. Pick-plane machinery improvements observed live: receipt-coverage
-   demotion TTL (RECEIPT_COVERAGE_TTL_MINUTES=120, landed #3681) and the
-   atomic live-claim pre-verify ("top 1 candidates live-claimed — no clean
-   pick"). Board census: 92 → 103 rows. PR-audit revival line still live
-   (30 open PRs, U2 honesty intact).
-4. WO #3433 re-probe: unchanged (open, report + bridge:receipt, updatedAt
+1. Door honored; worktree reset to origin/main a45dfd0 (0 behind). P0
+   #3663 DRAINED: fail-closed identity fix landed (#3727) and the sentry
+   c63 pass caught the remediation live in the RBAC plane (#3747); preflight
+   back to zero open P0 and cadence hold lifted.
+2. The loop dispatched solver on **#3354** (audit:finding, report row:
+   #1776 closed "completed" but the workflow hardening never landed).
+   U3 fresh byte-check on today's main a45dfd0: premises HOLD exactly —
+   **0/29** SHA-pinned `uses:`, **0** `persist-credentials`, the
+   duplicate-pr-guard `${{ github.head_ref }}` interpolation still live at
+   pipeline.yml **:364** (same line the row's table already records), and
+   `.github/actions/setup-node-tower/action.yml` is byte-identical to the
+   row's own checked tree 6726949 (git diff empty; canonical blob 1480 —
+   the row's "1,474" figure is a measurement footnote, not drift).
+3. Disposition — **skip-with-evidence, no new bridge receipt**: the row's
+   report-only evidence path was already executed by landed
+   bridge-20261031-3354-disposition-r1 (PR #3687, tree db837d5, ~2h ago)
+   with byte-identical premises; the remedy lives entirely in `.github/`
+   protected paths (admin lane). Re-filing an identical disposition inside
+   the TTL window would be exactly the duplicate U5 forbids; the standing
+   instruction for this class is skip-with-evidence, never re-triage.
+4. U2 plane regression CONFIRMED on a second runtime: the revived PR audit
+   is dark again — "tower PR payload carried no JSON list" (matches GLM
+   Agent 11 r3, #3749, same hour). The R78-mirror loop-side machinery is
+   intact and honest; the tower PR-read plane itself changed. Owner lane.
+5. WO #3433 re-probe: unchanged (open, report + bridge:receipt, updatedAt
    2026-10-30T14:27:57Z) — #2195 admin-pairing lane; re-probe continues.
 
 No code change; no closure request; report-only.
