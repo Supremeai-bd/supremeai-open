@@ -1212,28 +1212,101 @@ def list_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dic
     return failed_prs
 
 
-def report_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dict[str, Any]]:
+def report_failed_open_prs(
+    repo: str = UPSTREAM_REPO, limit: int = 30,
+    log_fn: Callable[[str, str], None] | None = None,
+) -> list[dict[str, Any]]:
     """Read-only audit step: emit a structured summary of currently failing open PRs.
 
     বাংলা: প্লেন অন্ধকার হলে (list_failed_open_prs() ⇒ None) কখনো "✅ zero"
     ছাপাবে না — "⚠️ UNSEEN" সৎ সতর্কতা ছাপায় (U2 সত্যতা; R61-শ্রেণি)।
     কলার-স্বাক্ষর অপরিবর্তিত: সবসময় তালিকা ফেরত (অন্ধকারে খালি তালিকা,
     তবে stdout-চুক্তি আলাদা — মিথ্যা-নিশ্চয়তা লাইন আর এমিট হয় না)।
+
+    #3574: log_fn ঐচ্ছিক প্যারামিটার (ডিফল্ট log — পুরনো dispatch-stdout চুক্তি
+    বাইট-অপরিবর্তিত, test_failed_pr_audit_honesty পিন অক্ষত)। preflight
+    অডিট envelope-মোডে _stderr_log পাঠায় — SPEC §4b stdout-purity (stdout
+    শুধুই envelope JSON) ভাঙে না, অথচ প্রতিটি বুটে স্ক্যানটা চলেই।
     """
+    if log_fn is None:
+        log_fn = log
     failed = list_failed_open_prs(repo=repo, limit=limit)
     if failed is None:
-        log("⚠", "Read-only failed PR audit: plane dark — open PRs UNSEEN (gh query failed/absent), not zero; treating this as clean would be false assurance (U2).")
+        log_fn("⚠", "Read-only failed PR audit: plane dark — open PRs UNSEEN (gh query failed/absent), not zero; treating this as clean would be false assurance (U2).")
         return []
     if failed:
-        log("🔍", f"Read-only failed PR audit: found {len(failed)} open PR(s) with failing checks (report-only):")
+        log_fn("🔍", f"Read-only failed PR audit: found {len(failed)} open PR(s) with failing checks (report-only):")
         for f in failed:
             num = f.get("number")
             branch = f.get("branch")
             checks = ", ".join(f.get("failed_checks") or [])
-            log("  ↳", f"PR #{num} ({branch}): [{checks}]")
+            log_fn("  ↳", f"PR #{num} ({branch}): [{checks}]")
     else:
-        log("✅", "Read-only failed PR audit: zero open PRs with failing checks.")
+        log_fn("✅", "Read-only failed PR audit: zero open PRs with failing checks.")
     return failed
+
+
+def preflight_observability_audit(
+    raw_rows: list[dict[str, Any]],
+    board_unavailable: bool,
+    offline: bool,
+    envelope_mode: bool,
+) -> None:
+    """#3574 Step-1 Preflight Observability Audit (Zero-Blindspot Invariant).
+
+    বাংলা (founder mandate, #762/#3564 ধারা): failed-PR অডিট আগে শর্তসাপেক্ষ
+    সাব-রুটিনে বন্দি ছিল — শুধু board-available dispatch পথে চলত, envelope-
+    মোড তো বটেই board-dark পথেও চলত না (#3514-এর call site ছিল else-ব্রাঞ্চে)।
+    ফলে ভাঙা merge-lane বা লাল CI অন্য execution-path বেছে নিলে unowned হয়ে
+    বসে থাকত — ঠিক যে blindspot-শ্রেণি এই P0 বন্ধ করতে বলেছে। এখন প্রতিটি
+    বুটে (envelope, dispatch, cadence, board-dark, offline) Step-1 অডিটটা
+    শর্তহীনভাবেই চলে:
+
+    ১. খোলা P0 architectural blocker স্ক্যান (বোর্ড প্লেন) — Admin directive #3:
+       Admin manual P0 > pipeline/CI fix > normal task; picker ইতিমধ্যেই
+       P0-first সর্ট করে (priority_key), অডিটটা সেটাকে প্রতি-বুটে দৃশ্যমান করে।
+    ২. ব্যর্থ open PR স্ক্যান (CI প্লেন) — U2-সৎ স্ক্যানার পুনঃব্যবহার
+       (report_failed_open_prs); চ্যানেল মোড-সচেতন: envelope-মোডে stderr
+       (stdout-purity), dispatch-মোডে stdout (মার্কার-গণনা চুক্তি অক্ষত)।
+
+    Dedup চুক্তি (U5): লুপ report-only থাকে — ব্যর্থ PR নিজেই tracked artifact
+    (ওরা work order; প্রতি বুটে নতুন issue ফাইল করা stampede), P0 blocker-রা
+    ইতিমধ্যেই বোর্ড row (#number দিয়ে named — duplicate নয়)। Surfacing মানে
+    প্রতি-বুটে দৃশ্যমানতা + P0-first pick elevation — নতুন artifact সৃষ্টি নয়।
+
+    কখনো raise/hang করে না — অডিট ব্যর্থ হলে সৎ অন্ধকার-লাইন, dispatch বাঁচে।
+    """
+    log_fn = _stderr_log if envelope_mode else log
+    # (1) খোলা P0 architectural blocker — বোর্ড প্লেন (zero extra network: rows
+    # এই রানেই fetch হয়ে গেছে; tower-fallback সহ)।
+    if board_unavailable:
+        log_fn("⚠", "preflight P0 scan: board plane dark — open P0 blockers UNSEEN, not zero (U2)")
+    else:
+        p0_rows: list[dict[str, Any]] = []
+        for item in raw_rows:
+            if not isinstance(item, dict):
+                continue
+            names = [
+                str(l.get("name", "")).lower()
+                for l in (item.get("labels") or [])
+                if isinstance(l, dict)
+            ]
+            if any(n == "p0-critical" or n.startswith("p0-") for n in names):
+                p0_rows.append(item)
+        if p0_rows:
+            log_fn("🚨", f"preflight: {len(p0_rows)} open P0 architectural blocker(s) — supreme priority (Admin manual P0 > pipeline/CI fixes > normal tasks):")
+            for item in p0_rows[:10]:
+                log_fn("  ↳", f"#{item.get('number')}: {str(item.get('title', '') or '')[:110]}")
+        else:
+            log_fn("✅", "preflight: zero open P0 architectural blockers on the live board.")
+    # (2) ব্যর্থ open PR — CI প্লেন (--offline হলে সৎ skip, নেটওয়ার্ক নেই)।
+    if offline:
+        log_fn("⚠", "preflight failed-PR scan: honestly skipped (--offline) — plane UNSEEN, not zero (U2)")
+        return
+    try:
+        report_failed_open_prs(repo=UPSTREAM_REPO, limit=30, log_fn=log_fn)
+    except Exception as exc:  # বাংলা: অডিট কখনো dispatch kill করবে না — সৎ অন্ধকার
+        log_fn("⚠", f"preflight failed-PR scan error (honest dark, dispatch continues): {exc}")
 
 
 def pick_next_issue(
@@ -2627,6 +2700,18 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
 
     envelope_mode = args.task_envelope or args.emit_prompt or args.emit_contract
 
+    # #3574 Step-1 Preflight Observability Audit — শর্তহীন (Zero-Blindspot
+    # Invariant): প্রতিটি বুট-পথ (envelope, dispatch, cadence, board-dark,
+    # offline) এখানেই অডিট পায় — শর্তসাপেক্ষ sub-routine-বন্দি হওয়ার শ্রেণিটা
+    # বন্ধ। চ্যানেল মোড-সচেতন (envelope → stderr, stdout শুধুই JSON)। পুরনো
+    # board-available-else শাখার কলটা সরানো হয়েছে — এখানে একবারই চলে।
+    preflight_observability_audit(
+        raw_rows=raw,
+        board_unavailable=board_unavailable,
+        offline=_offline_requested(getattr(args, "offline", False)),
+        envelope_mode=envelope_mode,
+    )
+
     if envelope_mode:
         # বাংলা: SPEC §4b — envelope মোডে banner (COMMON_RULES) stderr-এ যায়,
         # stdout শুধুই envelope JSON থাকে যাতে pipe/parse নিরাপদ থাকে।
@@ -2780,9 +2865,6 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # never raises/hangs (see _tower_queue_floor).
             log("!", _tower_queue_floor())
     else:
-        # Read-only audit step: list open failed PRs without auto-creating issues
-        report_failed_open_prs(repo=UPSTREAM_REPO, limit=30)
-
         picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt)
         if picked:
             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
