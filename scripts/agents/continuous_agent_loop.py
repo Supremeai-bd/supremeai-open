@@ -62,17 +62,6 @@ OFFLINE_ENV_VARS = (
 # pick_next_issue landed/in-flight কাজকে পুনঃদাবিযোগ্য ভাবত; live প্রমাণ 2026-10-28:
 # খোলা বোর্ডের ২৭টা non-excluded সারির ২০টাই bridge:queued মিরর (landed #2071/#2056
 # সহ), ফলে drained board-এ সত্যিকারের নতুন কাজের (#2103) আগে ভুলভাবে বেছে নেওয়া হত।
-# বাংলা: bridge:receipt = সাবমিশন পাইপলাইন নিজেই প্রতিটি receipt/report-only WO-তে
-# স্ট্যাম্প করে (mcp-control-plane bridge.tools.ts BRIDGE_RECEIPT_LABEL: taskId-তে
-# receipt|report-only হলে [bridge:receipt, report]) — এরা submission-এর intake
-# artifact, solver-টাস্ক নয়; তাদের কাজ নিজের PR-এই থাকে। সেটে না থাকায় picker
-# self-fulfilled receipt-WO নতুন টাস্ক হিসেবে পুনঃdispatch করত (#2516 drain census:
-# 34/128 self-fulfilled receipt-WO; লাইভ প্রমাণ 2026-10-30: #3345 dispatch হলো অথচ
-# তার কাজ ইতোমধ্যে #3346-এ landed)। #3315 coverage-probe এই শ্রেণি ধরতে পারে না —
-# সে উল্টো দিক দেখে (অন্য কোনো খোলা WO candidate-কে cite করছে কি না), অথচ receipt
-# নিজেকে cite করে না; label-exclusion এই শ্রেণির সঠিক ধরার জায়গা (#2100-র একই
-# মেকানিজম, একই SSOT)। সাধারণ report-only scout/ops রো বাদ যায় না — শুধু
-# পাইপলাইন-স্ট্যাম্প করা receipt শ্রেণি।
 EXCLUDED_LABELS = frozenset({
     "status:claimed",
     "status:in-progress",
@@ -86,7 +75,6 @@ EXCLUDED_LABELS = frozenset({
     "bridge:in-gates",
     "bridge:rejected",
     "bridge:idempotent-noop",
-    "bridge:receipt",
 })
 
 DEFAULT_GROUP = "core"
