@@ -369,6 +369,66 @@ class ProviderRegistry:
                 "rpm_limit": 60,
                 "priority": 30,
             },
+            # === LIVE-VERIFIED OPENAI-COMPATIBLE LANES (#1685, probed 2026-10-28) ===
+            {
+                "provider_id": "cerebras",
+                "display_name": "Cerebras (Wafer-Scale)",
+                "api_key_env_var": "CEREBRAS_API_KEY",
+                "base_url": "https://api.cerebras.ai/v1",
+                "models": [
+                    {"id": "gpt-oss-120b", "name": "GPT-OSS 120B", "tier": "standard"},
+                    {"id": "qwen-3.8-27b", "name": "Qwen 3.8 27B", "tier": "standard"},
+                ],
+                "rpm_limit": 60,
+                "is_free_tier": True,  # shared-inference free tier
+                "priority": 31,  # after existing free lanes; no inflation above primaries
+            },
+            {
+                "provider_id": "zai",
+                "display_name": "Z.ai (GLM)",
+                "api_key_env_var": "ZAI_API_KEY",
+                "base_url": "https://api.z.ai/api/paas/v4",
+                "models": [
+                    {
+                        "id": "glm-4.6",
+                        "name": "GLM-4.6",
+                        "tier": "premium",
+                        "specialty": "coding",
+                    },
+                ],
+                "rpm_limit": 60,
+                "is_free_tier": False,
+                "priority": 56,
+            },
+            {
+                "provider_id": "dashscope",
+                "display_name": "DashScope (Qwen)",
+                "api_key_env_var": "DASHSCOPE_API_KEY",
+                "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+                "models": [
+                    {"id": "qwen3.8-max", "name": "Qwen 3.8 Max", "tier": "premium"},
+                    {"id": "qwen-plus", "name": "Qwen Plus", "tier": "standard"},
+                ],
+                "rpm_limit": 60,
+                "is_free_tier": False,
+                "priority": 57,
+            },
+            {
+                "provider_id": "mistral",
+                "display_name": "Mistral AI",
+                "api_key_env_var": "MISTRAL_API_KEY",
+                "base_url": "https://api.mistral.ai/v1",
+                "models": [
+                    {
+                        "id": "mistral-large-latest",
+                        "name": "Mistral Large",
+                        "tier": "standard",
+                    },
+                ],
+                "rpm_limit": 60,
+                "is_free_tier": False,
+                "priority": 58,
+            },
         ]
 
         # Register all providers
