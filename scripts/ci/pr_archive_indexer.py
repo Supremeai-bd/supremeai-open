@@ -120,14 +120,15 @@ def index_pr(pr_num: int, include_diff: bool = True) -> bool:
         proc = subprocess.run(
             ["gh", "pr", "view", str(pr_num), "--json", "number,title,state,body,author,files"],
             capture_output=True,
-            text=True,
             check=False,
         )
         if proc.returncode != 0:
-            print(f"[-] Failed to fetch PR #{pr_num}: {proc.stderr.strip()}")
+            err = proc.stderr.decode("utf-8", errors="replace").strip() if proc.stderr else "Unknown error"
+            print(f"[-] Failed to fetch PR #{pr_num}: {err}")
             return False
 
-        pr_data = json.loads(proc.stdout)
+        out_text = proc.stdout.decode("utf-8", errors="replace") if proc.stdout else "{}"
+        pr_data = json.loads(out_text)
         diff_text = ""
         if include_diff:
             print(f"[*] Fetching git diff for PR #{pr_num}...")
@@ -152,19 +153,20 @@ def index_pr(pr_num: int, include_diff: bool = True) -> bool:
 
 
 def sync_merged_prs(limit: int = 20, include_diff: bool = True) -> int:
-    """Batch fetch and index recently merged PRs."""
+    """Batch fetch and index recently merged PRs with UTF-8 safe decoding."""
     print(f"[*] Fetching last {limit} merged PRs from repository...")
     proc = subprocess.run(
         ["gh", "pr", "list", "--state", "merged", "--limit", str(limit), "--json", "number,title"],
         capture_output=True,
-        text=True,
         check=False,
     )
     if proc.returncode != 0:
-        print(f"[-] Failed to fetch merged PR list: {proc.stderr.strip()}")
+        err = proc.stderr.decode("utf-8", errors="replace").strip() if proc.stderr else "Unknown error"
+        print(f"[-] Failed to fetch merged PR list: {err}")
         return 0
 
-    prs = json.loads(proc.stdout)
+    out_text = proc.stdout.decode("utf-8", errors="replace") if proc.stdout else "[]"
+    prs = json.loads(out_text)
     count = 0
     for p in prs:
         num = p.get("number")
