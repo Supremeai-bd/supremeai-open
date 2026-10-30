@@ -2929,6 +2929,37 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
     """Start-of-Work Rebase Mandate (#161, #514)."""
     return pre_push_rebase_guard()
 
+def wire_work_start_freshness(offline: bool) -> str:
+    """#3891 wire-zero root fix: the deferred consumer's wiring line.
+
+    বাংলা: pre_work_rebase_guard() #1551 থেকে defined-but-unwired ছিল — dispatch
+    সিদ্ধান্ত (pick/skip/P0-verdict) বাসি ট্রি থেকে নিত, ফিক্স-হওয়া ব্যর্থতাকে লাইভ
+    সত্য হিসেবে পুনঃউৎপাদন করত ("zombie darkness", লাইভ প্রমাণ 2026-10-31: 55-
+    behind ট্রি থেকে চালানো রান false-dark P0-গেট ছাপিয়ে solver dispatch বাদ দিয়েছিল)।
+    এই helper গার্ডটিকে ডিসপ্যাচ-পথের একেবারে শুরুতে ডাকে (scout #3891 ranked
+    remedy-1): clean ট্রি → auto-rebase (গার্ডের fail-closed মেকানিজমই), ব্যর্থতায়
+    সৎ behind-count লাইন (R61 ফ্লোর) — dispatch proceeds tagged, hard-abort নয়
+    (remedy-3 rejected)। রিটার্ন-স্ট্রিং কলার stderr-এ ছাপে — stdout-মার্কার গণনা
+    ও envelope-মোডের stdout-purity অস্পৃষ্ট। offline-এ fetch নেটওয়ার্ক কল — গার্ড
+    সৎভাবে skip (step_2_rules()-এর offline আচরণের একই শৃঙ্খলা; অফলাইনে নেটওয়ার্ক
+    কল করে timeout খাওয়া মিথ্যা সততা)।
+    """
+    if offline:
+        return "[Freshness] offline: work-start rebase guard honestly skipped (no fetch)"
+    synced, behind, detail = pre_work_rebase_guard()
+    if synced and behind <= 0:
+        return "[Freshness] work tree fresh (0 behind origin/main)"
+    if synced:
+        return (
+            f"[Freshness] tree was {behind} behind origin/main; "
+            f"auto-rebased at loop start ({detail})"
+        )
+    return (
+        f"[Freshness] work-start guard could not sync: {detail} — "
+        f"dispatch proceeds tagged behind={behind} (hard-abort rejected; "
+        f"R61 honesty floor)"
+    )
+
 # বাংলা: পুরনো step-পাইপলাইনের মৃত ক্লাস্টার (step_4_branch, step_6_verify,
 # push_branch_to_fork, step_7_record, run_cycle) বাদ দেওয়া হলো। step_6_verify ও
 # push_branch_to_fork কোনো কাজ না করেই True ফেরাত — ভুয়া সাফল্য (U2)।
@@ -3383,6 +3414,20 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
     advisory = hooks_path_advisory()
     if advisory:
         print(advisory, file=sys.stderr)
+    # বাংলা: #3891 wire-zero রুট-কজ ফিক্স — pre_work_rebase_guard() #1551 থেকে
+    # defined-but-unwired; stale-tree লুপ রান ফিক্স-হওয়া ব্যর্থতাকে লাইভ সত্য
+    # হিসেবে পুনঃউৎপাদন করত (zombie darkness: 55-behind ট্রি থেকে চালানো রান
+    # false-dark P0-গেট ছাপিয়ে solver dispatch বাদ দিয়েছিল, অথচ একই মিনিটে
+    # সরাসরি tower-প্রোব totalOpen=74 দেখায়)। এখন ডিসপ্যাচ-পথের শুরুতেই গার্ড
+    # (scout #3891 ranked remedy-1): clean ট্রি → auto-rebase, ব্যর্থতায় সৎ
+    # behind-count লাইন (R61 ফ্লোর) — proceed tagged, hard-abort নয়। stderr
+    # চ্যানেল — stdout-মার্কার গণনা ও envelope-মোডের stdout-purity অস্পৃষ্ট
+    # (hooks_path_advisory-র একই চ্যানেল-শৃঙ্খলা)। board query-র আগে: ফ্রেশনেস
+    # নিশ্চিত হলেই বোর্ড-সিদ্ধান্ত অর্থবহ — বাসি ট্রি-র প্রোব আগেই বাদ।
+    print(
+        wire_work_start_freshness(_offline_requested(getattr(args, "offline", False))),
+        file=sys.stderr,
+    )
     cmd = [
         "gh", "issue", "list",
         "--repo", UPSTREAM_REPO,
