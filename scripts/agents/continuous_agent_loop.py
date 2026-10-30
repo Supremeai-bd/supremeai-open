@@ -113,7 +113,40 @@ EXCLUDED_LABELS = frozenset({
     # জায়গা (#2100-র একই মেকানিজম, একই SSOT)। সাধারণ report-only scout/ops রো
     # বাদ যায় না — শুধু পাইপলাইন-স্ট্যাম্প করা receipt শ্রেণি।
     "bridge:receipt",
+    # Layer 1 lane declaration (PR #3398 / #3860): rows labeled report-only declare themselves non-solver
+    # work ("report-only, no closure request; Recovery: N/A" — live #2756/#2766/#2804/#2811).
+    # Dispatched as coder envelopes, they produced skip-loops or duplicate-receipt treadmills.
+    "report-only",
 })
+
+# বাংলা: লেবেল-বিহীন কিন্তু বডি/টাইটেল-ঘোষিত লেন (#2360-শ্রেণি: বডি নিজেই বলে
+# "Options (all admin-lane; auditor files evidence only)" + "Never-do: no fixes") —
+# লেবেল প্লেনে এসব ঘোষণা পৌঁছায় না, তাই পিকার ধরে না। এই ফাংশন এনভেলপ-স্তরে
+# সৎ lane_hint দেয় (fail-open: পিক ব্লক নয় — হারমেটিক পিক-চুক্তি অক্ষত; শুধু এজেন্ট
+# প্রথম দৃষ্টিতেই লেন-সিদ্ধান্ত নিতে পারে)।
+LANE_HINT_TITLE_PREFIXES = ("report(", "guard(")
+LANE_HINT_BODY_MARKERS = (
+    "report-only",
+    "admin-lane",
+    "admin lane",
+    "no fixes attempted",
+    "never-do",
+    "zero-claim",
+)
+
+
+def detect_lane_hint(title: str, body: str) -> dict[str, str] | None:
+    """বাংলা: টাইটেল/বডি-ঘোষিত লেন শনাক্ত করে সৎ hint দেয়; কিছু না মিললে None
+    (সৎ absence — মিথ্যা খালি hint নয়)। fail-open: কখনোই পিক ব্লক করে না।"""
+    t = (title or "").strip().lower()
+    for prefix in LANE_HINT_TITLE_PREFIXES:
+        if t.startswith(prefix):
+            return {"lane": "report-only", "evidence": f"title prefix '{prefix}'"}
+    b = (body or "").lower()
+    for marker in LANE_HINT_BODY_MARKERS:
+        if marker in b:
+            return {"lane": "report-only", "evidence": f"body marker '{marker}'"}
+    return None
 
 DEFAULT_GROUP = "core"
 VALID_TASK_TYPES = frozenset({"FEAT", "FIX", "DOCS", "STYLE", "REFACTOR", "TEST", "CHORE", "PERF", "OPS", "AUDIT", "SCOUT", "IMPLEMENT"})
@@ -1617,6 +1650,11 @@ def pick_next_issue(
         # the owner-pending convention space). Rows without a `state` key (the
         # gh-present contract: number,title,labels) default open — that path's
         # behavior is unchanged.
+        title = str(item.get("title") or "")
+        if "anchor hub" in title.lower():
+            return False
+        if "sentry" in title.lower():
+            return False
         state = item.get("state")
         if state is not None and str(state).lower() != "open":
             return False
@@ -2906,6 +2944,7 @@ def build_task_envelope(
     resolved_group = group or _detect_group(labels)
     classified = classify_task_role(title=title, labels=labels)
     role = classified
+    lane_hint = detect_lane_hint(title, body)
     if role_override:
         if role_override in SPECIALIST_ROLES or role_override in ROLE_RULES:
             role = role_override
@@ -2943,6 +2982,16 @@ def build_task_envelope(
             "STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge_read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.",
         ]
     )
+    if lane_hint:
+        specialist_prompt = "\n".join(
+            [
+                specialist_prompt,
+                f"LANE HINT ({lane_hint['evidence']}): this row declares a non-solver lane "
+                f"('{lane_hint['lane']}'). A coder envelope here must resolve to a lane-verdict "
+                "(evidence-backed skip or arbitration note), not a code PR, unless the body names a "
+                "concrete contributor-lane fix explicitly.",
+            ]
+        )
 
     envelope: dict[str, Any] = {
         "envelope_version": 1,
@@ -2966,6 +3015,7 @@ def build_task_envelope(
         "stop_conditions": [],
         "admin_gate": {"required": False, "status": "NOT_REQUIRED"},
         "specialist_prompt": specialist_prompt,
+        "lane_hint": lane_hint,
         "submission": {
             "pathway": "bridge_submit_patch | pull_request",
             "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
@@ -2989,6 +3039,8 @@ def build_task_envelope(
         envelope["problem_statement"] = problem_statement
     if board_note:
         envelope["board_note"] = board_note
+    if lane_hint is None:
+        envelope.pop("lane_hint", None)
     return {"task_envelope": envelope}
 
 def load_cadence_config(path: Path | None = None) -> dict[str, Any]:
@@ -3240,7 +3292,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         # createdAt: receipt-coverage TTL expiry (saturation livelock রুট-কজ,
         # GLM Agent 18 J486801) — stale-receipt শনাক্তে বোর্ড-রোতে জন্মতারিখ
         # দরকার; tower fallback প্লেনেও একই ফিল্ড সংরক্ষিত হয়।
-        "--json", "number,labels,createdAt",
+        "--json", "number,title,labels,createdAt",
         "--state", "open",
         # R78/J484751: 100 → 200 — pick_next_issue()-র নিজস্ব gh-কোয়েরির সাথে উইন্ডো
         # SSOT-প্যারিটি; লাইভ বোর্ডে ১১৫+ খোলা সারি থাকায় ১০০-র জানালা নীরবে
