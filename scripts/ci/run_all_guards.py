@@ -10,6 +10,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 GUARDS: list[list[str]] = [
+    # Wiring integrity FIRST (#3316): every later roster entry is asserted to
+    # reference a script that actually exists in the tree — wiring must not
+    # outrun implementation (live instance 2026-10-30: #3268 wiring merged
+    # while carrying PR #3257 still waited in the gate).
+    ["python", "scripts/ci/wiring_integrity_guard.py", "--self-test"],
+    ["python", "scripts/ci/wiring_integrity_guard.py", "--check"],
     ["python", "scripts/ci/boundary_sanitization_guard.py", "--self-test"],
     ["python", "scripts/ci/cross_platform_invariant_guard.py", "--self-test"],
     ["python", "scripts/ci/admin_sovereignty_guard.py", "--self-test"],
