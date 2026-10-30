@@ -1,0 +1,22 @@
+{
+  "uses_total": 29,
+  "sha_pinned": 0,
+  "local_actions": 2,
+  "tag_pinned": 27,
+  "checkout_sites": 15,
+  "persist_false": 0,
+  "implicit_persist_true": 15,
+  "template_injection": 28,
+  "files": [
+    ".github/workflows/pipeline.yml",
+    ".github/actions/gitleaks-scan/action.yml",
+    ".github/actions/report-ci-failure/action.yml",
+    ".github/actions/setup-node-tower/action.yml"
+  ],
+  "_meta": {
+    "frozen": "2026-10-31T00:2x+08",
+    "issue": 3527,
+    "surface": "supremeai-open .github (workflows+actions)",
+    "note": "implicit_persist_true=15 is the #3527 zero-recurrence tripwire; any change requires dated re-baseline evidence"
+  }
+}
