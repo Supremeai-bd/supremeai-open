@@ -918,9 +918,11 @@ def detect_changed_targets(
             return [], False
 
         targets: set[str] = set()
-        # Central monorepo Supremeai-bd/supremeai is the umbrella repository
-        # and must always receive synchronization whenever any landed changes occur.
-        umbrella = True
+        # Per Golden 6-Domain Architecture and Nightly Train specification,
+        # open-lane synchronization routes strictly to active Domain Satellites
+        # (studio, api, core, browser, vscode). The central monorepo (Supremeai-bd/supremeai)
+        # is synchronized via consolidation/nightly trains rather than direct push from open.
+        umbrella = False
 
         for f in files:
             if (
@@ -1276,7 +1278,7 @@ def main() -> int:
 
     if args.all:
         targets_to_sync = list(DOMAIN_MAP.keys())
-        sync_umbrella = True
+        sync_umbrella = False
     elif args.detect_changed:
         targets_to_sync, sync_umbrella = detect_changed_targets(
             repo_root, base_sha=args.base_sha
@@ -1299,7 +1301,7 @@ def main() -> int:
     else:
         # Default: sync all mapped satellites
         targets_to_sync = list(DOMAIN_MAP.keys())
-        sync_umbrella = True
+        sync_umbrella = False
 
     print(
         f"🎯 Target Repositories to Sync: {targets_to_sync} (Umbrella: {sync_umbrella})"
