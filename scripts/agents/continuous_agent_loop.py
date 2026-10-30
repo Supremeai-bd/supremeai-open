@@ -87,7 +87,46 @@ EXCLUDED_LABELS = frozenset({
     "bridge:rejected",
     "bridge:idempotent-noop",
     "bridge:receipt",
+    # বাংলা: report-only সারি নিজেরাই লেবেল-স্তরে ঘোষণা করে কোনো সমাধান চায় না
+    # (live 2026-10-30: #2756/#2766/#2804/#2811 সবগুলোর বডি report-only + no closure
+    # request + Recovery N/A বলে) — তবু পিকার সেগুলোকে coder এনভেলপে পাঠাচ্ছিল; ফলে
+    # প্রতি সাইকেলে হয় স্কিপ-চক্র নয় ডুপ্লিকেট-রসিদ ট্রেডমিল, আর প্রকৃত কোড-ফিক্স সারি
+    # পেছনে চাপা পড়ে। লেন-ঘোষণাকে পিক-স্তরেই সম্মান (root-cause: লেন-ফিল্টারের অনুপস্থিতি,
+    # নির্দিষ্ট ইস্যুর সমস্যা নয়)। guard 7 parity: loop SSOT বাড়ানো waste-দিক — গার্ড
+    # warning দেয়, fail নয় (pipeline.yml CLAIMABLE sync admin-লেন)।
+    "report-only",
 })
+
+# বাংলা: লেবেল-বিহীন কিন্তু বডি/টাইটেল-ঘোষিত লেন (#2360-শ্রেণি: বডি নিজেই বলে
+# "Options (all admin-lane; auditor files evidence only)" + "Never-do: no fixes") —
+# লেবেল প্লেনে এসব ঘোষণা পৌঁছায় না, তাই পিকার ধরে না। এই ফাংশন এনভেলপ-স্তরে
+# সৎ lane_hint দেয় (fail-open: পিক ব্লক নয় — হারমেটিক পিক-চুক্তি অক্ষত; শুধু এজেন্ট
+# প্রথম দৃষ্টিতেই লেন-সিদ্ধান্ত নিতে পারে)। হিউরিস্টিক সেট ইচ্ছাকৃত ছোট ও বোর্ড-প্রমাণিত:
+# টাইটেল-প্রিফিক্স report(/guard( সবই platform-guardian/auditor রিপোর্ট-শ্রেণি
+# (live: #3093/#3046/#2974/#2855, #3111/#3077/#3008/#2951); বডি-মার্কার নিজ-ঘোষণা।
+LANE_HINT_TITLE_PREFIXES = ("report(", "guard(")
+LANE_HINT_BODY_MARKERS = (
+    "report-only",
+    "admin-lane",
+    "admin lane",
+    "no fixes attempted",
+    "never-do",
+    "zero-claim",
+)
+
+
+def detect_lane_hint(title: str, body: str) -> dict[str, str] | None:
+    """বাংলা: টাইটেল/বডি-ঘোষিত লেন শনাক্ত করে সৎ hint দেয়; কিছু না মিললে None
+    (সৎ absence — মিথ্যা খালি hint নয়)। fail-open: কখনোই পিক ব্লক করে না।"""
+    t = (title or "").strip().lower()
+    for prefix in LANE_HINT_TITLE_PREFIXES:
+        if t.startswith(prefix):
+            return {"lane": "report-only", "evidence": f"title prefix '{prefix}'"}
+    b = (body or "").lower()
+    for marker in LANE_HINT_BODY_MARKERS:
+        if marker in b:
+            return {"lane": "report-only", "evidence": f"body marker '{marker}'"}
+    return None
 
 DEFAULT_GROUP = "core"
 VALID_TASK_TYPES = frozenset({"FEAT", "FIX", "DOCS", "STYLE", "REFACTOR", "TEST", "CHORE", "PERF", "OPS", "AUDIT", "SCOUT", "IMPLEMENT"})
@@ -1888,6 +1927,7 @@ def build_task_envelope(
     resolved_group = group or _detect_group(labels)
     classified = classify_task_role(title=title, labels=labels)
     role = classified
+    lane_hint = detect_lane_hint(title, body)
     if role_override:
         if role_override in SPECIALIST_ROLES or role_override in ROLE_RULES:
             role = role_override
@@ -1925,6 +1965,17 @@ def build_task_envelope(
             "STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge_read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.",
         ]
     )
+    if lane_hint:
+        # বাংলা: লেন-ঘোষণা শনাক্ত হলে প্রম্পটেও সৎ সতর্কতা — label-ছায়া থাকুক বা না থাকুক।
+        specialist_prompt = "\n".join(
+            [
+                specialist_prompt,
+                f"LANE HINT ({lane_hint['evidence']}): this row declares a non-solver lane "
+                f"('{lane_hint['lane']}'). A coder envelope here must resolve to a lane-verdict "
+                "(evidence-backed skip or arbitration note), not a code PR, unless the body names a "
+                "concrete contributor-lane fix explicitly.",
+            ]
+        )
 
     envelope: dict[str, Any] = {
         "envelope_version": 1,
@@ -1948,6 +1999,7 @@ def build_task_envelope(
         "stop_conditions": [],
         "admin_gate": {"required": False, "status": "NOT_REQUIRED"},
         "specialist_prompt": specialist_prompt,
+        "lane_hint": lane_hint,
         "submission": {
             "pathway": "bridge_submit_patch | pull_request",
             "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
@@ -1971,6 +2023,9 @@ def build_task_envelope(
         envelope["problem_statement"] = problem_statement
     if board_note:
         envelope["board_note"] = board_note
+    if lane_hint is None:
+        # বাংলা: সৎ absence — hint-হীন এনভেলপে মিথ্যা খালি lane_hint কী থাকে না।
+        envelope.pop("lane_hint", None)
     return {"task_envelope": envelope}
 
 def load_cadence_config(path: Path | None = None) -> dict[str, Any]:
