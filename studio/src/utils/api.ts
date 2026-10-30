@@ -202,6 +202,15 @@ export const getApiBaseUrl = (path?: string): string => {
     return '';
   }
 
+  // Cloudflare Pages / Edge proxy support:
+  // If hosted on Cloudflare Pages (.pages.dev or workers.dev),
+  // relative path allows Cloudflare _redirects proxy to seamlessly forward /api/* and /health
+  // to Render backend without cross-origin CORS preflight friction.
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (host.endsWith('.pages.dev') || host.endsWith('.workers.dev')) {
+    return '';
+  }
+
   // Firebase, Vercel ও বাকি সব হোস্টে সরাসর��� backend URL — runtime context অনুযায়ী
 
   // Firebase ও বাকি হোস্টে (local dev ইত্যাদি) সরাসররি backend URL — runtime context অনুযায়ী
