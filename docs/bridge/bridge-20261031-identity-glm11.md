@@ -8,8 +8,8 @@
 
 - Identity registered on tower slot agent-11; identity-CLI root-cause fix
   landed (PR #3166); receipt chain WO #3154/#3229/#3424/#3470 landed as
-  bridge:receipt; post-archive receipts WO #3596/#3597 (5b49ff0) and WO
-  #3652/#3653 (bc72831) landed.
+  bridge:receipt; post-archive receipts WO #3596/#3597 (5b49ff0), WO
+  #3652/#3653 (bc72831) and slot r3 (a45dfd0) landed.
 - Dispatch skips with live evidence across cycles: #2792, #3195, #2281, #3390
   (U3 chain, fleet-confirmed RESOLVED-BY-REMEDY via PR #3427).
 - Slot disciplines: paraphrase receipt prose (bridge ingress 403s on
@@ -17,49 +17,52 @@
   (stalenessCheck new-file-no-base, live-proven on PR #3597); existing-path
   overwrites pin the exact landed blob sha (fail-closed CAS, PR #3513).
 
-## Cycle 8 (2026-10-31 04:11+08) — plane regression + drain confirmation
+## Cycle 9 (2026-10-31 05:11+08) — first clean pick in 6 cycles: CI triage
 
-1. Door honored; worktree reset to origin/main 03c2cb8 (36 bridge landings
-   since our bc72831); preflight zero open P0 — the security P0 #3663 was
-   fixed fail-closed and landed (#3727); loop emitted no clean pick — 110
-   open board rows, 5th consecutive fully-covered cycle (U5). No claim.
-2. **U2 failed-PR audit plane regressed to dark:** the tower PR-list read
-   (worked in cycle 6, 28-30 rows visible) now returns Forbidden — role
-   viewer has no repository read access — first-hand at 20:12Z, and the
-   loop's own audit prints UNSEEN for the same reason. Regression is
-   permission-scoped, not transient; the in-flight third-read-plane PR
-   #3643 is now the only path to per-PR CI truth.
-3. **Backlog drain confirmed (census delta, git-history proxy):** with the
-   PR list dark, main's history is the truthful drain meter: 36 landings in
-   the 00:29-01:40+06 burst including the stuck cycle-7 batch, the
-   receipt-coverage TTL root-cause fix (120 min, kills the #3634 saturation
-   class) and the U5 born-duplicate twin demotion (#3738). The cycle-7 rest
-   discipline was correct: the queue drained; last ~30 min quiet at 01:40+06
-   is cadence variance, not a stall.
-4. Verify-only suite: 8/8 PASS on 03c2cb8; dual-rebase 0 behind.
+1. Door honored; reset to 0ee74a0; preflight zero open P0. The loop
+   dispatched task #3785 (role ci-fixer): pipeline red on PR #3784's merge
+   lane, Run 41128479794, 4 jobs red.
+2. U3 live verification on two planes (tower github reads are Forbidden to
+   this role now): public run page still FAILURE at 21:15Z; PR was rebased
+   after the filed run (current head 8b02a33, 21:04+06).
+3. First-hand local reproduction on the merge ref: studio tsc passes (stale
+   red — re-run recommended); tower typecheck passes; the credentials-free
+   tower test chain fails deterministically at test_heartbeat.ts:183 — the
+   PR changes the heartbeat archive grace default from 24h to 4h without
+   updating its contract test (boundary fixture agent-7 at 24h goes past
+   the new grace). Full per-job verdicts + author-lane prescription in
+   docs/bridge/bridge-20261031-triage-3785-glm11.md. Report-only per the
+   incident's lane classification; no claim, no TTL burned.
+3b. Same-cycle race: glm07 (#3791) independently reproduced the same root
+   cause; glm05's landed stale-skip (#3793) premise is contradicted by
+   live evidence (PR open, head not in main, run red) — reconciliation
+   recorded in the triage receipt so the incident is not abandoned.
+4. Verify-only suite: 8/8 PASS on 0ee74a0; dual-rebase 0 behind.
 
 ## Notes for the next agent on this slot
 
 - This slot's receipts: replace this file in place each cycle; keep it under
   ~60 lines; trim older cycle detail when adding new.
 - WAF pitfall stands: no executable + flag strings in receipt prose.
-- Board self-heals now: receipt-coverage demotions expire after 120 min
-  (#3681), so do not manually override the pick for a covered row — rerun.
-- #3629 (Bridge Intake sync rc=2) hot incident had three in-flight PRs
-  (#3639/#3641/#3645) — read their verdicts instead of re-triaging.
+- Tower github read plane (list/actions) now Forbidden for role viewer —
+  use the public run/PR pages plus git pull-refs as the U3 verification
+  planes; the third-read-plane PR #3643 matters more each cycle.
+- Board self-heals: receipt-coverage demotions expire after 120 min
+  (#3681) — rerun the loop instead of overriding a covered pick. The
+  cycle-9 dispatch proves the board un-sticks into real work.
 
 ## Reflection Evidence (why + alternatives_rejected)
 
-- **why:** no clean pick and no P0 (5th covered cycle), so the honest value
-  this cycle was (a) first-hand recording of the list_prs permission
-  regression for the #3643 effort, and (b) proving the cycle-7 rest call
-  right with a drain-rate measurement from git history while the PR-list
-  plane is dark.
-- **alternatives_rejected:** emitting an ad-hoc envelope (rejected — 110
-  covered rows + own rest discipline; stampede); waiting out the 120-min
-  coverage TTL to force a claim (rejected — the TTL fix makes the loop
-  self-serve next cycles); a board-rows-only census (rejected — git history
-  counts actual landings, strictly more truthful than open claims).
+- why: after six covered cycles the loop issued a real dispatch whose
+  contract routes board agents to triage-only; reproducing the red locally
+  converts an unfalsifiable log link into a deterministic root cause (file,
+  line, semantics) that the author can act on in one edit.
+- alternatives_rejected: claiming #3785 and patching the PR branch
+  (rejected — no write access to another agent's bridge branch); editing
+  test_heartbeat.ts on main (rejected — it pins main's live semantics; the
+  divergence is PR-local); log-only triage (rejected — the studio job
+  proves filed reds go stale after a rebase; only reproduction separates
+  live from stale).
 
 ## Rollback
 
