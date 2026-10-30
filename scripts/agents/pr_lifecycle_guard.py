@@ -369,34 +369,23 @@ def guard_lifecycle(api: Callable, apply: bool, report: GuardReport) -> None:
 SENTRY_PASS_RE = re.compile(r"^(?:guard\([^)]*\):\s*(?:provider\s+)?sentry\s+pass|sentry:)", re.IGNORECASE)
 
 
-def is_historical_sentry(title: str, created_at_iso: str, now: datetime | None = None) -> bool:
-    """১২ ঘণ্টার বেশি পুরোনো ঐতিহাসিক sentry pass শনাক্তকরণ।"""
-    if not SENTRY_PASS_RE.search(title):
-        return False
-    if not created_at_iso:
-        return False
-    now = now or datetime.now(timezone.utc)
-    try:
-        created = datetime.fromisoformat(created_at_iso.replace("Z", "+00:00"))
-        return (now - created) > timedelta(hours=12)
-    except Exception:
-        return False
-
-
-def is_completed_receipt(title: str, labels: list[str], created_at_iso: str, now: datetime | None = None) -> bool:
-    """৬ ঘণ্টার বেশি পুরোনো সম্পন্ন হওয়া bridge:receipt/ওয়ার্কলগ শনাক্তকরণ।"""
-    if "anchor-hub" in labels:
-        return False
-    is_receipt_label = "bridge:receipt" in labels or "report" in labels
-    is_wo_title = "Bridge Work Order" in title
-    if is_receipt_label and is_wo_title:
-        now = now or datetime.now(timezone.utc)
-        try:
-            created = datetime.fromisoformat(created_at_iso.replace("Z", "+00:00"))
-            return (now - created) > timedelta(hours=6)
-        except Exception:
-            return False
-    return False
+def find_superseded_sentry_passes(issues: list[dict]) -> list[tuple[int, int]]:
+    """ইস্যু বোর্ডের পুরাতন superseded sentry pass শনাক্তকরণ।
+    একটি সেন্ট্রি পাস কেবল তখনই superseded গণ্য হবে যদি বোর্ডে তুলনামূলক নতুন
+    (উচ্চতর সংখ্যাযুক্ত) কোনো সেন্ট্রি পাস ওপেন থাকে। কোনো অন্ধ সময় বা TTL-ভিত্তিক
+    ক্লোজিং নয়; প্রমাণভিত্তিক (evidence-based) প্রতিস্থাপন।
+    """
+    sentry_rows: list[int] = []
+    for iss in issues:
+        title = iss.get("title", "")
+        if SENTRY_PASS_RE.search(title):
+            num = iss.get("number")
+            if isinstance(num, int):
+                sentry_rows.append(num)
+    if not sentry_rows:
+        return []
+    newest = max(sentry_rows)
+    return [(num, newest) for num in sentry_rows if num < newest]
 
 
 def find_duplicate_issues(issues: list[dict]) -> list[tuple[int, int]]:
@@ -421,9 +410,9 @@ def find_duplicate_issues(issues: list[dict]) -> list[tuple[int, int]]:
 
 def clean_board_issues(api: Callable, apply: bool, report: GuardReport) -> None:
     """বোর্ডের অপ্রয়োজনীয়/অপ্রাসঙ্গিক Issue পরিষ্কার:
-    (১) ১২ ঘণ্টার বেশি পুরোনো ঐতিহাসিক sentry pass স্ন্যাপশট ক্লোজ।
-    (২) ৬ ঘণ্টার বেশি পুরোনো সম্পন্ন হওয়া bridge:receipt/ওয়ার্কলগ ক্লোজ।
-    (৩) হুবহু ডুপ্লিকেট Issue শনাক্ত ও ডুপ্লিকেটটি ক্লোজ।
+    (১) প্রমাণভিত্তিক ডুপ্লিকেট Issue শনাক্ত ও ডুপ্লিকেটটি ক্লোজ।
+    (২) পুরাতন superseded sentry pass ক্লোজ (যখন বোর্ডে নতুন সেন্ট্রি পাস বিদ্যমান থাকে)।
+    * নোট: কোনো অন্ধ TTL বা সময়-ভিত্তিক ক্লোজিং নেই; কেবল প্রমাণভিত্তিক সমাধান।
     """
     issues = api(f"repos/{REPO}/issues?state=open&per_page=100") or []
     if isinstance(issues, dict):
@@ -442,40 +431,17 @@ def clean_board_issues(api: Callable, apply: bool, report: GuardReport) -> None:
         api(f"repos/{REPO}/issues/{dup_num}", method="PATCH", payload={"state": "closed"})
         report.add(GuardAction(dup_num, "duplicate_issue_close", detail, applied=True))
 
-    now = datetime.now(timezone.utc)
-    for iss in issues:
-        num = iss.get("number")
-        if "pull_request" in iss:
-            continue  # PR বাদ
-        labels = [l.get("name") if isinstance(l, dict) else l for l in iss.get("labels", [])]
-        if "anchor-hub" in labels:
+    # ২. পুরাতন superseded sentry pass ক্লোজ (নতুন sentry pass-এর প্রমাণের ভিত্তিতে)
+    superseded = find_superseded_sentry_passes(issues)
+    for old_num, newest_num in superseded:
+        detail = f"superseded by newer sentry pass #{newest_num}"
+        if not apply:
+            report.add(GuardAction(old_num, "sentry_pass_superseded", detail + " (dry-run)"))
             continue
-        title = iss.get("title", "")
-        created_at_iso = iss.get("created_at", "")
-
-        # ২. ঐতিহাসিক sentry pass ক্লোজ
-        if is_historical_sentry(title, created_at_iso, now=now):
-            detail = "historical sentry pass expired (>12h)"
-            if not apply:
-                report.add(GuardAction(num, "sentry_pass_close", detail + " (dry-run)"))
-                continue
-            body = "<!-- janitor:auto-close:sentry-snapshot --> Closed: historical sentry health pass snapshot has expired."
-            api(f"repos/{REPO}/issues/{num}/comments", method="POST", payload={"body": body})
-            api(f"repos/{REPO}/issues/{num}", method="PATCH", payload={"state": "closed"})
-            report.add(GuardAction(num, "sentry_pass_close", detail, applied=True))
-            continue
-
-        # ৩. সম্পন্ন হওয়া bridge receipt ক্লোজ
-        if is_completed_receipt(title, labels, created_at_iso, now=now):
-            detail = "completed bridge receipt (>6h)"
-            if not apply:
-                report.add(GuardAction(num, "receipt_close", detail + " (dry-run)"))
-                continue
-            body = "<!-- janitor:auto-close:receipt --> Closed: completed run/worklog receipt."
-            api(f"repos/{REPO}/issues/{num}/comments", method="POST", payload={"body": body})
-            api(f"repos/{REPO}/issues/{num}", method="PATCH", payload={"state": "closed"})
-            report.add(GuardAction(num, "receipt_close", detail, applied=True))
-            continue
+        body = f"<!-- janitor:auto-close:superseded --> Closed: superseded by newer platform sentry pass #{newest_num}."
+        api(f"repos/{REPO}/issues/{old_num}/comments", method="POST", payload={"body": body})
+        api(f"repos/{REPO}/issues/{old_num}", method="PATCH", payload={"state": "closed"})
+        report.add(GuardAction(old_num, "sentry_pass_superseded", detail, applied=True))
 
 
 # ─────────────────────────── CLI ───────────────────────────
