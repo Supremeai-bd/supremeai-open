@@ -11,7 +11,7 @@
 
 1. **👥 Anti-Duplicate PR Guard — exit 1, CORRECT rejection:**
    `##[error]Competing PR detected! Another open PR already targets #3605.` /
-   `Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden.` /
+   `Per AGENTS.md U4, duplicate PRs are strictly forbidden.` /
    `Conflicting PR: PR #3612 (branch: bridge/bridge-20261031-agentsmd-failclosed-doc-r1)`
 2. **🛬 Autonomous Auto-Landing — unmergeable:**
    `X Pull request Supremeai-bd/supremeai-open#3614 is not mergeable: the merge commit cannot be cleanly created.` (--admin retry and --auto queue both rejected)

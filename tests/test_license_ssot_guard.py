@@ -275,8 +275,15 @@ def test_live_repo_reports_exactly_the_baselined_drifts() -> None:
         "the #1640/#1691 fix wave landed all proprietary mirror LICENSE notices; "
         "a LICENSE_FILE_ABSENT here means a mirror license was removed — restore it"
     )
+    # r1 heal (#3665): the gateway/LICENSE contradiction was fixed on main and
+    # the baseline shrank to zero with it — the #1690 class stays mechanically
+    # visible via classify_findings' self-test fixture (synthetic gateway/LICENSE
+    # scan), so any live recurrence still fails as NEW drift above.
     contradiction = {p for c, p in keys if c == "MODEL_CONTRADICTION"}
-    assert "gateway/LICENSE" in contradiction, "the #1690 class must stay visible"
+    assert not contradiction, (
+        f"live MODEL_CONTRADICTION reappeared with an empty baseline: {contradiction}"
+    )
+    assert not baseline, "baseline must stay at zero until new dated drift is baselined"
 
 
 def test_live_scan_covers_every_tracked_package_json() -> None:
@@ -312,9 +319,13 @@ def test_json_report_is_machine_readable() -> None:
     assert report["guard"] == "license_ssot_guard"
     assert report["map"] == MAP
     assert report["mode"] == "ratchet"
-    # Dated floor (post-#1640/#1691 shrink): 6 -> 1 entry (the contested #1690
-    # gateway/LICENSE contradiction).
-    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 1
+    # Dated floor (post-#1640/#1691 then #3665 shrink): 6 -> 1 -> 0 entries —
+    # the #1690 gateway/LICENSE contradiction was fixed on main, so the
+    # baseline is now empty and any new finding fails as NEW drift.
+    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 0
+    assert report["baseline_entries"] == 0, (
+        "baseline re-grew — shrink-only ratchet forbids adding entries"
+    )
     assert isinstance(report["findings"], list) and isinstance(report["notes"], list)
     for f in report["findings"]:
         assert set(f) == {"code", "path", "detail"}

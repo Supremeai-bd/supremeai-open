@@ -75,7 +75,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # bindings (core/marketplace_registry_sync.py: re/sys/dataclass/asdict;
 # tests/test_hollow_read_guard.py: json). All 5 removed (AST + word-boundary verified
 # dead, zero string-annotation uses); re-measured with this scanner -> 363.
-BASELINE_UNUSED_IMPORTS = 363
+# Re-armed 2026-10-30 r6 heal (standing-suite red sweep, #3665): 11 dead bindings
+# landed since c547d1e in 7 files (gateway/service/app.py Response;
+# scripts/agents/pr_lifecycle_guard.py datetime/timedelta/timezone;
+# scripts/ci/pr_archive_indexer.py Optional/os; scripts/ops/migrate_docs_to_archive.py
+# re/subprocess; tests/test_agent_identity_cli_model_forward.py subprocess;
+# tests/test_search_ssot.py json; tests/test_zizmor_profile_guard.py sys). Each
+# verified dead (zero non-import whole-word refs; string refs are comments, dict
+# keys, a local method name, or patch.object on another module's attribute);
+# re-measured with this scanner -> 361. Shrink-only preserved: 361 < 363 < 446.
+BASELINE_UNUSED_IMPORTS = 361
 
 # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
 # Each binding below was verified dead by AST Name-load analysis + word-boundary
