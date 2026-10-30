@@ -1,0 +1,16 @@
+{
+  "schema": "incident-triage-receipts/1",
+  "note": "Machine-readable SSOT index of incident classes whose triage plane is COMPLETE on main. The picker (continuous_agent_loop.py, triage_probe) demotes board rows whose incident number appears here, with an honest skip note citing the census. The prose census docs stay the human receipt; THIS registry is the machine index — a census PR that declares a class triage-complete MUST append a row here (dual-SSOT drift is the #57 lesson). Zero-network and fail-open: a missing or malformed registry serves every row unchanged — the demotion can only REMOVE a dispatch, never block one.",
+  "receipts": [
+    {
+      "class": "auto-landing policy-block (one-shot squash-merge without --auto after all-guards-passed; base branch policy prohibits the merge; exit 1) — one orchestration race class, fix landed #3418 with post-fix main green",
+      "incidents": [3390, 3399, 3400, 3401, 3402, 3413, 3414],
+      "censusRef": "docs/bridge/bridge-20261030-landingrace-class-3instances.md (PR #3416, commit 194b367) + docs/bridge/bridge-20261030-landingrace-family-u3-glm08.md (U3 family verification, PR #3431, commit f616ced)",
+      "triageReceipts": ["#3407 (analysis, PR #3408)", "#3410 (corroboration, PR #3411)", "#3431 (U3 family verification, seven rows, post-fix main green runs #8037/#8039)"],
+      "remainingWork": "per-row resolution only — each mirror row resolves when its own PR lands; picker-side suppression is now mechanical (triage_probe); workflow A/B/C remain owner-lane",
+      "recordedAt": "2026-10-30",
+      "recordedBy": "GLM Agent 20 (Job 486804) + GLM Agent 08 (Job 486809)",
+      "backfilledBy": "GLM Agent 14 (Job 486785)"
+    }
+  ]
+}

@@ -23,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CADENCE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence.json"
 STATE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence_state.json"
 ISSUE_LEASE_FILE = REPO_ROOT / "scripts" / "agents" / "dispatched_issues_state.json"
+TRIAGE_RECEIPTS_FILE = REPO_ROOT / "scripts" / "agents" / "incident_triage_receipts.json"
 # #57 SSOT: the lease length is owned by scripts/agents/claim_thresholds.py.
 # That module was landed to end the release<->re-claim flip-flop war, but the
 # loop kept its own hardcoded copy — the exact dual-SSOT drift #57 documents.
@@ -312,6 +313,84 @@ def _probe_incident_stale(item: dict[str, Any]) -> str | None:
     """
     try:
         return _incident_stale_note(item)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# Triage-receipt demotion (Zero-Recurrence U6, board-local extension of the
+# #3050 demotion family): a landed census can declare an incident CLASS's
+# triage plane complete (live 2026-10-30: #3416's landing-race census for
+# #3390/#3399/#3400 — auto-landing policy-block, remaining work owner-lane).
+# The prose standing instruction ("next agents should skip-with-evidence") is
+# passive — the picker re-served #3399 within hours of the census landing and
+# a full agent cycle burned on log probing a structurally blocked row. The
+# machine remedy is TRIAGE_RECEIPTS_FILE (incident_triage_receipts.json): the
+# ONE machine index census PRs append to; the picker demotes any row whose
+# number is listed, with an honest note citing the census. Fail-open by
+# construction: a missing or malformed registry serves every row unchanged —
+# the filter can only REMOVE a dispatch, never block one. Zero-network
+# (board-local, like the sentry-family demotion).
+
+
+def _load_triage_receipts(path: Path | None = None) -> dict[int, dict[str, Any]]:
+    """Load {incident_number: receipt} from the registry; {} on any failure."""
+    p = path or TRIAGE_RECEIPTS_FILE
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        receipts = data.get("receipts")
+        if not isinstance(receipts, list):
+            return {}
+        index: dict[int, dict[str, Any]] = {}
+        for receipt in receipts:
+            if not isinstance(receipt, dict):
+                continue
+            incidents = receipt.get("incidents")
+            if not isinstance(incidents, list):
+                continue
+            for n in incidents:
+                if isinstance(n, int) and not isinstance(n, bool):
+                    index[n] = receipt
+        return index
+    except Exception:  # noqa: BLE001 — fail-open: a dark registry serves every row
+        return {}
+
+
+def _triage_receipt_note(
+    item: dict[str, Any], index: dict[int, dict[str, Any]] | None = None
+) -> str | None:
+    """Board-local demotion note for incidents with a landed triage receipt.
+
+    Returns None for anything unjudgeable (missing/non-numeric number,
+    unlisted incident, empty registry): fail-open by construction, the row is
+    served exactly as before."""
+    try:
+        number = int(item.get("number"))
+    except (TypeError, ValueError):
+        return None
+    if index is None:
+        index = _load_triage_receipts()
+    receipt = index.get(number)
+    if not receipt:
+        return None
+    census = str(receipt.get("censusRef", "a landed census"))
+    remaining = str(receipt.get("remainingWork", "owner-lane"))
+    return (
+        f"triage-receipt demotion (Zero-Recurrence U6): incident #{number} is already "
+        f"absorbed by a landed triage census ({census}) — the triage plane for this "
+        f"class is COMPLETE and the remaining work is owner-lane ({remaining}); "
+        "skip-with-evidence per the census standing instruction, never re-triage"
+    )
+
+
+def _probe_triage_receipt(item: dict[str, Any]) -> str | None:
+    """Live-plane wrapper handed to pick_next_issue as triage_probe.
+
+    Never raises (the pick path's never-raise contract); returns the demotion
+    note or None. Hermetic callers inject the index into _triage_receipt_note
+    directly instead.
+    """
+    try:
+        return _triage_receipt_note(item)
     except Exception:  # noqa: BLE001
         return None
 
@@ -767,6 +846,7 @@ def pick_next_issue(
     log_fn: Callable[[str, str], None] | None = None,
     incident_probe: Callable[[dict[str, Any]], str | None] | None = None,
     premise_probe: Callable[[dict[str, Any]], str | None] | None = None,
+    triage_probe: Callable[[dict[str, Any]], str | None] | None = None,
 ) -> str | None:
     # বাংলা: log_fn=None → call-time-এ log-এ ফলব্যাক। ডিফল্ট-প্যারামিটারে সরাসরি log
     # লিখলে def-time evaluation-এ NameError হত — log() এই ফাইলে pick_next_issue-
@@ -906,6 +986,22 @@ def pick_next_issue(
                 log_fn("!", f"pick pre-verify: #{num} incident probe raised {type(exc).__name__} — serving row unchanged")
             if stale_note:
                 log_fn("!", f"pick pre-verify: #{num} skipped — {stale_note}; advancing to next candidate (#3050 U3 demotion)")
+                continue
+        if triage_probe is not None:
+            # Zero-Recurrence U6 — triage-receipt demotion: an incident whose
+            # class census already landed (machine index:
+            # scripts/agents/incident_triage_receipts.json) is skipped IN THE
+            # SAME RUN (advance to the next candidate), the same
+            # skip-and-advance shape as the live-claim and incident filters.
+            # Fail-open: probe errors serve the row (never-raise contract);
+            # the filter can only REMOVE a dispatch, never block one.
+            try:
+                receipt_note = triage_probe(item)
+            except Exception as exc:  # noqa: BLE001
+                receipt_note = None
+                log_fn("!", f"pick pre-verify: #{num} triage probe raised {type(exc).__name__} — serving row unchanged")
+            if receipt_note:
+                log_fn("!", f"pick pre-verify: #{num} skipped — {receipt_note}; advancing to next candidate (U6 triage-receipt demotion)")
                 continue
         if premise_probe is not None:
             # item 15 (§6ak) — premise-delivered demotion: a row whose own
@@ -2092,7 +2188,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # বাংলা: SPEC §4b stdout-purity — envelope-মোডে pick-প্রি-ভেরিফাই অ্যাডভাইজরি
             # stderr-এ যায় (log_fn=_stderr_log), stdout শুধুই envelope JSON; ডিসপ্যাচ-পথে
             # (নিচের সাইট) default log_fn=log অপরিবর্তিত — stdout-মার্কার গণনা অক্ষত।
-            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered)
+            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt)
             if picked:
                 target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
                 # বাংলা: board query-র list payload-এ title থাকে না (gh issue list
@@ -2192,7 +2288,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # never raises/hangs (see _tower_queue_floor).
             log("!", _tower_queue_floor())
     else:
-        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered)
+        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt)
         if picked:
             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
             # status:runway → ci-fixer, gate:pre-landing → task-auditor হলেও
