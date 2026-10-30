@@ -257,12 +257,12 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs = D
     // আগে কলারের signal নীরবে ওভাররাইট হয়ে যেত, ফলে UI abort কাজ করত না।
     const callerSignal = options.signal;
     const signalAny = typeof AbortSignal !== 'undefined'
-      ? (AbortSignal as unknown as { any?: (...signals: AbortSignal[]) => AbortSignal }).any
+      ? (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }).any
       : undefined;
     if (callerSignal && callerSignal.aborted) {
       fetchOptions.signal = callerSignal;
     } else if (callerSignal && typeof signalAny === 'function') {
-      fetchOptions.signal = signalAny.call(AbortSignal, controller.signal, callerSignal);
+      fetchOptions.signal = signalAny([controller.signal, callerSignal]);
     } else {
       fetchOptions.signal = controller.signal;
     }

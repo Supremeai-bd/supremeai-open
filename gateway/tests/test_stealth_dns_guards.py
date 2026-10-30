@@ -252,7 +252,7 @@ def test_endpoints() -> None:
         appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
 
 
-def test_unconfigured(monkeypatched: Dict[str, Any] = {}) -> None:
+def test_unconfigured(monkeypatched: Dict[str, Any] | None = None) -> None:
     print("G11c unconfigured -> 503 (no env mutation: snapshot returns not-configured)")
     from fastapi.testclient import TestClient
 

@@ -217,7 +217,8 @@ export default defineConfig({
           // through lazy admin chunks (AdminShell) again. Chunk-boundary only —
           // zero runtime behavior change (same module instance, same semantics).
           if (/[\\/]node_modules[\\/]eventemitter3[\\/]/.test(id)) return 'vendor-events'
-          if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) return 'vendor-charts'
+          // recharts is bundled into its consuming (lazy) route chunks so it
+          // never ships in the initial graph (see #1339 / studio size budget).
           if (/[\\/]node_modules[\\/](@xterm|xterm)[\\/]/.test(id)) return 'vendor-terminal'
           if (/[\\/]node_modules[\\/](@monaco-editor|monaco-editor)[\\/]/.test(id)) return 'vendor-editor'
           if (/[\\/]node_modules[\\/](framer-motion|lucide-react)[\\/]/.test(id)) return 'vendor-ui'

@@ -295,7 +295,7 @@ def probe_render(kv: dict) -> list[dict]:
                           f"{se}/{ke} নেই", category="CONFIG_MISSING"))
             continue
         H = {"Authorization": f"Bearer {akey}"}
-        st, svc = retry(lambda: jget(f"https://api.render.com/v1/services/{sid}", H))
+        st, svc = retry(lambda sid=sid, H=H: jget(f"https://api.render.com/v1/services/{sid}", H))
         if st != 200:
             cat, note = classify("render", f"settings[{name}]", st, json.dumps(svc))
             out.append(mk("render", f"settings[{name}]", False, f"HTTP {st}", category=cat, note=note))
@@ -312,7 +312,7 @@ def probe_render(kv: dict) -> list[dict]:
             out.append(mk("render", f"settings[{name}].healthCheckPath", None,
                           "healthCheckPath সেট নেই — ভাঙা ডিপ্লয়ও 'live' হতে পারে",
                           category="SETTINGS_RISK"))
-        st, deps = retry(lambda: jget(f"https://api.render.com/v1/services/{sid}/deploys?limit=5", H))
+        st, deps = retry(lambda sid=sid, H=H: jget(f"https://api.render.com/v1/services/{sid}/deploys?limit=5", H))
         if st == 200:
             rows = [d.get("deploy", d) for d in (deps if isinstance(deps, list) else [])]
             bad = [d for d in rows if d.get("status") in ("build_failed", "update_failed", "canceled")]
@@ -427,7 +427,7 @@ def probe_cloudflare(kv: dict) -> list[dict]:
         if not email or not gk:
             continue
         H = {"X-Auth-Email": email, "X-Auth-Key": gk}
-        st, zones = retry(lambda: jget("https://api.cloudflare.com/client/v4/zones?per_page=50", H))
+        st, zones = retry(lambda H=H: jget("https://api.cloudflare.com/client/v4/zones?per_page=50", H))
         if st != 200 or not (zones.get("success") if isinstance(zones, dict) else False):
             out.append(mk("cloudflare", f"zones[{label}]", False, f"HTTP {st}", category="AUTH_INVALID"))
             continue
@@ -556,7 +556,7 @@ def probe_known_keys(kv: dict) -> list[dict]:
             H = {"Authorization": f"Bearer {tok}"}
         else:
             H = {"Authorization": tok}
-        st, body = retry(lambda: jget(url, H))
+        st, body = retry(lambda url=url, H=H: jget(url, H))
         low = (body if isinstance(body, str) else json.dumps(body)).lower()
         if st == 200:
             out.append(mk(name, "key-validity", True, "HTTP 200 — সচল"))

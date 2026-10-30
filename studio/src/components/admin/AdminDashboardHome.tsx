@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import {  Cpu } from 'lucide-react';
-import { RealTimeMetricsPanel } from './RealTimeMetricsPanel';
+const RealTimeMetricsPanel = lazy(() => import('./RealTimeMetricsPanel').then(m => ({ default: m.RealTimeMetricsPanel })));
 import { useMetrics, useHealthMap, useCIReports, useDashboardEvents } from '../../hooks/useDashboardData';
 import { HealthReportWidget } from './HealthReportWidget';
 import { GitHubCIWidget } from './GitHubCIWidget';
@@ -145,7 +145,9 @@ export const AdminDashboardHome: React.FC = () => {
 
       {/* 1.5 Real-Time Metrics Panel (Mini-Grafana) */}
       <div className="mb-6">
-        <RealTimeMetricsPanel />
+        <Suspense fallback={<div className="h-24 animate-pulse bg-gray-100 rounded" />}>
+          <RealTimeMetricsPanel />
+        </Suspense>
       </div>
 
       {/* 2. MIDDLE ROW: 3 Columns Grid */}

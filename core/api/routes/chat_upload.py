@@ -171,8 +171,11 @@ async def upload_chat_image(
 
     # Write file to disk
     try:
-        with open(file_path, "wb") as f:
-            f.write(content)
+        import asyncio
+        def _write_content():
+            with open(file_path, "wb") as f:
+                f.write(content)
+        await asyncio.to_thread(_write_content)
     except OSError as e:
         logger.error(f"Failed to write upload file: {e}")
         raise HTTPException(status_code=500, detail="Failed to save uploaded file") from e
@@ -181,17 +184,20 @@ async def upload_chat_image(
     # file so the /files explorer's LIST endpoint survives process restarts (the
     # in-memory `_uploads` registry does not). Sidecar: <attachment_id>.meta.json
     try:
-        with open(os.path.join(user_dir, f"{attachment_id}.meta.json"), "w") as meta_fh:
-            json.dump(
-                {
-                    "name": original_name,
-                    "mime_type": mime_type,
-                    "size": len(content),
-                    "user_id": user_id,
-                    "created_at": datetime.now(UTC).isoformat(),
-                },
-                meta_fh,
-            )
+        import asyncio
+        def _write_meta():
+            with open(os.path.join(user_dir, f"{attachment_id}.meta.json"), "w") as meta_fh:
+                json.dump(
+                    {
+                        "name": original_name,
+                        "mime_type": mime_type,
+                        "size": len(content),
+                        "user_id": user_id,
+                        "created_at": datetime.now(UTC).isoformat(),
+                    },
+                    meta_fh,
+                )
+        await asyncio.to_thread(_write_meta)
     except OSError as meta_err:
         logger.warning(f"Sidecar metadata write failed (non-critical): {meta_err}")
 

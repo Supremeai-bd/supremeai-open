@@ -8,7 +8,7 @@ common dialogs (e.g. cookie banners, auth popups), flow histories, and latencies
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 from core.cache.semantic_cache import semantic_cache
 from core.monitoring.logging_config import logger
@@ -17,7 +17,7 @@ from core.monitoring.logging_config import logger
 class BrowsingMemory:
     """Persistent cross-session site intelligence and preflight behavior synthesizer."""
 
-    _site_history: dict[str, list[dict[str, Any]]] = {}
+    _site_history: ClassVar[dict[str, list[dict[str, Any]]]] = {}
 
     async def observe(self, site: str, event: dict[str, Any]) -> None:
         """Record navigation, interaction, or outcome event for a site domain."""

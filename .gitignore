@@ -29,6 +29,8 @@ graphify-out/
 .cache/graphify*/
 audit-out/
 audit.raw.json
+ci-reports/
+size_budget_report.json
 .agents/**/audit-out/
 .agents/**/audit.raw.json
 .agents/**/test_shot.png
