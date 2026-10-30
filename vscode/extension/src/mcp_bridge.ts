@@ -148,18 +148,29 @@ export class McpBridge {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
+      // 2026-10-30 rename-wave 2 fix (#2493): the pre-wave bridge_work_order
+      // tool is DEAD on the tower (-32602 "Tool not found"), and the live
+      // dotted bridge.work_order is a READ tool (requires `number`). The
+      // live zero-credential task-dispatch surface is github.create_issue;
+      // map the request onto its contract instead of the stale creation shape.
+      const bodyLines = [
+        req.description || "",
+        "",
+        `**Scope paths:** ${req.scopePaths.length ? req.scopePaths.join(", ") : "(none)"}`,
+        `**Priority:** ${req.priority || "P1-high"}`,
+      ];
+
       const payload = {
         jsonrpc: "2.0",
         id: Date.now(),
         method: "tools/call",
         params: {
-          name: "bridge_work_order",
+          name: "github.create_issue",
           arguments: {
-            target_repo: req.repo,
-            summary: req.title,
-            scope_paths: req.scopePaths,
-            description: req.description,
-            priority: req.priority || "P1-high",
+            title: req.title,
+            body: bodyLines.join("\n"),
+            repo: req.repo,
+            labels: [req.priority || "P1-high", "status:unclaimed"],
           },
         },
       };

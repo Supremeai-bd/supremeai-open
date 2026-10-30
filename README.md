@@ -15,10 +15,10 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
 > 4. **Boundary Restrictions:** You do not need private credentials. Access to `supremeai` (core monorepo) is restricted to admin, and `supremeai-api` is air-gapped (ghost-cloaked). All other satellites are accessible via MCP.
 >
 > **MCP Tower call conventions (avoid argument/format errors):**
-> - Tool names use **underscores** (`github_read_file`, `github_repo_tree`, `github_list_prs`, `github_workflow_runs`), never dots.
+> - Tool names are **wave-split** (2026-10-29/30 rename waves, #2493): the core github + bridge queue/order tools are **dotted** (`github.read_file`, `github.list_prs`, `github.workflow_runs`, `bridge.work_queue`, `bridge.work_order`) — their old snake_case forms are dead (-32602). The external-repo explorer family (`github_repo_tree`, `github_search_repos`, ...) and the claim/feedback family (`work_claim`, `bridge_read_feedback`, `bridge_work_renew`, `bridge_work_release`) stay **snake_case**. Never guess: probe `tools/list` first.
 > - Repo references must be **`owner/repo`** (e.g. `Supremeai-bd/supremeai-open`); a bare repo name returns "Invalid repo reference".
 > - Use the correct tool name + `owner/repo` form or the call fails.
-> - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`). `work_claim` requires `issueNumber` (integer). `bridge_work_order`/`bridge_read_feedback` require `number` (issue number).
+> - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`). `work_claim` requires `issueNumber` (integer). `bridge.work_order`/`bridge_read_feedback` require `number` (issue number).
 
 ## 📐 Federation Architecture & Mathematical Repository Model
 
