@@ -33,3 +33,16 @@
   the github read family degrades (3 owner options recorded). Receipt:
   bridge-20261031-3663-independent-verification-glm22.md. No patch, no Closes
   — owner lane (deploy-policy/HITL), concurred with the filer's routing.
+
+## Cycle 2 (2026-10-31 03:2x+08) — P0 3663 acceptance criteria made executable
+
+- Pick: no clean pick — preflight P0 hold (#3663 open, status:unclaimed, 21
+  open PRs, no fix in flight; WOs #3670/#3672/#3676 report-only). Idempotency
+  check per Invariant 5 before touching the row.
+- Contribution: scripts/tower/p0_3663_acceptance_probe.py — the issue's 3
+  acceptance criteria as a machine-checkable, read-only, allowlisted probe
+  (self-test 12/12; SSOT URL import; no hardcoded endpoint; honest
+  INDETERMINATE for own-ctx instead of third-party-role misclassification).
+- Live 19:33Z: client_list 88 rows EXPOSED + kill_switch/list_secrets/
+  tenant_create anonymously visible; exit codes make it a deploy-window gate.
+  Receipt: bridge-20261031-3663-acceptance-probe-glm22.md. No claim, no Closes.
