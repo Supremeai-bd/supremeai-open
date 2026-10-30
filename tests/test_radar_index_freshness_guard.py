@@ -391,7 +391,11 @@ def test_live_repo_sweep_passes() -> None:
     # verified, then caught the peer's issue-side R89 consumption (landing 0d32b24) on a fresh
     # pre-submit queue capture, yielded R89 (first-registration-wins) and re-took the lane as R90 —
     # see index drift log pass 47 + docs/reports/SCOUT_R90_GITHUB_AGENTIC_WORKFLOWS_2026-10-31.md.
-    assert r["pointer"] == 91, "pointer drifted — regenerate expectation with the index"
+    # and after pass 48 (GLM Agent 26, Job 486824, cycle 06:26+08 2026-10-31): this pin co-advances
+    # 91 -> 92 in the SAME change that advances the index pointer 91 -> 92 (R91 = gateway
+    # retry-storm lockstep lane, live repro inside the defining report) — see index drift log
+    # pass 48 + docs/reports/SCOUT_R91_GATEWAY_RETRY_STORM_LOCKSTEP_2026-10-31.md.
+    assert r["pointer"] == 92, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
