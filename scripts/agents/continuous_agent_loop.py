@@ -1410,9 +1410,14 @@ def report_failed_open_prs(
     PR-প্লেন দেখায় (live প্রমাণ: এক রানে লুপ "plane dark" ছাপাচ্ছিল, tower-এ ১০টি
     open PR দৃশ্যমান ছিল)। ফলব্যাক সফল হলে 🔍 revived-লাইন + per-PR ক্যানসাস ছাপে,
     তবে check status টাওয়ার-পেলোডে নেই বলে সেটা UNSEEN-ই থাকে — ফলে পুরনো
-    honesty-pin (কখনো "✅/zero" মিথ্যা-নিশ্চয়তা নয়) অক্ষত থাকে; ফলব্যাক-ব্যর্থতায়
-    আগের ⚠ লাইনই আসে (fallback-নোট সহ)। --offline পথ preflight-এ আগেই সৎ-skip
-    হয়, তাই নেটওয়ার্ক-বিহীন রানে এই প্রোব চলে না।
+    honesty-pin (কখনো "✅/zero" মিথ্যা-নিশ্চয়তা নয়) অক্ষত থাকে; --offline পথ
+    preflight-এ আগেই সৎ-skip হয়, তাই নেটওয়ার্ক-বিহীন রানে এই প্রোব চলে না।
+
+    #3772 board-assurance স্তর (2026-10-31): viewer-যুগে tower list_prs স্থায়ীভাবে
+    RBAC-forbidden — PR-প্রোব-ব্যর্থতা এখন ব্যতিক্রম নয়, প্রতিটি zero-credential
+    বুটের ডিফল্ট। তাই ফলব্যাক-ব্যর্থতায় এখন আরেকটা স্তর চলে: viewer-অনুমোদিত
+    বোর্ড-প্লেনের (bridge.work_queue) in-gates গণনা — landing-cohort-এর সৎ partial
+    assurance (কখনো ✅/zero নয়); বোর্ড-প্লেনও অন্ধ হলে তবেই আগের ⚠ লাইন।
 
     #3574: log_fn ঐচ্ছিক প্যারামিটার (ডিফল্ট log — পুরনো dispatch-stdout চুক্তি
     বাইট-অপরিবর্তিত, test_failed_pr_audit_honesty পিন অক্ষত)। preflight
@@ -1438,7 +1443,37 @@ def report_failed_open_prs(
             for p in fb_rows[:limit]:
                 log_fn("  ↳", f"PR #{p.get('number')}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
             return []
-        log_fn("⚠", f"Read-only failed PR audit: plane dark — open PRs UNSEEN (gh query failed/absent; {fb_note}), not zero; treating this as clean would be false assurance (U2).")
+        # বাংলা (#3772, viewer-যুগের স্থায়ী RBAC-অন্ধত্ব): PR-প্লেন (gh + tower
+        # list_prs) দুই স্তরেই অন্ধ হলে আগের কোড সরাসরি ⚠ ছাপত — ফলে প্রতিটি
+        # zero-credential বুটে landing-cohort সম্পূর্ণ অদৃশ্য থাকত (live প্রমাণ
+        # 2026-10-31: viewer role-এ list_prs Forbidden স্থায়ী access-control
+        # অবস্থা)। রুট-কজ ফিক্স: viewer-অনুমোদিত বোর্ড-প্লেনের (bridge.work_queue —
+        # R78 থেকেই প্রমাণিত এই লেনে চলে) in-gates সারিগুলোই খোলা PR-এর intake
+        # প্রক্সি — সেই গণনা দিয়ে সৎ partial assurance। চুক্তি: কখনো ✅/zero
+        # নয় (in-gates গণনা failing-subset শ্রেণিবিন্যাস দিতে পারে না — U2 পিন
+        # অক্ষত), প্রোব never-raise, বোর্ড-প্লেনও অন্ধ হলে আগের ⚠ লাইনই।
+        try:
+            b_rows, b_note = _tower_board_rows(timeout_s=20.0)
+        except Exception as exc:  # noqa: BLE001 — অডিট কখনো dispatch kill করবে না
+            b_rows, b_note = [], f"board probe raised ({type(exc).__name__})"
+        if b_rows:
+            in_gates = sum(
+                1
+                for r in b_rows
+                if any(
+                    (l.get("name") if isinstance(l, dict) else str(l)) == "bridge:in-gates"
+                    for l in (r.get("labels") or [])
+                )
+            )
+            log_fn(
+                "🔍",
+                f"Read-only failed PR audit: PR-plane dark (viewer RBAC; {fb_note}) — "
+                f"board-plane partial assurance via {b_note}: {in_gates} row(s) in gates "
+                f"(bridge:in-gates) of {len(b_rows)}; landing cohort visible, per-PR check "
+                "status UNSEEN, not certified clean (U2).",
+            )
+            return []
+        log_fn("⚠", f"Read-only failed PR audit: plane dark — open PRs UNSEEN (gh query failed/absent; {fb_note}; {b_note}), not zero; treating this as clean would be false assurance (U2).")
         return []
     if failed:
         log_fn("🔍", f"Read-only failed PR audit: found {len(failed)} open PR(s) with failing checks (report-only):")
