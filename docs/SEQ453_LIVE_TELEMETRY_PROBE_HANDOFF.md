@@ -1,5 +1,14 @@
 # Seq 453 — Live Telemetry Probe & Timestamp-Parity Contract Hand-off (#453, r1)
 
+> **ghost-host-retired: #2355/#2365/#2377** — this historical receipt's §1
+> "Measured evidence" records the probe against the retired no-server ghost
+> `supremeai-api.onrender.com` as measured at r1 build (2026-10-17); that
+> surface is now a plain-404 alias. The live gateway SSOT is
+> `https://supremeai-api-ulw0.onrender.com` (README service table,
+> `docs/CONSUMERS.md`); `probe_live_status_453.py` defaults to it since
+> #2365. Do NOT re-probe the ghost — `scripts/ci/ghost_host_guard.py`
+> enforces this class.
+
 > Task: `bridge-20261017-live-telemetry-probe-453` · Issue: #453 (enhancement,
 > repo:open; **claim state at build time: PENDING** — this order is submitted
 > only after the operator sets `status:claimed` / an `<!-- atomic-claim -->`
