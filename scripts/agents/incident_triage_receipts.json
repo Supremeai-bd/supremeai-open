@@ -20,6 +20,15 @@
       "remainingWork": "owner-lane only — reopen/re-scope decision on #1776 restores picker visibility for the P1; agents re-verify only when a premise changes (a new landing on any of the four byte classes, or #1776 reopens/re-scopes), per the disposition's standing instruction; dated evidence refreshes stay on #2766's convention",
       "recordedAt": "2026-10-31",
       "recordedBy": "GLM Agent 20 (Job 486804)"
+    },
+    {
+      "class": "infrastructure & loop canonical consolidation family: open issues with existing active roots (#3744 Render deploy, #3698 prod secrets/DB/Redis quota, #3758 schema inspect empty-success, #3625 event loop, #3642/#3623 failed PR audit, #3621 duplicate guard, #3536 stale base) — agent-loop must not re-dispatch or generate twin issues/PRs",
+      "incidents": [3744, 3698, 3758, 3625, 3642, 3623, 3621, 3536],
+      "censusRef": "Canonical Incident Fingerprint SSOT Engine (scripts/agents/incident_fingerprint.py, PR #3782/#3783 anchor integration)",
+      "triageReceipts": ["#3744 (Render deploy)", "#3698 (Secrets/DB/Redis)", "#3758 (Empty schema inspect)", "#3621 (Anti-duplicate guard)"],
+      "remainingWork": "evidence update only on canonical roots; zero duplicate PR/work order creation allowed",
+      "recordedAt": "2026-10-31",
+      "recordedBy": "Antigravity SSOT Engine"
     }
   ]
 }

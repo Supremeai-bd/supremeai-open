@@ -44,6 +44,17 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+if sys.stdout.encoding != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError, OSError):
+        pass
+if sys.stderr.encoding != "utf-8":
+    try:
+        sys.stderr.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
 API_BASE = "https://api.github.com"
 
