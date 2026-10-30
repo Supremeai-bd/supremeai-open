@@ -316,6 +316,79 @@ def _probe_incident_stale(item: dict[str, Any]) -> str | None:
         return None
 
 
+# Stale-sentry demotion (#3050 demotion family, board-local extension):
+# the platform sentry series is a rolling sentinel — every pass supersedes the
+# previous one, yet all 20 open passes sit on the board as claimable rows
+# (labels [] / status:unclaimed / platform-guardian+sentry), so the
+# age-first priority sort serves the OLDEST fossil (live 2026-10-30 09:25Z:
+# #2237 — a 2-day-old pass — was dispatched as the top pick while the live
+# sentinel #3111, carrying that cycle's first-hand TELEGRAM-PRIMARY DOWN
+# finding, sorted last). The falsified premise is the same class as #3050's:
+# "you are looking at the freshest evidence" — false for every superseded
+# pass. Unlike the CI-incident probe this judgment needs ZERO network: the
+# family comparison is board-local (max issue number among open rows sharing
+# the family shape; issue numbers are monotonic with filing order, which makes
+# them a robustness-proof ordering token — no timestamp parsing). Two title
+# spellings coexist in the series ("guard(platform): sentry pass …" and
+# "guard(platform): provider sentry pass …"); the family test is prefix +
+# marker so both join. Bridge mirror rows ("🌉 Bridge Work Order — … sentry
+# pass …") do NOT start with the prefix and never join. Fail-open: any
+# malformed row (missing title, non-numeric number) serves unchanged — the
+# filter can only REMOVE a dispatch, never block one.
+SENTRY_FAMILY_PREFIX = "guard(platform):"
+SENTRY_FAMILY_MARKER = "sentry pass"
+
+
+def _sentry_pass_newest_open(issues: list[dict[str, Any]]) -> int | None:
+    """Newest (max issue number) open platform sentry pass on the board.
+
+    Board-local, never-raise: comparison runs over the full open-row list
+    (not just claimable candidates) so a claimed/bot-labeled newest sibling
+    still supersedes the older fossils — the sentinel duty follows the
+    newest OPEN pass regardless of its claim state.
+    """
+    newest: int | None = None
+    try:
+        for row in issues:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "").casefold()
+            if not title.startswith(SENTRY_FAMILY_PREFIX) or SENTRY_FAMILY_MARKER not in title:
+                continue
+            try:
+                num = int(row.get("number", 0))
+            except (TypeError, ValueError):
+                continue
+            if newest is None or num > newest:
+                newest = num
+    except Exception:  # noqa: BLE001 — fail-open
+        return newest
+    return newest
+
+
+def _sentry_superseded_note(item: dict[str, Any], newest: int | None) -> str | None:
+    """Demotion note when item is an OLDER member of the sentry-pass family.
+
+    None for non-family rows, malformed rows, and the newest member itself
+    (its premise — freshest sentinel evidence — is intact). Never raises.
+    """
+    try:
+        if newest is None:
+            return None
+        title = str(item.get("title") or "").casefold()
+        if not title.startswith(SENTRY_FAMILY_PREFIX) or SENTRY_FAMILY_MARKER not in title:
+            return None
+        num = int(item.get("number", 0))
+    except Exception:  # noqa: BLE001 — fail-open
+        return None
+    if num < newest:
+        return (
+            "superseded platform sentry pass (stale-sentry demotion, #3050 family): "
+            f"newest open sibling #{newest} carries the sentinel duty"
+        )
+    return None
+
+
 def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> tuple[bool, str]:
     """#2794 fix (1) — live-plane claim pre-verify for the dispatch pick.
 
@@ -496,6 +569,33 @@ def pick_next_issue(
     if exclude:
         excluded_set = {str(e) for e in exclude}
         candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
+    # Stale-sentry demotion (#3050 family, board-local): superseded platform
+    # sentry passes are filtered from the candidates BEFORE the priority sort,
+    # so the live sentinel (newest open pass) and real work surface within the
+    # top-FEEDBACK_PREVERIFY_TOPN pre-verify window instead of the window
+    # exhausting on fossils (live 2026-10-30: 20 open sentry passes; top-5 by
+    # age were ALL fossils, #2237 dispatched while #3111 sorted last).
+    # Gated on live mode (claim_probe wired) — pure mode keeps the pre-change
+    # label-only contract byte-identical for hermetic callers, exactly the
+    # boundary the #2794/#3050 probes ride. Malformed rows fail open and are
+    # served unchanged.
+    if claim_probe is not None:
+        newest_sentry = _sentry_pass_newest_open(issues or [])
+        if newest_sentry is not None:
+            survivors: list[dict[str, Any]] = []
+            demoted = 0
+            for cand in candidates:
+                if _sentry_superseded_note(cand, newest_sentry) is not None:
+                    demoted += 1
+                    continue
+                survivors.append(cand)
+            if demoted:
+                log_fn(
+                    "!",
+                    f"stale-sentry demotion: {demoted} superseded platform sentry pass row(s) "
+                    f"filtered from the pick — newest open sibling #{newest_sentry} carries the sentinel duty",
+                )
+            candidates = survivors
     sorted_issues = sorted(candidates, key=priority_key)
     if claim_probe is None:
         # Pure mode — label-only pick, exactly the pre-#2794 contract (hermetic
