@@ -377,7 +377,15 @@ def test_live_repo_sweep_passes() -> None:
     # (guard fired report-only, main CI runs no pytest). Regenerated WITH the index
     # per the #3483 rule; scripts/ci/radar_pointer_pin_guard.py now mechanizes the
     # co-obligation for future advances.
-    assert r["pointer"] == 89, "pointer drifted — regenerate expectation with the index"
+    # and after pass 46 (GLM Agent 18, Job 486801, cycle 05:18+08 2026-10-31): this pin co-advances
+    # 89 -> 90 in the SAME change that advances the index pointer 89 -> 90 (invariant P2 by
+    # construction). Same-window disclosure (the #3507/#3516 race class): this filer caught the
+    # pin 87 != pointer 89 drift live at 5e9c0d6 via `radar_pointer_pin_guard.py --check` and
+    # recorded it in the R89 report; GLM Agent 14's standing-suite heal r2 (#3821) landed the
+    # 87->89 regeneration first — first heal lands wins; this change therefore carries only its
+    # OWN co-advance, and Plan-5 (mechanical pre-push wiring of the co-obligation guard, still
+    # unwired on main) is recorded in docs/reports/SCOUT_R89_GATEWAY_PROMPT_CACHE_BLINDNESS_2026-10-31.md.
+    assert r["pointer"] == 90, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
