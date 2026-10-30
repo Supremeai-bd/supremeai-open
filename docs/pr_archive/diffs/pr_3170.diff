@@ -1,0 +1,45 @@
+diff --git a/docs/bridge/bridge-20261030-2792-intake-recovery-r1.md b/docs/bridge/bridge-20261030-2792-intake-recovery-r1.md
+new file mode 100644
+index 00000000..715d6447
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-2792-intake-recovery-r1.md
+@@ -0,0 +1,39 @@
++# #2792 Recovery Receipt r1 — private Bridge Intake gate is UP: 3 consecutive successes after the #327-#329 failure burst
++
++- **Task ID:** `bridge-20261030-2792-intake-recovery-r1`
++- **Lane:** report-only recovery correction (zero code, zero protected paths, no closure requested)
++- **Agent:** GLM Agent 08 (Job 486735), cycle 10:28Z 2026-10-30, zero-credential tower probe
++- **Claim:** work_claim GRANT_TAKEOVER 10:28:16Z, 30-min lease (prior claim expired 2026-10-29T23:17Z)
++
++## Live evidence (tower `github.workflow_runs`, explicit repo `Supremeai-bd/supremeai`, 2026-10-30T10:2xZ)
++
++| run | created (UTC) | event | conclusion |
++|---|---|---|---|
++| #327 (40806589604) | 10-29 02:28:51Z | schedule | FAILURE |
++| #328 (40854712613) | 10-29 10:05:10Z | schedule | FAILURE |
++| #329 (40916554577) | 10-29 16:56:58Z | schedule | FAILURE |
++| 40961066544 | **10-29 21:50:06Z** | schedule | **success** |
++| 40988997992 | **10-30 01:59:00Z** | schedule | **success** |
++| 41028340579 | **10-30 08:43:11Z** | schedule | **success** |
++
++- **The outage window closed at ~2026-10-29 21:50Z** (duration ≈19.4h from #327, matching the ~3.5-4.5min exit-code-2 signature #2792 documented). **3 consecutive scheduled successes since** — the gate has been healthy for ~36h at read time.
++- #2792's headline ("gate down >14h, 3 scheduled runs") is superseded: the P1 row now reads as a live outage to every solver/priority scan, but the referenced incident is stale per the loop's U3 STALE-INCIDENT GUARD ("resolved incidents are skipped with evidence, never re-solved"). This receipt is that evidence.
++- The onset-correlation hypothesis (open-repo landing c161014e1f at 23:34Z 10-28) is neither confirmed nor falsified by this receipt — recovery happened without any visible admin report; whether an unnoticed fix, revert, or transient (runner/quota) class resolved it remains owner-visible history. The suggested fail-loud guard (alert on 2+ consecutive intake failures) remains valid and would have both caught and closed this incident mechanically.
++
++## Remedy routing (unchanged, admin-lane)
++
++No agent action possible (private repo `.github/` + `infrastructure/mcp-control-plane/src/events/bridge_intake.ts`). Disposition of #2792 (keep-open for the guard lane vs close-as-recovered) belongs to the filer/admin — no closure requested. Refs #2792 #2225-family sentry series.
++
++## Verification
++
++- Probe: zero-credential tower read only; raw run rows archived agent-side (`scripts/r2792_probe.json` shape: name/event/conclusion/created_at per row, 20-row window back to 10-27).
++- `continuous_agent_loop --verify-only`: 8/8 PASS; `radar_index_freshness_guard --check` exit 0 (index untouched; this receipt cites issue numbers only).
++
++## Reflection
++
++**Why:** the P1's live-state is false on the board; every future solver dispatched to #2792 would chase a dead incident (the exact waste class the U3 guard names). Corrections cost one receipt; stale P1 headlines cost owner attention and solver cycles.
++**Alternatives rejected:** (a) silently skipping — the guard requires the skip be recorded WITH evidence; (b) closing #2792 — closure authority stays with the filer/admin (out-of-envelope remedy, and the row's guard suggestion is still open value); (c) re-running the failing steps for RCA — the runs are green now; the failing-step logs of #327-#329 remain the filer's captured evidence.
++
++## Rollback
++
++git revert-safe: delete this single receipt file (pure docs addition).
