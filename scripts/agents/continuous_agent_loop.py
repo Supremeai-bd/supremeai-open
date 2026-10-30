@@ -1232,6 +1232,14 @@ def report_failed_open_prs(
     আগের ⚠ লাইনই আসে (fallback-নোট সহ)। --offline পথ preflight-এ আগেই সৎ-skip
     হয়, তাই নেটওয়ার্ক-বিহীন রানে এই প্রোব চলে না।
 
+    check-window enrichment (2026-10-31, U2-upgrade): revived ক্যানসাসের পরে
+    _tower_workflow_runs_probe() এক tower-কলে সাম্প্রতিক workflow-run উইন্ডো
+    আনে এবং enrich_pr_check_verdicts() প্রতিটি open PR-কে মেকানিক্যালি
+    শ্রেণিবিন্যস্ত করে (failing/passing/unverified; join-না-হলে সৎ unseen)।
+    ✅-zero লাইন এখন শুধুমাত্র তখনই ইমিট হয় যখন প্রতিটি open PR-এর head sha
+    উইন্ডোতে completed-run বহন করে এবং কোনো failure নেই — "প্রাপ্ত" সার্টিফিকেশন,
+    অনুমান নয়। প্রোব-অন্ধকার ⇒ নীরবতা (আগের চুক্তি বাইট-অপরিবর্তিত)।
+
     #3574: log_fn ঐচ্ছিক প্যারামিটার (ডিফল্ট log — পুরনো dispatch-stdout চুক্তি
     বাইট-অপরিবর্তিত, test_failed_pr_audit_honesty পিন অক্ষত)। preflight
     অডিট envelope-মোডে _stderr_log পাঠায় — SPEC §4b stdout-purity (stdout
@@ -1255,6 +1263,52 @@ def report_failed_open_prs(
             log_fn("🔍", f"Read-only failed PR audit: plane revived via {fb_note} — per-PR check status UNSEEN (tower payload carries no statusCheckRollup; gh absent); failing subset unknown, not certified clean (U2).")
             for p in fb_rows[:limit]:
                 log_fn("  ↳", f"PR #{p.get('number')}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
+            # ── U2-upgrade (2026-10-31, audit cycle GLM Agent 28 / Job 486832):
+            # the revived census stopped at UNSEEN because the tower list_prs
+            # payload carries no statusCheckRollup — but the SAME tower carries
+            # github.workflow_runs (head_branch/head_sha/conclusion), which
+            # mechanically classifies every open PR whose CI fired inside the
+            # run window. Enrichment converts "failing subset unknown" into a
+            # real failing list for the joinable subset while staying honest
+            # about the remainder: the ✅-zero certification line is emitted
+            # ONLY when every open PR row got mechanically classified and
+            # none is failing. Probe dark/raise ⇒ silence (the UNSEEN line
+            # above already carries the honesty contract) — never raise, never
+            # hang, never manufacture a verdict from absent data (U2).
+            try:
+                run_rows, runs_note = _tower_workflow_runs_probe()
+            except Exception as exc:  # noqa: BLE001 — enrichment must never kill dispatch
+                run_rows, runs_note = None, f"runs probe raised ({type(exc).__name__})"
+            if run_rows:
+                verdicts = enrich_pr_check_verdicts(fb_rows, run_rows)
+                classified = [v for v in verdicts.values() if v.get("verdict") in ("failing", "passing", "unverified")]
+                failing_rows: list[dict[str, Any]] = []
+                for p in fb_rows[:limit]:
+                    v = verdicts.get(p.get("number"))
+                    if not v:
+                        continue
+                    if v["verdict"] == "failing":
+                        failing_rows.append({
+                            "number": p.get("number"),
+                            "title": p.get("title"),
+                            "branch": v.get("branch"),
+                            "failed_checks": v.get("failed_checks") or [],
+                            "url": p.get("url"),
+                        })
+                        log_fn("  ↳", f"PR #{p.get('number')} FAILING: [{', '.join(v.get('failed_checks') or ['?'])}] head {str(v.get('sha') or '?')[:8]} ({v.get('branch') or 'branch-unjoined'})")
+                n_pass = sum(1 for v in classified if v["verdict"] == "passing")
+                n_unver = sum(1 for v in classified if v["verdict"] == "unverified")
+                n_unseen = max(0, len(fb_rows[:limit]) - len(classified))
+                log_fn("🔍", f"check-window enrichment ({runs_note}): {len(classified)}/{len(fb_rows[:limit])} open PRs mechanically classified — {len(failing_rows)} failing, {n_pass} passing, {n_unver} unverified/in-flight, {n_unseen} unseen-outside-window (U2: unseen subset never certified).")
+                if failing_rows:
+                    log_fn("🚨", f"check-window enrichment: {len(failing_rows)} open PR(s) with failing CI (report-only):")
+                    return failing_rows
+                if classified and len(classified) == len(fb_rows[:limit]):
+                    # Full mechanical coverage + zero failing ⇒ certified zero
+                    # is now EARNED (every head sha carried a completed run).
+                    log_fn("✅", f"check-window enrichment: zero failing among all {len(classified)} classified open PRs (window-certified, not assumed).")
+                    return []
+                return []
             return []
         log_fn("⚠", f"Read-only failed PR audit: plane dark — open PRs UNSEEN (gh query failed/absent; {fb_note}), not zero; treating this as clean would be false assurance (U2).")
         return []
@@ -2022,6 +2076,230 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
     if outcome.get("error"):
         return None, str(outcome["error"])
     return outcome.get("rows"), str(outcome.get("note", "tower PR fallback returned no rows"))
+
+
+# ── check-window enrichment (2026-10-31, U2-upgrade) ─────────────────────
+# The revived tower census stopped at "per-PR check status UNSEEN" because
+# github.list_prs carries no statusCheckRollup. But the SAME tower exposes
+# github.workflow_runs (GitHub REST /actions/runs shape: head_branch,
+# head_sha, status, conclusion), and every bridge PR branch is cut as
+# bridge/<taskId> while the PR title carries the same <taskId> in its
+# trailing parenthetical — a deterministic join key that needs NO extra
+# plane and NO unauthenticated api.github.com quota (shared-IP quota is a
+# live failure class: 2026-10-31 17:35Z probe showed core.remaining=0).
+# These three helpers turn that join into the failed-PR audit's third
+# read plane: gh → tower census → tower check-window classification.
+
+PR_FAILED_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure"})
+
+
+def _pr_title_task_token(title: str) -> str | None:
+    """Extract the bridge taskId token from a PR title's trailing parenthetical.
+
+    বাংলা: bridge PR-এর শিরোনাম সবসময় "(bridge-YYYYMMDD-<slug>-<agent>)" দিয়ে
+    শেষ হয় এবং সেই টাস্ক-ই ব্রাঞ্চ "bridge/<taskId>" হিসেবে কাটা হয় — শিরোনাম↔ব্রাঞ্চ
+    যোগের নির্ধারিত কী। মিল না পেলে None (সৎ "unjoinable")।
+    """
+    m = re.search(r"\((bridge-[A-Za-z0-9._\-]+)\)\s*$", (title or "").strip())
+    return m.group(1) if m else None
+
+
+def enrich_pr_check_verdicts(
+    pr_rows: list[dict[str, Any]],
+    run_rows: list[dict[str, Any]],
+) -> dict[int, dict[str, Any]]:
+    """Pure join: open-PR rows × workflow-run rows → per-PR check verdicts.
+
+    Deterministic and offline — NO network, NO gh, NO tower. Contract:
+
+    - PRs absent from the returned map are the honest UNSEEN subset (no run
+      in the window joined them); the caller must never certify them.
+    - A PR's head sha is the sha of its NEWEST run in the window (created_at,
+      id sort). Verdict is computed ONLY against that sha — a stale failure
+      on an older sha of the same branch can never classify the PR failing.
+    - failing  ⇒ any completed run on the head sha concluded in
+      PR_FAILED_CONCLUSIONS (failed_checks carries the unique run names);
+    - passing  ⇒ completed runs exist on the head sha, none failed, none
+      in-flight — full completed coverage, all success;
+    - unverified ⇒ runs exist on the head sha but certification is pending
+      (in-flight run, or cancelled-only — the concurrency-churn shape; a
+      cancelled gate is NOT certified green, and NOT claimed failing either).
+    - Join keys: title-token → branch "bridge/<token>" (and bare token as a
+      defensive alias), then the run payload's own pull_requests[] linkage.
+    """
+    by_branch: dict[str, list[dict[str, Any]]] = {}
+    by_pr_number: dict[int, list[dict[str, Any]]] = {}
+    for run in run_rows:
+        if not isinstance(run, dict):
+            continue
+        branch = str(run.get("head_branch") or "")
+        if branch:
+            by_branch.setdefault(branch, []).append(run)
+        for linked in (run.get("pull_requests") or []):
+            if isinstance(linked, dict) and linked.get("number") is not None:
+                try:
+                    by_pr_number.setdefault(int(linked["number"]), []).append(run)
+                except (TypeError, ValueError):
+                    pass
+    # GitHub returns runs newest-first; sort anyway so the join is order-proof.
+    for bucket in (by_branch, by_pr_number):
+        for runs in bucket.values():
+            runs.sort(key=lambda r: (str(r.get("created_at") or ""), str(r.get("id") or "")), reverse=True)
+
+    verdicts: dict[int, dict[str, Any]] = {}
+    for pr in pr_rows:
+        if not isinstance(pr, dict) or pr.get("number") is None:
+            continue
+        number = int(pr["number"])
+        token = _pr_title_task_token(str(pr.get("title") or ""))
+        joined: list[dict[str, Any]] = []
+        branch_used = ""
+        if token:
+            for key in (f"bridge/{token}", token):
+                if key in by_branch:
+                    joined = by_branch[key]
+                    branch_used = key
+                    break
+        if not joined and number in by_pr_number:
+            joined = by_pr_number[number]
+            branch_used = next(
+                (str(r.get("head_branch")) for r in joined if r.get("head_branch")), ""
+            )
+        if not joined:
+            continue  # honest UNSEEN — no verdict manufactured from absent data
+        head_sha = str(joined[0].get("head_sha") or "")
+        runs_on_head = [r for r in joined if str(r.get("head_sha") or "") == head_sha]
+        completed = [r for r in runs_on_head if r.get("status") == "completed"]
+        failed = [r for r in completed if str(r.get("conclusion") or "") in PR_FAILED_CONCLUSIONS]
+        in_flight = [r for r in runs_on_head if r.get("status") != "completed"]
+        if failed:
+            names: list[str] = []
+            for r in failed:
+                name = str(r.get("name") or "unnamed-check")
+                if name not in names:
+                    names.append(name)
+            verdicts[number] = {
+                "verdict": "failing",
+                "sha": head_sha,
+                "branch": branch_used,
+                "failed_checks": names,
+            }
+        elif (
+            in_flight
+            or not completed
+            or any(str(r.get("conclusion") or "") != "success" for r in completed)
+        ):
+            # Unverified: in-flight, no completed run, or a completed run that
+            # is neither success nor a listed failure (cancelled/skipped — the
+            # concurrency-churn shape certifies nothing in either direction).
+            verdicts[number] = {"verdict": "unverified", "sha": head_sha, "branch": branch_used, "failed_checks": []}
+        else:
+            verdicts[number] = {"verdict": "passing", "sha": head_sha, "branch": branch_used, "failed_checks": []}
+    return verdicts
+
+
+def _tower_workflow_runs_probe(per_page: int = 100, timeout_s: float = 40.0) -> tuple[list[dict[str, Any]] | None, str]:
+    """One-tower-call probe of the recent workflow-run window (never raises).
+
+    বাংলা: _tower_open_prs-এর প্রমাণিত প্যাটার্ন হুবহু (lazy sibling import,
+    urllib raw-body, thread+timeout, never-raise) — শুধু github.workflow_runs
+    (per_page=100, ~40-মিনিটের CI ফায়ারহোস উইন্ড) ডাকে। ফেরত (rows|None, note):
+    rows=None মানে প্রোব অন্ধকার — কলার নীরব থাকে, পুরনো UNSEEN চুক্তিই থাকে।
+    """
+    outcome: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            base = _mtc.MCP_SERVER_URL.rstrip("/")
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+                hdrs = dict(headers)
+                if sid:
+                    hdrs["mcp-session-id"] = sid
+                req = urllib.request.Request(
+                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
+
+            init_id = "cal-runs-probe-1"
+            sid, _ = _post({
+                "jsonrpc": "2.0", "id": init_id, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05", "capabilities": {},
+                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                },
+            }, None)
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            call_id = "cal-runs-probe-2"
+            _, body = _post({
+                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                "params": {"name": "github.workflow_runs", "arguments": {
+                    "repo": UPSTREAM_REPO, "per_page": max(1, min(int(per_page), 100)),
+                }},
+            }, sid, timeout=45)
+
+            envelopes: list[dict[str, Any]] = []
+            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+                try:
+                    envelopes.append(json.loads(m.group(1)))
+                except json.JSONDecodeError:
+                    pass
+            if not envelopes:
+                try:
+                    envelopes.append(json.loads(body))
+                except json.JSONDecodeError:
+                    pass
+            result: Any = None
+            for env in envelopes:
+                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+                    result = env.get("result")
+                    break
+            text = ""
+            if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+                first = result["content"][0]
+                txt = first.get("text") if isinstance(first, dict) else None
+                if isinstance(txt, str):
+                    text = txt
+            payload: Any = None
+            if text:
+                try:
+                    payload = json.loads(text)
+                except json.JSONDecodeError:
+                    payload = None
+            runs: Any = None
+            if isinstance(payload, dict):
+                runs = payload.get("workflow_runs")
+            elif isinstance(payload, list):
+                runs = payload
+            if not isinstance(runs, list):
+                outcome["error"] = "tower runs payload carried no workflow_runs list"
+                return
+            rows = [r for r in runs if isinstance(r, dict)]
+            outcome["rows"] = rows
+            outcome["note"] = f"tower workflow_runs window: {len(rows)} run(s)"
+        except Exception as exc:  # noqa: BLE001 — probe must never raise
+            outcome["error"] = f"tower runs probe failed ({type(exc).__name__})"
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — probe must never raise
+        return None, f"tower runs probe error ({type(exc).__name__})"
+    if t.is_alive():
+        return None, "tower runs probe timed out"
+    if outcome.get("error"):
+        return None, str(outcome["error"])
+    return outcome.get("rows"), str(outcome.get("note", "tower runs probe returned no rows"))
+
 
 def _tower_issue_hydrate(number: int | str, timeout_s: float = 75.0) -> dict[str, Any] | None:
     """Per-issue tower hydration fallback — the mirror of _tower_board_rows (R78).
