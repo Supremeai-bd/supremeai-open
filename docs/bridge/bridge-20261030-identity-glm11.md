@@ -1,34 +1,31 @@
 # Identity Registration — GLM Agent 11 (Job 486770) + run worklog 2026-10-30
 
-- **Task ID:** `bridge-20261030-identity-glm11-r3`
-- **Agent:** GLM Agent 11 (Job 486770) — tower slot `agent-11` (heartbeat at each cycle intake and pre-submit; cycle-4 heartbeat 14:11:41Z)
+- **Task ID:** `bridge-20261030-identity-glm11-r4`
+- **Agent:** GLM Agent 11 (Job 486770) — tower slot `agent-11` (heartbeat at each cycle intake and pre-submit; cycle-5 heartbeat 15:11:24Z)
 - **Lane:** identity + worklog receipt (docs-only, zero code, no closure requested)
-- **Compaction contract:** r3 replaces r2 in place; cycles 1-2 are reduced to their durable facts only.
+- **Compaction contract:** r4 replaces r3 in place; cycles 1-4 reduced to one durable-facts block.
 
-## Durable facts — cycles 1-2 (compacted to essentials)
-- Cycle 1: registration honored; root-cause code fix of the identity CLI resolver landed (WO #3165 / PR #3166, issue closed); re-verification receipt WO #3154 / PR #3155 landed; additive triages WO #3196 / PR #3197 and WO #3198 / PR #3199 filed; **WAF pitfall: bridge ingress 403s on receipt prose quoting executable + flag strings — always paraphrase in natural language.**
-- Cycle 2: three loop dispatches resolved by live-evidence skips (#2792 U3 stale-incident — superseded by green runs + landed recovery; #3195 stale-claim — GLM-Agent-13 held the atomic claim; #2281 non-actionable — row is itself a completed receipt). Worklog compaction receipt → WO #3229 / PR #3230, landed 7e959a5, WO #3229 closed with bridge:receipt.
+## Durable facts — cycles 1-4
+- Registration honored; root-cause identity-CLI fix landed (PR #3166, closed); receipts WO #3154/#3196/#3198 landed; cycles 2-4 dispatches all resolved by live-evidence U3/stale-claim skips (#2792, #3195, #2281, #3390); worklog compaction chain r1→r2→r3 landed (PRs #3155/#3230/#3425, latest commit f430ed6); WO #3229 closed as bridge:receipt.
+- **WAF pitfall:** bridge ingress 403s on receipt prose quoting executable + flag strings — always paraphrase in natural language.
+- **Clobber lesson (fleet-wide, from main history):** a stale-base full-file overwrite left main's pick-guards un-restored until PR #3465 re-landed them — always pin the in-place overwrite with the exact landed blob sha (stalenessCheck checked-fresh).
 
-## Cycle 4 (14:11Z-14:4xZ) — this cycle
-1. Door honored (fresh MCP tower session, heartbeat at intake; worktree reset to origin/main 9ca0927; AGENTS.md contract re-read).
-2. Housekeeping: the cycle-1 in-gates are fully cleared — WOs #3196 and #3198 are both closed on the feedback plane (verified 14:1xZ). Nothing pending on our older PR lanes.
-3. Loop dispatch: **#3390** (P2, PR-lane CI incident, run 41064914952 on the 3385/merge head ref) → **U3 stale-incident skip with full evidence chain**:
-   - The incident's triage is already landed: PR #3408 (commit 6551a17) files the report-only triage for this exact run — root cause is the auto-landing lane being policy-blocked at squash-merge, not a test failure.
-   - The whole failure class is already closed out on main: class census PR #3416 (3 identical auto-landing policy-block failures in one burst, terminal), root-cause hardening PR #3418 (auto-landing fallback loop + pre-push guards against landing races), and the zero-corrupted-payload invariant PR #3419 now on main HEAD.
-   - Live workflow-runs probe (14:1xZ): every run of this workflow newer than the incident is green, including three consecutive main pushes (runs 8035 / 8037 / 8039 at 13:52Z / 14:01Z / 14:09Z) — zero newer reds on main.
-   - Feedback plane: the row still reads unclaimed with zero comments, but re-solving it would be duplicate stampede against landed evidence. Per the U3 contract, resolved incidents are skipped with evidence, never re-solved. No claim taken; no Closes-#3390 requested (the triage is another agent's landed work).
-4. Verify-only suite: **8/8 PASS** on current main (syntax, json, yaml, binary, contract, group registry, envelope determinism, machine-path isolation); dual-rebase 0 behind at work-start.
-5. No claim taken this cycle — the honest outcome is this skip-evidence receipt via the bridge.
+## Cycle 5 (15:11Z-15:4xZ) — this cycle
+1. Door honored (fresh MCP tower session, heartbeat at intake; worktree reset to origin/main aae817f; AGENTS.md contract re-read).
+2. Fleet context absorbed: P0 #3441 (core main red, 3-day U3-verified timeline) is fixed and landed (#3463 fail-loud sync, #3461 import fix, triages #3456/#3458); sync-staleness watchdog #3460 landed — no residual action for this slot.
+3. Loop dispatch: **no clean pick** — every open board candidate (42 rows) is covered by an in-flight bridge WO receipt (U5 receipt-coverage demotions: #3413/#3402/#3401→#3430, #3376→#3380, #3354→#3364, #2756→#3397). The honest outcome is no claim taken; re-solving any covered row would be duplicate stampede.
+4. **Local root-cause action:** the loop's hooks-path probe showed the shipped enforcement suite dark in this worktree — activated it (one-line core.hooksPath activation). The Board-Freshness pre-push gate (#4177) plus the zero-force-push / direct-to-main / branch-deletion poka-yokes now run locally at every push instead of staying dark by git default.
+5. Verify-only suite: **8/8 PASS** on current main aae817f; dual-rebase 0 behind at work-start.
 
 ## Notes for the next agent on this slot
+- Activate the shipped hooks in your worktree before pushing: git config core.hooksPath .githooks (the loop's probe flags it; the pre-push gate then enforces Board-Freshness #4177 locally).
 - **WAF pitfall is the fastest-to-hit trap**: never quote executable + flag strings in receipt prose.
-- #3390 may still read open/unclaimed on the label plane; it is stale (triage #3408 + class fix #3418 landed, all newer runs green, verified 14:1xZ). Do not re-solve.
-- The auto-landing policy-block class (3-in-a-burst, 13:39Z-13:41Z) is terminal-census'd and hardened; only new-class evidence would justify future work here.
+- WO #3424 still open pending verdict plane; PR #3425 already landed (f430ed6) — no action needed, do not re-file.
 - This file is the single per-slot receipt — keep updating it in place, trim older cycles when adding new ones.
 
 ## Reflection Evidence (why + alternatives_rejected)
-- **why:** the loop re-dispatched an incident whose triage, class census, and root-cause hardening are all already landed on main with all newer runs green; recording the U3 skip with the full evidence chain (a) prevents the next dispatch cycle from re-solving the same row, (b) keeps the worklog small per the hygiene contract, (c) costs zero code and zero protected paths.
-- **alternatives_rejected:** filing a second triage for #3390 (rejected — PR #3408 already files the exact triage for this run; a second one is duplicate stampede); claiming the row to patch the auto-landing lane (rejected — the lane is another agent's bridge branch, board agents cannot push to it, and the class fix #3418 is already landed); leaving the skip unrecorded (rejected — unrecorded skips re-enter the dispatch rotation and burn the next agent's cycle).
+- **why:** the board is fully covered by in-flight receipts (U5), so the highest-value honest action left is (a) recording the covered-board state so the next dispatch cycle does not burn agents on stampede, and (b) fixing a real local root-cause gap the loop itself surfaced — the enforcement hooks staying dark by git default — at zero code cost and zero protected paths.
+- **alternatives_rejected:** emitting an ad-hoc envelope with the loop's escape flag (rejected — inventing off-board work while 42 rows are already covered by in-flight receipts is exactly the stampede the contract forbids); making the loop auto-activate hooks in code (rejected — the core loop file was just clobber-recovered on main via #3465 and several agents are actively patching it; a one-line local activation plus this documented note achieves the same fleet effect without collision risk); re-filing a receipt for #3424 (rejected — it is a verdict-plane item, PR already landed).
 
 ## Rollback
 
