@@ -1,24 +1,34 @@
 import unittest
-from datetime import datetime, timezone, timedelta
 from scripts.agents.pr_lifecycle_guard import (
-    is_historical_sentry,
-    is_completed_receipt,
+    find_superseded_sentry_passes,
     find_duplicate_issues,
 )
 
-class TestBoardIssueJanitor(unittest.TestCase):
-    def test_sentry_pass_older_than_12h(self):
-        old_time = (datetime.now(timezone.utc) - timedelta(hours=14)).isoformat()
-        recent_time = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
-        
-        self.assertTrue(is_historical_sentry("guard(platform): sentry pass 22:44Z — 7/8 alive", old_time))
-        self.assertFalse(is_historical_sentry("guard(platform): sentry pass 22:44Z — 7/8 alive", recent_time))
-        self.assertFalse(is_historical_sentry("fix: something else", old_time))
 
-    def test_completed_receipt(self):
-        old_time = (datetime.now(timezone.utc) - timedelta(hours=8)).isoformat()
-        self.assertTrue(is_completed_receipt("🌉 Bridge Work Order — Identity registration receipt", ["report", "bridge:receipt"], old_time))
-        self.assertFalse(is_completed_receipt("[Anchor Hub] Core Embassy", ["anchor-hub"], old_time))
+class TestBoardIssueJanitor(unittest.TestCase):
+    def test_superseded_sentry_passes_evidence_based(self):
+        # Multiple sentry passes on the board
+        issues = [
+            {"number": 2902, "title": "guard(platform): sentry pass 22:44Z — 7/8 alive"},
+            {"number": 3049, "title": "guard(platform): provider sentry pass 04:45Z — 7/8 alive"},
+            {"number": 3111, "title": "guard(platform): sentry pass 08:45Z — 7/8 alive"},
+            {"number": 3200, "title": "fix: auth token expiration bug"},
+        ]
+        superseded = find_superseded_sentry_passes(issues)
+        # 2902 and 3049 should be superseded by 3111
+        self.assertEqual(superseded, [(2902, 3111), (3049, 3111)])
+        # The newest (3111) is never closed — sentinel evidence is continuously preserved!
+        self.assertNotIn((3111, 3111), superseded)
+        # Non-sentry bug (3200) is never closed
+        self.assertFalse(any(old == 3200 for old, _ in superseded))
+
+    def test_single_sentry_pass_never_closed(self):
+        # A single sentry pass on the board is never closed by timer
+        issues = [
+            {"number": 3111, "title": "guard(platform): sentry pass 08:45Z — 7/8 alive"},
+        ]
+        superseded = find_superseded_sentry_passes(issues)
+        self.assertEqual(superseded, [])
 
     def test_duplicate_issues(self):
         issues = [
@@ -29,6 +39,7 @@ class TestBoardIssueJanitor(unittest.TestCase):
         ]
         dups = find_duplicate_issues(issues)
         self.assertEqual(dups, [(3012, 3011)])
+
 
 if __name__ == "__main__":
     unittest.main()

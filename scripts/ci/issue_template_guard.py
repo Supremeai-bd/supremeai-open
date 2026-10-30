@@ -44,6 +44,11 @@ SECTION_MARKER = re.compile(
 )
 MIN_BODY_CHARS = 50
 
+ROUTINE_GREEN_SENTRY = re.compile(
+    r"^(?:\[P[0-3]\]\s*)?(?:guard\([^)]*\):\s*(?:provider\s+)?sentry\s+pass|sentry:).*(?:all[- ]green|[0-9]+/[0-9]+\s+alive)",
+    re.IGNORECASE,
+)
+
 PLACEHOLDER_TITLES = {
     "test",
     "tests",
@@ -155,6 +160,11 @@ def validate_issue(payload: dict) -> dict:
     ):
         reasons.append(f"placeholder title: {stripped!r}")
 
+    if ROUTINE_GREEN_SENTRY.search(stripped):
+        reasons.append(
+            "routine green sentry telemetry passes must not open new issues "
+            "(record routine success in run worklogs or memory plane)"
+        )
     if len(body) < MIN_BODY_CHARS:
         reasons.append(f"body too short ({len(body)} < {MIN_BODY_CHARS} chars)")
     elif not SECTION_MARKER.search(body):
@@ -227,6 +237,9 @@ def _self_test() -> int:
         {**good, "body": "task contract: deliver the guard plus offline self-tests."}
     )
     assert v4["verdict"] == "pass", v4
+    # Routine green sentry rejected
+    sentry_rej = validate_issue({**good, "title": "[P2] guard(platform): sentry pass 12:00Z — 7/8 alive"})
+    assert sentry_rej["verdict"] == "reject" and any("routine green sentry" in r for r in sentry_rej["reasons"]), sentry_rej
     print("self-test OK: issue_template_guard")
     return 0
 
